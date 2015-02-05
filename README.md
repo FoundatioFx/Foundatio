@@ -1,2 +1,2 @@
 # Foundatio
-Foundatio blocks for building distributed apps.
+Foundation blocks for building distributed apps.
