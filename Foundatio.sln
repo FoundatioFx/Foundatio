@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio", "src\Core\Foundatio.csproj", "{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Redis", "src\Redis\Foundatio.Redis.csproj", "{E2029C76-1003-4A72-8407-81DDF4B2B102}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Azure", "src\Azure\Foundatio.Azure.csproj", "{075BC817-A72D-45B4-8473-7635591146D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.StatsD", "src\StatsD\Foundatio.StatsD.csproj", "{79568AC0-644C-4014-846C-9A353D7D790B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2029C76-1003-4A72-8407-81DDF4B2B102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2029C76-1003-4A72-8407-81DDF4B2B102}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2029C76-1003-4A72-8407-81DDF4B2B102}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2029C76-1003-4A72-8407-81DDF4B2B102}.Release|Any CPU.Build.0 = Release|Any CPU
+		{075BC817-A72D-45B4-8473-7635591146D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{075BC817-A72D-45B4-8473-7635591146D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{075BC817-A72D-45B4-8473-7635591146D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{075BC817-A72D-45B4-8473-7635591146D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{79568AC0-644C-4014-846C-9A353D7D790B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{79568AC0-644C-4014-846C-9A353D7D790B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{79568AC0-644C-4014-846C-9A353D7D790B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{79568AC0-644C-4014-846C-9A353D7D790B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
