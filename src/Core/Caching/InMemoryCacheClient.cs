@@ -26,7 +26,7 @@ namespace Foundatio.Caching {
         public int Count { get { return _memory.Count; } }
         public int? MaxItems { get; set; }
 
-        internal ICollection<string> Keys {
+        public ICollection<string> Keys {
             get { return _memory.OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
         } 
 

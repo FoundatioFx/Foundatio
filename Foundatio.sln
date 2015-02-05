@@ -11,6 +11,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Azure", "src\Azur
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.StatsD", "src\StatsD\Foundatio.StatsD.csproj", "{79568AC0-644C-4014-846C-9A353D7D790B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Tests", "src\Core\Tests\Foundatio.Tests.csproj", "{23002BA4-8663-460B-8D67-3AA941B0322A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Redis.Tests", "src\Redis\Tests\Foundatio.Redis.Tests.csproj", "{06F778A3-3563-42FE-8A40-3BA16201CCB0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Azure.Tests", "src\Azure\Tests\Foundatio.Azure.Tests.csproj", "{07E315CC-4852-42F9-B502-30A6E3724F6C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{70515E66-DAF8-4D18-8F8F-8A2934171AA9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,8 +41,25 @@ Global
 		{79568AC0-644C-4014-846C-9A353D7D790B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{79568AC0-644C-4014-846C-9A353D7D790B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{79568AC0-644C-4014-846C-9A353D7D790B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23002BA4-8663-460B-8D67-3AA941B0322A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23002BA4-8663-460B-8D67-3AA941B0322A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23002BA4-8663-460B-8D67-3AA941B0322A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23002BA4-8663-460B-8D67-3AA941B0322A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06F778A3-3563-42FE-8A40-3BA16201CCB0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06F778A3-3563-42FE-8A40-3BA16201CCB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06F778A3-3563-42FE-8A40-3BA16201CCB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06F778A3-3563-42FE-8A40-3BA16201CCB0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07E315CC-4852-42F9-B502-30A6E3724F6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07E315CC-4852-42F9-B502-30A6E3724F6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07E315CC-4852-42F9-B502-30A6E3724F6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07E315CC-4852-42F9-B502-30A6E3724F6C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{23002BA4-8663-460B-8D67-3AA941B0322A} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
+		{06F778A3-3563-42FE-8A40-3BA16201CCB0} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
+		{07E315CC-4852-42F9-B502-30A6E3724F6C} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
 	EndGlobalSection
 EndGlobal
