@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Threading;
 using Foundatio.Tests.Utility;
-using Foundatio;
 using Foundatio.Messaging;
+using Foundatio.Tests.Messaging;
 using StackExchange.Redis;
 using Xunit;
 
-namespace Foundatio.Tests.Messaging {
+namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests {
         private readonly RedisMessageBus _messageBus;
 

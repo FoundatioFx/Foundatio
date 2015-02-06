@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using Foundatio.Queues;
+using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using StackExchange.Redis;
 
-namespace Foundatio.Tests.Queue {
+namespace Foundatio.Redis.Tests.Queue {
     public class RedisQueueTests : InMemoryQueueTests {
         private ConnectionMultiplexer _muxer;
 

@@ -8,7 +8,6 @@ using Foundatio.Caching;
 using Foundatio.Component;
 using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Redis.Extensions;
 using Nito.AsyncEx;
 using NLog.Fluent;
 using StackExchange.Redis;

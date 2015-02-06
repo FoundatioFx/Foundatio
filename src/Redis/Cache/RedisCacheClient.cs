@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
+using Foundatio.Extensions;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {
@@ -32,7 +32,7 @@ namespace Foundatio.Caching {
             if (value.IsNullOrEmpty)
                 return default(T);
 
-            return JsonConvert.DeserializeObject<T>(value.ToString());
+            return value.ToString().FromJson<T>();
         }
 
         public bool TryGet<T>(string key, out T value) {
@@ -42,7 +42,7 @@ namespace Foundatio.Caching {
                 if (stringValue.IsNullOrEmpty)
                     return false;
 
-                value = JsonConvert.DeserializeObject<T>(stringValue.ToString());
+                value = stringValue.ToString().FromJson<T>();
                 return true;
             } catch {
                 return false;
@@ -88,17 +88,17 @@ namespace Foundatio.Caching {
         }
 
         public bool Add<T>(string key, T value) {
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json, null, When.NotExists);
         }
 
         public bool Set<T>(string key, T value) {
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json);
         }
 
         public bool Replace<T>(string key, T value) {
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json, null, When.Exists);
         }
 
@@ -120,7 +120,7 @@ namespace Foundatio.Caching {
                 return false;
             }
 
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json, expiresIn, When.NotExists);
         }
 
@@ -130,7 +130,7 @@ namespace Foundatio.Caching {
                 return false;
             }
 
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json, expiresIn);
         }
 
@@ -140,7 +140,7 @@ namespace Foundatio.Caching {
                 return false;
             }
 
-            var json = JsonConvert.SerializeObject(value);
+            var json = value.ToJson();
             return _db.StringSet(key, json, expiresIn, When.Exists);
         }
 
@@ -171,7 +171,7 @@ namespace Foundatio.Caching {
 
             var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
-                T value = JsonConvert.DeserializeObject<T>(values[i]);
+                T value = values[i].ToString().FromJson<T>();
                 result.Add(keyArray[i], value);
             }
 
@@ -182,7 +182,7 @@ namespace Foundatio.Caching {
             if (values == null)
                 return;
 
-            _db.StringSet(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)JsonConvert.SerializeObject(v.Value)).ToArray());
+            _db.StringSet(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)v.Value.ToJson()).ToArray());
         }
 
         public DateTime? GetExpiration(string key) {

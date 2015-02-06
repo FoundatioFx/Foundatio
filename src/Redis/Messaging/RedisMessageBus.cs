@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
-using Foundatio.Redis.Extensions;
+using Foundatio.Extensions;
 using NLog.Fluent;
 using StackExchange.Redis;
 

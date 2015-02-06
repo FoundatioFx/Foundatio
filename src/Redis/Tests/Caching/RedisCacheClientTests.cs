@@ -1,9 +1,10 @@
 ﻿using System;
 using Foundatio.Caching;
+using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using StackExchange.Redis;
 
-namespace Foundatio.Tests.Caching {
+namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests: CacheClientTestsBase {
         protected override ICacheClient GetCache() {
             if (ConnectionStrings.Get("RedisConnectionString") == null)

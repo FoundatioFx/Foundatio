@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Bson;
 using Newtonsoft.Json.Linq;
 
-namespace Foundatio.Redis.Extensions {
+namespace Foundatio.Extensions {
     [System.Runtime.InteropServices.GuidAttribute("4186FC77-AF28-4D51-AAC3-49055DD855A4")]
     public static class JsonExtensions {
         public static bool IsNullOrEmpty(this JToken target) {
