@@ -65,6 +65,7 @@
     <Compile Include="Queue\RedisQueue.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Foundatio.Redis.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
