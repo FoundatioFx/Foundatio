@@ -246,50 +246,59 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public void CanHaveMultipleQueueInstances() {
-            using (var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
-                Debug.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
-                queue.DeleteQueue();
+            for (int x = 0; x < 5; x++) {
+                using (var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
+                    Trace.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
+                    queue.DeleteQueue();
 
-                const int workItemCount = 10;
-                const int workerCount = 3;
-                var latch = new CountdownEvent(workItemCount);
-                var info = new WorkInfo();
-                var workers = new List<IQueue<SimpleWorkItem>> { queue };
+                    const int workItemCount = 10;
+                    const int workerCount = 3;
+                    var latch = new CountdownEvent(workItemCount);
+                    var info = new WorkInfo();
+                    var workers = new List<IQueue<SimpleWorkItem>> {queue};
 
-                for (int i = 0; i < workerCount; i++) {
-                    var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    Debug.WriteLine(String.Format("Queue Id: {0}", q.QueueId));
-                    q.StartWorking(w => DoWork(w, latch, info));
-                    workers.Add(q);
-                }
+                    for (int i = 0; i < workerCount; i++) {
+                        var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                        Trace.WriteLine(String.Format("Queue Id: {0}", q.QueueId));
+                        q.StartWorking(w => DoWork(w, latch, info));
+                        workers.Add(q);
+                    }
 
-                Parallel.For(0, workItemCount, i => {
-                    var id = queue.Enqueue(new SimpleWorkItem {
-                        Data = "Hello",
-                        Id = i
+                    Parallel.For(0, workItemCount, i => {
+                        var id = queue.Enqueue(new SimpleWorkItem {
+                            Data = "Hello",
+                            Id = i
+                        });
+                        Trace.WriteLine(String.Format("Enqueued Index: {0} Id: {1}", i, id));
                     });
-                    Debug.WriteLine("Enqueued Index: {0} Id: {1}", i, id);
-                });
 
-                Assert.True(latch.Wait(TimeSpan.FromSeconds(10)));
-                Debug.WriteLine("Completed: {0} Abandoned: {1} Error: {2}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
-                for (int i = 0; i < workers.Count; i++)
-                    Debug.WriteLine("Worker#{0} Completed: {1} Abandoned: {2} Error: {3}", i, workers[i].CompletedCount, workers[i].AbandonedCount, workers[i].WorkerErrorCount);
+                    Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
+                    Assert.True(latch.Wait(TimeSpan.FromSeconds(10)));
+                    Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
+                    Trace.WriteLine(String.Format("Completed: {0} Abandoned: {1} Error: {2}",
+                        info.CompletedCount,
+                        info.AbandonCount,
+                        info.ErrorCount));
 
-                Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
+                    for (int i = 0; i < workers.Count; i++)
+                        Trace.WriteLine(String.Format("Worker#{0} Completed: {1} Abandoned: {2} Error: {3}", i,
+                            workers[i].CompletedCount, workers[i].AbandonedCount, workers[i].WorkerErrorCount));
 
-                // In memory queue doesn't share state.
-                if (queue.GetType() == typeof(InMemoryQueue<SimpleWorkItem>)) {
-                    Assert.Equal(info.CompletedCount, queue.CompletedCount);
-                    Assert.Equal(info.AbandonCount, queue.AbandonedCount - queue.WorkerErrorCount);
-                    Assert.Equal(info.ErrorCount, queue.WorkerErrorCount);
-                } else {
-                    Assert.Equal(info.CompletedCount, workers.Sum(q => q.CompletedCount));
-                    Assert.Equal(info.AbandonCount, workers.Sum(q => q.AbandonedCount) - workers.Sum(q => q.WorkerErrorCount));
-                    Assert.Equal(info.ErrorCount, workers.Sum(q => q.WorkerErrorCount));
+                    Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
+
+                    // In memory queue doesn't share state.
+                    if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
+                        Assert.Equal(info.CompletedCount, queue.CompletedCount);
+                        Assert.Equal(info.AbandonCount, queue.AbandonedCount - queue.WorkerErrorCount);
+                        Assert.Equal(info.ErrorCount, queue.WorkerErrorCount);
+                    } else {
+                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.CompletedCount));
+                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.AbandonedCount) - workers.Sum(q => q.WorkerErrorCount));
+                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.WorkerErrorCount));
+                    }
+
+                    workers.ForEach(w => w.Dispose());
                 }
-
-                workers.ForEach(w => w.Dispose());
             }
         }
 
@@ -325,21 +334,21 @@ namespace Foundatio.Tests.Queue {
         }
 
         private void DoWork(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {
-            Debug.WriteLine("Starting: {0}", w.Value.Id);
+            Trace.WriteLine(String.Format("Starting: {0}", w.Value.Id));
             Assert.Equal("Hello", w.Value.Data);
 
             try {
                 // randomly complete, abandon or blowup.
                 if (RandomData.GetBool()) {
-                    Debug.WriteLine("Completing: {0}", w.Value.Id);
+                    Trace.WriteLine(String.Format("Completing: {0}", w.Value.Id));
                     w.Complete();
                     info.IncrementCompletedCount();
                 } else if (RandomData.GetBool()) {
-                    Debug.WriteLine("Abandoning: {0}", w.Value.Id);
+                    Trace.WriteLine(String.Format("Abandoning: {0}", w.Value.Id));
                     w.Abandon();
                     info.IncrementAbandonCount();
                 } else {
-                    Debug.WriteLine("Erroring: {0}", w.Value.Id);
+                    Trace.WriteLine(String.Format("Erroring: {0}", w.Value.Id));
                     info.IncrementErrorCount();
                     throw new ApplicationException();
                 }
