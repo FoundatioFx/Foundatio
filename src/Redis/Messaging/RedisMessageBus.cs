@@ -18,7 +18,9 @@ namespace Foundatio.Messaging {
         }
 
         private void OnMessage(RedisChannel channel, RedisValue value) {
+            Log.Trace().Message("OnMessage: {0}", channel).Write();
             var message = ((string)value).FromJson<MessageBusData>();
+            Log.Trace().Message("Deserialized Message: {0}", message.Type).Write();
 
             Type messageType = null;
             try {
@@ -28,7 +30,10 @@ namespace Foundatio.Messaging {
             }
 
             object body = message.Data.FromJson(messageType);
-            foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
+            Log.Trace().Message("Deserialized Message Data: {0}", message.Type).Write();
+            var subscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
+            Log.Trace().Message("Found {0} subscribers for type: {1}", subscribers.Count, message.Type).Write();
+            foreach (var subscriber in subscribers) {
                 try {
                     subscriber.Action(body);
                 } catch (Exception ex) {
@@ -38,12 +43,15 @@ namespace Foundatio.Messaging {
         }
 
         public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+            Log.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
             base.Publish(messageType, message, delay);
 
+            // TODO: Implement more robust delayed messages on Redis that have better deliverability guarantees.
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return;
 
             _subscriber.Publish(_topic, new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }.ToJson());
+            Log.Trace().Message("Message Published To: {0}", _topic).Write();
         }
 
         public void Subscribe<T>(Action<T> handler) where T: class {
