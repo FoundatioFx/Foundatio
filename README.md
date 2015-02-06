@@ -8,4 +8,4 @@ Pluggable foundation blocks for building distributed apps.
 - File Storage
 - Metrics
 
-Includes in memory implementations (for dev), Redis, and Azure.
+Includes implementations in Redis, Azure and in memory (for dev).
