@@ -318,7 +318,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.NotNull(workItem);
-                Assert.True(sw.Elapsed > TimeSpan.FromSeconds(1));
+                Assert.True(sw.Elapsed > TimeSpan.FromSeconds(.99));
                 workItem.Complete();
                 Assert.Equal(0, queue.GetQueueCount());
             }
