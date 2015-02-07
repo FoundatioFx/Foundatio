@@ -9,7 +9,7 @@ using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
 
 namespace Foundatio.Azure.Messaging {
-    public class ServiceBusMessageBus : IMessagePublisher, IMessageSubscriber {
+    public class ServiceBusMessageBus : IMessageBus {
         private readonly string _connectionString;
         private readonly string _topicName;
         private readonly string _subscriptionName;

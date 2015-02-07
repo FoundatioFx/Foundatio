@@ -7,7 +7,7 @@ using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Messaging {
-    public class RedisMessageBusTests {
+    public class RedisMessageBusTests : IDisposable {
         private readonly RedisMessageBus _messageBus;
 
         public RedisMessageBusTests() {
@@ -15,7 +15,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 return;
 
             var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
-            _messageBus = new RedisMessageBus(muxer.GetSubscriber());   
+            _messageBus = new RedisMessageBus(muxer.GetSubscriber(), Guid.NewGuid().ToString("N"));   
         }
 
         [Fact]
@@ -32,7 +32,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = resetEvent.WaitOne(15000);
+            bool success = resetEvent.WaitOne(2000);
             Assert.True(success, "Failed to receive message.");
         }
 
@@ -52,7 +52,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 resetEvent.Set();
             });
 
-            bool success = resetEvent.WaitOne(2000);
+            bool success = resetEvent.WaitOne(1000);
             Assert.False(success, "Messages are building up.");
         }
 
@@ -78,7 +78,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(15000);
+            bool success = latch.Wait(3000);
             Assert.True(success, "Failed to receive all messages.");
         }
 
@@ -103,7 +103,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(5000);
+            bool success = latch.Wait(3000);
             Assert.True(success, "Failed to receive all messages.");
         }
 
@@ -124,7 +124,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = resetEvent.WaitOne(5000);
+            bool success = resetEvent.WaitOne(3000);
             Assert.True(success, "Failed to receive message.");
         }
 
@@ -148,7 +148,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(5000);
+            bool success = latch.Wait(3000);
             Assert.True(success, "Failed to receive all messages.");
         }
 
@@ -171,8 +171,12 @@ namespace Foundatio.Redis.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(5000);
+            bool success = latch.Wait(3000);
             Assert.True(success, "Failed to receive all messages.");
+        }
+
+        public void Dispose() {
+            _messageBus.Dispose();
         }
     }
 }

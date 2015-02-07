@@ -272,8 +272,7 @@ namespace Foundatio.Tests.Queue {
                         Trace.WriteLine(String.Format("Enqueued Index: {0} Id: {1}", i, id));
                     });
 
-                    Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
-                    Assert.True(latch.Wait(TimeSpan.FromSeconds(10)));
+                    Assert.True(latch.Wait(TimeSpan.FromSeconds(5)));
                     Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
                     Trace.WriteLine(String.Format("Completed: {0} Abandoned: {1} Error: {2}",
                         info.CompletedCount,

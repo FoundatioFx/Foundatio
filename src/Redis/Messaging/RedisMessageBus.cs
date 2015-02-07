@@ -6,7 +6,7 @@ using NLog.Fluent;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
-    public class RedisMessageBus : MessageBusBase, IMessageSubscriber {
+    public class RedisMessageBus : MessageBusBase, IMessageBus {
         private readonly ISubscriber _subscriber;
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
         private readonly string _topic;
@@ -64,6 +64,11 @@ namespace Foundatio.Messaging {
                     handler(m as T);
                 }
             });
+        }
+
+        public override void Dispose() {
+            _subscriber.UnsubscribeAll();
+            base.Dispose();
         }
 
         private class Subscriber {

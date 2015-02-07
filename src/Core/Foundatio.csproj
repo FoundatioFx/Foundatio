@@ -60,6 +60,7 @@
     <Compile Include="Lock\CacheLockProvider.cs" />
     <Compile Include="Lock\DisposableLock.cs" />
     <Compile Include="Lock\ILockProvider.cs" />
+    <Compile Include="Messaging\IMessageBus.cs" />
     <Compile Include="Messaging\IMessagePublisher.cs" />
     <Compile Include="Messaging\IMessageSubscriber.cs" />
     <Compile Include="Messaging\InMemoryMessageBus.cs" />

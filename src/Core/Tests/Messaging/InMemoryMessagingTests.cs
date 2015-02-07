@@ -8,6 +8,15 @@ using Xunit;
 
 namespace Foundatio.Tests.Messaging {
     public class InMemoryMessagingTests {
+        private IMessageBus _messageBus;
+
+        protected virtual IMessageBus GetMessageBus() {
+            if (_messageBus == null)
+                _messageBus = new InMemoryMessageBus();
+
+            return _messageBus;
+        }
+
         [Fact]
         public void CanSendMessage() {
             var resetEvent = new AutoResetEvent(false);

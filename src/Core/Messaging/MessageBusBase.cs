@@ -38,7 +38,7 @@ namespace Foundatio.Messaging {
             public object Message { get; set; }
         }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             _queueDisposedCancellationTokenSource.Cancel();
         }
     }
