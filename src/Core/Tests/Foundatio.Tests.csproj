@@ -52,11 +52,14 @@
   <ItemGroup>
     <Compile Include="Caching\CacheClientTestsBase.cs" />
     <Compile Include="Caching\InMemoryCacheClientTests.cs" />
-    <Compile Include="Locks\LockTests.cs" />
-    <Compile Include="Messaging\InMemoryMessagingTests.cs" />
+    <Compile Include="Locks\InMemoryLockTests.cs" />
+    <Compile Include="Locks\LockTestBase.cs" />
+    <Compile Include="Messaging\InMemoryMessageBusTests.cs" />
+    <Compile Include="Messaging\MessageBusTestBase.cs" />
     <Compile Include="Messaging\Samples.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queue\InMemoryQueueTests.cs" />
+    <Compile Include="Queue\QueueTestBase.cs" />
     <Compile Include="Queue\Samples.cs" />
     <Compile Include="Storage\FileStorageTestsBase.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />

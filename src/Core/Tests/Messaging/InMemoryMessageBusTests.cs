@@ -1,22 +1,10 @@
-﻿using System;
-using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
-using Foundatio.Tests.Messaging;
-using StackExchange.Redis;
 using Xunit;
 
-namespace Foundatio.Redis.Tests.Messaging {
-    public class RedisMessageBusTests : MessageBusTestBase, IDisposable {
-        private RedisMessageBus _messageBus;
-
+namespace Foundatio.Tests.Messaging {
+    public class InMemoryMessageBusTests : MessageBusTestBase {
         protected override IMessageBus GetMessageBus() {
-            if (ConnectionStrings.Get("RedisConnectionString") == null)
-                return null;
-
-            var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
-            _messageBus = new RedisMessageBus(muxer.GetSubscriber(), Guid.NewGuid().ToString("N"));
-
-            return _messageBus;
+            return new InMemoryMessageBus();
         }
 
         [Fact]
@@ -57,10 +45,6 @@ namespace Foundatio.Redis.Tests.Messaging {
         [Fact]
         public override void WontKeepMessagesWithNoSubscribers() {
             base.WontKeepMessagesWithNoSubscribers();
-        }
-
-        public void Dispose() {
-            _messageBus.Dispose();
         }
     }
 }

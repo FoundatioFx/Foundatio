@@ -79,8 +79,8 @@ namespace Foundatio.Azure.Queues {
 
         public string QueueId { get; private set; }
 
-        public long GetQueueCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.ScheduledMessageCount; }
-        public long GetWorkingCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.ActiveMessageCount; }
+        public long GetQueueCount() { return _namespaceManager.GetQueue(_queueName).MessageCount; }
+        public long GetWorkingCount() { return -1; }
         public long GetDeadletterCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.DeadLetterMessageCount; }
 
         public IEnumerable<T> GetDeadletterItems() {

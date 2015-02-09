@@ -10,6 +10,16 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override void CanManageFiles() {
+            base.CanManageFiles();
+        }
+
+        [Fact]
+        public override void CanConcurrentlyManageFiles() {
+            base.CanConcurrentlyManageFiles();
+        }
+
+        [Fact]
         public void CanUseDataDirectory() {
             var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
             Assert.NotNull(storage.Folder);

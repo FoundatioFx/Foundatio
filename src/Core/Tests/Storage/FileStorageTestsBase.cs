@@ -12,10 +12,11 @@ using NLog.Fluent;
 
 namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase {
-        protected abstract IFileStorage GetStorage();
+        protected virtual IFileStorage GetStorage() {
+            return null;
+        }
 
-        [Fact]
-        public void CanManageFiles() {
+        public virtual void CanManageFiles() {
             Reset();
 
             IFileStorage storage = GetStorage();
@@ -49,8 +50,7 @@ namespace Foundatio.Tests.Storage {
             Assert.Equal(0, storage.GetFileList().Count());
         }
 
-        [Fact]
-        public void CanConcurrentlyManageFiles() {
+        public virtual void CanConcurrentlyManageFiles() {
             Reset();
 
             IFileStorage storage = GetStorage();

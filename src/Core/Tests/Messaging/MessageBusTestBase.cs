@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Threading;
 using Foundatio.Tests.Utility;
@@ -7,20 +6,17 @@ using Foundatio.Messaging;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging {
-    public class InMemoryMessagingTests {
-        private IMessageBus _messageBus;
-
+    public abstract class MessageBusTestBase {
         protected virtual IMessageBus GetMessageBus() {
-            if (_messageBus == null)
-                _messageBus = new InMemoryMessageBus();
-
-            return _messageBus;
+            return null;
         }
 
-        [Fact]
-        public void CanSendMessage() {
+        public virtual void CanSendMessage() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var resetEvent = new AutoResetEvent(false);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<SimpleMessageA>(msg => {
                 Assert.Equal("Hello", msg.Data);
                 resetEvent.Set();
@@ -33,10 +29,12 @@ namespace Foundatio.Tests.Messaging {
             Assert.True(success, "Failed to receive message.");
         }
 
-        [Fact]
-        public void CanSendDelayedMessage() {
+        public virtual void CanSendDelayedMessage() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var resetEvent = new AutoResetEvent(false);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<SimpleMessageA>(msg => {
                 Assert.Equal("Hello", msg.Data);
                 resetEvent.Set();
@@ -55,10 +53,12 @@ namespace Foundatio.Tests.Messaging {
             Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
         }
 
-        [Fact]
-        public void CanSendMessageToMultipleSubscribers() {
+        public virtual void CanSendMessageToMultipleSubscribers() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var latch = new CountDownLatch(3);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<SimpleMessageA>(msg => {
                 Assert.Equal("Hello", msg.Data);
                 latch.Signal();
@@ -75,14 +75,16 @@ namespace Foundatio.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(100);
+            bool success = latch.Wait(1000);
             Assert.True(success, "Failed to receive all messages.");
         }
 
-        [Fact]
-        public void CanTolerateSubscriberFailure() {
+        public virtual void CanTolerateSubscriberFailure() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var latch = new CountDownLatch(2);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<SimpleMessageA>(msg => {
                 throw new ApplicationException();
             });
@@ -102,10 +104,12 @@ namespace Foundatio.Tests.Messaging {
             Assert.True(success, "Failed to receive all messages.");
         }
 
-        [Fact]
-        public void WillOnlyReceiveSubscribedMessageType() {
+        public virtual void WillOnlyReceiveSubscribedMessageType() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var resetEvent = new AutoResetEvent(false);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<SimpleMessageB>(msg => {
                 Assert.True(false, "Received wrong message type.");
             });
@@ -121,10 +125,12 @@ namespace Foundatio.Tests.Messaging {
             Assert.True(success, "Failed to receive message.");
         }
 
-        [Fact]
-        public void WillReceiveDerivedMessageTypes() {
+        public virtual void WillReceiveDerivedMessageTypes() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var latch = new CountDownLatch(2);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<ISimpleMessage>(msg => {
                 Assert.Equal("Hello", msg.Data);
                 latch.Signal();
@@ -143,10 +149,12 @@ namespace Foundatio.Tests.Messaging {
             Assert.True(success, "Failed to receive all messages.");
         }
 
-        [Fact]
-        public void CanSubscribeToAllMessageTypes() {
+        public virtual void CanSubscribeToAllMessageTypes() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
             var latch = new CountDownLatch(3);
-            var messageBus = new InMemoryMessageBus();
             messageBus.Subscribe<object>(msg => {
                 latch.Signal();
             });
@@ -160,8 +168,28 @@ namespace Foundatio.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(100);
+            bool success = latch.Wait(1000);
             Assert.True(success, "Failed to receive all messages.");
+        }
+
+        public virtual void WontKeepMessagesWithNoSubscribers() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            messageBus.Publish(new SimpleMessageA {
+                Data = "Hello"
+            });
+
+            Thread.Sleep(1000);
+            var resetEvent = new AutoResetEvent(false);
+            messageBus.Subscribe<SimpleMessageA>(msg => {
+                Assert.Equal("Hello", msg.Data);
+                resetEvent.Set();
+            });
+
+            bool success = resetEvent.WaitOne(1000);
+            Assert.False(success, "Messages are building up.");
         }
     }
 }

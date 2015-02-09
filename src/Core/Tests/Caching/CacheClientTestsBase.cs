@@ -5,11 +5,12 @@ using Xunit;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase {
-        protected abstract ICacheClient GetCache();
+        protected virtual ICacheClient GetCacheClient() {
+            return null;
+        }
 
-        [Fact]
         public virtual void CanSetAndGetValue() {
-            var cache = GetCache();
+            var cache = GetCacheClient();
             if (cache == null)
                 return;
             
@@ -20,9 +21,8 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(1, value);
         }
 
-        [Fact]
         public virtual void CanSetAndGetObject() {
-            var cache = GetCache();
+            var cache = GetCacheClient();
             if (cache == null)
                 return;
 
@@ -37,9 +37,8 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal("test", value.Type);
         }
 
-        [Fact]
-        public virtual void CanSetEpiration() {
-            var cache = GetCache();
+        public virtual void CanSetExpiration() {
+            var cache = GetCacheClient();
             if (cache == null)
                 return;
 

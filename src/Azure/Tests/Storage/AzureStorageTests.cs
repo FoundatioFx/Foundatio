@@ -3,6 +3,7 @@ using Foundatio;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
+using Xunit;
 
 namespace Foundatio.Azure.Tests.Storage {
     public class AzureStorageTests : FileStorageTestsBase {
@@ -11,6 +12,16 @@ namespace Foundatio.Azure.Tests.Storage {
                 return null;
 
             return new AzureFileStorage(ConnectionStrings.Get("AzureStorageConnectionString"));
+        }
+
+        [Fact]
+        public override void CanManageFiles() {
+            base.CanManageFiles();
+        }
+
+        [Fact]
+        public override void CanConcurrentlyManageFiles() {
+            base.CanConcurrentlyManageFiles();
         }
     }
 }

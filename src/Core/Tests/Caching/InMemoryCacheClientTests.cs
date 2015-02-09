@@ -6,15 +6,30 @@ using Xunit;
 
 namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
-        protected override ICacheClient GetCache() {
+        protected override ICacheClient GetCacheClient() {
             return new InMemoryCacheClient();
+        }
+
+        [Fact]
+        public override void CanSetAndGetValue() {
+            base.CanSetAndGetValue();
+        }
+
+        [Fact]
+        public override void CanSetAndGetObject() {
+            base.CanSetAndGetObject();
+        }
+
+        [Fact]
+        public override void CanSetExpiration() {
+            base.CanSetExpiration();
         }
 
         [Fact]
         public void CanSetMaxItems() {
             // run in tight loop so that the code is warmed up and we can catch timing issues
             for (int x = 0; x < 5; x++) {
-                var cache = GetCache() as InMemoryCacheClient;
+                var cache = GetCacheClient() as InMemoryCacheClient;
                 if (cache == null)
                     return;
 

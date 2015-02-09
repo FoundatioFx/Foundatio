@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class HybridCachingClientTests: CacheClientTestsBase {
-        protected override ICacheClient GetCache() {
+        protected override ICacheClient GetCacheClient() {
             if (String.IsNullOrEmpty(ConnectionStrings.Get("RedisConnectionString")))
                 return null;
 
@@ -18,24 +18,25 @@ namespace Foundatio.Redis.Tests.Caching {
 
         [Fact]
         public override void CanSetAndGetValue() {
-            var cache = GetCache() as HybridCacheClient;
-            if (cache == null)
-                return;
+            base.CanSetAndGetValue();
+        }
 
-            cache.FlushAll();
+        [Fact]
+        public override void CanSetAndGetObject() {
+            base.CanSetAndGetObject();
+        }
 
-            cache.Set("test", 1);
-            var value = cache.Get<int>("test");
-            Assert.Equal(1, value);
-            Assert.Equal(1, cache.LocalCache.Count);
+        [Fact]
+        public override void CanSetExpiration() {
+            base.CanSetExpiration();
         }
 
         [Fact]
         public void CanInvalidateLocalCache() {
-            var firstCache = GetCache() as HybridCacheClient;
+            var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
              
-            var secondCache = GetCache() as HybridCacheClient;
+            var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
             firstCache.Set("willCacheLocallyOnFirst", 1);

@@ -5,7 +5,7 @@ using Foundatio.Tests.Utility;
 
 namespace Foundatio.Azure.Tests.Caching {
     public class AzureCacheClientTests : CacheClientTestsBase {
-        protected override ICacheClient GetCache() {
+        protected override ICacheClient GetCacheClient() {
             if (ConnectionStrings.Get("AzureConnectionString") == null)
                 return null;
 
