@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
@@ -25,13 +24,15 @@ namespace Foundatio.Azure.Queues {
         private long _workerErrorCount = 0;
         private bool _isListening = false;
         private readonly int _retries;
-        private readonly int _workItemTimeoutMilliseconds;
+        private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
-        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, int workItemTimeoutMilliseconds = 60 * 1000, bool shouldRecreate = false, RetryPolicy retryPolicy = null) {
+        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
-            _workItemTimeoutMilliseconds = workItemTimeoutMilliseconds;
+            if (workItemTimeout.HasValue && workItemTimeout.Value < TimeSpan.FromMinutes(5))
+                _workItemTimeout = workItemTimeout.Value;
+            QueueId = Guid.NewGuid().ToString("N");
 
             if (_namespaceManager.QueueExists(_queueName) && shouldRecreate)
                 _namespaceManager.DeleteQueue(_queueName);
@@ -39,13 +40,13 @@ namespace Foundatio.Azure.Queues {
             if (!_namespaceManager.QueueExists(_queueName)) {
                 _queueDescription = new QueueDescription(_queueName) {
                     MaxDeliveryCount = retries + 1,
-                    LockDuration = TimeSpan.FromMilliseconds(workItemTimeoutMilliseconds)
+                    LockDuration = _workItemTimeout
                 };
                 _namespaceManager.CreateQueue(_queueDescription);
             } else {
                 _queueDescription = _namespaceManager.GetQueue(_queueName);
                 _queueDescription.MaxDeliveryCount = retries + 1;
-                _queueDescription.LockDuration = TimeSpan.FromMilliseconds(workItemTimeoutMilliseconds);
+                _queueDescription.LockDuration = _workItemTimeout;
             }
 
             _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
@@ -53,15 +54,15 @@ namespace Foundatio.Azure.Queues {
                 _queueClient.RetryPolicy = retryPolicy;
         }
 
-        public async Task ResetQueueAsync() {
-            if (await _namespaceManager.QueueExistsAsync(_queueName))
-                await _namespaceManager.DeleteQueueAsync(_queueName);
+        public void DeleteQueue() {
+            if (_namespaceManager.QueueExists(_queueName))
+                _namespaceManager.DeleteQueue(_queueName);
 
             _queueDescription = new QueueDescription(_queueName) {
                 MaxDeliveryCount = _retries + 1,
-                LockDuration = TimeSpan.FromMilliseconds(_workItemTimeoutMilliseconds)
+                LockDuration = _workItemTimeout
             };
-            await _namespaceManager.CreateQueueAsync(_queueDescription);
+            _namespaceManager.CreateQueue(_queueDescription);
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -70,25 +71,19 @@ namespace Foundatio.Azure.Queues {
             _workerErrorCount = 0;
         }
 
-        public void DeleteQueue() {
-            throw new NotImplementedException();
-        }
-
         public long EnqueuedCount { get { return _enqueuedCount; } }
         public long DequeuedCount { get { return _dequeuedCount; } }
         public long CompletedCount { get { return _completedCount; } }
         public long AbandonedCount { get { return _abandonedCount; } }
         public long WorkerErrorCount { get { return _workerErrorCount; } }
 
-        public string QueueId {
-            get { throw new NotImplementedException(); }
-        }
+        public string QueueId { get; private set; }
 
-        public async Task<long> GetQueueCountAsync() { return (await _namespaceManager.GetQueueAsync(_queueName)).MessageCountDetails.ScheduledMessageCount; }
-        public async Task<long> GetWorkingCountAsync() { return (await _namespaceManager.GetQueueAsync(_queueName)).MessageCountDetails.ActiveMessageCount; }
-        public async Task<long> GetDeadletterCountAsync() { return (await _namespaceManager.GetQueueAsync(_queueName)).MessageCountDetails.DeadLetterMessageCount; }
+        public long GetQueueCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.ScheduledMessageCount; }
+        public long GetWorkingCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.ActiveMessageCount; }
+        public long GetDeadletterCount() { return _namespaceManager.GetQueue(_queueName).MessageCountDetails.DeadLetterMessageCount; }
 
-        public Task<IEnumerable<T>> GetDeadletterItemsAsync() {
+        public IEnumerable<T> GetDeadletterItems() {
             throw new NotImplementedException();
         }
 
@@ -117,7 +112,10 @@ namespace Foundatio.Azure.Queues {
         }
 
         public string Enqueue(T data) {
-            throw new NotImplementedException();
+            Interlocked.Increment(ref _enqueuedCount);
+            var msg = new BrokeredMessage(data);
+            _queueClient.Send(msg);
+            return msg.MessageId;
         }
 
         public void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
@@ -129,7 +127,6 @@ namespace Foundatio.Azure.Queues {
                 throw new ApplicationException("Already working.");
 
             lock (_workerLock) {
-                Debug.WriteLine("StartWorking: " + Thread.CurrentThread.ManagedThreadId);
                 _isWorking = true;
                 _workerAction = handler;
                 _workerAutoComplete = autoComplete;
@@ -148,38 +145,10 @@ namespace Foundatio.Azure.Queues {
         }
 
         public QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
-            throw new NotImplementedException();
-        }
-
-        public void Complete(string id) {
-            throw new NotImplementedException();
-        }
-
-        public void Abandon(string id) {
-            throw new NotImplementedException();
-        }
-
-        public long GetQueueCount() {
-            throw new NotImplementedException();
-        }
-
-        public long GetWorkingCount() {
-            throw new NotImplementedException();
-        }
-
-        public long GetDeadletterCount() {
-            throw new NotImplementedException();
-        }
-
-        public IEnumerable<T> GetDeadletterItems() {
-            throw new NotImplementedException();
-        }
-
-        public async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
 
-            using (var msg = await _queueClient.ReceiveAsync(timeout.Value)) {
+            using (var msg = _queueClient.Receive(timeout.Value)) {
                 if (msg == null)
                     return null;
 
@@ -194,9 +163,19 @@ namespace Foundatio.Azure.Queues {
             return _queueClient.CompleteAsync(new Guid(id));
         }
 
+        public void Complete(string id) {
+            Interlocked.Increment(ref _completedCount);
+            _queueClient.Complete(new Guid(id));
+        }
+
         public Task AbandonAsync(string id) {
             Interlocked.Increment(ref _abandonedCount);
             return _queueClient.AbandonAsync(new Guid(id));
+        }
+
+        public void Abandon(string id) {
+            Interlocked.Increment(ref _abandonedCount);
+            _queueClient.Abandon(new Guid(id));
         }
 
         public void Dispose() {

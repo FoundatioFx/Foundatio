@@ -57,8 +57,8 @@ namespace Foundatio.Azure.Messaging {
             return Task.FromResult(0);
         }
 
-        public Task PublishAsync<T>(T message) where T : class {
-            return _topicClient.SendAsync(new BrokeredMessage(new MessageBusData { Type = typeof(T).AssemblyQualifiedName, Data = message.ToJson() }));
+        public void Publish(Type messageType, object message, TimeSpan? delay = null) {
+            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }));
         }
 
         public void Subscribe<T>(Action<T> handler) where T : class {
@@ -68,7 +68,7 @@ namespace Foundatio.Azure.Messaging {
                     if (!(m is T))
                         return;
 
-                    handler(m as T);
+                    handler((T)m);
                 }
             });
         }
@@ -76,10 +76,6 @@ namespace Foundatio.Azure.Messaging {
         private class Subscriber {
             public Type Type { get; set; }
             public Action<object> Action { get; set; }
-        }
-
-        public void Publish(Type messageType, object message, TimeSpan? delay = null) {
-            throw new NotImplementedException();
         }
     }
 }

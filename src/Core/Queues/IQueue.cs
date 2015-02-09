@@ -9,6 +9,7 @@ namespace Foundatio.Queues {
         QueueEntry<T> Dequeue(TimeSpan? timeout = null);
         void Complete(string id);
         void Abandon(string id);
+        // TODO: Change to get all stats at the same time to allow optimization of retrieval.
         long GetQueueCount();
         long GetWorkingCount();
         long GetDeadletterCount();
