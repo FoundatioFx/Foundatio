@@ -21,7 +21,8 @@ build:
   publish_nuget: true
   publish_nuget_symbols: true
 
-after_build:
+before_test:
+  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
   - cinst redis-64
   - redis-server --service-install
   - redis-server --service-start
