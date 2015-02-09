@@ -16,7 +16,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanQueueAndDequeueWorkItem() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 queue.Enqueue(new SimpleWorkItem {
@@ -36,7 +40,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanQueueAndDequeueMultipleWorkItems() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 const int workItemCount = 25;
@@ -66,7 +74,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void WillWaitForItem() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 TimeSpan timeToWait = TimeSpan.FromSeconds(1);
@@ -93,7 +105,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void DequeueWaitWillGetSignaled() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 Task.Factory.StartNewDelayed(250, () => GetQueue().Enqueue(new SimpleWorkItem {
@@ -111,7 +127,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanUseQueueWorker() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 var resetEvent = new AutoResetEvent(false);
@@ -132,7 +152,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHandleErrorInWorker() {
-            using (var queue = GetQueue(1, retryDelay: TimeSpan.Zero)) {
+            var queue = GetQueue(1, retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 queue.StartWorking(w => {
@@ -157,7 +181,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void WorkItemsWillTimeout() {
-            using (var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50))) {
+            var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 queue.Enqueue(new SimpleWorkItem {
@@ -180,7 +208,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void WorkItemsWillGetMovedToDeadletter() {
-            using (var queue = GetQueue(retryDelay: TimeSpan.Zero)) {
+            var queue = GetQueue(retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 queue.Enqueue(new SimpleWorkItem {
@@ -207,7 +239,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanAutoCompleteWorker() {
-            using (var queue = GetQueue()) {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 var resetEvent = new AutoResetEvent(false);
@@ -230,7 +266,11 @@ namespace Foundatio.Tests.Queue {
 
         public virtual void CanHaveMultipleQueueInstances() {
             for (int x = 0; x < 5; x++) {
-                using (var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
+                var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                if (queue == null)
+                    return;
+
+                using (queue) {
                     Trace.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
                     queue.DeleteQueue();
 
@@ -285,7 +325,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanDelayRetry() {
-            using (var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(50), retryDelay: TimeSpan.FromSeconds(1))) {
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(50), retryDelay: TimeSpan.FromSeconds(1));
+            if (queue == null)
+                return;
+
+            using (queue) {
                 queue.DeleteQueue();
 
                 queue.Enqueue(new SimpleWorkItem {
