@@ -24,12 +24,13 @@ namespace Foundatio.Messaging {
             }
         }
 
-        public virtual void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public abstract void Publish(Type messageType, object message, TimeSpan? delay = null);
+
+        protected void AddDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException("message");
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
-                _delayedMessages.Add(new DelayedMessage { Message = message, MessageType = messageType, SendTime = DateTime.Now.Add(delay.Value) });
+            _delayedMessages.Add(new DelayedMessage { Message = message, MessageType = messageType, SendTime = DateTime.Now.Add(delay) });
         }
 
         protected class DelayedMessage {

@@ -7,11 +7,18 @@ using Xunit;
 
 namespace Foundatio.Azure.Tests.Messaging {
     public class ServiceBusMessageBusTests : MessageBusTestBase {
+        private static IMessageBus _messageBus;
+
         protected override IMessageBus GetMessageBus() {
+            if (_messageBus != null)
+                return _messageBus;
+
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
                 return null;
 
-            return new ServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"));
+            _messageBus = new ServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"));
+            
+            return _messageBus;
         }
 
         [Fact]

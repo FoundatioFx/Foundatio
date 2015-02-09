@@ -25,7 +25,7 @@ namespace Foundatio.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = resetEvent.WaitOne(100);
+            bool success = resetEvent.WaitOne(1000);
             Assert.True(success, "Failed to receive message.");
         }
 
@@ -41,12 +41,12 @@ namespace Foundatio.Tests.Messaging {
             });
 
             var sw = new Stopwatch();
+            sw.Start();
             messageBus.Publish(new SimpleMessageA {
                 Data = "Hello"
             }, TimeSpan.FromMilliseconds(100));
 
-            sw.Start();
-            bool success = resetEvent.WaitOne(1200);
+            bool success = resetEvent.WaitOne(100200);
             sw.Stop();
 
             Assert.True(success, "Failed to receive message.");
@@ -100,7 +100,7 @@ namespace Foundatio.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = latch.Wait(900);
+            bool success = latch.Wait(2000);
             Assert.True(success, "Failed to receive all messages.");
         }
 

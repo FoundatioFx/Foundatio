@@ -5,14 +5,25 @@ using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
+using Microsoft.ServiceBus;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
+        private readonly static string QueueName = Guid.NewGuid().ToString("N");
+
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null) {
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
                 return null;
 
-            return new ServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"), retries, workItemTimeout);
+            if (!retryDelay.HasValue)
+                retryDelay = TimeSpan.Zero;
+
+            var maxBackoff = retryDelay.Value > TimeSpan.Zero
+                ? retryDelay.Value + retryDelay.Value
+                : TimeSpan.FromSeconds(1);
+            var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
+            return new ServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"),
+                QueueName, retries, workItemTimeout, false, retryPolicy);
         }
 
         [Fact]
@@ -65,7 +76,7 @@ namespace Foundatio.Azure.Tests.Queue {
             base.CanHaveMultipleQueueInstances();
         }
 
-        [Fact]
+        // not using this test because you can set specific delay times for servicebus
         public override void CanDelayRetry() {
             base.CanDelayRetry();
         }

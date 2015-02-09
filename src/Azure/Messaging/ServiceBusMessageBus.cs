@@ -9,7 +9,7 @@ using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
 
 namespace Foundatio.Azure.Messaging {
-    public class ServiceBusMessageBus : IMessageBus {
+    public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
         private readonly string _connectionString;
         private readonly string _topicName;
         private readonly string _subscriptionName;
@@ -31,10 +31,10 @@ namespace Foundatio.Azure.Messaging {
                 _namespaceManager.CreateSubscription(_topicName, _subscriptionName);
 
             _subscriptionClient = SubscriptionClient.CreateFromConnectionString(connectionString, _topicName, _subscriptionName, ReceiveMode.ReceiveAndDelete);
-            _subscriptionClient.OnMessageAsync(OnMessage);
+            _subscriptionClient.OnMessage(OnMessage, new OnMessageOptions { AutoComplete = true });
         }
 
-        private Task OnMessage(BrokeredMessage brokeredMessage) {
+        private void OnMessage(BrokeredMessage brokeredMessage) {
             var message = brokeredMessage.GetBody<MessageBusData>();
 
             Type messageType = null;
@@ -52,12 +52,15 @@ namespace Foundatio.Azure.Messaging {
                     Log.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                 }
             }
-            brokeredMessage.Complete();
-
-            return Task.FromResult(0);
         }
 
-        public void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+            // TODO: Figure out if there is a way to natively delay messages in servicebus
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                AddDelayedMessage(messageType, message, delay.Value);
+                return;
+            }
+
             _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }));
         }
 

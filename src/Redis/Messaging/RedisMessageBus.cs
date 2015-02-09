@@ -44,11 +44,10 @@ namespace Foundatio.Messaging {
 
         public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
             Log.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
-            base.Publish(messageType, message, delay);
-
-            // TODO: Implement more robust delayed messages on Redis that have better deliverability guarantees.
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                AddDelayedMessage(messageType, message, delay.Value);
                 return;
+            }
 
             _subscriber.Publish(_topic, new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }.ToJson());
             Log.Trace().Message("Message Published To: {0}", _topic).Write();

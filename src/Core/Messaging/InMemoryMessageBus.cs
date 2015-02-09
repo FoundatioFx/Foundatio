@@ -9,10 +9,10 @@ namespace Foundatio.Messaging {
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
         public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
-            base.Publish(messageType, message, delay);
-
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                AddDelayedMessage(messageType, message, delay.Value);
                 return;
+            }
 
             Task.Factory.StartNew(() => {
                 foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {

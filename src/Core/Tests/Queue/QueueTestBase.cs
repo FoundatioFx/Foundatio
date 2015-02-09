@@ -102,7 +102,7 @@ namespace Foundatio.Tests.Queue {
 
                 var sw = new Stopwatch();
                 sw.Start();
-                var workItem = queue.Dequeue();
+                var workItem = queue.Dequeue(TimeSpan.FromSeconds(2));
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.NotNull(workItem);
@@ -166,7 +166,6 @@ namespace Foundatio.Tests.Queue {
                 var workItem = queue.Dequeue(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(0, queue.GetQueueCount());
 
                 // wait for the task to be auto abandoned
                 var sw = new Stopwatch();
@@ -191,7 +190,6 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal("Hello", workItem.Value.Data);
                 Assert.Equal(1, queue.DequeuedCount);
 
-                Assert.Equal(0, queue.GetQueueCount());
                 workItem.Abandon();
                 Assert.Equal(1, queue.AbandonedCount);
 
@@ -223,7 +221,7 @@ namespace Foundatio.Tests.Queue {
 
                 Assert.Equal(1, queue.EnqueuedCount);
                 resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Thread.Sleep(50);
+                Thread.Sleep(100);
                 Assert.Equal(0, queue.GetQueueCount());
                 Assert.Equal(1, queue.CompletedCount);
                 Assert.Equal(0, queue.WorkerErrorCount);
@@ -297,7 +295,6 @@ namespace Foundatio.Tests.Queue {
                 var workItem = queue.Dequeue(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(0, queue.GetQueueCount());
 
                 // wait for the task to be auto abandoned
                 var sw = new Stopwatch();
