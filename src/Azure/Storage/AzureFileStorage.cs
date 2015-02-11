@@ -21,7 +21,7 @@ namespace Foundatio.Storage {
             return blockBlob.DownloadText();
         }
 
-        public FileInfo GetFileInfo(string path) {
+        public FileSpec GetFileInfo(string path) {
             var blob = _container.GetBlockBlobReference(path);
             return blob.ToFileInfo();
         }
@@ -59,7 +59,7 @@ namespace Foundatio.Storage {
             return blockBlob.DeleteIfExists();
         }
 
-        public IEnumerable<FileInfo> GetFileList(string searchPattern = null, int? limit = null) {
+        public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
             return _container.ListBlobs(null, true).OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
         }
 

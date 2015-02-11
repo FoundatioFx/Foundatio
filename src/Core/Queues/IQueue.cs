@@ -27,15 +27,20 @@ namespace Foundatio.Queues {
 
     public interface IQueue2<T> : IDisposable where T : class {
         Task<string> EnqueueAsync(T data);
-        void StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false);
+        Task StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
         void StopWorking();
         Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         Task CompleteAsync(string id);
         Task AbandonAsync(string id);
         Task<QueueStats> GetQueueStatsAsync();
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
-        Task DeleteQueueAsync();
         string QueueId { get; }
+    }
+
+    public interface IQueueManager {
+        Task<IQueue<T>> CreateQueueAsync<T>(string name = null, object config = null) where T : class;
+        Task DeleteQueueAsync(string name);
+        Task ClearQueueAsync(string name);
     }
 
     public class QueueStats {

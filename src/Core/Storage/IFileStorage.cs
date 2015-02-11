@@ -8,30 +8,32 @@ using Newtonsoft.Json;
 namespace Foundatio.Storage {
     public interface IFileStorage : IDisposable {
         string GetFileContents(string path);
-        FileInfo GetFileInfo(string path);
+        FileSpec GetFileInfo(string path);
         bool Exists(string path);
         bool SaveFile(string path, string contents);
         bool RenameFile(string oldpath, string newpath);
         bool DeleteFile(string path);
-        IEnumerable<FileInfo> GetFileList(string searchPattern = null, int? limit = null);
+        IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null);
     }
 
     public interface IFileStorage2 : IDisposable {
         Task<Stream> GetFileContentsAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
-        Task<FileInfo> GetFileInfoAsync(string path);
+        Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
         Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken));
-        Task<bool> RenameFileAsync(string oldpath, string newpath);
+        Task<bool> RenameFileAsync(string path, string newpath);
+        Task<bool> CopyFileAsync(string path, string targetpath);
         Task<bool> DeleteFileAsync(string path);
         // TODO: Support paging large file lists
-        Task<IEnumerable<FileInfo>> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default(CancellationToken));
     }
 
-    public class FileInfo {
+    public class FileSpec {
         public string Path { get; set; }
         public DateTime Created { get; set; }
         public DateTime Modified { get; set; }
         public long Size { get; set; }
+        // TODO: Add metadata object for custom properties
     }
 
     public static class FileStorageExtensions {
@@ -44,7 +46,7 @@ namespace Foundatio.Storage {
             return JsonConvert.DeserializeObject<T>(json);
         }
 
-        public static void DeleteFiles(this IFileStorage storage, IEnumerable<FileInfo> files) {
+        public static void DeleteFiles(this IFileStorage storage, IEnumerable<FileSpec> files) {
             foreach (var file in files)
                 storage.DeleteFile(file.Path);
         }

@@ -35,12 +35,12 @@ namespace Foundatio.Storage {
             }
         }
 
-        public FileInfo GetFileInfo(string path) {
+        public FileSpec GetFileInfo(string path) {
             var info = new System.IO.FileInfo(path);
             if (!info.Exists)
                 return null;
 
-            return new FileInfo {
+            return new FileSpec {
                 Path = path.Replace(Folder, String.Empty),
                 Created = info.CreationTime,
                 Modified = info.LastWriteTime,
@@ -103,18 +103,18 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public IEnumerable<FileInfo> GetFileList(string searchPattern = null, int? limit = null) {
+        public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
             if (String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
 
-            var list = new List<FileInfo>();
+            var list = new List<FileSpec>();
 
             foreach (var path in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories).Take(limit ?? Int32.MaxValue)) {
                 var info = new System.IO.FileInfo(path);
                 if (!info.Exists)
                     continue;
 
-                list.Add(new FileInfo {
+                list.Add(new FileSpec {
                     Path = path.Replace(Folder, String.Empty),
                     Created = info.CreationTime,
                     Modified = info.LastWriteTime,

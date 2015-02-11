@@ -33,15 +33,14 @@ namespace Foundatio.Caching {
     }
 
     public interface ICacheClient2 : IDisposable {
-        int RemoveAll(IEnumerable<string> keys);
+        int RemoveAll(IEnumerable<string> keys = null);
         bool TryGet<T>(string key, out T value);
         long Increment(string key, uint amount = 1, TimeSpan? expiresIn = null);
         bool Add<T>(string key, T value, TimeSpan? expiresIn = null);
         bool Replace<T>(string key, T value, TimeSpan? expiresIn = null);
-        void FlushAll();
         IDictionary<string, T> GetAll<T>(IEnumerable<string> keys);
         int SetAll<T>(IDictionary<string, T> values);
-        DateTime? GetExpiration(string key);
+        TimeSpan? GetExpiration(string key);
         void SetExpiration(string key, TimeSpan expiresIn);
     }
 }

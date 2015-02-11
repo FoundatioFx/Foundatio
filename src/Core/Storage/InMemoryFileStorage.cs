@@ -7,7 +7,7 @@ using Foundatio.Extensions;
 
 namespace Foundatio.Storage {
     public class InMemoryFileStorage : IFileStorage {
-        private readonly Dictionary<string, Tuple<FileInfo, string>> _storage = new Dictionary<string, Tuple<FileInfo, string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Tuple<FileSpec, string>> _storage = new Dictionary<string, Tuple<FileSpec, string>>(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new object();
 
         public InMemoryFileStorage() : this(1024 * 1024 * 256, 100) {}
@@ -32,7 +32,7 @@ namespace Foundatio.Storage {
             }
         }
 
-        public FileInfo GetFileInfo(string path) {
+        public FileSpec GetFileInfo(string path) {
             return Exists(path) ? _storage[path].Item1 : null;
         }
 
@@ -55,7 +55,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentException(String.Format("File size {0} exceeds the maximum size of {1}.", contents.Length.ToFileSizeDisplay(), MaxFileSize.ToFileSizeDisplay()));
 
             lock (_lock) {
-                _storage[path] = Tuple.Create(new FileInfo {
+                _storage[path] = Tuple.Create(new FileSpec {
                     Created = DateTime.Now,
                     Modified = DateTime.Now,
                     Path = path,
@@ -102,7 +102,7 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public IEnumerable<FileInfo> GetFileList(string searchPattern = null, int? limit = null) {
+        public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
             if (searchPattern == null)
                 searchPattern = "*";
 

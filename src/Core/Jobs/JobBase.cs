@@ -36,6 +36,7 @@ namespace Foundatio.Jobs {
             int iterations = 0;
             while (!token.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
+
                 var result = await RunAsync(token);
                 if (result != null) {
                     if (!result.IsSuccess)
@@ -55,7 +56,7 @@ namespace Foundatio.Jobs {
         }
 
         public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
-            RunContinuousAsync(delay, iterationLimit, token).Wait();
+            RunContinuousAsync(delay, iterationLimit, token).Wait(token);
         }
     }
 }
