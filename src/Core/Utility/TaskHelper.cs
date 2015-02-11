@@ -89,14 +89,11 @@ namespace Foundatio.Component {
         }
 
         public static async Task RunPeriodic(Func<Task> action, TimeSpan period, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
-            if (!cancellationToken.HasValue)
-                cancellationToken = CancellationToken.None;
-
             if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
-                await Task.Delay(initialDelay.Value, cancellationToken.Value);
+                await Task.Delay(initialDelay.Value, cancellationToken);
 
-            while (!cancellationToken.Value.IsCancellationRequested) {
-                await Task.Delay(period, cancellationToken.Value);
+            while (!cancellationToken.IsCancellationRequested) {
+                await Task.Delay(period, cancellationToken);
                 try {
                     await action();
                 } catch (Exception ex) {

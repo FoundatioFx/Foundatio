@@ -9,17 +9,10 @@ namespace Foundatio.Jobs {
             return null;
         }
 
-        protected bool IsCancelPending(CancellationToken? token) {
-            return token != null && token.Value.IsCancellationRequested;
-        }
-
-        public Task<JobResult> RunAsync(CancellationToken? token = null) {
-            if (!token.HasValue)
-                token = CancellationToken.None;
-
+        public Task<JobResult> RunAsync(CancellationToken token = default(CancellationToken)) {
             try {
                 using (GetJobLock())
-                    return TryRunAsync(token.Value);
+                    return TryRunAsync(token);
             } catch (TimeoutException) {
                 return Task.FromResult(JobResult.FailedWithMessage("Timeout attempting to acquire lock."));
             }
@@ -35,16 +28,13 @@ namespace Foundatio.Jobs {
 
         protected abstract Task<JobResult> RunInternalAsync(CancellationToken token);
 
-        public JobResult Run(CancellationToken? token = null) {
+        public JobResult Run(CancellationToken token = default(CancellationToken)) {
             return RunAsync(token).Result;
         }
 
-        public async Task RunContinuousAsync(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken? token = null) {
-            if (!token.HasValue)
-                token = CancellationToken.None;
-
+        public async Task RunContinuousAsync(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
             int iterations = 0;
-            while (!IsCancelPending(token) && (iterationLimit < 0 || iterations < iterationLimit)) {
+            while (!token.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
                 var result = await RunAsync(token);
                 if (result != null) {
@@ -60,11 +50,11 @@ namespace Foundatio.Jobs {
 
                 iterations++;
                 if (delay.HasValue && delay.Value > TimeSpan.Zero)
-                    await Task.Delay(delay.Value, token.Value);
+                    await Task.Delay(delay.Value, token);
             }
         }
 
-        public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken? token = null) {
+        public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
             RunContinuousAsync(delay, iterationLimit, token).Wait();
         }
     }
