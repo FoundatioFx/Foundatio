@@ -4,15 +4,15 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 
-namespace Foundatio.AppStats {
-    public class InMemoryAppStatsClient : IAppStatsClient {
+namespace Foundatio.Metrics {
+    public class InMemoryMetricsClient : IMetricsClient {
         private readonly ConcurrentDictionary<string, long> _counters = new ConcurrentDictionary<string, long>();
         private readonly ConcurrentDictionary<string, GaugeStats> _gauges = new ConcurrentDictionary<string, GaugeStats>();
         private readonly ConcurrentDictionary<string, TimingStats> _timings = new ConcurrentDictionary<string, TimingStats>();
         private readonly ConcurrentDictionary<string, AutoResetEvent> _counterEvents = new ConcurrentDictionary<string, AutoResetEvent>();
         private Timer _statsDisplayTimer;
 
-        public InMemoryAppStatsClient() {
+        public InMemoryMetricsClient() {
             _statsDisplayTimer = new Timer(OnDisplayStats, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
         }
 
@@ -87,7 +87,7 @@ namespace Foundatio.AppStats {
         }
 
         public IDisposable StartTimer(string statName) {
-            return new AppStatsTimer(statName, this);
+            return new MetricTimer(statName, this);
         }
 
         public void Time(Action action, string statName) {

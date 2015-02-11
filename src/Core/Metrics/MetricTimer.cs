@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Diagnostics;
 
-namespace Foundatio.AppStats {
-    public class AppStatsTimer : IDisposable {
+namespace Foundatio.Metrics {
+    public class MetricTimer : IDisposable {
         private readonly string _name;
         private readonly Stopwatch _stopWatch;
         private bool _disposed;
-        private readonly IAppStatsClient _client;
+        private readonly IMetricsClient _client;
 
-        public AppStatsTimer(string name, IAppStatsClient client) {
+        public MetricTimer(string name, IMetricsClient client) {
             _name = name;
             _stopWatch = new Stopwatch();
             _client = client;

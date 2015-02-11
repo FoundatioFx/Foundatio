@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
@@ -28,5 +30,18 @@ namespace Foundatio.Caching {
         DateTime? GetExpiration(string cacheKey);
         void SetExpiration(string cacheKey, TimeSpan expiresIn);
         void SetExpiration(string cacheKey, DateTime expiresAt);
+    }
+
+    public interface ICacheClient2 : IDisposable {
+        int RemoveAll(IEnumerable<string> keys);
+        bool TryGet<T>(string key, out T value);
+        long Increment(string key, uint amount = 1, TimeSpan? expiresIn = null);
+        bool Add<T>(string key, T value, TimeSpan? expiresIn = null);
+        bool Replace<T>(string key, T value, TimeSpan? expiresIn = null);
+        void FlushAll();
+        IDictionary<string, T> GetAll<T>(IEnumerable<string> keys);
+        int SetAll<T>(IDictionary<string, T> values);
+        DateTime? GetExpiration(string key);
+        void SetExpiration(string key, TimeSpan expiresIn);
     }
 }

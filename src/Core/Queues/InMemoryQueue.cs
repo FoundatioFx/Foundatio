@@ -5,9 +5,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.AppStats;
 using Foundatio.Component;
 using Foundatio.Extensions;
+using Foundatio.Metrics;
 using NLog.Fluent;
 
 namespace Foundatio.Queues {
@@ -29,9 +29,9 @@ namespace Foundatio.Queues {
         private int _workerErrorCount;
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly IAppStatsClient _stats;
+        private readonly IMetricsClient _stats;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IAppStatsClient stats = null, string statName = null) {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient stats = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _stats = stats;
             QueueSizeStatName = statName;

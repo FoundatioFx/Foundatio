@@ -88,7 +88,7 @@ namespace Foundatio.Component {
             return tcs.TrySetResult(result ?? FromResult(default(TResult)));
         }
 
-        public static async Task RunPeriodic(Func<Task> action, TimeSpan period, CancellationToken? cancellationToken = null, TimeSpan? initialDelay = null) {
+        public static async Task RunPeriodic(Func<Task> action, TimeSpan period, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
             if (!cancellationToken.HasValue)
                 cancellationToken = CancellationToken.None;
 

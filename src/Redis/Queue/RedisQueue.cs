@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.AppStats;
 using Foundatio.Caching;
 using Foundatio.Component;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Metrics;
 using Nito.AsyncEx;
 using NLog.Fluent;
 using StackExchange.Redis;
@@ -35,10 +35,10 @@ namespace Foundatio.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
-        private readonly IAppStatsClient _stats;
+        private readonly IMetricsClient _stats;
 
         public RedisQueue(ConnectionMultiplexer connection, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, bool runMaintenanceTasks = true, IAppStatsClient stats = null, string statName = null) {
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, bool runMaintenanceTasks = true, IMetricsClient stats = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
             _cache = new RedisCacheClient(connection);

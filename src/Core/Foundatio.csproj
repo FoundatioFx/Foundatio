@@ -66,9 +66,9 @@
     <Compile Include="Messaging\InMemoryMessageBus.cs" />
     <Compile Include="Messaging\MessageBusBase.cs" />
     <Compile Include="Messaging\MessageBusData.cs" />
-    <Compile Include="Metrics\AppStatsTimer.cs" />
-    <Compile Include="Metrics\IAppStatsClient.cs" />
-    <Compile Include="Metrics\InMemoryAppStatsClient.cs" />
+    <Compile Include="Metrics\MetricTimer.cs" />
+    <Compile Include="Metrics\IMetricsClient.cs" />
+    <Compile Include="Metrics\InMemoryMetricsClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\InMemoryQueue.cs" />
     <Compile Include="Queues\IQueue.cs" />

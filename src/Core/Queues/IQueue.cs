@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Queues {
     public interface IQueue<T> : IDisposable where T : class {
@@ -21,5 +23,29 @@ namespace Foundatio.Queues {
         long AbandonedCount { get; }
         long WorkerErrorCount { get; }
         string QueueId { get; }
+    }
+
+    public interface IQueue2<T> : IDisposable where T : class {
+        Task<string> EnqueueAsync(T data);
+        void StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false);
+        void StopWorking();
+        Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task CompleteAsync(string id);
+        Task AbandonAsync(string id);
+        Task<QueueStats> GetQueueStatsAsync();
+        Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
+        Task DeleteQueueAsync();
+        string QueueId { get; }
+    }
+
+    public class QueueStats {
+        public long Active { get; private set; }
+        public long Working { get; private set; }
+        public long Deadletter { get; private set; }
+        public long LocalEnqueued { get; private set; }
+        public long LocalDequeued { get; private set; }
+        public long LocalCompleted { get; private set; }
+        public long LocalAbandoned { get; private set; }
+        public long LocalWorkerErrors { get; private set; }
     }
 }
