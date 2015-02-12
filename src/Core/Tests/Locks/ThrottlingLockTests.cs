@@ -8,8 +8,10 @@ using Xunit;
 
 namespace Foundatio.Tests {
     public class ThrottlingLockTests : LockTestBase {
+        private readonly TimeSpan _period = TimeSpan.FromSeconds(2);
+
         protected override ILockProvider GetLockProvider() {
-            return new ThrottlingLockProvider(new InMemoryCacheClient(), 5, TimeSpan.FromSeconds(1));
+            return new ThrottlingLockProvider(new InMemoryCacheClient(), 5, _period);
         }
 
         [Fact]
@@ -18,8 +20,12 @@ namespace Foundatio.Tests {
             if (locker == null)
                 return;
 
+            Trace.WriteLine(DateTime.UtcNow.Subtract(DateTime.UtcNow.Floor(_period)).TotalMilliseconds);
+            Trace.WriteLine(DateTime.UtcNow.ToString("mm:ss.fff"));
             // wait until we are at the beginning of our time bucket
-            Run.UntilTrue(() => DateTime.UtcNow.Subtract(DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1))).TotalMilliseconds < 100, null, TimeSpan.FromMilliseconds(50));
+            Run.UntilTrue(() => DateTime.UtcNow.Subtract(DateTime.UtcNow.Floor(_period)).TotalMilliseconds < 100, null, TimeSpan.FromMilliseconds(50));
+            Trace.WriteLine(DateTime.UtcNow.Subtract(DateTime.UtcNow.Floor(_period)).TotalMilliseconds);
+            Trace.WriteLine(DateTime.UtcNow.ToString("mm:ss.fff"));
 
             var sw = new Stopwatch();
             sw.Start();
@@ -35,7 +41,7 @@ namespace Foundatio.Tests {
             sw.Stop();
 
             Trace.WriteLine(sw.Elapsed);
-            Assert.InRange(sw.Elapsed.TotalSeconds, .8, 1.2);
+            Assert.InRange(sw.Elapsed.TotalSeconds, 1.2, 2);
         }
     }
 }

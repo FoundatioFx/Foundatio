@@ -27,6 +27,8 @@ before_test:
   - redis-server --service-install
   - redis-server --service-start
 
+test: off
+
 deploy:
   - provider: Environment
     name: NuGet
