@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace Foundatio.Utility {
-    public static class Run {
+    internal static class Run {
         private static readonly ConcurrentDictionary<Delegate, object> _onceCalls = new ConcurrentDictionary<Delegate, object>(new LambdaComparer<Delegate>(CompareDelegates));
         public static void Once(Action action) {
             if (_onceCalls.TryAdd(action, null))

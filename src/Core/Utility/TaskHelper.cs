@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 
 namespace Foundatio.Component {
-    public static class TaskHelper {
+    internal static class TaskHelper {
         private static readonly Task _defaultCompleted = FromResult(new AsyncVoid());
         private static readonly Task<object> _completedTaskReturningNull = FromResult<object>(null);
 

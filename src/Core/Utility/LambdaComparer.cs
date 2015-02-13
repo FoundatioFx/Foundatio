@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 
 namespace Foundatio.Utility {
-    public class LambdaComparer<T> : IEqualityComparer<T>, IComparer<T> {
+    internal class LambdaComparer<T> : IEqualityComparer<T>, IComparer<T> {
         private readonly Func<T, T, int> _compareValuesFunc;
         private readonly Func<T, int> _getHashCodeFunc;
 

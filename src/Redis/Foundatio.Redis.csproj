@@ -58,6 +58,15 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Core\Utility\LambdaComparer.cs">
+      <Link>Utility\LambdaComparer.cs</Link>
+    </Compile>
+    <Compile Include="..\Core\Utility\Run.cs">
+      <Link>Utility\Run.cs</Link>
+    </Compile>
+    <Compile Include="..\Core\Utility\TaskHelper.cs">
+      <Link>Utility\TaskHelper.cs</Link>
+    </Compile>
     <Compile Include="Cache\HybridCacheClient.cs" />
     <Compile Include="Cache\RedisCacheClient.cs" />
     <Compile Include="Messaging\RedisMessageBus.cs" />

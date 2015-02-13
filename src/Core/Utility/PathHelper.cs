@@ -2,7 +2,7 @@
 using System.IO;
 
 namespace Foundatio.Utility {
-    public static class PathHelper {
+    internal static class PathHelper {
         private const string DATA_DIRECTORY = "|DataDirectory|";
 
         public static string ExpandPath(string path) {
