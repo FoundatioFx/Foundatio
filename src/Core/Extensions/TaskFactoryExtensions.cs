@@ -1,5 +1,5 @@
 ﻿namespace System.Threading.Tasks {
-    public static partial class TaskFactoryExtensions {
+    internal static partial class TaskFactoryExtensions {
         public static Task StartNewDelayed(
             this TaskFactory factory, int millisecondsDelay) {
             return StartNewDelayed(factory, millisecondsDelay, CancellationToken.None);

@@ -2,7 +2,7 @@
 
 namespace System.Threading.Tasks {
     /// <summary>Extension methods for TaskCompletionSource.</summary>
-    public static class TaskCompletionSourceExtensions {
+    internal static class TaskCompletionSourceExtensions {
         /// <summary>Transfers the result of a Task to the TaskCompletionSource.</summary>
         /// <typeparam name="TResult">Specifies the type of the result.</typeparam>
         /// <param name="resultSetter">The TaskCompletionSource.</param>
