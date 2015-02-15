@@ -1,5 +1,6 @@
 ﻿using Foundatio.Caching;
 using Foundatio.Lock;
+using Foundatio.Redis.Cache;
 using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using StackExchange.Redis;

@@ -1,10 +1,12 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Bson;
 using Newtonsoft.Json.Linq;
+using NLog.Fluent;
 
 namespace Foundatio.Extensions {
     [System.Runtime.InteropServices.GuidAttribute("4186FC77-AF28-4D51-AAC3-49055DD855A4")]
@@ -210,6 +212,7 @@ namespace Foundatio.Extensions {
                 value = data.FromJson<T>(settings);
                 return true;
             } catch (Exception ex) {
+                Log.Error().Message("Error deserializing json: type={0}", typeof(T).Name).Exception(ex).Write();
                 value = default(T);
                 return false;
             }
@@ -248,6 +251,7 @@ namespace Foundatio.Extensions {
                 value = data.FromBson<T>(settings);
                 return true;
             } catch (Exception ex) {
+                Log.Error().Message("Error deserializing bson: type={0}", typeof(T).Name).Exception(ex).Write();
                 value = default(T);
                 return false;
             }
@@ -258,6 +262,7 @@ namespace Foundatio.Extensions {
                 value = data.FromBson(objectType, settings);
                 return true;
             } catch (Exception ex) {
+                Log.Error().Message("Error deserializing bson: type={0}", objectType.Name).Exception(ex).Write();
                 value = null;
                 return false;
             }

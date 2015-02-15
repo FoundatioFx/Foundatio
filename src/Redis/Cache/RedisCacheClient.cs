@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using StackExchange.Redis;
 
-namespace Foundatio.Caching {
+namespace Foundatio.Redis.Cache {
     public class RedisCacheClient : ICacheClient {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _db;

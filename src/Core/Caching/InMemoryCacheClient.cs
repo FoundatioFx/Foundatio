@@ -5,7 +5,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Component;
+using Foundatio.Extensions;
+using Foundatio.Utility;
 using NLog.Fluent;
 
 namespace Foundatio.Caching {
@@ -17,9 +18,7 @@ namespace Foundatio.Caching {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
 
             _cacheDisposedCancellationTokenSource = new CancellationTokenSource();
-#pragma warning disable 4014
-            TaskHelper.RunPeriodic(DoMaintenanceWork, TimeSpan.FromSeconds(1), _cacheDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
-#pragma warning restore 4014
+            TaskHelper.RunPeriodic(DoMaintenanceWork, TimeSpan.FromMilliseconds(50), _cacheDisposedCancellationTokenSource.Token).IgnoreExceptions();
         }
 
         public bool FlushOnDispose { get; set; }
@@ -330,17 +329,32 @@ namespace Foundatio.Caching {
             }
         }
 
-        private async Task DoMaintenanceWork() {
+        private Task DoMaintenanceWork() {
             var enumerator = _memory.GetEnumerator();
             try {
+                var now = DateTime.UtcNow;
                 while (enumerator.MoveNext()) {
                     var current = enumerator.Current;
-                    if (current.Value.ExpiresAt < DateTime.UtcNow)
+                    if (current.Value.ExpiresAt < now) {
                         Remove(current.Key);
+                        OnItemExpired(current.Key);
+                        Log.Trace().Message("Removing expired key: key={0} expiresat={1} now={2}", current.Key, current.Value.ExpiresAt, now);
+                    }
                 }
             } catch (Exception ex) {
                 Log.Error().Exception(ex).Message("Error trying to remove expired items from cache.").Write();
             }
+
+            return TaskHelper.Completed();
+        }
+
+        public event EventHandler<string> ItemExpired;
+
+        protected void OnItemExpired(string key) {
+            if (ItemExpired == null)
+                return;
+
+            ItemExpired(this, key);
         }
 
         private class CacheEntry {

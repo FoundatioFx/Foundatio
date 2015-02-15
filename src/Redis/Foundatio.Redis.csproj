@@ -58,6 +58,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Core\Extensions\TaskExtensions.cs">
+      <Link>Extensions\TaskExtensions.cs</Link>
+    </Compile>
     <Compile Include="..\Core\Utility\LambdaComparer.cs">
       <Link>Utility\LambdaComparer.cs</Link>
     </Compile>
@@ -67,11 +70,11 @@
     <Compile Include="..\Core\Utility\TaskHelper.cs">
       <Link>Utility\TaskHelper.cs</Link>
     </Compile>
-    <Compile Include="Cache\HybridCacheClient.cs" />
+    <Compile Include="Cache\RedisHybridCacheClient.cs" />
     <Compile Include="Cache\RedisCacheClient.cs" />
     <Compile Include="Messaging\RedisMessageBus.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Queue\RedisQueue.cs" />
+    <Compile Include="Queues\RedisQueue.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Foundatio.Redis.nuspec" />

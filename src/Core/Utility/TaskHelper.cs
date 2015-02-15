@@ -1,11 +1,11 @@
-﻿using System.Threading;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace Foundatio.Component {
+namespace Foundatio.Utility {
     internal static class TaskHelper {
         private static readonly Task _defaultCompleted = FromResult(new AsyncVoid());
         private static readonly Task<object> _completedTaskReturningNull = FromResult<object>(null);

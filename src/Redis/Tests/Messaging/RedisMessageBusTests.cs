@@ -1,6 +1,7 @@
 ﻿using System;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
+using Foundatio.Redis.Messaging;
 using Foundatio.Tests.Messaging;
 using StackExchange.Redis;
 using Xunit;

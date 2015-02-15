@@ -5,9 +5,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Component;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
+using Foundatio.Utility;
 using NLog.Fluent;
 
 namespace Foundatio.Queues {
@@ -44,9 +44,7 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-#pragma warning disable 4014
-            TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
-#pragma warning restore 4014
+            TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
         }
 
         public long GetQueueCount() { return _queue.Count; }
@@ -195,7 +193,7 @@ namespace Foundatio.Queues {
             UpdateStats();
         }
 
-        private async Task WorkerLoop(CancellationToken token) {
+        private Task WorkerLoop(CancellationToken token) {
             Log.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
             while (!token.IsCancellationRequested) {
                 if (_queue.Count == 0 || _workerAction == null)
@@ -208,7 +206,7 @@ namespace Foundatio.Queues {
                 } catch (TimeoutException) { }
 
                 if (queueEntry == null || _workerAction == null)
-                    return;
+                    return TaskHelper.Completed();
 
                 try {
                     _workerAction(queueEntry);
@@ -220,6 +218,8 @@ namespace Foundatio.Queues {
                     Interlocked.Increment(ref _workerErrorCount);
                 }
             }
+
+            return TaskHelper.Completed();
         }
 
         private void UpdateStats() {
@@ -227,13 +227,15 @@ namespace Foundatio.Queues {
                 _stats.Gauge(QueueSizeStatName, GetQueueCount());
         }
 
-        private async Task DoMaintenance() {
+        private Task DoMaintenance() {
             Log.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
 
             foreach (var item in _dequeued.Where(kvp => DateTime.Now.Subtract(kvp.Value.TimeDequeued).Milliseconds > _workItemTimeout.TotalMilliseconds)) {
                 Log.Trace().Message("DoMaintenance Abandon: {0}", item.Key).Write();
                 Abandon(item.Key);
             }
+
+            return TaskHelper.Completed();
         }
 
         public void Dispose() {

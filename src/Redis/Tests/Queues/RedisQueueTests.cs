@@ -2,12 +2,13 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Redis.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using StackExchange.Redis;
 using Xunit;
 
-namespace Foundatio.Redis.Tests.Queue {
+namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
         private ConnectionMultiplexer _muxer;
 

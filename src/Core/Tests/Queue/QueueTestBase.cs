@@ -4,9 +4,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Component;
+using Foundatio.Extensions;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 
 namespace Foundatio.Tests.Queue {

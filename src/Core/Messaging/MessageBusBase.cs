@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Component;
+using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase : IMessagePublisher, IDisposable {
@@ -12,16 +13,16 @@ namespace Foundatio.Messaging {
 
         public MessageBusBase() {
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-#pragma warning disable 4014
-            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
-#pragma warning restore 4014
+            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
         }
 
-        private async Task DoMaintenance() {
+        private Task DoMaintenance() {
             foreach (var message in _delayedMessages.Where(m => m.SendTime <= DateTime.Now).ToList()) {
                 _delayedMessages.Remove(message);
                 Publish(message.MessageType, message.Message);
             }
+
+            return TaskHelper.Completed();
         }
 
         public abstract void Publish(Type messageType, object message, TimeSpan? delay = null);

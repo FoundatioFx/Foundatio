@@ -4,15 +4,17 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Component;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Metrics;
+using Foundatio.Queues;
+using Foundatio.Redis.Cache;
+using Foundatio.Utility;
 using Nito.AsyncEx;
 using NLog.Fluent;
 using StackExchange.Redis;
 
-namespace Foundatio.Queues {
+namespace Foundatio.Redis.Queues {
     public class RedisQueue<T> : IQueue<T> where T: class {
         private readonly string _queueName;
         private readonly IDatabase _db;
@@ -69,7 +71,7 @@ namespace Foundatio.Queues {
 
             if (runMaintenanceTasks) {
                 _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-                TaskHelper.RunPeriodic(DoMaintenanceWork, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+                TaskHelper.RunPeriodic(DoMaintenanceWork, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
             }
 
             Log.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
@@ -338,7 +340,7 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
         }
 
-        private async Task WorkerLoop(CancellationToken token) {
+        private Task WorkerLoop(CancellationToken token) {
             Log.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
             while (!token.IsCancellationRequested && _workerAction != null) {
                 Log.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
@@ -362,6 +364,8 @@ namespace Foundatio.Queues {
             }
 
             Log.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, token.IsCancellationRequested).Write();
+
+            return TaskHelper.Completed();
         }
 
         private void UpdateStats() {
@@ -372,7 +376,7 @@ namespace Foundatio.Queues {
             _stats.Gauge(QueueSizeStatName, count);
         }
 
-        private async Task DoMaintenanceWork() {
+        private Task DoMaintenanceWork() {
             Log.Trace().Message("DoMaintenance {0}", _queueName).Write();
 
             var workIds = _db.ListRange(WorkListName);
@@ -412,8 +416,10 @@ namespace Foundatio.Queues {
                     using (_lockProvider.AcquireLock(waitId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
                         Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
                         var tx = _db.CreateTransaction();
+#pragma warning disable 4014
                         tx.ListRemoveAsync(WaitListName, waitId);
                         tx.ListLeftPushAsync(QueueListName, waitId);
+#pragma warning restore 4014
                         var success = tx.Execute();
                         if (!success)
                             throw new Exception("Unable to move item to queue list.");
@@ -423,6 +429,8 @@ namespace Foundatio.Queues {
                     }
                 } catch {}
             }
+
+            return TaskHelper.Completed();
         }
 
         public void Dispose() {

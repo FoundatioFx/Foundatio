@@ -1,4 +1,8 @@
-﻿namespace System.Threading.Tasks {
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Foundatio.Extensions {
     internal static partial class TaskFactoryExtensions {
         public static Task StartNewDelayed(
             this TaskFactory factory, int millisecondsDelay) {
@@ -248,7 +252,7 @@
         /// <summary>Gets the TaskScheduler instance that should be used to schedule tasks.</summary>
         public static TaskScheduler GetTargetScheduler<TResult>(this TaskFactory<TResult> factory) {
             if (factory == null) throw new ArgumentNullException("factory");
-            return factory.Scheduler != null ? factory.Scheduler : TaskScheduler.Current;
+            return factory.Scheduler ?? TaskScheduler.Current;
         }
 
         /// <summary>Converts TaskCreationOptions into TaskContinuationOptions.</summary>

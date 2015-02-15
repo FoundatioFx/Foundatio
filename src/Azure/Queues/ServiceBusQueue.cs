@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
@@ -13,16 +14,15 @@ namespace Foundatio.Azure.Queues {
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
         private Func<QueueEntry<T>, Task> _workerAction;
-        private bool _workerAutoComplete = false;
+        private bool _workerAutoComplete;
         private bool _isWorking;
         private static object _workerLock = new object();
         private QueueDescription _queueDescription;
-        private long _enqueuedCount = 0;
-        private long _dequeuedCount = 0;
-        private long _completedCount = 0;
-        private long _abandonedCount = 0;
-        private long _workerErrorCount = 0;
-        private bool _isListening = false;
+        private long _enqueuedCount;
+        private long _dequeuedCount;
+        private long _completedCount;
+        private long _abandonedCount;
+        private long _workerErrorCount;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
@@ -127,7 +127,10 @@ namespace Foundatio.Azure.Queues {
         }
 
         public void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
-            StartWorking(async entry => handler(entry), autoComplete);
+            StartWorking(entry => {
+                handler(entry);
+                return TaskHelper.Completed();
+            }, autoComplete);
         }
 
         public void StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false) {

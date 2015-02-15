@@ -58,7 +58,6 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             const string queueFolder = "q";
-            const string archiveFolder = "archive";
             var queueItems = new BlockingCollection<int>();
 
             Parallel.For(0, 25, i => {

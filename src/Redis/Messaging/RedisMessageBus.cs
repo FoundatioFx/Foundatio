@@ -2,10 +2,11 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using Foundatio.Extensions;
+using Foundatio.Messaging;
 using NLog.Fluent;
 using StackExchange.Redis;
 
-namespace Foundatio.Messaging {
+namespace Foundatio.Redis.Messaging {
     public class RedisMessageBus : MessageBusBase, IMessageBus {
         private readonly ISubscriber _subscriber;
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
