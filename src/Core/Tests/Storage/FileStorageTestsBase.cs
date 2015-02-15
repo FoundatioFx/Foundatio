@@ -60,7 +60,7 @@ namespace Foundatio.Tests.Storage {
             const string queueFolder = "q";
             var queueItems = new BlockingCollection<int>();
 
-            Parallel.For(0, 25, i => {
+            Parallel.For(0, 10, i => {
                 var ev = new PostInfo {
                     ApiVersion = 2,
                     CharSet = "utf8",
@@ -74,9 +74,9 @@ namespace Foundatio.Tests.Storage {
                 storage.SaveObject(Path.Combine(queueFolder, i + ".json"), ev);
                 queueItems.Add(i);
             });
-            Assert.Equal(25, storage.GetFileList().Count());
+            Assert.Equal(10, storage.GetFileList().Count());
 
-            Parallel.For(0, 50, i => {
+            Parallel.For(0, 10, i => {
                 string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                 var eventPost = storage.GetEventPostAndSetActive(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"));
                 if (eventPost == null)
