@@ -9,7 +9,7 @@ using NLog.Fluent;
 using Xunit;
 
 namespace Foundatio.Tests.Caching {
-    public class HybridCachingClientTests: CacheClientTestsBase {
+    public class HybridCacheClientTests: CacheClientTestsBase {
         private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
         private readonly IMessageBus _messageBus = new InMemoryMessageBus();
 
@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public void WillUseLocalCache() {
+        public virtual void WillUseLocalCache() {
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 
@@ -57,7 +57,7 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public void WillExpireRemoteItems() {
+        public virtual void WillExpireRemoteItems() {
             Log.Trace().Message("Warm the log...").Write();
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);

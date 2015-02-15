@@ -27,7 +27,7 @@ before_test:
   - redis-server --service-install
   - redis-server --service-start
 
-#test: off
+test: off
 
 deploy:
   - provider: Environment
