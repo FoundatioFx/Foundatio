@@ -1,47 +1,77 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
+using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : IMetricsClient {
-        private readonly ConcurrentDictionary<string, long> _counters = new ConcurrentDictionary<string, long>();
+        private readonly ConcurrentDictionary<string, CounterStats> _counters = new ConcurrentDictionary<string, CounterStats>();
         private readonly ConcurrentDictionary<string, GaugeStats> _gauges = new ConcurrentDictionary<string, GaugeStats>();
         private readonly ConcurrentDictionary<string, TimingStats> _timings = new ConcurrentDictionary<string, TimingStats>();
         private readonly ConcurrentDictionary<string, AutoResetEvent> _counterEvents = new ConcurrentDictionary<string, AutoResetEvent>();
         private Timer _statsDisplayTimer;
 
-        public InMemoryMetricsClient() {
-            _statsDisplayTimer = new Timer(OnDisplayStats, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        public void StartDisplayingStats(TimeSpan? interval = null) {
+            if (interval == null)
+                interval = TimeSpan.FromSeconds(10);
+
+            _statsDisplayTimer = new Timer(OnDisplayStats, null, interval.Value, interval.Value);
+        }
+
+        public void StopDisplayingStats() {
+            if (_statsDisplayTimer == null)
+                return;
+            
+            _statsDisplayTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        }
+
+        public void Reset() {
+            _counters.Clear();
+            _gauges.Clear();
+            _timings.Clear();
         }
 
         private void OnDisplayStats(object state) {
             DisplayStats();
         }
 
-        public void DisplayStats() {
-            foreach (var key in _counters.Keys.ToList())
-                Debug.WriteLine("Counter: {0} Value: {1}", key, _counters[key]);
+        public void DisplayStats(TextWriter writer = null) {
+            if (writer == null)
+                writer = new TraceTextWriter();
+
+            int maxNameLength = Math.Max(Math.Max(_counters.Max(c => c.Key.Length), _gauges.Max(c => c.Key.Length)), _timings.Max(c => c.Key.Length)) + 2;
+            foreach (var key in _counters.Keys.ToList()) {
+                var counter = _counters[key];
+                writer.WriteLine("Counter: {0} Value: {1} Rate: {2}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), ((double)counter.Value / counter.GetElapsedTime().TotalSeconds).ToString("#,##0.##'/s'"));
+            }
 
             foreach (var key in _gauges.Keys.ToList()) {
-                Debug.WriteLine("Gauge: {0} Value: {1}", key, _gauges[key].Current.ToString("N0"));
-                Debug.WriteLine("Gauge: {0} Avg Value: {1}", key, _gauges[key].Average.ToString("F"));
-                Debug.WriteLine("Gauge: {0} Max Value: {1}", key, _gauges[key].Max.ToString("N0"));
+                var gauge = _gauges[key];
+                writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"));
             }
 
             foreach (var key in _timings.Keys.ToList()) {
-                Debug.WriteLine("Timing: {0} Min Value: {1}ms", key, _timings[key].Min.ToString("N0"));
-                Debug.WriteLine("Timing: {0} Avg Value: {1}ms", key, _timings[key].Average.ToString("F"));
-                Debug.WriteLine("Timing: {0} Max Value: {1}ms", key, _timings[key].Max.ToString("N0"));
+                var timing = _timings[key];
+                writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"));
             }
 
             if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)
-                Debug.WriteLine("-----");
+                writer.WriteLine("-----");
         }
 
+        public IDictionary<string, CounterStats> Counters { get { return _counters; } }
+        public IDictionary<string, TimingStats> Timings { get { return _timings; } }
+        public IDictionary<string, GaugeStats> Gauges { get { return _gauges; } }
+
         public void Counter(string statName, int value = 1) {
-            _counters.AddOrUpdate(statName, value, (key, current) => current + value);
+            _counters.AddOrUpdate(statName, key => new CounterStats(value), (key, stats) => {
+                stats.Increment(value);
+                return stats;
+            });
             AutoResetEvent waitHandle;
             _counterEvents.TryGetValue(statName, out waitHandle);
             if (waitHandle != null)
@@ -101,11 +131,35 @@ namespace Foundatio.Metrics {
         }
 
         public long GetCount(string statName) {
-            return _counters.ContainsKey(statName) ? _counters[statName] : 0;
+            return _counters.ContainsKey(statName) ? _counters[statName].Value : 0;
         }
 
         public double GetGaugeValue(string statName) {
             return _gauges.ContainsKey(statName) ? _gauges[statName].Current : 0d;
+        }
+    }
+
+    public class CounterStats {
+        public CounterStats(long value) {
+            Increment(value);
+        }
+
+        private long _value = 0;
+        private readonly Stopwatch _stopwatch = new Stopwatch();
+
+        public long Value { get { return _value; } }
+
+        public TimeSpan GetElapsedTime() {
+            return _stopwatch.Elapsed;
+        }
+
+        private static readonly object _lock = new object();
+        public void Increment(long value) {
+            lock (_lock) {
+                _value += value;
+                if (!_stopwatch.IsRunning)
+                    _stopwatch.Start();
+            }
         }
     }
 

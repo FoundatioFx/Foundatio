@@ -80,6 +80,7 @@
     <Compile Include="Utility\PathHelper.cs" />
     <Compile Include="Utility\Run.cs" />
     <Compile Include="Utility\TaskHelper.cs" />
+    <Compile Include="Utility\TraceTextWriter.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Foundatio.nuspec" />
