@@ -7,6 +7,8 @@ namespace Foundatio.Tests.Metrics {
         [Fact]
         public void CanIncrementCounter() {
             var metrics = new InMemoryMetricsClient();
+            metrics.DisplayStats();
+
             metrics.Counter("c1");
             Assert.Equal(1, metrics.GetCount("c1"));
 

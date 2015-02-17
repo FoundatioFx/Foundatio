@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Foundatio.Utility;
 
@@ -43,7 +44,14 @@ namespace Foundatio.Metrics {
             if (writer == null)
                 writer = new TraceTextWriter();
 
-            int maxNameLength = Math.Max(Math.Max(_counters.Max(c => c.Key.Length), _gauges.Max(c => c.Key.Length)), _timings.Max(c => c.Key.Length)) + 2;
+            int maxNameLength = 1;
+            if (_counters.Count > 0)
+                maxNameLength = Math.Max(_counters.Max(c => c.Key.Length), maxNameLength);
+            if (_gauges.Count > 0)
+                maxNameLength = Math.Max(_gauges.Max(c => c.Key.Length), maxNameLength);
+            if (_timings.Count > 0)
+                maxNameLength = Math.Max(_timings.Max(c => c.Key.Length), maxNameLength);
+
             foreach (var key in _counters.Keys.ToList()) {
                 var counter = _counters[key];
                 writer.WriteLine("Counter: {0} Value: {1} Rate: {2}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), ((double)counter.Value / counter.GetElapsedTime().TotalSeconds).ToString("#,##0.##'/s'"));
