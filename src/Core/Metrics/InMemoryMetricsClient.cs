@@ -54,7 +54,7 @@ namespace Foundatio.Metrics {
 
             foreach (var key in _counters.Keys.ToList()) {
                 var counter = _counters[key];
-                writer.WriteLine("Counter: {0} Value: {1} Rate: {2}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), ((double)counter.Value / counter.GetElapsedTime().TotalSeconds).ToString("#,##0.##'/s'"));
+                writer.WriteLine("Counter: {0} Value: {1} Rate: {2}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
             }
 
             foreach (var key in _gauges.Keys.ToList()) {
@@ -69,6 +69,14 @@ namespace Foundatio.Metrics {
 
             if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)
                 writer.WriteLine("-----");
+        }
+
+        public MetricStats GetMetricStats() {
+            return new MetricStats {
+                Counters = _counters,
+                Timings = _timings,
+                Gauges = _gauges
+            };
         }
 
         public IDictionary<string, CounterStats> Counters { get { return _counters; } }
@@ -147,6 +155,12 @@ namespace Foundatio.Metrics {
         }
     }
 
+    public class MetricStats {
+        public IDictionary<string, CounterStats> Counters { get; internal set; }
+        public IDictionary<string, TimingStats> Timings { get; internal set; }
+        public IDictionary<string, GaugeStats> Gauges { get; internal set; }
+    }
+
     public class CounterStats {
         public CounterStats(long value) {
             Increment(value);
@@ -156,10 +170,7 @@ namespace Foundatio.Metrics {
         private readonly Stopwatch _stopwatch = new Stopwatch();
 
         public long Value { get { return _value; } }
-
-        public TimeSpan GetElapsedTime() {
-            return _stopwatch.Elapsed;
-        }
+        public double Rate { get { return ((double)Value / _stopwatch.Elapsed.TotalSeconds); } }
 
         private static readonly object _lock = new object();
         public void Increment(long value) {

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Foundatio.Metrics;
 using Xunit;
 
@@ -16,9 +15,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.Equal(6, metrics.GetCount("c1"));
 
             var counter = metrics.Counters["c1"];
-            var hitsPerSec = counter.Value / counter.GetElapsedTime().TotalSeconds;
-            //Debug.WriteLine(hitsPerSec);
-            Assert.InRange(hitsPerSec, 500, 2000);
+            Assert.InRange(counter.Rate, 500, 2000);
 
             metrics.Gauge("g1", 2.534);
             Assert.Equal(2.534, metrics.GetGaugeValue("g1"));
@@ -27,6 +24,8 @@ namespace Foundatio.Tests.Metrics {
 
             metrics.DisplayStats();
             metrics.DisplayStats();
+
+            var stats = metrics.GetMetricStats();
         }
     }
 }
