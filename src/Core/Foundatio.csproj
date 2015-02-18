@@ -46,6 +46,10 @@
     <Compile Include="Caching\HybridCacheClient.cs" />
     <Compile Include="Caching\ICacheClient.cs" />
     <Compile Include="Caching\InMemoryCacheClient.cs" />
+    <Compile Include="Dependency\DefaultDependencyResolver.cs" />
+    <Compile Include="Dependency\DependencyResolverExtensions.cs" />
+    <Compile Include="Dependency\IBootstrapper.cs" />
+    <Compile Include="Dependency\IDependencyResolver.cs" />
     <Compile Include="Extensions\ConcurrentQueueExtensions.cs" />
     <Compile Include="Extensions\JsonExtensions.cs" />
     <Compile Include="Extensions\NumberExtensions.cs" />
@@ -56,6 +60,9 @@
     <Compile Include="Extensions\DateTimeExtensions.cs" />
     <Compile Include="Jobs\JobBase.cs" />
     <Compile Include="Jobs\JobResult.cs" />
+    <Compile Include="Jobs\JobRunner.cs" />
+    <Compile Include="Jobs\QueueProcessorJobBase.cs" />
+    <Compile Include="Jobs\ShutdownEventCatcher.cs" />
     <Compile Include="Lock\CacheLockProvider.cs" />
     <Compile Include="Lock\DisposableLock.cs" />
     <Compile Include="Lock\ILockProvider.cs" />
