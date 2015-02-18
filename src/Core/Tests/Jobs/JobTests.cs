@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Threading;
-using Foundatio.Dependency;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Xunit;
 
@@ -22,15 +21,25 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public void CanBootstrapJobs() {
-            var resolver = JobRunner.GetResolver(typeof(JobTests));
-            Assert.NotNull(resolver);
+            var serviceProvider = JobRunner.GetServiceProvider(typeof(JobTests));
+            Assert.NotNull(serviceProvider);
+            Assert.Equal(serviceProvider.GetType(), typeof(MyBootstrappedServiceProvider));
 
-            var job = resolver.GetService<WithDependencyJob>();
+            serviceProvider = JobRunner.GetServiceProvider(typeof(MyBootstrappedServiceProvider));
+            Assert.NotNull(serviceProvider);
+            Assert.Equal(serviceProvider.GetType(), typeof(MyBootstrappedServiceProvider));
+
+            var job = serviceProvider.GetService<WithDependencyJob>();
             Assert.NotNull(job);
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);
 
-            var jobInstance = JobRunner.CreateJobInstance("Foundatio.Tests.HelloWorldJob,Foundatio.Tests");
+            var jobInstance = JobRunner.CreateJobInstance("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests");
+            Assert.NotNull(job);
+            Assert.NotNull(job.Dependency);
+            Assert.Equal(5, job.Dependency.MyProperty);
+
+            jobInstance = JobRunner.CreateJobInstance("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests", "Foundatio.Tests.Jobs.MyBootstrappedServiceProvider,Foundatio.Tests");
             Assert.NotNull(job);
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);

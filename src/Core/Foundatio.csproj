@@ -46,10 +46,6 @@
     <Compile Include="Caching\HybridCacheClient.cs" />
     <Compile Include="Caching\ICacheClient.cs" />
     <Compile Include="Caching\InMemoryCacheClient.cs" />
-    <Compile Include="Dependency\DefaultDependencyResolver.cs" />
-    <Compile Include="Dependency\DependencyResolverExtensions.cs" />
-    <Compile Include="Dependency\IBootstrapper.cs" />
-    <Compile Include="Dependency\IDependencyResolver.cs" />
     <Compile Include="Extensions\ConcurrentQueueExtensions.cs" />
     <Compile Include="Extensions\JsonExtensions.cs" />
     <Compile Include="Extensions\NumberExtensions.cs" />
@@ -80,6 +76,10 @@
     <Compile Include="Queues\InMemoryQueue.cs" />
     <Compile Include="Queues\IQueue.cs" />
     <Compile Include="Queues\QueueEntry.cs" />
+    <Compile Include="ServiceProvider\ActivatorServiceProvider.cs" />
+    <Compile Include="ServiceProvider\BootstrappedServiceProviderBase.cs" />
+    <Compile Include="ServiceProvider\IBootstrappedServiceProvider.cs" />
+    <Compile Include="Extensions\ServiceProviderExtensions.cs" />
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />

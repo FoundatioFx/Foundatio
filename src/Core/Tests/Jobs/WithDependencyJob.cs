@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Jobs {
     public class WithDependencyJob : JobBase {
         public WithDependencyJob(MyDependency dependency) {
             Dependency = dependency;

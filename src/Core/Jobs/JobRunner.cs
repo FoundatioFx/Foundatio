@@ -2,40 +2,11 @@
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Foundatio.Dependency;
+using Foundatio.ServiceProvider;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
     public class JobRunner {
-        public static JobBase CreateJobInstance(string jobTypeName, string bootstrapperTypeName = null) {
-            var jobType = Type.GetType(jobTypeName);
-            if (jobType == null) {
-                Log.Error().Message("Unable to resolve job type: \"{0}\".", jobTypeName).Write();
-                return null;
-            }
-
-            Type bootstrapperType = jobType;
-            if (!String.IsNullOrEmpty(bootstrapperTypeName)) {
-                bootstrapperType = Type.GetType(bootstrapperTypeName);
-                if (bootstrapperType == null) {
-                    Log.Error().Message("Unable to resolve bootstrapper type: \"{0}\".", bootstrapperTypeName).Write();
-                    return null;
-                }
-            }
-
-            var resolver = GetResolver(bootstrapperType);
-            if (resolver == null)
-                return null;
-
-            var job = resolver.GetService(jobType) as JobBase;
-            if (job == null) {
-                Log.Error().Message("Job Type must derive from Job.").Write();
-                return null;
-            }
-
-            return job;
-        }
-
         public static int RunJob(JobBase job, bool runContinuous = false, bool quietMode = false, int delay = 0, Action showHeader = null) {
             if (job == null)
                 return -1;
@@ -55,22 +26,55 @@ namespace Foundatio.Jobs {
             return 0;
         }
 
-        public static IDependencyResolver GetResolver(Type bootstrapperType) {
-            if (!typeof(IBootstrapper).IsAssignableFrom(bootstrapperType))
-                bootstrapperType = bootstrapperType.Assembly.GetTypes()
-                    .Where(typeof(IBootstrapper).IsAssignableFrom).FirstOrDefault();
-
-            if (bootstrapperType != null) {
-                var bootstrapper = Activator.CreateInstance(bootstrapperType) as IBootstrapper;
-                if (bootstrapper == null) {
-                    Log.Error().Message("Job Type must derive from Job.").Write();
-                    return null;
-                }
-
-                return bootstrapper.GetResolver();
+        public static JobBase CreateJobInstance(string jobTypeName, string serviceProviderTypeName = null) {
+            var jobType = Type.GetType(jobTypeName);
+            if (jobType == null) {
+                Log.Error().Message("Unable to resolve job type: \"{0}\".", jobTypeName).Write();
+                return null;
             }
 
-            return new DefaultDependencyResolver();
+            Type serviceProviderType = jobType;
+            if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
+                serviceProviderType = Type.GetType(serviceProviderTypeName);
+                if (serviceProviderType == null) {
+                    Log.Error().Message("Unable to resolve service provider type: \"{0}\".", serviceProviderTypeName).Write();
+                    return null;
+                }
+            }
+
+            var resolver = GetServiceProvider(serviceProviderType);
+            if (resolver == null)
+                return null;
+
+            var job = resolver.GetService(jobType) as JobBase;
+            if (job == null) {
+                Log.Error().Message("Job Type must derive from Job.").Write();
+                return null;
+            }
+
+            return job;
+        }
+
+        public static IServiceProvider GetServiceProvider(Type serviceProviderType) {
+            if (!typeof (IServiceProvider).IsAssignableFrom(serviceProviderType)) {
+                // prefer bootstrapped service provider
+                serviceProviderType = serviceProviderType.Assembly.GetTypes()
+                    .Where(typeof (IBootstrappedServiceProvider).IsAssignableFrom).FirstOrDefault();
+                
+                if (serviceProviderType == null)
+                    serviceProviderType = serviceProviderType.Assembly.GetTypes()
+                        .Where(typeof(IServiceProvider).IsAssignableFrom).FirstOrDefault();
+            }
+
+            if (serviceProviderType == null)
+                return new ActivatorServiceProvider();
+
+            var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
+            if (bootstrapper != null)
+                return bootstrapper;
+
+            Log.Error().Message("Job Type must derive from Job.").Write();
+            return null;
         }
 
         private static string _webJobsShutdownFile;

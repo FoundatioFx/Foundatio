@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Jobs {
     public class HelloWorldJob : JobBase {
         public int RunCount { get; set; }
 
