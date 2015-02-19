@@ -44,12 +44,13 @@ namespace Foundatio.Tests.Caching {
 
             cache.FlushAll();
 
-            var expiresAt = DateTime.UtcNow.AddMilliseconds(150);
-            cache.Set("test", 1, expiresAt);
+            var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
+            var success = cache.Set("test", 1, expiresAt);
+            Assert.True(success);
             Assert.Equal(1, cache.Get<int>("test"));
-            Assert.Equal(expiresAt.ToString(), cache.GetExpiration("test").Value.ToString());
+            Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
      
-            Task.Delay(TimeSpan.FromMilliseconds(250)).Wait();
+            Task.Delay(TimeSpan.FromMilliseconds(500)).Wait();
             Assert.Equal(0, cache.Get<int>("test"));
             Assert.Null(cache.GetExpiration("test"));
         }

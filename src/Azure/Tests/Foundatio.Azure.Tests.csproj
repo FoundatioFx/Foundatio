@@ -96,6 +96,10 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\AzureStorage\Foundatio.AzureStorage.csproj">
+      <Project>{71cfdef8-8c3f-444c-a562-8236fafb51ca}</Project>
+      <Name>Foundatio.AzureStorage</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\Core\Foundatio.csproj">
       <Project>{f5b6c2b5-485f-4a4b-8e00-d5f77676cd6e}</Project>
       <Name>Foundatio</Name>
@@ -104,9 +108,9 @@
       <Project>{23002ba4-8663-460b-8d67-3aa941b0322a}</Project>
       <Name>Foundatio.Tests</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Foundatio.Azure.csproj">
+    <ProjectReference Include="..\Foundatio.AzureServiceBus.csproj">
       <Project>{075bc817-a72d-45b4-8473-7635591146d5}</Project>
-      <Name>Foundatio.Azure</Name>
+      <Name>Foundatio.AzureServiceBus</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup />
