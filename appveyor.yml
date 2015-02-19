@@ -32,4 +32,4 @@ before_test:
 
 deploy:
   - provider: Environment
-    name: NuGet
+    name: Exceptionless NuGet
