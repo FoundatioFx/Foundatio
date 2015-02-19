@@ -11,8 +11,8 @@ before_build:
   - nuget restore
   - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\Core\Foundatio.nuspec -Overwrite
   - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\Redis\Foundatio.Redis.nuspec -Overwrite
-  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\Azure\Foundatio.AzureStorage.nuspec -Overwrite
-  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\Azure\Foundatio.AzureServiceBus.nuspec -Overwrite
+  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\AzureStorage\Foundatio.AzureStorage.nuspec -Overwrite
+  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\AzureServiceBus\Foundatio.AzureServiceBus.nuspec -Overwrite
   - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$env:appveyor_build_version" -Path .\src\StatsD\Foundatio.StatsD.nuspec -Overwrite
 
 configuration: Release
