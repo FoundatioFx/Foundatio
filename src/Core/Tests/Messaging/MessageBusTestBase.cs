@@ -18,6 +18,7 @@ namespace Foundatio.Tests.Messaging {
 
             var resetEvent = new AutoResetEvent(false);
             messageBus.Subscribe<SimpleMessageA>(msg => {
+                Trace.WriteLine("Got one!");
                 Assert.Equal("Hello", msg.Data);
                 resetEvent.Set();
             });
@@ -25,7 +26,7 @@ namespace Foundatio.Tests.Messaging {
                 Data = "Hello"
             });
 
-            bool success = resetEvent.WaitOne(1000);
+            bool success = resetEvent.WaitOne(10000);
             Assert.True(success, "Failed to receive message.");
         }
 
