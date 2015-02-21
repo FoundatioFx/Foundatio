@@ -34,6 +34,9 @@ test_script:
 
 #test: off
 
+after_test:
+  - ps: Build\enable-rdp.ps1
+
 deploy:
   - provider: Environment
     name: Exceptionless NuGet
