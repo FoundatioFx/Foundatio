@@ -29,6 +29,9 @@ before_test:
   - nuget install xunit.runners -excludeversion
   - set PATH=%APPVEYOR_BUILD_FOLDER%\xunit.runners\tools;%PATH%
 
+test_script:
+  - ps: xunit.console.clr4.x86 "C:\projects\foundatio\src\Redis\Tests\bin\Release\Foundatio.Redis.Tests.dll"
+
 #test: off
 
 deploy:
