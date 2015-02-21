@@ -41,6 +41,7 @@
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
+    <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Caching\HybridCacheClient.cs" />
@@ -76,6 +77,8 @@
     <Compile Include="Queues\InMemoryQueue.cs" />
     <Compile Include="Queues\IQueue.cs" />
     <Compile Include="Queues\QueueEntry.cs" />
+    <Compile Include="Serializer\ISerializer.cs" />
+    <Compile Include="Serializer\JsonNetSerializer.cs" />
     <Compile Include="ServiceProvider\ActivatorServiceProvider.cs" />
     <Compile Include="ServiceProvider\BootstrappedServiceProviderBase.cs" />
     <Compile Include="ServiceProvider\IBootstrappedServiceProvider.cs" />

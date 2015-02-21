@@ -9,6 +9,7 @@ using Foundatio.Tests.Utility;
 using StackExchange.Redis;
 using Xunit;
 using Exceptionless.RandomData;
+using Foundatio.Metrics;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
@@ -82,6 +83,47 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public void MeasureThroughputWithRandomFailures() {
+            var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            FlushAll();
+
+            using (queue) {
+                queue.DeleteQueue();
+
+                const int workItemCount = 10000;
+                for (int i = 0; i < workItemCount; i++) {
+                    queue.Enqueue(new SimpleWorkItem {
+                        Data = "Hello"
+                    });
+                }
+                Assert.Equal(workItemCount, queue.GetQueueCount());
+
+                var metrics = new InMemoryMetricsClient();
+                var workItem = queue.Dequeue(TimeSpan.Zero);
+                while (workItem != null) {
+                    Assert.Equal("Hello", workItem.Value.Data);
+                    if (RandomData.GetBool(10))
+                        workItem.Abandon();
+                    else
+                        workItem.Complete();
+                    metrics.Counter("work");
+
+                    workItem = queue.Dequeue(TimeSpan.FromSeconds(2));
+                }
+                metrics.DisplayStats();
+
+                Assert.True(queue.DequeuedCount >= workItemCount);
+                Assert.Equal(workItemCount, queue.CompletedCount + queue.GetDeadletterCount());
+                Assert.Equal(0, queue.GetQueueCount());
+
+                Trace.WriteLine(CountAllKeys());
+            }
+        }
+
+        [Fact]
         public void MeasureThroughput() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
@@ -100,17 +142,16 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 Assert.Equal(workItemCount, queue.GetQueueCount());
 
-                var sw = new Stopwatch();
-                sw.Start();
-                var workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+                var metrics = new InMemoryMetricsClient();
+                var workItem = queue.Dequeue(TimeSpan.Zero);
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
                     workItem.Complete();
+                    metrics.Counter("work");
 
-                    workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+                    workItem = queue.Dequeue(TimeSpan.Zero);
                 }
-                sw.Stop();
-                Trace.WriteLine("Queue throughput: " + (workItemCount / sw.Elapsed.TotalSeconds).ToString("F2") + "/sec");
+                metrics.DisplayStats();
 
                 Assert.Equal(workItemCount, queue.DequeuedCount);
                 Assert.Equal(workItemCount, queue.CompletedCount);
@@ -121,10 +162,12 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public void CanBeatItRealGood() {
+        public void MeasureWorkerThroughput() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
+
+            FlushAll();
 
             using (queue) {
                 queue.DeleteQueue();
@@ -137,26 +180,22 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 Assert.Equal(workItemCount, queue.GetQueueCount());
 
-                var sw = new Stopwatch();
-                sw.Start();
-                var workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
-                while (workItem != null) {
+                var countdown = new CountDownLatch(workItemCount);
+                var metrics = new InMemoryMetricsClient();
+                queue.StartWorking(workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
-
-                    // randomly don't complete
-                    if (RandomData.GetBool(90))
-                        workItem.Complete();
-
-                    // get next item
-                    workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
-                }
-                sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
-                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+                    workItem.Complete();
+                    metrics.Counter("work");
+                    countdown.Signal();
+                });
+                countdown.Wait(60 * 1000);
+                metrics.DisplayStats();
 
                 Assert.Equal(workItemCount, queue.DequeuedCount);
                 Assert.Equal(workItemCount, queue.CompletedCount);
                 Assert.Equal(0, queue.GetQueueCount());
+
+                Trace.WriteLine(CountAllKeys());
             }
         }
 

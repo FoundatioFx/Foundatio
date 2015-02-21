@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using Foundatio.Caching;
 using Foundatio.Extensions;
+using Foundatio.Serializer;
 using StackExchange.Redis;
 
 namespace Foundatio.Redis.Cache {
     public class RedisCacheClient : ICacheClient {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _db;
+        private readonly ISerializer _serializer;
 
-        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer) {
+        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null) {
             _connectionMultiplexer = connectionMultiplexer;
             _db = connectionMultiplexer.GetDatabase();
+            _serializer = serializer ?? new JsonNetSerializer();
         }
 
         public bool Remove(string key) {
@@ -29,25 +32,57 @@ namespace Foundatio.Redis.Cache {
         }
 
         public T Get<T>(string key) {
-            var value = _db.StringGet(key);
-            if (value.IsNullOrEmpty)
-                return default(T);
-
-            return value.ToString().FromJson<T>();
+            return ChangeType<T>(_db.StringGet(key));
         }
 
         public bool TryGet<T>(string key, out T value) {
-            value = default(T);
-            try {
-                var stringValue = _db.StringGet(key);
-                if (stringValue.IsNullOrEmpty)
-                    return false;
+            return InternalTryGet(key, out value);
+        }
 
-                value = stringValue.ToString().FromJson<T>();
-                return true;
-            } catch {
+        protected bool InternalTryGet<T>(string key, out T value, CommandFlags flags = CommandFlags.None) {
+            value = default(T);
+
+            var redisValue = _db.StringGet(key, flags);
+            if (redisValue == RedisValue.Null)
                 return false;
-            }
+
+            if (typeof(T) == typeof(Int32))
+                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+            else if (typeof(T) == typeof(Int64))
+                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+            else if (typeof(T) == typeof(Int16))
+                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+            else if (typeof(T) == typeof(bool))
+                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+            else if (typeof(T) == typeof(double))
+                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+            else 
+                value = redisValue.ToString().FromJson<T>();
+
+            return true;
+        }
+
+        protected T ChangeType<T>(RedisValue value) {
+            if (value == RedisValue.Null && IsNullable(typeof(T)))
+                return default(T);
+
+            if (typeof(T) == typeof(Int16)
+                || typeof(T) == typeof(Int32)
+                || typeof(T) == typeof(Int64)
+                || typeof(T) == typeof(double)
+                || typeof(T) == typeof(bool))
+                return (T)Convert.ChangeType(value, typeof(T));
+
+            return _serializer.Deserialize<T>(value);
+        }
+
+        private static bool IsNullable(Type type) {
+            if (!type.IsValueType)
+                return true; // ref-type
+            if (Nullable.GetUnderlyingType(type) != null)
+                return true; // Nullable<T>
+
+            return false;
         }
 
         public long Increment(string key, uint amount) {
@@ -89,18 +124,15 @@ namespace Foundatio.Redis.Cache {
         }
 
         public bool Add<T>(string key, T value) {
-            var json = value.ToJson();
-            return _db.StringSet(key, json, null, When.NotExists);
+            return InternalSet(key, value, null, When.NotExists);
         }
 
         public bool Set<T>(string key, T value) {
-            var json = value.ToJson();
-            return _db.StringSet(key, json);
+            return InternalSet(key, value);
         }
 
         public bool Replace<T>(string key, T value) {
-            var json = value.ToJson();
-            return _db.StringSet(key, json, null, When.Exists);
+            return InternalSet(key, value, null, When.Exists);
         }
 
         public bool Set<T>(string key, T value, DateTime expiresAt) {
@@ -121,28 +153,29 @@ namespace Foundatio.Redis.Cache {
                 return false;
             }
 
-            var json = value.ToJson();
-            return _db.StringSet(key, json, expiresIn, When.NotExists);
+            return InternalSet(key, value, expiresIn, When.NotExists);
         }
 
         public bool Set<T>(string key, T value, TimeSpan expiresIn) {
-            if (expiresIn.Ticks < 0) {
-                Remove(key);
-                return false;
-            }
+            return InternalSet(key, value, expiresIn);
+        }
+
+        protected bool InternalSet<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
+            if (typeof(T) == typeof(Int16))
+                return _db.StringSet(key, Convert.ToInt16(value), expiresIn, when, flags);
+            if (typeof(T) == typeof(Int32))
+                return _db.StringSet(key, Convert.ToInt32(value), expiresIn, when, flags);
+            if (typeof(T) == typeof(Int64))
+                return _db.StringSet(key, Convert.ToInt64(value), expiresIn, when, flags);
+            if (typeof(T) == typeof(bool))
+                return _db.StringSet(key, Convert.ToBoolean(value), expiresIn, when, flags);
 
             var json = value.ToJson();
-            return _db.StringSet(key, json, expiresIn);
+            return _db.StringSet(key, json, expiresIn, when, flags);
         }
 
         public bool Replace<T>(string key, T value, TimeSpan expiresIn) {
-            if (expiresIn.Ticks < 0) {
-                Remove(key);
-                return false;
-            }
-
-            var json = value.ToJson();
-            return _db.StringSet(key, json, expiresIn, When.Exists);
+            return InternalSet(key, value, expiresIn, When.Exists);
         }
 
         public void FlushAll() {

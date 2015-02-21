@@ -192,7 +192,7 @@ namespace Foundatio.Redis.Queues {
             Log.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 
             DateTime started = DateTime.UtcNow;
-            while (timeout > TimeSpan.Zero && value.IsNullOrEmpty && DateTime.UtcNow.Subtract(started) < timeout) {
+            while (value.IsNullOrEmpty && timeout > TimeSpan.Zero && DateTime.UtcNow.Subtract(started) < timeout) {
                 Log.Trace().Message("Waiting to dequeue item...").Write();
 
                 // wait for timeout or signal or dispose
@@ -207,18 +207,7 @@ namespace Foundatio.Redis.Queues {
             if (value.IsNullOrEmpty)
                 return null;
 
-            Log.Trace().Message("Dequeued item: {0}", value).Write();
-            try {
-                Log.Trace().Message("Getting item lock...", value).Write();
-                IDisposable workItemLock = _lockProvider.AcquireLock(value, _workItemTimeout, TimeSpan.FromSeconds(2));
-                if (workItemLock == null)
-                    return null;
-            } catch (TimeoutException) {
-                return null;
-            }
-
-            Log.Trace().Message("Got item lock: {0}", value).Write();
-            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
+            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
 
             try {
                 var payload = _cache.Get<T>(GetPayloadKey(value));
@@ -238,12 +227,13 @@ namespace Foundatio.Redis.Queues {
 
         public void Complete(string id) {
             Log.Trace().Message("Queue {0} complete item: {1}", _queueName, id).Write();
-            _db.ListRemove(WorkListName, id);
-            _db.KeyDelete(GetPayloadKey(id));
-            _db.KeyDelete(GetAttemptsKey(id));
-            _db.KeyDelete(GetDequeuedTimeKey(id));
-            _db.KeyDelete(GetWaitTimeKey(id));
-            _lockProvider.ReleaseLock(id);
+            var batch = _db.CreateBatch();
+            batch.ListRemoveAsync(WorkListName, id);
+            batch.KeyDeleteAsync(GetPayloadKey(id));
+            batch.KeyDeleteAsync(GetAttemptsKey(id));
+            batch.KeyDeleteAsync(GetDequeuedTimeKey(id));
+            batch.KeyDeleteAsync(GetWaitTimeKey(id));
+            batch.Execute();
             Interlocked.Increment(ref _completedCount);
             UpdateStats();
             Log.Trace().Message("Complete done: {0}", id).Write();
@@ -251,10 +241,10 @@ namespace Foundatio.Redis.Queues {
 
         public void Abandon(string id) {
             Log.Trace().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
-            var attemptsValue = _db.StringGet(GetAttemptsKey(id));
+            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
             int attempts = 1;
             if (attemptsValue.HasValue)
-                attempts = (int)attemptsValue + 1;
+                attempts = attemptsValue.Value + 1;
             Log.Trace().Message("Item attempts: {0}", attempts).Write();
 
             var retryDelay = GetRetryDelay(attempts);
@@ -273,9 +263,8 @@ namespace Foundatio.Redis.Queues {
                 if (!success)
                     throw new Exception("Unable to move item to wait list.");
 
-                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay), GetWaitTimeTtl());
-                _db.StringIncrement(GetAttemptsKey(id));
-                _db.KeyExpire(GetAttemptsKey(id), GetAttemptsTtl());
+                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
             } else {
                 Log.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
@@ -285,12 +274,10 @@ namespace Foundatio.Redis.Queues {
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                _db.StringIncrement(GetAttemptsKey(id));
-                _db.KeyExpire(GetAttemptsKey(id), GetAttemptsTtl());
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
                 _subscriber.Publish(GetTopicName(), id);
             }
 
-            _lockProvider.ReleaseLock(id);
             Interlocked.Increment(ref _abandonedCount);
             UpdateStats();
             Log.Trace().Message("Abondon complete: {0}", id).Write();
@@ -381,16 +368,17 @@ namespace Foundatio.Redis.Queues {
 
             var workIds = _db.ListRange(WorkListName);
             foreach (var workId in workIds) {
-                var dequeuedTime = _cache.Get<DateTime?>(GetDequeuedTimeKey(workId));
+                var dequeuedTimeTicks = _cache.Get<long?>(GetDequeuedTimeKey(workId));
 
                 // dequeue time should be set, use current time
-                if (!dequeuedTime.HasValue) {
-                    _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow, GetDequeuedTimeTtl());
+                if (!dequeuedTimeTicks.HasValue) {
+                    _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
                     continue;
                 }
 
+                var dequeuedTime = new DateTime(dequeuedTimeTicks.Value);
                 Log.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
-                if (DateTime.UtcNow.Subtract(dequeuedTime.Value) <= _workItemTimeout)
+                if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
                     continue;
 
                 Log.Trace().Message("Getting work time out lock...").Write();
@@ -404,10 +392,10 @@ namespace Foundatio.Redis.Queues {
 
             var waitIds = _db.ListRange(WaitListName);
             foreach (var waitId in waitIds) {
-                var waitTime = _cache.Get<DateTime?>(GetWaitTimeKey(waitId));
-                Log.Trace().Message("Wait time: {0}", waitTime).Write();
+                var waitTimeTicks = _cache.Get<long?>(GetWaitTimeKey(waitId));
+                Log.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
 
-                if (waitTime.HasValue && waitTime.Value > DateTime.UtcNow)
+                if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)
                     continue;
 
                 Log.Trace().Message("Getting retry lock").Write();
