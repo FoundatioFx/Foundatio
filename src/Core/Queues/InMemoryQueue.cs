@@ -44,7 +44,7 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
+            TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
         }
 
         public long GetQueueCount() { return _queue.Count; }

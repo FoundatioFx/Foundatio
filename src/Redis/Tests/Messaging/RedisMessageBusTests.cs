@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Threading;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Redis.Messaging;

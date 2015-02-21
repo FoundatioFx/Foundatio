@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,10 +14,11 @@ namespace Foundatio.Messaging {
 
         public MessageBusBase() {
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
+            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
         }
 
         private Task DoMaintenance() {
+            Trace.WriteLine("Doing maintenance...");
             foreach (var message in _delayedMessages.Where(m => m.SendTime <= DateTime.Now).ToList()) {
                 _delayedMessages.Remove(message);
                 Publish(message.MessageType, message.Message);

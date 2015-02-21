@@ -88,18 +88,21 @@ namespace Foundatio.Utility {
             return tcs.TrySetResult(result ?? FromResult(default(TResult)));
         }
 
-        public static async Task RunPeriodic(Func<Task> action, TimeSpan period, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
-            if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
-                await Task.Delay(initialDelay.Value, cancellationToken);
+        public static void RunPeriodic(Func<Task> action, TimeSpan interval, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
+            Task.Factory.StartNew(async () => {
+                if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
+                    await Task.Delay(initialDelay.Value, cancellationToken);
 
-            while (!cancellationToken.IsCancellationRequested) {
-                await Task.Delay(period, cancellationToken);
-                try {
-                    await action();
-                } catch (Exception ex) {
-                    Trace.TraceError(ex.Message);
+                while (!cancellationToken.IsCancellationRequested) {
+                    try {
+                        await action();
+                    } catch (Exception ex) {
+                        Trace.TraceError(ex.Message);
+                    }
+
+                    await Task.Delay(interval, cancellationToken);
                 }
-            }
+            }, cancellationToken);
         }
 
         public async static Task<bool> DelayUntil(Func<bool> condition, TimeSpan? timeout = null, int checkInterval = 100) {

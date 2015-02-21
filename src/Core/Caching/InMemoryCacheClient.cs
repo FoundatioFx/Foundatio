@@ -18,7 +18,7 @@ namespace Foundatio.Caching {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
 
             _cacheDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenanceWork, TimeSpan.FromMilliseconds(50), _cacheDisposedCancellationTokenSource.Token).IgnoreExceptions();
+            TaskHelper.RunPeriodic(DoMaintenanceWork, TimeSpan.FromMilliseconds(50), _cacheDisposedCancellationTokenSource.Token);
         }
 
         public bool FlushOnDispose { get; set; }
