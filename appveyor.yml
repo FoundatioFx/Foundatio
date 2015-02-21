@@ -20,7 +20,7 @@ build:
 
 cache:
   - packages -> **\packages.config
-  - C:\ProgramData\chocolatey\lib -> appveyor.yml
+#  - C:\ProgramData\chocolatey\lib -> appveyor.yml
 
 before_test:
   - cinst redis-64
