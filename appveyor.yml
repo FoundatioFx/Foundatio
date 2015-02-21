@@ -26,16 +26,9 @@ before_test:
   - redis-server --service-install
   - redis-server --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
-  - nuget install xunit.runners -excludeversion
-  - set PATH=%APPVEYOR_BUILD_FOLDER%\xunit.runners\tools;%PATH%
-
-test_script:
-  - ps: xunit.console.clr4.x86 "C:\projects\foundatio\src\Redis\Tests\bin\Release\Foundatio.Redis.Tests.dll"
+  - ps: Build\enable-rdp.ps1
 
 #test: off
-
-after_test:
-  - ps: Build\enable-rdp.ps1
 
 deploy:
   - provider: Environment
