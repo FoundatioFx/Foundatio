@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Foundatio.Utility;
 
@@ -54,7 +53,7 @@ namespace Foundatio.Metrics {
 
             foreach (var key in _counters.Keys.ToList()) {
                 var counter = _counters[key];
-                writer.WriteLine("Counter: {0} Value: {1} Rate: {2}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
+                writer.WriteLine("Counter: {0} Value: {1} Rate: {2} Rate: {3}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.CurrentRate.ToString("#,##0.##'/s'").PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
             }
 
             foreach (var key in _gauges.Keys.ToList()) {
@@ -166,18 +165,33 @@ namespace Foundatio.Metrics {
             Increment(value);
         }
 
-        private long _value = 0;
+        private long _value;
+        private long _currentValue;
         private readonly Stopwatch _stopwatch = new Stopwatch();
+        private readonly Stopwatch _currentStopwatch = new Stopwatch();
 
         public long Value { get { return _value; } }
+        public long CurrentValue { get { return _currentValue; } }
         public double Rate { get { return ((double)Value / _stopwatch.Elapsed.TotalSeconds); } }
+        public double CurrentRate { get { return ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds); } }
 
         private static readonly object _lock = new object();
         public void Increment(long value) {
             lock (_lock) {
                 _value += value;
+                _currentValue += value;
+
                 if (!_stopwatch.IsRunning)
                     _stopwatch.Start();
+
+                if (!_currentStopwatch.IsRunning)
+                    _currentStopwatch.Start();
+
+                if (_currentStopwatch.Elapsed > TimeSpan.FromMinutes(1)) {
+                    _currentValue = 0;
+                    _currentStopwatch.Reset();
+                    _currentStopwatch.Start();
+                }
             }
         }
     }
