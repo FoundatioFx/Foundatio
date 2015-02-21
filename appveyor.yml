@@ -15,24 +15,20 @@ configuration: Release
 
 build:
   project: Foundatio.sln
-#  publish_nuget: true
-#  publish_nuget_symbols: true
+  publish_nuget: true
+  publish_nuget_symbols: true
 
 cache:
   - packages -> **\packages.config
-#  - C:\ProgramData\chocolatey\lib -> appveyor.yml
 
 before_test:
   - cinst redis-64
   - redis-server --service-install
   - redis-server --service-start
-#  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
+  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
 
-test:
-  assemblies:
-    - Foundatio.Redis.Tests.dll
-#test: off
+test: off
 
-#deploy:
-#  - provider: Environment
-#    name: Exceptionless NuGet
+deploy:
+  - provider: Environment
+    name: Exceptionless NuGet
