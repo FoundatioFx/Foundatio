@@ -186,6 +186,8 @@ namespace Foundatio.Extensions {
             return data.ToObject<List<T>>(serializer);
         }
 
+        private static Lazy<JsonSerializer> _defaultSerializer = new Lazy<JsonSerializer>(JsonSerializer.CreateDefault);
+
         public static T FromJson<T>(this JObject data, JsonSerializerSettings settings = null) {
             JsonSerializer serializer = settings == null ? JsonSerializer.CreateDefault() : JsonSerializer.CreateDefault(settings);
             return data.ToObject<T>(serializer);

@@ -74,6 +74,7 @@
     <Compile Include="Cache\RedisCacheClient.cs" />
     <Compile Include="Messaging\RedisMessageBus.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Queues\RedisQueue2.cs" />
     <Compile Include="Queues\RedisQueue.cs" />
   </ItemGroup>
   <ItemGroup>

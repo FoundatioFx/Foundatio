@@ -27,9 +27,9 @@ namespace Foundatio.Queues {
 
     public interface IQueue2<T> : IDisposable where T : class {
         Task<string> EnqueueAsync(T data);
-        Task StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        Task StartWorking(Func<QueueEntry2<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
         void StopWorking();
-        Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<QueueEntry2<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         Task CompleteAsync(string id);
         Task AbandonAsync(string id);
         Task<QueueStats> GetQueueStatsAsync();
