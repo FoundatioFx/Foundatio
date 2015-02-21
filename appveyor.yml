@@ -26,8 +26,10 @@ before_test:
   - redis-server --service-install
   - redis-server --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
+  - nuget install xunit.runners -excludeversion
+  - set PATH=%APPVEYOR_BUILD_FOLDER%\xunit.runners\tools;%PATH%
 
-test: off
+#test: off
 
 deploy:
   - provider: Environment
