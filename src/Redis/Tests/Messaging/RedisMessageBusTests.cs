@@ -15,7 +15,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 return null;
 
             var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
-            _messageBus = new RedisMessageBus(muxer.GetSubscriber(), Guid.NewGuid().ToString("N"));
+            _messageBus = new RedisMessageBus(muxer.GetSubscriber());
 
             return _messageBus;
         }
