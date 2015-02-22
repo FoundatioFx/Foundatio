@@ -16,19 +16,20 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var resetEvent = new AutoResetEvent(false);
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Trace.WriteLine("Got one!");
-                Assert.Equal("Hello", msg.Data);
-                resetEvent.Set();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var resetEvent = new AutoResetEvent(false);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Trace.WriteLine("Got one!");
+                    Assert.Equal("Hello", msg.Data);
+                    resetEvent.Set();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
 
-            bool success = resetEvent.WaitOne(1000);
-            Trace.WriteLine(success);
-            //Assert.True(success, "Failed to receive message.");
+                bool success = resetEvent.WaitOne(1000);
+                Assert.True(success, "Failed to receive message.");
+            }
         }
 
         public virtual void CanSendDelayedMessage() {
@@ -36,23 +37,25 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var resetEvent = new AutoResetEvent(false);
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                resetEvent.Set();
-            });
+            using (messageBus) {
+                var resetEvent = new AutoResetEvent(false);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    resetEvent.Set();
+                });
 
-            var sw = new Stopwatch();
-            sw.Start();
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            }, TimeSpan.FromMilliseconds(100));
+                var sw = new Stopwatch();
+                sw.Start();
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                }, TimeSpan.FromMilliseconds(100));
 
-            bool success = resetEvent.WaitOne(100200);
-            sw.Stop();
+                bool success = resetEvent.WaitOne(100200);
+                sw.Stop();
 
-            Assert.True(success, "Failed to receive message.");
-            Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
+                Assert.True(success, "Failed to receive message.");
+                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
+            }
         }
 
         public virtual void CanSendMessageToMultipleSubscribers() {
@@ -60,25 +63,27 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var latch = new CountDownLatch(3);
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var latch = new CountDownLatch(3);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
 
-            bool success = latch.Wait(1000);
-            Assert.True(success, "Failed to receive all messages.");
+                bool success = latch.Wait(1000);
+                Assert.True(success, "Failed to receive all messages.");
+            }
         }
 
         public virtual void CanTolerateSubscriberFailure() {
@@ -86,24 +91,26 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var latch = new CountDownLatch(2);
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                throw new ApplicationException();
-            });
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var latch = new CountDownLatch(2);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    throw new ApplicationException();
+                });
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
 
-            bool success = latch.Wait(2000);
-            Assert.True(success, "Failed to receive all messages.");
+                bool success = latch.Wait(2000);
+                Assert.True(success, "Failed to receive all messages.");
+            }
         }
 
         public virtual void WillOnlyReceiveSubscribedMessageType() {
@@ -111,20 +118,22 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var resetEvent = new AutoResetEvent(false);
-            messageBus.Subscribe<SimpleMessageB>(msg => {
-                Assert.True(false, "Received wrong message type.");
-            });
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                resetEvent.Set();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var resetEvent = new AutoResetEvent(false);
+                messageBus.Subscribe<SimpleMessageB>(msg => {
+                    Assert.True(false, "Received wrong message type.");
+                });
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    resetEvent.Set();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
 
-            bool success = resetEvent.WaitOne(100);
-            Assert.True(success, "Failed to receive message.");
+                bool success = resetEvent.WaitOne(100);
+                Assert.True(success, "Failed to receive message.");
+            }
         }
 
         public virtual void WillReceiveDerivedMessageTypes() {
@@ -132,23 +141,25 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var latch = new CountDownLatch(2);
-            messageBus.Subscribe<ISimpleMessage>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                latch.Signal();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
-            messageBus.Publish(new SimpleMessageB {
-                Data = "Hello"
-            });
-            messageBus.Publish(new SimpleMessageC {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var latch = new CountDownLatch(2);
+                messageBus.Subscribe<ISimpleMessage>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    latch.Signal();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
+                messageBus.Publish(new SimpleMessageB {
+                    Data = "Hello"
+                });
+                messageBus.Publish(new SimpleMessageC {
+                    Data = "Hello"
+                });
 
-            bool success = latch.Wait(100);
-            Assert.True(success, "Failed to receive all messages.");
+                bool success = latch.Wait(100);
+                Assert.True(success, "Failed to receive all messages.");
+            }
         }
 
         public virtual void CanSubscribeToAllMessageTypes() {
@@ -156,22 +167,24 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            var latch = new CountDownLatch(3);
-            messageBus.Subscribe<object>(msg => {
-                latch.Signal();
-            });
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
-            messageBus.Publish(new SimpleMessageB {
-                Data = "Hello"
-            });
-            messageBus.Publish(new SimpleMessageC {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                var latch = new CountDownLatch(3);
+                messageBus.Subscribe<object>(msg => {
+                    latch.Signal();
+                });
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
+                messageBus.Publish(new SimpleMessageB {
+                    Data = "Hello"
+                });
+                messageBus.Publish(new SimpleMessageC {
+                    Data = "Hello"
+                });
 
-            bool success = latch.Wait(1000);
-            Assert.True(success, "Failed to receive all messages.");
+                bool success = latch.Wait(1000);
+                Assert.True(success, "Failed to receive all messages.");
+            }
         }
 
         public virtual void WontKeepMessagesWithNoSubscribers() {
@@ -179,19 +192,21 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            messageBus.Publish(new SimpleMessageA {
-                Data = "Hello"
-            });
+            using (messageBus) {
+                messageBus.Publish(new SimpleMessageA {
+                    Data = "Hello"
+                });
 
-            Thread.Sleep(1000);
-            var resetEvent = new AutoResetEvent(false);
-            messageBus.Subscribe<SimpleMessageA>(msg => {
-                Assert.Equal("Hello", msg.Data);
-                resetEvent.Set();
-            });
+                Thread.Sleep(1000);
+                var resetEvent = new AutoResetEvent(false);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    resetEvent.Set();
+                });
 
-            bool success = resetEvent.WaitOne(1000);
-            Assert.False(success, "Messages are building up.");
+                bool success = resetEvent.WaitOne(1000);
+                Assert.False(success, "Messages are building up.");
+            }
         }
     }
 }

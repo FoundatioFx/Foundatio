@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
-    public abstract class JobBase {
+    public abstract class JobBase : IDisposable {
         protected virtual IDisposable GetJobLock() {
             return null;
         }
@@ -58,5 +58,7 @@ namespace Foundatio.Jobs {
         public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
             RunContinuousAsync(delay, iterationLimit, token).Wait(token);
         }
+
+        public virtual void Dispose() {}
     }
 }

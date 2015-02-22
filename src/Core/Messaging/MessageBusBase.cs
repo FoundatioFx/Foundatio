@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
@@ -14,7 +13,7 @@ namespace Foundatio.Messaging {
 
         public MessageBusBase() {
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            //TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
         }
 
         private Task DoMaintenance() {

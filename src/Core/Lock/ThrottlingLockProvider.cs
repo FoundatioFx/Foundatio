@@ -56,5 +56,7 @@ namespace Foundatio.Lock {
         private string GetCacheKey(string name) {
             return String.Concat("throttling-lock:", name, ":", DateTime.UtcNow.Floor(_throttlingPeriod).Ticks);
         }
+
+        public void Dispose() {}
     }
 }

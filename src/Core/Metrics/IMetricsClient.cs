@@ -1,7 +1,7 @@
 ﻿using System;
 
 namespace Foundatio.Metrics {
-    public interface IMetricsClient {
+    public interface IMetricsClient : IDisposable {
         void Counter(string statName, int value = 1);
         void Gauge(string statName, double value);
         void Timer(string statName, long milliseconds);

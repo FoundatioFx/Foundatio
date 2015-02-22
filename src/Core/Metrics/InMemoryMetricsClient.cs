@@ -152,6 +152,8 @@ namespace Foundatio.Metrics {
         public double GetGaugeValue(string statName) {
             return _gauges.ContainsKey(statName) ? _gauges[statName].Current : 0d;
         }
+
+        public void Dispose() {}
     }
 
     public class MetricStats {

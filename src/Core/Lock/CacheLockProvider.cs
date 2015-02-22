@@ -49,5 +49,7 @@ namespace Foundatio.Lock {
         private string GetCacheKey(string name) {
             return String.Concat("lock:", name);
         }
+
+        public void Dispose() {}
     }
 }

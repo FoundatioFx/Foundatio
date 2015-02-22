@@ -13,12 +13,14 @@ namespace Foundatio.Tests.Caching {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
-            
-            cache.FlushAll();
 
-            cache.Set("test", 1);
-            var value = cache.Get<int>("test");
-            Assert.Equal(1, value);
+            using (cache) {
+                cache.FlushAll();
+
+                cache.Set("test", 1);
+                var value = cache.Get<int>("test");
+                Assert.Equal(1, value);
+            }
         }
 
         public virtual void CanSetAndGetObject() {
@@ -26,15 +28,17 @@ namespace Foundatio.Tests.Caching {
             if (cache == null)
                 return;
 
-            cache.FlushAll();
+            using (cache) {
+                cache.FlushAll();
 
-            var dt = DateTimeOffset.Now;
-            cache.Set("test", new MyData { Type = "test", Date = dt, Message = "Hello World" });
-            var value = cache.Get<MyData>("test");
-            Assert.NotNull(value);
-            Assert.Equal(dt, value.Date);
-            Assert.Equal("Hello World", value.Message);
-            Assert.Equal("test", value.Type);
+                var dt = DateTimeOffset.Now;
+                cache.Set("test", new MyData {Type = "test", Date = dt, Message = "Hello World"});
+                var value = cache.Get<MyData>("test");
+                Assert.NotNull(value);
+                Assert.Equal(dt, value.Date);
+                Assert.Equal("Hello World", value.Message);
+                Assert.Equal("test", value.Type);
+            }
         }
 
         public virtual void CanSetExpiration() {
@@ -42,17 +46,19 @@ namespace Foundatio.Tests.Caching {
             if (cache == null)
                 return;
 
-            cache.FlushAll();
+            using (cache) {
+                cache.FlushAll();
 
-            var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
-            var success = cache.Set("test", 1, expiresAt);
-            Assert.True(success);
-            Assert.Equal(1, cache.Get<int>("test"));
-            Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
-     
-            Task.Delay(TimeSpan.FromMilliseconds(500)).Wait();
-            Assert.Equal(0, cache.Get<int>("test"));
-            Assert.Null(cache.GetExpiration("test"));
+                var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
+                var success = cache.Set("test", 1, expiresAt);
+                Assert.True(success);
+                Assert.Equal(1, cache.Get<int>("test"));
+                Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
+
+                Task.Delay(TimeSpan.FromMilliseconds(500)).Wait();
+                Assert.Equal(0, cache.Get<int>("test"));
+                Assert.Null(cache.GetExpiration("test"));
+            }
         }
     }
 

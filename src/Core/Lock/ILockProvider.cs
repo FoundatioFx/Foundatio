@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace Foundatio.Lock {
-    public interface ILockProvider {
+    public interface ILockProvider : IDisposable {
         IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null);
         bool IsLocked(string name);
         void ReleaseLock(string name);

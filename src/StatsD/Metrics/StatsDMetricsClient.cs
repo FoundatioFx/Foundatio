@@ -35,5 +35,7 @@ namespace Foundatio.AppStats {
             using (StartTimer(statName))
                 return func();
         }
+
+        public void Dispose() {}
     }
 }
