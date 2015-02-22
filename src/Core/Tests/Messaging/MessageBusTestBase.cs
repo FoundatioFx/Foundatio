@@ -26,8 +26,10 @@ namespace Foundatio.Tests.Messaging {
                 messageBus.Publish(new SimpleMessageA {
                     Data = "Hello"
                 });
+                Trace.WriteLine("Published one...");
 
                 bool success = resetEvent.WaitOne(2000);
+                Trace.WriteLine("Done waiting: " + success);
                 Assert.True(success, "Failed to receive message.");
             }
 
