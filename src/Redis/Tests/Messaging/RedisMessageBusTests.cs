@@ -41,15 +41,15 @@ namespace Foundatio.Redis.Tests.Messaging {
         //    base.WillOnlyReceiveSubscribedMessageType();
         //}
 
-        //[Fact]
-        //public override void WillReceiveDerivedMessageTypes() {
-        //    base.WillReceiveDerivedMessageTypes();
-        //}
+        [Fact]
+        public override void WillReceiveDerivedMessageTypes() {
+            base.WillReceiveDerivedMessageTypes();
+        }
 
-        //[Fact]
-        //public override void CanSubscribeToAllMessageTypes() {
-        //    base.CanSubscribeToAllMessageTypes();
-        //}
+        [Fact]
+        public override void CanSubscribeToAllMessageTypes() {
+            base.CanSubscribeToAllMessageTypes();
+        }
 
         //[Fact]
         //public override void WontKeepMessagesWithNoSubscribers() {
