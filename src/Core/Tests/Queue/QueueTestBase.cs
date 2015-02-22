@@ -89,7 +89,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.Null(workItem);
-                Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(10)));
+                Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
                 Task.Factory.StartNewDelayed(100, () => queue.Enqueue(new SimpleWorkItem {
                     Data = "Hello"
