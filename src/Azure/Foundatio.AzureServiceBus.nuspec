@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package >
   <metadata>
-    <id>Foundatio.Azure</id>
+    <id>Foundatio.AzureServiceBus</id>
     <version>$version$</version>
-    <title>Foundatio Azure Implementations</title>
+    <title>Foundatio Azure ServiceBus Implementations</title>
     <authors>ejsmith, bniemyjski</authors>
     <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
     <projectUrl>https://github.com/exceptionless/Foundatio</projectUrl>
