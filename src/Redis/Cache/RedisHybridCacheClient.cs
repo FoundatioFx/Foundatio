@@ -5,6 +5,6 @@ using StackExchange.Redis;
 namespace Foundatio.Redis.Cache {
     public class RedisHybridCacheClient : HybridCacheClient {
         public RedisHybridCacheClient(ConnectionMultiplexer connectionMultiplexer)
-            : base(new RedisCacheClient(connectionMultiplexer), new RedisMessageBus(connectionMultiplexer.GetSubscriber())) {}
+            : base(new RedisCacheClient(connectionMultiplexer), new RedisMessageBus(connectionMultiplexer.GetSubscriber(), "cache-messages")) {}
     }
 }

@@ -13,7 +13,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                 return null;
 
             var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
-            return new RedisMessageBus(muxer.GetSubscriber());
+            return new RedisMessageBus(muxer.GetSubscriber(), "test-messages");
         }
 
         [Fact]
