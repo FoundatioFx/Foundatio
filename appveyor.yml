@@ -10,7 +10,7 @@ assembly_info:
 
 before_build:
   - nuget restore
-  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "test" -Path ..\src\**\*.nuspec -Overwrite
+  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "test" -Path src\**\*.nuspec -Overwrite
 
 configuration: Release
 
