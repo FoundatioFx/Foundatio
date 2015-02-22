@@ -4,6 +4,7 @@ using System.Threading;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
+using NLog.Fluent;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase {
@@ -19,9 +20,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Trace.WriteLine("Got one!");
+                    Log.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
+                    Log.Trace().Message("Set event").Write();
                 });
                 messageBus.Publish(new SimpleMessageA {
                     Data = "Hello"
