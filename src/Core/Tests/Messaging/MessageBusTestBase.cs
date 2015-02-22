@@ -27,9 +27,11 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = resetEvent.WaitOne(1000);
+                bool success = resetEvent.WaitOne(2000);
                 Assert.True(success, "Failed to receive message.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void CanSendDelayedMessage() {
@@ -50,12 +52,14 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 }, TimeSpan.FromMilliseconds(100));
 
-                bool success = resetEvent.WaitOne(100200);
+                bool success = resetEvent.WaitOne(2000);
                 sw.Stop();
 
                 Assert.True(success, "Failed to receive message.");
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void CanSendMessageToMultipleSubscribers() {
@@ -81,9 +85,11 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = latch.Wait(1000);
+                bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void CanTolerateSubscriberFailure() {
@@ -111,6 +117,8 @@ namespace Foundatio.Tests.Messaging {
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void WillOnlyReceiveSubscribedMessageType() {
@@ -131,9 +139,11 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = resetEvent.WaitOne(100);
+                bool success = resetEvent.WaitOne(2000);
                 Assert.True(success, "Failed to receive message.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void WillReceiveDerivedMessageTypes() {
@@ -157,9 +167,11 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = latch.Wait(100);
+                bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void CanSubscribeToAllMessageTypes() {
@@ -182,9 +194,11 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = latch.Wait(1000);
+                bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
             }
+
+            Thread.Sleep(50);
         }
 
         public virtual void WontKeepMessagesWithNoSubscribers() {
@@ -204,9 +218,11 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                 });
 
-                bool success = resetEvent.WaitOne(1000);
+                bool success = resetEvent.WaitOne(2000);
                 Assert.False(success, "Messages are building up.");
             }
+
+            Thread.Sleep(50);
         }
     }
 }
