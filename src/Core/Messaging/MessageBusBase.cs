@@ -3,28 +3,24 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
-using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase : IMessagePublisher, IDisposable {
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly List<DelayedMessage> _delayedMessages = new List<DelayedMessage>();
-        private readonly Task _maintenanceTask;
+        private readonly Timer _maintenanceTimer;
 
         public MessageBusBase() {
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            _maintenanceTask = TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+            _maintenanceTimer = new Timer(DoMaintenance, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(500));
         }
 
-        private Task DoMaintenance() {
-            Trace.WriteLine("Doing maintenance...");
-            foreach (var message in _delayedMessages.Where(m => m.SendTime <= DateTime.Now).ToList()) {
-                _delayedMessages.Remove(message);
-                Publish(message.MessageType, message.Message);
+        private readonly object _lock = new object();
+        private void DoMaintenance(object state) {
+            lock (_lock) {
+                foreach (var message in _delayedMessages.Where(m => m.SendTime <= DateTime.Now).ToList()) {
+                    _delayedMessages.Remove(message);
+                    Publish(message.MessageType, message.Message);
+                }
             }
-
-            return TaskHelper.Completed();
         }
 
         public abstract void Publish(Type messageType, object message, TimeSpan? delay = null);
@@ -33,7 +29,8 @@ namespace Foundatio.Messaging {
             if (message == null)
                 throw new ArgumentNullException("message");
 
-            _delayedMessages.Add(new DelayedMessage { Message = message, MessageType = messageType, SendTime = DateTime.Now.Add(delay) });
+            lock (_lock)
+                _delayedMessages.Add(new DelayedMessage { Message = message, MessageType = messageType, SendTime = DateTime.Now.Add(delay) });
         }
 
         protected class DelayedMessage {
@@ -44,9 +41,8 @@ namespace Foundatio.Messaging {
 
         public virtual void Dispose() {
             Trace.WriteLine("Disposing MessageBusBase");
-            _queueDisposedCancellationTokenSource.Cancel();
-            _maintenanceTask.Wait();
-            _maintenanceTask.Dispose();
+            if (_maintenanceTimer != null)
+                _maintenanceTimer.Dispose();
             Trace.WriteLine("Done Disposing MessageBusBase");
         }
     }
