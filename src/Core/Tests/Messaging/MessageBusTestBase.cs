@@ -65,7 +65,7 @@ namespace Foundatio.Tests.Messaging {
                 Trace.WriteLine("Done waiting: " + success);
 
                 Assert.True(success, "Failed to receive message.");
-                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
+                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
             }
 
             Thread.Sleep(50);
