@@ -88,8 +88,8 @@ namespace Foundatio.Utility {
             return tcs.TrySetResult(result ?? FromResult(default(TResult)));
         }
 
-        public static void RunPeriodic(Func<Task> action, TimeSpan interval, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
-            Task.Factory.StartNew(async () => {
+        public static Task RunPeriodic(Func<Task> action, TimeSpan interval, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
+            return Task.Factory.StartNew(async () => {
                 if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
                     await Task.Delay(initialDelay.Value, cancellationToken);
 

@@ -10,10 +10,11 @@ namespace Foundatio.Messaging {
     public abstract class MessageBusBase : IMessagePublisher, IDisposable {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly List<DelayedMessage> _delayedMessages = new List<DelayedMessage>();
+        private readonly Task _maintenanceTask;
 
         public MessageBusBase() {
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+            _maintenanceTask = TaskHelper.RunPeriodic(DoMaintenance, TimeSpan.FromMilliseconds(500), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
         }
 
         private Task DoMaintenance() {
@@ -42,7 +43,11 @@ namespace Foundatio.Messaging {
         }
 
         public virtual void Dispose() {
+            Trace.WriteLine("Disposing MessageBusBase");
             _queueDisposedCancellationTokenSource.Cancel();
+            _maintenanceTask.Wait();
+            _maintenanceTask.Dispose();
+            Trace.WriteLine("Done Disposing MessageBusBase");
         }
     }
 }

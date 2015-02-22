@@ -67,7 +67,7 @@ namespace Foundatio.Redis.Messaging {
         }
 
         public override void Dispose() {
-            _subscriber.UnsubscribeAll();
+            _subscriber.Unsubscribe(_topic);
             base.Dispose();
         }
 
