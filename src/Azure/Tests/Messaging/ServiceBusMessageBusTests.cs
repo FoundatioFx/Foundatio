@@ -47,8 +47,8 @@ namespace Foundatio.Azure.Tests.Messaging {
         }
 
         [Fact]
-        public override void WillReceiveDerivedMessageTypes() {
-            base.WillReceiveDerivedMessageTypes();
+        public override void AWillReceiveDerivedMessageTypes() {
+            base.AWillReceiveDerivedMessageTypes();
         }
 
         [Fact]

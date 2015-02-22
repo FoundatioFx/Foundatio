@@ -25,6 +25,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                     Log.Trace().Message("Set event").Write();
                 });
+                Thread.Sleep(100);
                 messageBus.Publish(new SimpleMessageA {
                     Data = "Hello"
                 });
@@ -154,7 +155,7 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void WillReceiveDerivedMessageTypes() {
+        public virtual void AWillReceiveDerivedMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
