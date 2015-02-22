@@ -55,7 +55,7 @@ namespace Foundatio.Redis.Messaging {
                 return;
             }
 
-            _subscriber.Publish(_topic, new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }.ToJson(), CommandFlags.FireAndForget);
+            _subscriber.Publish(_topic, new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }.ToJson());
             Log.Trace().Message("Message Published To: {0}", _topic).Write();
         }
 

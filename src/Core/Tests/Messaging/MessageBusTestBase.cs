@@ -30,7 +30,7 @@ namespace Foundatio.Tests.Messaging {
                 });
                 Trace.WriteLine("Published one...");
 
-                bool success = resetEvent.WaitOne(2000);
+                bool success = resetEvent.WaitOne(5000);
                 Trace.WriteLine("Done waiting: " + success);
                 Assert.True(success, "Failed to receive message.");
             }
@@ -175,7 +175,7 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = latch.Wait(2000);
+                bool success = latch.Wait(5000);
                 Assert.True(success, "Failed to receive all messages.");
             }
 
