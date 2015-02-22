@@ -155,7 +155,7 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void AWillReceiveDerivedMessageTypes() {
+        public virtual void WillReceiveDerivedMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;

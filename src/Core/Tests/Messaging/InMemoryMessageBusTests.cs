@@ -33,8 +33,8 @@ namespace Foundatio.Tests.Messaging {
         }
 
         [Fact]
-        public override void AWillReceiveDerivedMessageTypes() {
-            base.AWillReceiveDerivedMessageTypes();
+        public override void WillReceiveDerivedMessageTypes() {
+            base.WillReceiveDerivedMessageTypes();
         }
 
         [Fact]
