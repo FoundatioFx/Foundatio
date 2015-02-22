@@ -32,7 +32,7 @@ namespace Foundatio.Redis.Messaging {
 
             object body = message.Data.FromJson(messageType);
             Log.Trace().Message("Deserialized Message Data: {0}", message.Type).Write();
-            var subscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
+            var subscribers = _subscribers.Where(s => s.Type.Equals(messageType.FullName, StringComparison.OrdinalIgnoreCase)).ToList();
             Log.Trace().Message("Found {0} subscribers for type: {1}", subscribers.Count, message.Type).Write();
             foreach (var subscriber in subscribers) {
                 try {
@@ -55,8 +55,9 @@ namespace Foundatio.Redis.Messaging {
         }
 
         public void Subscribe<T>(Action<T> handler) where T: class {
+            Log.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
-                Type = typeof(T),
+                Type = typeof(T).FullName,
                 Action = m => {
                     if (!(m is T))
                         return;
@@ -72,7 +73,7 @@ namespace Foundatio.Redis.Messaging {
         }
 
         private class Subscriber {
-            public Type Type { get; set; }
+            public string Type { get; set; }
             public Action<object> Action { get; set; }
         }
     }
