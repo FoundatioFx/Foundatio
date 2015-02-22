@@ -10,7 +10,7 @@ namespace Foundatio.Messaging {
         private readonly Timer _maintenanceTimer;
 
         public MessageBusBase() {
-            _maintenanceTimer = new Timer(DoMaintenance, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(500));
+            //_maintenanceTimer = new Timer(DoMaintenance, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(500));
         }
 
         private readonly object _lock = new object();
