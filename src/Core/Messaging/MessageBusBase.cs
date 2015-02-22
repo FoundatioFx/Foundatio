@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 
@@ -40,10 +39,8 @@ namespace Foundatio.Messaging {
         }
 
         public virtual void Dispose() {
-            Trace.WriteLine("Disposing MessageBusBase");
             if (_maintenanceTimer != null)
                 _maintenanceTimer.Dispose();
-            Trace.WriteLine("Done Disposing MessageBusBase");
         }
     }
 }
