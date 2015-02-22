@@ -15,8 +15,8 @@ configuration: Release
 
 build:
   project: Foundatio.sln
-  publish_nuget: true
-  publish_nuget_symbols: true
+#  publish_nuget: true
+#  publish_nuget_symbols: true
 
 cache:
   - packages -> **\packages.config
@@ -25,13 +25,13 @@ before_test:
   - cinst redis-64
   - redis-server --service-install
   - redis-server --service-start
-  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
+#  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
 #  - ps: Build\enable-rdp.ps1
 
 test:
   assemblies:
     - Foundatio.Redis.Tests.dll
 
-deploy:
-  - provider: Environment
-    name: Exceptionless NuGet
+#deploy:
+#  - provider: Environment
+#    name: Exceptionless NuGet
