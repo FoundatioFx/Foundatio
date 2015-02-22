@@ -8,12 +8,16 @@ using Xunit;
 
 namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
+        private static ConnectionMultiplexer _muxer;
+
         protected override IMessageBus GetMessageBus() {
             if (ConnectionStrings.Get("RedisConnectionString") == null)
                 return null;
 
-            var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
-            return new RedisMessageBus(muxer.GetSubscriber(), "test-messages");
+            if (_muxer == null)
+                _muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
+
+            return new RedisMessageBus(_muxer.GetSubscriber(), "test-messages");
         }
 
         [Fact]
