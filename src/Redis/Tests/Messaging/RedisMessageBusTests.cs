@@ -21,10 +21,10 @@ namespace Foundatio.Redis.Tests.Messaging {
             base.CanSendMessage();
         }
 
-        [Fact]
-        public override void CanSendDelayedMessage() {
-            base.CanSendDelayedMessage();
-        }
+        //[Fact]
+        //public override void CanSendDelayedMessage() {
+        //    base.CanSendDelayedMessage();
+        //}
 
         //[Fact]
         //public override void CanSendMessageToMultipleSubscribers() {
