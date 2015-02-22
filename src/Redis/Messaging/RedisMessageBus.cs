@@ -15,6 +15,7 @@ namespace Foundatio.Redis.Messaging {
         public RedisMessageBus(ISubscriber subscriber, string topic = null) {
             _subscriber = subscriber;
             _topic = topic ?? "messages";
+            Log.Trace().Message("Subscribing to topic: {0}", _topic).Write();
             _subscriber.Subscribe(_topic, OnMessage);
         }
 
