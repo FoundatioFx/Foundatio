@@ -32,9 +32,9 @@ namespace Foundatio.Redis.Messaging {
 
             object body = message.Data.FromJson(messageType);
             Log.Trace().Message("Deserialized Message Data: {0}", message.Type).Write();
-            var subscribers = _subscribers.Where(s => s.Type.Equals(messageType.FullName, StringComparison.OrdinalIgnoreCase)).ToList();
-            Log.Trace().Message("Found {0} subscribers for type: {1}", subscribers.Count, message.Type).Write();
-            foreach (var subscriber in subscribers) {
+            var messageTypeSubscribers = _subscribers.Where(s => s.Type.Equals(messageType.FullName, StringComparison.OrdinalIgnoreCase)).ToList();
+            Log.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, message.Type).Write();
+            foreach (var subscriber in messageTypeSubscribers) {
                 try {
                     subscriber.Action(body);
                 } catch (Exception ex) {
