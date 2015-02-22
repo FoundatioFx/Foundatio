@@ -1,6 +1,6 @@
 version: 1.0.{build}
 clone_depth: 2
-os: Unstable
+
 assembly_info:
   patch: true
   file: AssemblyInfo.*
@@ -27,6 +27,10 @@ before_test:
   - redis-server --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
 #  - ps: Build\enable-rdp.ps1
+
+test:
+  assemblies:
+    - Foundatio.Redis.Tests.dll
 
 deploy:
   - provider: Environment

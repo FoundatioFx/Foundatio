@@ -46,8 +46,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Log.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
+                    Log.Trace().Message("Set event").Write();
                 });
 
                 var sw = new Stopwatch();
@@ -55,9 +57,11 @@ namespace Foundatio.Tests.Messaging {
                 messageBus.Publish(new SimpleMessageA {
                     Data = "Hello"
                 }, TimeSpan.FromMilliseconds(100));
+                Trace.WriteLine("Published one...");
 
                 bool success = resetEvent.WaitOne(2000);
                 sw.Stop();
+                Trace.WriteLine("Done waiting: " + success);
 
                 Assert.True(success, "Failed to receive message.");
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
