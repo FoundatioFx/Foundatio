@@ -22,6 +22,7 @@ namespace Foundatio.Queues {
         long CompletedCount { get; }
         long AbandonedCount { get; }
         long WorkerErrorCount { get; }
+        long WorkItemTimeoutCount { get; }
         string QueueId { get; }
     }
 

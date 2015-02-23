@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless.RandomData;
 using Foundatio.Metrics;
@@ -12,8 +14,8 @@ using Xunit;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null) {
-            var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay);
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
+            var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems);
             Debug.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
             return queue;
         }
@@ -73,6 +75,175 @@ namespace Foundatio.Redis.Tests.Queues {
             base.CanDelayRetry();
         }
 
+        [Fact]
+        public void VerifyCacheKeysAreCorrect() {
+            var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+
+            using (queue) {
+                var db = SharedConnection.GetMuxer().GetDatabase();
+
+                string id = queue.Enqueue(new SimpleWorkItem { Data = "blah", Id = 1 });
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(2, CountAllKeys());
+
+                var workItem = queue.Dequeue();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(3, CountAllKeys());
+
+                workItem.Complete();
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.Equal(0, CountAllKeys());
+            }
+        }
+
+        [Fact]
+        public void VerifyCacheKeysAreCorrectAfterAbandon() {
+            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+
+            using (queue) {
+                var db = SharedConnection.GetMuxer().GetDatabase();
+
+                var id = queue.Enqueue(new SimpleWorkItem { Data = "blah", Id = 1 });
+                var workItem = queue.Dequeue();
+                workItem.Abandon();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(4, CountAllKeys());
+
+                workItem = queue.Dequeue();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(4, CountAllKeys());
+
+                // let the work item timeout
+                Thread.Sleep(1000);
+                Assert.Equal(1, queue.WorkItemTimeoutCount);
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(2, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(4, CountAllKeys());
+
+                // should go to deadletter now
+                workItem = queue.Dequeue();
+                workItem.Abandon();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:dead"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(3, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(4, CountAllKeys());
+            }
+        }
+
+        [Fact]
+        public void VerifyCacheKeysAreCorrectAfterAbandonWithRetryDelay() {
+            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250));
+            if (queue == null)
+                return;
+
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+
+            using (queue) {
+                var db = SharedConnection.GetMuxer().GetDatabase();
+
+                var id = queue.Enqueue(new SimpleWorkItem { Data = "blah", Id = 1 });
+                var workItem = queue.Dequeue();
+                workItem.Abandon();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:wait"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
+                Assert.Equal(5, CountAllKeys());
+
+                Thread.Sleep(1000);
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:wait"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
+                Assert.Equal(4, CountAllKeys());
+
+                workItem = queue.Dequeue();
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(4, CountAllKeys());
+            }
+        }
+
+        [Fact]
+        public void CanTrimDeadletterItems() {
+            var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3);
+            if (queue == null)
+                return;
+
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+
+            using (queue) {
+                var db = SharedConnection.GetMuxer().GetDatabase();
+                var workItemIds = new List<string>();
+
+                for (int i = 0; i < 10; i++) {
+                    var id = queue.Enqueue(new SimpleWorkItem {Data = "blah", Id = i});
+                    Trace.WriteLine(id);
+                    workItemIds.Add(id);
+                }
+
+                for (int i = 0; i < 10; i++) {
+                    var workItem = queue.Dequeue();
+                    workItem.Abandon();
+                    Trace.WriteLine("Abondoning: " + workItem.Id);
+                }
+
+                workItemIds.Reverse();
+                Thread.Sleep(1000);
+
+                foreach (var id in workItemIds.Take(3)) {
+                    Trace.WriteLine("Checking: " + id);
+                    Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
+                }
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:wait"));
+                Assert.Equal(3, db.ListLength("q:SimpleWorkItem:dead"));
+                Assert.Equal(10, CountAllKeys());
+            }
+        }
+        
         // TODO: Need to write tests that verify the cache data is correct after each operation.
 
         [Fact]
@@ -201,7 +372,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 var server = SharedConnection.GetMuxer().GetServer(endpoint);
 
                 try {
-                    server.FlushDatabase();
+                    server.FlushAllDatabases();
                 } catch (Exception) { }
             }
         }

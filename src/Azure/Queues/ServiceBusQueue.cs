@@ -23,6 +23,7 @@ namespace Foundatio.Azure.Queues {
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
+        private long _workItmeTimeoutCount;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
@@ -76,6 +77,7 @@ namespace Foundatio.Azure.Queues {
         public long CompletedCount { get { return _completedCount; } }
         public long AbandonedCount { get { return _abandonedCount; } }
         public long WorkerErrorCount { get { return _workerErrorCount; } }
+        public long WorkItemTimeoutCount { get { return _workItmeTimeoutCount; } }
 
         public string QueueId { get; private set; }
 

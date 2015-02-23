@@ -27,6 +27,7 @@ namespace Foundatio.Queues {
         private int _completedCount;
         private int _abandonedCount;
         private int _workerErrorCount;
+        private int _workerItemTimeoutCount;
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly IMetricsClient _metrics;
@@ -56,6 +57,7 @@ namespace Foundatio.Queues {
         public long CompletedCount { get { return _completedCount; } }
         public long AbandonedCount { get { return _abandonedCount; } }
         public long WorkerErrorCount { get { return _workerErrorCount; } }
+        public long WorkItemTimeoutCount { get { return _workerItemTimeoutCount; } }
         public string QueueId { get; private set; }
         protected string QueueSizeStatName { get; set; }
 
@@ -231,6 +233,7 @@ namespace Foundatio.Queues {
             foreach (var item in _dequeued.Where(kvp => DateTime.Now.Subtract(kvp.Value.TimeDequeued).Milliseconds > _workItemTimeout.TotalMilliseconds)) {
                 Log.Trace().Message("DoMaintenance Abandon: {0}", item.Key).Write();
                 Abandon(item.Key);
+                Interlocked.Increment(ref _workerItemTimeoutCount);
             }
 
             return TaskHelper.Completed();

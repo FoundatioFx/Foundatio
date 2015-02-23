@@ -11,13 +11,16 @@ namespace Foundatio.Redis.Tests.Jobs {
     public class RedisJobTests {
         [Fact]
         public void CanRunQueueJob() {
-            const int workItemCount = 10000;
+            const int workItemCount = 100000;
             var metrics = new InMemoryMetricsClient();
             var countdown = new CountDownLatch(workItemCount);
             var queue = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), null, 0, TimeSpan.Zero, metrics: metrics);
 
-            for (int i = 0; i < workItemCount; i++)
-                queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
+            Task.Factory.StartNew(() => {
+                Parallel.For(0, workItemCount, i => {
+                    queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
+                });
+            });
 
             var job = new SampleQueueJob(queue, metrics, countdown);
             var tokenSource = new CancellationTokenSource();

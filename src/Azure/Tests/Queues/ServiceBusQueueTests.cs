@@ -11,7 +11,7 @@ namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
                 return null;
 

@@ -12,7 +12,7 @@ using Xunit;
 
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase {
-        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null) {
+        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             return null;
         }
 

@@ -28,19 +28,22 @@ namespace Foundatio.Redis.Queues {
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
+        private long _workItemTimeoutCount;
         private readonly TimeSpan _payloadTtl;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
         private readonly int _retries = 2;
         private readonly TimeSpan _deadLetterTtl = TimeSpan.FromDays(1);
+        private readonly int _deadLetterMaxItems;
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
         private readonly IMetricsClient _metrics;
+        private readonly Timer _maintenanceTimer;
 
         public RedisQueue(ConnectionMultiplexer connection, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
             _cache = new RedisCacheClient(connection);
@@ -63,6 +66,7 @@ namespace Foundatio.Redis.Queues {
                 _workItemTimeout = workItemTimeout.Value;
             if (deadLetterTimeToLive.HasValue)
                 _deadLetterTtl = deadLetterTimeToLive.Value;
+            _deadLetterMaxItems = deadLetterMaxItems;
 
             _payloadTtl = GetPayloadTtl();
 
@@ -71,7 +75,8 @@ namespace Foundatio.Redis.Queues {
 
             if (runMaintenanceTasks) {
                 _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-                TaskHelper.RunPeriodic(DoMaintenanceWork, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+                TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
+                _maintenanceTimer = new Timer(DoMaintenanceWork, null, interval, TimeSpan.FromMilliseconds(100));
             }
 
             Log.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
@@ -94,6 +99,7 @@ namespace Foundatio.Redis.Queues {
         public long CompletedCount { get { return _completedCount; } }
         public long AbandonedCount { get { return _abandonedCount; } }
         public long WorkerErrorCount { get { return _workerErrorCount; } }
+        public long WorkItemTimeoutCount { get { return _workItemTimeoutCount; } }
         public string QueueId { get; private set; }
 
         private string QueueListName { get; set; }
@@ -254,6 +260,7 @@ namespace Foundatio.Redis.Queues {
                 _db.ListRemove(WorkListName, id);
                 _db.ListLeftPush(DeadListName, id);
                 _db.KeyExpire(GetPayloadKey(id), _deadLetterTtl);
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
             } else if (retryDelay > TimeSpan.Zero) {
                 Log.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
@@ -322,6 +329,21 @@ namespace Foundatio.Redis.Queues {
             _db.KeyDelete(name);
         }
 
+        private void TrimDeadletterItems(int maxItems) {
+            var itemIds = _db.ListRange(DeadListName).Skip(maxItems);
+            foreach (var id in itemIds) {
+                _db.KeyDelete(GetPayloadKey(id));
+                _db.KeyDelete(GetAttemptsKey(id));
+                _db.KeyDelete(GetDequeuedTimeKey(id));
+                _db.KeyDelete(GetWaitTimeKey(id));
+                _db.ListRemove(QueueListName, id);
+                _db.ListRemove(WorkListName, id);
+                _db.ListRemove(WaitListName, id);
+                _db.ListRemove(DeadListName, id);
+                _lockProvider.ReleaseLock(id);
+            }
+        }
+
         private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             Log.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
             _autoEvent.Set();
@@ -363,7 +385,7 @@ namespace Foundatio.Redis.Queues {
             _metrics.Gauge(QueueSizeStatName, count);
         }
 
-        private Task DoMaintenanceWork() {
+        private void DoMaintenanceWork(object state) {
             Log.Trace().Message("DoMaintenance {0}", _queueName).Write();
 
             var workIds = _db.ListRange(WorkListName);
@@ -386,6 +408,7 @@ namespace Foundatio.Redis.Queues {
                     using (_lockProvider.AcquireLock(workId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
                         Log.Trace().Message("Got item lock for work time out").Write();
                         Abandon(workId);
+                        Interlocked.Increment(ref _workItemTimeoutCount);
                     }
                 } catch {}
             }
@@ -418,7 +441,11 @@ namespace Foundatio.Redis.Queues {
                 } catch {}
             }
 
-            return TaskHelper.Completed();
+            if (_lockProvider.IsLocked(_queueName + "-trimdead"))
+                return;
+
+            using (_lockProvider.AcquireLock(_queueName + "-trimdead", TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5)))
+                TrimDeadletterItems(_deadLetterMaxItems);
         }
 
         public void Dispose() {
@@ -426,6 +453,8 @@ namespace Foundatio.Redis.Queues {
             StopWorking();
             if (_queueDisposedCancellationTokenSource != null)
                 _queueDisposedCancellationTokenSource.Cancel();
+            if (_maintenanceTimer != null)
+                _maintenanceTimer.Dispose();
         }
     }
 }
