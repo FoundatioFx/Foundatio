@@ -21,7 +21,7 @@ build:
   publish_nuget_symbols: true
 
 cache:
-  - packages -> **\packages.config
+#  - packages -> **\packages.config
 
 before_test:
   - cinst redis-64
