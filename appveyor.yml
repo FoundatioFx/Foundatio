@@ -20,9 +20,6 @@ build:
   publish_nuget: true
   publish_nuget_symbols: true
 
-cache:
-#  - packages -> **\packages.config
-
 before_test:
   - cinst redis-64
   - redis-server --service-install
