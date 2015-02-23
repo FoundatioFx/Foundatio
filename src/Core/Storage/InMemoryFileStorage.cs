@@ -26,7 +26,7 @@ namespace Foundatio.Storage {
 
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
-                    throw new FileNotFoundException();
+                    return null;
 
                 return _storage[path].Item2;
             }

@@ -65,6 +65,9 @@ namespace Foundatio.Tests.Storage {
                 const string queueFolder = "q";
                 var queueItems = new BlockingCollection<int>();
 
+                var info = storage.GetFileInfo("nope");
+                Assert.Null(info);
+
                 Parallel.For(0, 10, i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,

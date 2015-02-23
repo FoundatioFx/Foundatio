@@ -37,17 +37,17 @@ namespace Foundatio.Redis.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
-        private readonly IMetricsClient _stats;
+        private readonly IMetricsClient _metrics;
 
         public RedisQueue(ConnectionMultiplexer connection, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, bool runMaintenanceTasks = true, IMetricsClient stats = null, string statName = null) {
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
             _cache = new RedisCacheClient(connection);
             _lockProvider = new CacheLockProvider(_cache);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
-            _stats = stats;
+            _metrics = metrics;
             QueueSizeStatName = statName;
             QueueListName = "q:" + _queueName + ":in";
             WorkListName = "q:" + _queueName + ":work";
@@ -356,11 +356,11 @@ namespace Foundatio.Redis.Queues {
         }
 
         private void UpdateStats() {
-            if (_stats == null || String.IsNullOrEmpty(QueueSizeStatName))
+            if (_metrics == null || String.IsNullOrEmpty(QueueSizeStatName))
                 return;
 
             long count = GetQueueCount();
-            _stats.Gauge(QueueSizeStatName, count);
+            _metrics.Gauge(QueueSizeStatName, count);
         }
 
         private Task DoMaintenanceWork() {

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Foundatio.Azure.Extensions;
@@ -18,7 +19,14 @@ namespace Foundatio.Storage {
 
         public string GetFileContents(string path) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return blockBlob.DownloadText();
+            try {
+                return blockBlob.DownloadText();
+            } catch (StorageException ex) {
+                if (ex.RequestInformation.HttpStatusCode == 404)
+                    return null;
+
+                throw;
+            }
         }
 
         public FileSpec GetFileInfo(string path) {
@@ -41,7 +49,7 @@ namespace Foundatio.Storage {
         public bool RenameFile(string oldpath, string newpath) {
             var oldBlob = _container.GetBlockBlobReference(oldpath);
             var newBlob = _container.GetBlockBlobReference(newpath);
-
+            
             using (var stream = new MemoryStream())
             {
                 oldBlob.DownloadToStream(stream);

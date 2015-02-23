@@ -29,14 +29,17 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException("path");
 
             try {
+                if (!Exists(path))
+                    return null;
+
                 return File.ReadAllText(Path.Combine(Folder, path));
-            } catch (Exception) {
+            } catch (FileNotFoundException) {
                 return null;
             }
         }
 
         public FileSpec GetFileInfo(string path) {
-            var info = new System.IO.FileInfo(path);
+            var info = new FileInfo(path);
             if (!info.Exists)
                 return null;
 

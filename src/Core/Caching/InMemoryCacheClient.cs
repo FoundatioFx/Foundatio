@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 using NLog.Fluent;
 
@@ -13,6 +12,7 @@ namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private ConcurrentDictionary<string, CacheEntry> _memory;
         private readonly CancellationTokenSource _cacheDisposedCancellationTokenSource;
+        private readonly object _lock = new object();
 
         public InMemoryCacheClient() {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -43,7 +43,8 @@ namespace Foundatio.Caching {
                 return;
             }
 
-            _memory[key] = entry;
+            lock (_lock)
+                _memory[key] = entry;
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
                 string oldest = _memory.OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
@@ -59,14 +60,16 @@ namespace Foundatio.Caching {
                 return false;
             }
 
-            CacheEntry entry;
-            if (TryGetValue(key, out entry))
-                return false;
+            lock (_lock) {
+                CacheEntry entry;
+                if (TryGetValue(key, out entry))
+                    return false;
 
-            entry = new CacheEntry(value, expiresAt);
-            Set(key, entry);
+                entry = new CacheEntry(value, expiresAt);
+                Set(key, entry);
 
-            return true;
+                return true;
+            }
         }
 
         private bool CacheSet(string key, object value) {

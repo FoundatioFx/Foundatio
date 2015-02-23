@@ -73,6 +73,8 @@ namespace Foundatio.Redis.Tests.Queues {
             base.CanDelayRetry();
         }
 
+        // TODO: Need to write tests that verify the cache data is correct after each operation.
+
         [Fact]
         public void MeasureThroughputWithRandomFailures() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
@@ -102,7 +104,7 @@ namespace Foundatio.Redis.Tests.Queues {
                         workItem.Complete();
                     metrics.Counter("work");
 
-                    workItem = queue.Dequeue(TimeSpan.FromSeconds(2));
+                    workItem = queue.Dequeue(TimeSpan.FromMilliseconds(100));
                 }
                 metrics.DisplayStats();
 

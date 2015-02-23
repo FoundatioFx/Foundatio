@@ -58,6 +58,7 @@
   <ItemGroup>
     <Compile Include="Caching\RedisHybridCacheClientTests.cs" />
     <Compile Include="Caching\RedisCacheClientTests.cs" />
+    <Compile Include="Jobs\RedisJobTests.cs" />
     <Compile Include="Locks\RedisLockTests.cs" />
     <Compile Include="Messaging\RedisMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

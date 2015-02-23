@@ -54,6 +54,7 @@
     <Compile Include="Caching\HybridCacheClientTests.cs" />
     <Compile Include="Caching\InMemoryCacheClientTests.cs" />
     <Compile Include="Jobs\MyServiceProvider.cs" />
+    <Compile Include="Jobs\SampleQueueJob.cs" />
     <Compile Include="Jobs\WithDependencyJob.cs" />
     <Compile Include="Jobs\HelloWorldJob.cs" />
     <Compile Include="Jobs\JobTests.cs" />

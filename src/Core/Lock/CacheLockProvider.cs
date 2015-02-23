@@ -26,6 +26,7 @@ namespace Foundatio.Lock {
 
                 Log.Trace().Message("Lock doesn't exist: {0}", name).Write();
 
+                // support locks that never timeout
                 if (lockTimeout.HasValue && lockTimeout.Value == TimeSpan.Zero)
                     return _cacheClient.Add(cacheKey, DateTime.Now);
 

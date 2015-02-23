@@ -26,14 +26,14 @@ namespace Foundatio.Tests {
                 Assert.False(locker.IsLocked("test"));
 
                 int counter = 0;
-                Parallel.For(0, 20, i => {
+                Parallel.For(0, 100, i => {
                     using (locker.AcquireLock("test")) {
                         Assert.True(locker.IsLocked("test"));
                         Interlocked.Increment(ref counter);
                     }
                 });
 
-                Assert.Equal(20, counter);
+                Assert.Equal(100, counter);
             }
         }
 

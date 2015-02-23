@@ -43,6 +43,9 @@ namespace Foundatio.Storage {
 
         public static T GetObject<T>(this IFileStorage storage, string path) {
             string json = storage.GetFileContents(path);
+            if (String.IsNullOrEmpty(json))
+                return default(T);
+
             return JsonConvert.DeserializeObject<T>(json);
         }
 

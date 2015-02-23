@@ -29,11 +29,11 @@ namespace Foundatio.Queues {
         private int _workerErrorCount;
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly IMetricsClient _stats;
+        private readonly IMetricsClient _metrics;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient stats = null, string statName = null) {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
-            _stats = stats;
+            _metrics = metrics;
             QueueSizeStatName = statName;
             _retries = retries;
             if (retryDelay.HasValue)
@@ -164,9 +164,7 @@ namespace Foundatio.Queues {
         }
 
         private void Retry(QueueInfo<T> info) {
-            Trace.WriteLine("Retry");
             _queue.Enqueue(info);
-            Trace.WriteLine("Retry: Set Event");
             _autoEvent.Set();
         }
 
@@ -223,8 +221,8 @@ namespace Foundatio.Queues {
         }
 
         private void UpdateStats() {
-            if (_stats != null && !String.IsNullOrEmpty(QueueSizeStatName))
-                _stats.Gauge(QueueSizeStatName, GetQueueCount());
+            if (_metrics != null && !String.IsNullOrEmpty(QueueSizeStatName))
+                _metrics.Gauge(QueueSizeStatName, GetQueueCount());
         }
 
         private Task DoMaintenance() {
