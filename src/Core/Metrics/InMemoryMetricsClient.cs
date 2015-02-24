@@ -39,35 +39,46 @@ namespace Foundatio.Metrics {
             DisplayStats();
         }
 
+        private static bool _isDisplayingStats = false;
+        private static readonly object _statsDisplayLock = new object();
         public void DisplayStats(TextWriter writer = null) {
             if (writer == null)
                 writer = new TraceTextWriter();
 
-            int maxNameLength = 1;
-            if (_counters.Count > 0)
-                maxNameLength = Math.Max(_counters.Max(c => c.Key.Length), maxNameLength);
-            if (_gauges.Count > 0)
-                maxNameLength = Math.Max(_gauges.Max(c => c.Key.Length), maxNameLength);
-            if (_timings.Count > 0)
-                maxNameLength = Math.Max(_timings.Max(c => c.Key.Length), maxNameLength);
+            if (_isDisplayingStats)
+                return;
 
-            foreach (var key in _counters.Keys.ToList()) {
-                var counter = _counters[key];
-                writer.WriteLine("Counter: {0} Value: {1} Rate: {2} Rate: {3}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.CurrentRate.ToString("#,##0.##'/s'").PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
+            lock (_statsDisplayLock) {
+                _isDisplayingStats = true;
+
+                int maxNameLength = 1;
+                if (_counters.Count > 0)
+                    maxNameLength = Math.Max(_counters.Max(c => c.Key.Length), maxNameLength);
+                if (_gauges.Count > 0)
+                    maxNameLength = Math.Max(_gauges.Max(c => c.Key.Length), maxNameLength);
+                if (_timings.Count > 0)
+                    maxNameLength = Math.Max(_timings.Max(c => c.Key.Length), maxNameLength);
+
+                foreach (var key in _counters.Keys.ToList()) {
+                    var counter = _counters[key];
+                    writer.WriteLine("Counter: {0} Value: {1} Rate: {2} Rate: {3}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.CurrentRate.ToString("#,##0.##'/s'").PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
+                }
+
+                foreach (var key in _gauges.Keys.ToList()) {
+                    var gauge = _gauges[key];
+                    writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"));
+                }
+
+                foreach (var key in _timings.Keys.ToList()) {
+                    var timing = _timings[key];
+                    writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"));
+                }
+
+                if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)
+                    writer.WriteLine("-----");
             }
 
-            foreach (var key in _gauges.Keys.ToList()) {
-                var gauge = _gauges[key];
-                writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"));
-            }
-
-            foreach (var key in _timings.Keys.ToList()) {
-                var timing = _timings[key];
-                writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"));
-            }
-
-            if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)
-                writer.WriteLine("-----");
+            _isDisplayingStats = false;
         }
 
         public MetricStats GetMetricStats() {

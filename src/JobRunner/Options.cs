@@ -19,6 +19,9 @@ namespace Foundatio.JobRunner {
         [Option('d', "delay", Required = false, DefaultValue = 0, HelpText = "Amount of time in milliseconds to delay between continuous job runs.")]
         public int Delay { get; set; }
 
+        [Option('i', "instances", Required = false, DefaultValue = 1, HelpText = "Number of concurrent job instances to run. Only applies to continuous jobs.")]
+        public int InstanceCount { get; set; }
+
         [HelpOption]
         public string GetUsage() {
             var help = new HelpText {
