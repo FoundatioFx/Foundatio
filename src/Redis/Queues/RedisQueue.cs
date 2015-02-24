@@ -388,64 +388,76 @@ namespace Foundatio.Redis.Queues {
         private void DoMaintenanceWork(object state) {
             Log.Trace().Message("DoMaintenance {0}", _queueName).Write();
 
-            var workIds = _db.ListRange(WorkListName);
-            foreach (var workId in workIds) {
-                var dequeuedTimeTicks = _cache.Get<long?>(GetDequeuedTimeKey(workId));
+            try {
+                var workIds = _db.ListRange(WorkListName);
+                foreach (var workId in workIds) {
+                    var dequeuedTimeTicks = _cache.Get<long?>(GetDequeuedTimeKey(workId));
 
-                // dequeue time should be set, use current time
-                if (!dequeuedTimeTicks.HasValue) {
-                    _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
-                    continue;
+                    // dequeue time should be set, use current time
+                    if (!dequeuedTimeTicks.HasValue) {
+                        _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
+                        continue;
+                    }
+
+                    var dequeuedTime = new DateTime(dequeuedTimeTicks.Value);
+                    Log.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
+                    if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
+                        continue;
+
+                    Log.Trace().Message("Getting work time out lock...").Write();
+                    try {
+                        using (_lockProvider.AcquireLock(workId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
+                            Log.Trace().Message("Got item lock for work time out").Write();
+                            Abandon(workId);
+                            Interlocked.Increment(ref _workItemTimeoutCount);
+                        }
+                    } catch {}
                 }
-
-                var dequeuedTime = new DateTime(dequeuedTimeTicks.Value);
-                Log.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
-                if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
-                    continue;
-
-                Log.Trace().Message("Getting work time out lock...").Write();
-                try {
-                    using (_lockProvider.AcquireLock(workId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
-                        Log.Trace().Message("Got item lock for work time out").Write();
-                        Abandon(workId);
-                        Interlocked.Increment(ref _workItemTimeoutCount);
-                    }
-                } catch {}
+            } catch (Exception ex) {
+                Log.Error().Exception(ex).Message("Error occurred while checking for work item timeouts.").Write();
             }
 
-            var waitIds = _db.ListRange(WaitListName);
-            foreach (var waitId in waitIds) {
-                var waitTimeTicks = _cache.Get<long?>(GetWaitTimeKey(waitId));
-                Log.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
+            try {
+                var waitIds = _db.ListRange(WaitListName);
+                foreach (var waitId in waitIds) {
+                    var waitTimeTicks = _cache.Get<long?>(GetWaitTimeKey(waitId));
+                    Log.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
 
-                if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)
-                    continue;
+                    if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)
+                        continue;
 
-                Log.Trace().Message("Getting retry lock").Write();
+                    Log.Trace().Message("Getting retry lock").Write();
 
-                try {
-                    using (_lockProvider.AcquireLock(waitId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
-                        Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
-                        var tx = _db.CreateTransaction();
+                    try {
+                        using (_lockProvider.AcquireLock(waitId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
+                            Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
+                            var tx = _db.CreateTransaction();
 #pragma warning disable 4014
-                        tx.ListRemoveAsync(WaitListName, waitId);
-                        tx.ListLeftPushAsync(QueueListName, waitId);
+                            tx.ListRemoveAsync(WaitListName, waitId);
+                            tx.ListLeftPushAsync(QueueListName, waitId);
 #pragma warning restore 4014
-                        var success = tx.Execute();
-                        if (!success)
-                            throw new Exception("Unable to move item to queue list.");
+                            var success = tx.Execute();
+                            if (!success)
+                                throw new Exception("Unable to move item to queue list.");
 
-                        _db.KeyDelete(GetWaitTimeKey(waitId));
-                        _subscriber.Publish(GetTopicName(), waitId);
-                    }
-                } catch {}
+                            _db.KeyDelete(GetWaitTimeKey(waitId));
+                            _subscriber.Publish(GetTopicName(), waitId);
+                        }
+                    } catch {}
+                }
+            } catch (Exception ex) {
+                Log.Error().Exception(ex).Message("Error occurred while adding items back to the queue after the retry delay.").Write();
             }
 
-            if (_lockProvider.IsLocked(_queueName + "-trimdead"))
-                return;
+            try {
+                if (_lockProvider.IsLocked(_queueName + "-trimdead"))
+                    return;
 
-            using (_lockProvider.AcquireLock(_queueName + "-trimdead", TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5)))
-                TrimDeadletterItems(_deadLetterMaxItems);
+                using (_lockProvider.AcquireLock(_queueName + "-trimdead", TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5)))
+                    TrimDeadletterItems(_deadLetterMaxItems);
+            } catch (Exception ex) {
+                Log.Error().Exception(ex).Message("Error occurred while trimming dead letter items.").Write();
+            }
         }
 
         public void Dispose() {
