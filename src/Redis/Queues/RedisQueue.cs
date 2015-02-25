@@ -405,13 +405,13 @@ namespace Foundatio.Redis.Queues {
                         continue;
 
                     Log.Trace().Message("Getting work time out lock...").Write();
-                    try {
-                        using (_lockProvider.AcquireLock(workId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
+                    _lockProvider.TryUsingLock(workId,
+                        () => {
                             Log.Trace().Message("Got item lock for work time out").Write();
                             Abandon(workId);
                             Interlocked.Increment(ref _workItemTimeoutCount);
-                        }
-                    } catch {}
+                        },
+                        TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
                 }
             } catch (Exception ex) {
                 Log.Error().Exception(ex).Message("Error occurred while checking for work item timeouts.").Write();
@@ -428,8 +428,8 @@ namespace Foundatio.Redis.Queues {
 
                     Log.Trace().Message("Getting retry lock").Write();
 
-                    try {
-                        using (_lockProvider.AcquireLock(waitId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
+                    _lockProvider.TryUsingLock(waitId,
+                        () => {
                             Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
                             var tx = _db.CreateTransaction();
 #pragma warning disable 4014
@@ -442,21 +442,19 @@ namespace Foundatio.Redis.Queues {
 
                             _db.KeyDelete(GetWaitTimeKey(waitId));
                             _subscriber.Publish(GetTopicName(), waitId);
-                        }
-                    } catch {}
+                        },
+                        TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
                 }
             } catch (Exception ex) {
                 Log.Error().Exception(ex).Message("Error occurred while adding items back to the queue after the retry delay.").Write();
             }
 
             try {
-                if (_lockProvider.IsLocked(_queueName + "-trimdead"))
-                    return;
-
-                using (_lockProvider.AcquireLock(_queueName + "-trimdead", TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5)))
-                    TrimDeadletterItems(_deadLetterMaxItems);
+                _lockProvider.TryUsingLock(_queueName + "-trimdead",
+                    () => TrimDeadletterItems(_deadLetterMaxItems),
+                    TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error occurred while trimming dead letter items.").Write();
+                Log.Error().Exception(ex).Message("Error trimming deadletter items.").Write();
             }
         }
 
