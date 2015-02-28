@@ -8,7 +8,6 @@ namespace Foundatio.Tests.Jobs {
         public int RunCount { get; set; }
 
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
-            Console.WriteLine("Hello World! " + RunCount);
             RunCount++;
 
             return Task.FromResult(JobResult.Success);
