@@ -33,6 +33,11 @@ namespace Foundatio.Jobs {
                 return null;
             }
 
+            if (!typeof (JobBase).IsAssignableFrom(jobType)) {
+                Log.Error().Message("Job Type must derive from Job.").Write();
+                return null;
+            }
+
             Type serviceProviderType = jobType;
             if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
                 serviceProviderType = Type.GetType(serviceProviderTypeName);

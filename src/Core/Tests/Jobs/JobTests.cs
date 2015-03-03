@@ -13,6 +13,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public void CanRunJobs() {
             var job = new HelloWorldJob();
+            Assert.Equal(0, job.RunCount);
             job.Run();
             Assert.Equal(1, job.RunCount);
 
@@ -21,6 +22,12 @@ namespace Foundatio.Tests.Jobs {
 
             job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token);
             Assert.True(job.RunCount > 10);
+
+            var jobInstance = JobRunner.CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
+            Assert.NotNull(jobInstance);
+            Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
+            Assert.Equal(JobResult.Success, jobInstance.Run());
+            Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
         }
 
         [Fact]
