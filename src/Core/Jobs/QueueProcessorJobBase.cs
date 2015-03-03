@@ -31,6 +31,11 @@ namespace Foundatio.Jobs {
             return ProcessQueueItem(queueEntry);
         }
 
+        public void RunUntilEmpty() {
+            while (_queue.GetQueueCount() > 0)
+                Run();
+        }
+
         protected abstract Task<JobResult> ProcessQueueItem(QueueEntry<T> queueEntry);
     }
 }
