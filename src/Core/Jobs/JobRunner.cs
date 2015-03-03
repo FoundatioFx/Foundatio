@@ -61,14 +61,11 @@ namespace Foundatio.Jobs {
         }
 
         public static IServiceProvider GetServiceProvider(Type serviceProviderType) {
-            if (!typeof (IServiceProvider).IsAssignableFrom(serviceProviderType)) {
+            if (serviceProviderType != null && !typeof(IServiceProvider).IsAssignableFrom(serviceProviderType)) {
+                var types = serviceProviderType.Assembly.GetTypes();
                 // prefer bootstrapped service provider
-                serviceProviderType = serviceProviderType.Assembly.GetTypes()
-                    .Where(typeof (IBootstrappedServiceProvider).IsAssignableFrom).FirstOrDefault();
-                
-                if (serviceProviderType == null)
-                    serviceProviderType = serviceProviderType.Assembly.GetTypes()
-                        .Where(typeof(IServiceProvider).IsAssignableFrom).FirstOrDefault();
+                serviceProviderType = types.Where(typeof(IBootstrappedServiceProvider).IsAssignableFrom).FirstOrDefault()
+                                      ?? types.Where(typeof(IServiceProvider).IsAssignableFrom).FirstOrDefault();
             }
 
             if (serviceProviderType == null)
