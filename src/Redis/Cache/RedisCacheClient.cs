@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Serializer;
 using StackExchange.Redis;
 
@@ -57,7 +56,7 @@ namespace Foundatio.Redis.Cache {
             else if (typeof(T) == typeof(double))
                 value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
             else 
-                value = redisValue.ToString().FromJson<T>();
+                value = _serializer.Deserialize<T>(redisValue);
 
             return true;
         }
@@ -170,8 +169,8 @@ namespace Foundatio.Redis.Cache {
             if (typeof(T) == typeof(bool))
                 return _db.StringSet(key, Convert.ToBoolean(value), expiresIn, when, flags);
 
-            var json = value.ToJson();
-            return _db.StringSet(key, json, expiresIn, when, flags);
+            var data = _serializer.Serialize(value);
+            return _db.StringSet(key, data, expiresIn, when, flags);
         }
 
         public bool Replace<T>(string key, T value, TimeSpan expiresIn) {
@@ -205,7 +204,7 @@ namespace Foundatio.Redis.Cache {
 
             var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
-                T value = values[i].ToString().FromJson<T>();
+                T value = _serializer.Deserialize<T>(values[i]);
                 result.Add(keyArray[i], value);
             }
 
@@ -216,7 +215,7 @@ namespace Foundatio.Redis.Cache {
             if (values == null)
                 return;
 
-            _db.StringSet(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)v.Value.ToJson()).ToArray());
+            _db.StringSet(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)_serializer.Serialize(v.Value)).ToArray());
         }
 
         public DateTime? GetExpiration(string key) {

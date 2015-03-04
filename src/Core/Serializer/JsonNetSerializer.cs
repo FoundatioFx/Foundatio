@@ -1,4 +1,4 @@
-﻿using System.Text;
+﻿using System;
 using Newtonsoft.Json;
 
 namespace Foundatio.Serializer {
@@ -9,12 +9,16 @@ namespace Foundatio.Serializer {
             _settings = settings ?? new JsonSerializerSettings();
         }
 
-        public T Deserialize<T>(byte[] value) {
-            return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(value), _settings);
+        public T Deserialize<T>(string value) {
+            return JsonConvert.DeserializeObject<T>(value, _settings);
         }
 
-        public byte[] Serialize(object value) {
-            return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(value, _settings));
+        public object Deserialize(string value, Type objectType) {
+            return JsonConvert.DeserializeObject(value, objectType, _settings);
+        }
+
+        public string Serialize(object value) {
+            return JsonConvert.SerializeObject(value, _settings);
         }
     }
 }

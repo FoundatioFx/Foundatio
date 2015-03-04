@@ -3,24 +3,25 @@ using System.Collections.Concurrent;
 using System.Linq;
 using Foundatio.Extensions;
 using Foundatio.Messaging;
+using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
 
 namespace Foundatio.Azure.Messaging {
     public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
-        private readonly string _connectionString;
         private readonly string _topicName;
+        private readonly ISerializer _serializer;
         private readonly string _subscriptionName;
         private readonly NamespaceManager _namespaceManager;
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
-        public ServiceBusMessageBus(string connectionString, string topicName) {
+        public ServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
             _topicName = topicName;
+            _serializer = serializer ?? new JsonNetSerializer();
             _subscriptionName = "MessageBus";
-            _connectionString = connectionString;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             if (!_namespaceManager.TopicExists(_topicName))
                 _namespaceManager.CreateTopic(_topicName);
@@ -43,7 +44,7 @@ namespace Foundatio.Azure.Messaging {
                 Log.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
             }
 
-            object body = message.Data.FromJson(messageType);
+            object body = _serializer.Deserialize(message.Data, messageType);
             foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
                 try {
                     subscriber.Action(body);
@@ -60,7 +61,7 @@ namespace Foundatio.Azure.Messaging {
                 return;
             }
 
-            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = message.ToJson() }));
+            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.Serialize(message) }));
         }
 
         public void Subscribe<T>(Action<T> handler) where T : class {

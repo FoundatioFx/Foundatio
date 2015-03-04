@@ -1,6 +1,9 @@
-﻿namespace Foundatio.Serializer {
+﻿using System;
+
+namespace Foundatio.Serializer {
     public interface ISerializer {
-        T Deserialize<T>(byte[] value);
-        byte[] Serialize(object value);
+        T Deserialize<T>(string value);
+        object Deserialize(string value, Type objectType);
+        string Serialize(object value);
     }
 }

@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Redis.Cache;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using NLog.Fluent;
@@ -42,11 +42,11 @@ namespace Foundatio.Redis.Queues {
         private readonly IMetricsClient _metrics;
         private readonly Timer _maintenanceTimer;
 
-        public RedisQueue(ConnectionMultiplexer connection, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
+        public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
-            _cache = new RedisCacheClient(connection);
+            _cache = new RedisCacheClient(connection, serializer);
             _lockProvider = new CacheLockProvider(_cache);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
