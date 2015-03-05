@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
@@ -12,6 +11,11 @@ namespace Foundatio.Azure.Tests.Storage {
                 return null;
 
             return new AzureFileStorage(ConnectionStrings.Get("AzureStorageConnectionString"));
+        }
+
+        [Fact]
+        public override void CanGetEmptyFileListOnMissingDirectory() {
+            base.CanGetEmptyFileListOnMissingDirectory();
         }
 
         [Fact]

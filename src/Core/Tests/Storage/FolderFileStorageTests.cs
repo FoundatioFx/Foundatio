@@ -10,6 +10,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override void CanGetEmptyFileListOnMissingDirectory() {
+            base.CanGetEmptyFileListOnMissingDirectory();
+        }
+
+        [Fact]
         public override void CanManageFiles() {
             base.CanManageFiles();
         }

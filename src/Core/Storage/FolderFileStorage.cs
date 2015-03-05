@@ -111,6 +111,8 @@ namespace Foundatio.Storage {
                 searchPattern = "*";
 
             var list = new List<FileSpec>();
+            if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))
+                return list;
 
             foreach (var path in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories).Take(limit ?? Int32.MaxValue)) {
                 var info = new System.IO.FileInfo(path);

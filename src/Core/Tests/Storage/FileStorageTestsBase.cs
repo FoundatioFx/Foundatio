@@ -16,6 +16,18 @@ namespace Foundatio.Tests.Storage {
             return null;
         }
 
+        public virtual void CanGetEmptyFileListOnMissingDirectory() {
+            Reset();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                Assert.Equal(0, storage.GetFileList(Guid.NewGuid() + "\\*").Count());
+            }
+        }
+
         public virtual void CanManageFiles() {
             Reset();
 
