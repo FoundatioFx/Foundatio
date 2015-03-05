@@ -61,7 +61,7 @@ namespace Foundatio.Azure.Messaging {
                 return;
             }
 
-            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.Serialize(message) }));
+            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) }));
         }
 
         public void Subscribe<T>(Action<T> handler) where T : class {

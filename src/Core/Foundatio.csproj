@@ -76,6 +76,7 @@
     <Compile Include="Queues\InMemoryQueue.cs" />
     <Compile Include="Queues\IQueue.cs" />
     <Compile Include="Queues\QueueEntry.cs" />
+    <Compile Include="Serializer\IHaveSerializer.cs" />
     <Compile Include="Serializer\ISerializer.cs" />
     <Compile Include="Serializer\JsonNetSerializer.cs" />
     <Compile Include="ServiceProvider\ActivatorServiceProvider.cs" />

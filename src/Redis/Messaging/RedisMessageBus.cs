@@ -23,7 +23,7 @@ namespace Foundatio.Redis.Messaging {
 
         private void OnMessage(RedisChannel channel, RedisValue value) {
             Log.Trace().Message("OnMessage: {0}", channel).Write();
-            var message = _serializer.Deserialize<MessageBusData>(value);
+            var message = _serializer.Deserialize<MessageBusData>((string)value);
 
             Type messageType = null;
             try {
@@ -51,7 +51,7 @@ namespace Foundatio.Redis.Messaging {
                 return;
             }
 
-            var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.Serialize(message) });
+            var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             _subscriber.Publish(_topic, data, CommandFlags.FireAndForget);
         }
 

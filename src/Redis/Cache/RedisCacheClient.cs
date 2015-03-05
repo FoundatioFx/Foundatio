@@ -6,7 +6,7 @@ using Foundatio.Serializer;
 using StackExchange.Redis;
 
 namespace Foundatio.Redis.Cache {
-    public class RedisCacheClient : ICacheClient {
+    public class RedisCacheClient : ICacheClient, IHaveSerializer {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _db;
         private readonly ISerializer _serializer;
@@ -56,7 +56,7 @@ namespace Foundatio.Redis.Cache {
             else if (typeof(T) == typeof(double))
                 value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
             else 
-                value = _serializer.Deserialize<T>(redisValue);
+                value = _serializer.Deserialize<T>((string)redisValue);
 
             return true;
         }
@@ -72,7 +72,7 @@ namespace Foundatio.Redis.Cache {
                 || typeof(T) == typeof(bool))
                 return (T)Convert.ChangeType(value, typeof(T));
 
-            return _serializer.Deserialize<T>(value);
+            return _serializer.Deserialize<T>((string)value);
         }
 
         private static bool IsNullable(Type type) {
@@ -204,7 +204,7 @@ namespace Foundatio.Redis.Cache {
 
             var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
-                T value = _serializer.Deserialize<T>(values[i]);
+                T value = _serializer.Deserialize<T>((string)values[i]);
                 result.Add(keyArray[i], value);
             }
 
@@ -237,6 +237,10 @@ namespace Foundatio.Redis.Cache {
             }
 
             _db.KeyExpire(key, expiresIn);
+        }
+
+        ISerializer IHaveSerializer.Serializer {
+            get { return _serializer; }
         }
 
         public void Dispose() { }
