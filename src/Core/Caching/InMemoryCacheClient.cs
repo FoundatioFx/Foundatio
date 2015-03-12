@@ -47,7 +47,7 @@ namespace Foundatio.Caching {
                 _memory[key] = entry;
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
-                string oldest = _memory.OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
+                string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
                 CacheEntry cacheEntry;
                 _memory.TryRemove(oldest, out cacheEntry);
             }
