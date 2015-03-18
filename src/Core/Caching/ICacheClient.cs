@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
@@ -30,16 +31,17 @@ namespace Foundatio.Caching {
         void SetExpiration(string cacheKey, DateTime expiresAt);
     }
 
+    // TODO: Change to async
     public interface ICacheClient2 : IDisposable {
-        int RemoveAll(IEnumerable<string> keys = null);
-        bool TryGet<T>(string key, out T value);
-        long Increment(string key, uint amount = 1, TimeSpan? expiresIn = null);
-        bool Add<T>(string key, T value, TimeSpan? expiresIn = null);
-        bool Replace<T>(string key, T value, TimeSpan? expiresIn = null);
-        IDictionary<string, T> GetAll<T>(IEnumerable<string> keys);
-        bool Set<T>(string key, T value, TimeSpan? expiresIn = null);
-        int SetAll<T>(IDictionary<string, T> values);
-        TimeSpan? GetExpiration(string key);
-        void SetExpiration(string key, TimeSpan expiresIn);
+        Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
+        Task<bool> TryGetAsync<T>(string key, out T value);
+        Task<long> IncrementAsync(string key, uint amount = 1, TimeSpan? expiresIn = null);
+        Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys);
+        Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<int> SetAllAsync<T>(IDictionary<string, T> values);
+        Task<TimeSpan?> GetExpirationAsync(string key);
+        Task SetExpirationAsync(string key, TimeSpan expiresIn);
     }
 }

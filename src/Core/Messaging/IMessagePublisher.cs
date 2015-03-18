@@ -1,8 +1,13 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 namespace Foundatio.Messaging {
     public interface IMessagePublisher {
         void Publish(Type messageType, object message, TimeSpan? delay = null);
+    }
+
+    public interface IMessagePublisher2 {
+        Task PublishAsync(Type messageType, object message, TimeSpan? delay = null);
     }
 
     public static class MessagePublisherExtensions {

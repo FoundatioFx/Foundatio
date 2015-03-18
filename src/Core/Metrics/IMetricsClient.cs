@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 namespace Foundatio.Metrics {
     public interface IMetricsClient : IDisposable {
@@ -11,8 +12,8 @@ namespace Foundatio.Metrics {
     }
 
     public interface IMetricsClient2 {
-        void Counter(string statName, int value = 1);
-        void Gauge(string statName, double value);
-        void Timer(string statName, long milliseconds);
+        Task CounterAsync(string statName, int value = 1);
+        Task GaugeAsync(string statName, double value);
+        Task TimerAsync(string statName, long milliseconds);
     }
 }
