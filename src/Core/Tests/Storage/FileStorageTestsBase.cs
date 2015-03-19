@@ -39,18 +39,17 @@ namespace Foundatio.Tests.Storage {
                 storage.SaveFile(@"archived\archived.txt", "archived");
                 storage.SaveFile(@"q\new.txt", "new");
                 Assert.Equal(2, storage.GetFileList().Count());
+                Assert.Equal(1, storage.GetFileList(limit: 1).Count());
                 Assert.Equal(1, storage.GetFileList(@"archived\*").Count());
                 Assert.Equal(1, storage.GetFileList(@"q\*").Count());
 
                 var file = storage.GetFileList(@"archived\*").FirstOrDefault();
                 Assert.NotNull(file);
-                Assert.Equal(@"archived\archived.txt", file.Path);
                 Assert.Equal("archived", storage.GetFileContents(@"archived\archived.txt"));
 
 
                 file = storage.GetFileList(@"q\*").FirstOrDefault();
                 Assert.NotNull(file);
-                Assert.Equal(@"q\new.txt", file.Path);
                 Assert.Equal("new", storage.GetFileContents(@"q\new.txt"));
             }
         }

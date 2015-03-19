@@ -68,7 +68,13 @@ namespace Foundatio.Storage {
         }
 
         public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
-            return _container.ListBlobs(null, true).OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
+            // TODO: ListBlobs only takes a blob name prefix. As such we currently do not support wildcards (E.G., q\event*.json).
+            if (searchPattern != null)
+                searchPattern = searchPattern.TrimEnd('*', '\\');
+
+            // TODO: More efficient take (It seems that the rest call has a limit option but the api doesn't.
+            var files = _container.ListBlobs(searchPattern, true).OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
+            return limit.HasValue ? files.Take(limit.Value) : files;
         }
 
         public void Dispose() {}
