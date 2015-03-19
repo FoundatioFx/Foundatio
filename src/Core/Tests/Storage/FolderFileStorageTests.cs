@@ -15,6 +15,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override void CanGetFileListForSingleFolder() {
+            base.CanGetFileListForSingleFolder();
+        }
+
+        [Fact]
         public override void CanManageFiles() {
             base.CanManageFiles();
         }
