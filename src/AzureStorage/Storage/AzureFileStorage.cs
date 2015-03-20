@@ -72,9 +72,11 @@ namespace Foundatio.Storage {
             if (searchPattern != null)
                 searchPattern = searchPattern.TrimEnd('*', '\\');
 
-            // TODO: More efficient take (It seems that the rest call has a limit option but the api doesn't.
-            var files = _container.ListBlobs(searchPattern, true).OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
-            return limit.HasValue ? files.Take(limit.Value) : files;
+            var blobItems = _container.ListBlobs(searchPattern, true);
+            if (limit.HasValue)
+                blobItems = blobItems.Take(limit.Value);
+
+            return blobItems.OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
         }
 
         public void Dispose() {}
