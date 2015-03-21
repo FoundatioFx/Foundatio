@@ -83,8 +83,10 @@
     <Compile Include="ServiceProvider\BootstrappedServiceProviderBase.cs" />
     <Compile Include="ServiceProvider\IBootstrappedServiceProvider.cs" />
     <Compile Include="Extensions\ServiceProviderExtensions.cs" />
+    <Compile Include="Storage\FolderFileStorage2.cs" />
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
+    <Compile Include="Storage\InMemoryFileStorage2.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />
     <Compile Include="Utility\PathHelper.cs" />
