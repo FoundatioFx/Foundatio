@@ -22,9 +22,9 @@ namespace Foundatio.Storage {
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
         Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken));
-        Task<bool> RenameFileAsync(string path, string newpath);
-        Task<bool> CopyFileAsync(string path, string targetpath);
-        Task<bool> DeleteFileAsync(string path);
+        Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken));
+        Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken));
+        Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
         Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken));
     }
 

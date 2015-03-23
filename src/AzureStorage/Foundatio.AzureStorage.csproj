@@ -68,6 +68,7 @@
   <ItemGroup>
     <Compile Include="Extensions\StorageExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Storage\AzureFileStorage2.cs" />
     <Compile Include="Storage\AzureFileStorage.cs" />
   </ItemGroup>
   <ItemGroup>

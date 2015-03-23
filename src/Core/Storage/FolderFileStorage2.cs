@@ -78,7 +78,7 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<bool> RenameFileAsync(string path, string newpath) {
+        public async Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(newpath))
@@ -99,7 +99,7 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetpath) {
+        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(targetpath))
@@ -120,7 +120,7 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<bool> DeleteFileAsync(string path) {
+        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 

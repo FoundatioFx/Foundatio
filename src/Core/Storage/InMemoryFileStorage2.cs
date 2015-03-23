@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,7 +72,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newpath) {
+        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(newpath))
@@ -92,7 +91,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetpath) {
+        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(targetpath))
@@ -110,7 +109,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> DeleteFileAsync(string path) {
+        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 

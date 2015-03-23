@@ -91,6 +91,7 @@
     <Compile Include="Messaging\ServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\ServiceBusQueueTests.cs" />
+    <Compile Include="Storage\AzureStorage2Tests.cs" />
     <Compile Include="Storage\AzureStorageTests.cs" />
   </ItemGroup>
   <ItemGroup>
