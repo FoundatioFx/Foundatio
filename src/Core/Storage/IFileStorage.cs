@@ -8,16 +8,6 @@ using Newtonsoft.Json;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IDisposable {
-        string GetFileContents(string path);
-        FileSpec GetFileInfo(string path);
-        bool Exists(string path);
-        bool SaveFile(string path, string contents);
-        bool RenameFile(string oldpath, string newpath);
-        bool DeleteFile(string path);
-        IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null);
-    }
-
-    public interface IFileStorage2 : IDisposable {
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
@@ -53,32 +43,13 @@ namespace Foundatio.Storage {
             foreach (var file in files)
                 storage.DeleteFile(file.Path);
         }
-    }
 
-    public static class FileStorage2Extensions {
-        public static bool SaveObject<T>(this IFileStorage2 storage, string path, T data) {
-            return storage.SaveFile(path, JsonConvert.SerializeObject(data));
-        }
-
-        public static T GetObject<T>(this IFileStorage2 storage, string path) {
-            string json = storage.GetFileContents(path);
-            if (String.IsNullOrEmpty(json))
-                return default(T);
-
-            return JsonConvert.DeserializeObject<T>(json);
-        }
-
-        public static void DeleteFiles(this IFileStorage2 storage, IEnumerable<FileSpec> files) {
-            foreach (var file in files)
-                storage.DeleteFile(file.Path);
-        }
-
-        public static string GetFileContents(this IFileStorage2 storage, string path) {
+        public static string GetFileContents(this IFileStorage storage, string path) {
             using (var stream = storage.GetFileStreamAsync(path).Result)
                 return new StreamReader(stream).ReadToEnd();
         }
 
-        public static byte[] GetFileContentsRaw(this IFileStorage2 storage, string path) {
+        public static byte[] GetFileContentsRaw(this IFileStorage storage, string path) {
             var stream = storage.GetFileStreamAsync(path).Result;
             return ReadFully(stream);
         }
@@ -94,27 +65,27 @@ namespace Foundatio.Storage {
             }
         }
 
-        public static FileSpec GetFileInfo(this IFileStorage2 storage, string path) {
+        public static FileSpec GetFileInfo(this IFileStorage storage, string path) {
             return storage.GetFileInfoAsync(path).Result;
         }
 
-        public static bool Exists(this IFileStorage2 storage, string path) {
+        public static bool Exists(this IFileStorage storage, string path) {
             return storage.ExistsAsync(path).Result;
         }
 
-        public static bool SaveFile(this IFileStorage2 storage, string path, string contents) {
+        public static bool SaveFile(this IFileStorage storage, string path, string contents) {
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents))).Result;
         }
 
-        public static bool RenameFile(this IFileStorage2 storage, string oldpath, string newpath) {
+        public static bool RenameFile(this IFileStorage storage, string oldpath, string newpath) {
             return storage.RenameFileAsync(oldpath, newpath).Result;
         }
 
-        public static bool DeleteFile(this IFileStorage2 storage, string path) {
+        public static bool DeleteFile(this IFileStorage storage, string path) {
             return storage.DeleteFileAsync(path).Result;
         }
 
-        public static IEnumerable<FileSpec> GetFileList(this IFileStorage2 storage, string searchPattern = null, int? limit = null) {
+        public static IEnumerable<FileSpec> GetFileList(this IFileStorage storage, string searchPattern = null, int? limit = null) {
             return storage.GetFileListAsync(searchPattern, limit).Result;
         }
     }

@@ -137,8 +137,19 @@ namespace Foundatio.Tests.Storage {
         }
     }
 
-    public static class Storage2Extensions {
-        public static PostInfo GetEventPostAndSetActive(this IFileStorage2 storage, string path) {
+    public class PostInfo {
+        public int ApiVersion { get; set; }
+        public string CharSet { get; set; }
+        public string ContentEncoding { get; set; }
+        public byte[] Data { get; set; }
+        public string IpAddress { get; set; }
+        public string MediaType { get; set; }
+        public string ProjectId { get; set; }
+        public string UserAgent { get; set; }
+    }
+
+    public static class StorageExtensions {
+        public static PostInfo GetEventPostAndSetActive(this IFileStorage storage, string path) {
             PostInfo eventPostInfo = null;
             try {
                 eventPostInfo = storage.GetObject<PostInfo>(path);
@@ -155,7 +166,7 @@ namespace Foundatio.Tests.Storage {
             return eventPostInfo;
         }
 
-        public static bool SetNotActive(this IFileStorage2 storage, string path) {
+        public static bool SetNotActive(this IFileStorage storage, string path) {
             try {
                 return storage.DeleteFile(path + ".x");
             } catch (Exception ex) {
@@ -165,7 +176,7 @@ namespace Foundatio.Tests.Storage {
             return false;
         }
 
-        public static bool CompleteEventPost(this IFileStorage2 storage, string path, string projectId, DateTime created, bool shouldArchive = true) {
+        public static bool CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true) {
             // don't move files that are already in the archive
             if (path.StartsWith("archive"))
                 return true;

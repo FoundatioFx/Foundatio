@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
@@ -24,21 +26,21 @@ namespace Foundatio.Storage {
 
         public string Folder { get; set; }
 
-        public string GetFileContents(string path) {
+        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 
             try {
-                if (!Exists(path))
+                if (!await ExistsAsync(path))
                     return null;
 
-                return File.ReadAllText(Path.Combine(Folder, path));
+                return File.OpenRead(Path.Combine(Folder, path));
             } catch (FileNotFoundException) {
                 return null;
             }
         }
 
-        public FileSpec GetFileInfo(string path) {
+        public async Task<FileSpec> GetFileInfoAsync(string path) {
             var info = new FileInfo(path);
             if (!info.Exists)
                 return null;
@@ -51,11 +53,11 @@ namespace Foundatio.Storage {
             };
         }
 
-        public bool Exists(string path) {
+        public async Task<bool> ExistsAsync(string path) {
             return File.Exists(Path.Combine(Folder, path));
         }
 
-        public bool SaveFile(string path, string contents) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 
@@ -64,7 +66,11 @@ namespace Foundatio.Storage {
                 Directory.CreateDirectory(directory);
 
             try {
-                File.WriteAllText(Path.Combine(Folder, path), contents);
+                using (var fileStream = File.Create(Path.Combine(Folder, path)))
+                {
+                    stream.Seek(0, SeekOrigin.Begin);
+                    await stream.CopyToAsync(fileStream);
+                }
             } catch (Exception) {
                 return false;
             }
@@ -72,9 +78,9 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public bool RenameFile(string oldpath, string newpath) {
-            if (String.IsNullOrWhiteSpace(oldpath))
-                throw new ArgumentNullException("oldpath");
+        public async Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(newpath))
                 throw new ArgumentNullException("newpath");
 
@@ -84,7 +90,7 @@ namespace Foundatio.Storage {
                     if (directory != null && !Directory.Exists(Path.Combine(Folder, directory)))
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
-                    File.Move(Path.Combine(Folder, oldpath), Path.Combine(Folder, newpath));
+                    File.Move(Path.Combine(Folder, path), Path.Combine(Folder, newpath));
                 }
             } catch (Exception) {
                 return false;
@@ -93,7 +99,28 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public bool DeleteFile(string path) {
+        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException("path");
+            if (String.IsNullOrWhiteSpace(targetpath))
+                throw new ArgumentNullException("targetpath");
+
+            try {
+                lock (_lockObject) {
+                    string directory = Path.GetDirectoryName(targetpath);
+                    if (directory != null && !Directory.Exists(Path.Combine(Folder, directory)))
+                        Directory.CreateDirectory(Path.Combine(Folder, directory));
+
+                    File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
+                }
+            } catch (Exception) {
+                return false;
+            }
+
+            return true;
+        }
+
+        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 
@@ -106,7 +133,8 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
+        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
+            CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
 
@@ -114,8 +142,8 @@ namespace Foundatio.Storage {
             if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))
                 return list;
 
-            foreach (var path in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories).Take(limit ?? Int32.MaxValue)) {
-                var info = new System.IO.FileInfo(path);
+            foreach (var path in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue)) {
+                var info = new FileInfo(path);
                 if (!info.Exists)
                     continue;
 
@@ -130,6 +158,6 @@ namespace Foundatio.Storage {
             return list;
         }
 
-        public void Dispose() {}
+        public void Dispose() { }
     }
 }

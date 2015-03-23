@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Azure.Extensions;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
@@ -10,17 +13,17 @@ namespace Foundatio.Storage {
     public class AzureFileStorage : IFileStorage {
         private readonly CloudBlobContainer _container;
 
-        public AzureFileStorage(string connectionString, string containerName = "ex-events") {
+        public AzureFileStorage(string connectionString, string containerName = "storage") {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudBlobClient();
             _container = client.GetContainerReference(containerName);
             _container.CreateIfNotExists();
         }
 
-        public string GetFileContents(string path) {
+        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
             try {
-                return blockBlob.DownloadText();
+                return await blockBlob.OpenReadAsync(cancellationToken);
             } catch (StorageException ex) {
                 if (ex.RequestInformation.HttpStatusCode == 404)
                     return null;
@@ -29,56 +32,83 @@ namespace Foundatio.Storage {
             }
         }
 
-        public FileSpec GetFileInfo(string path) {
+        public async Task<FileSpec> GetFileInfoAsync(string path) {
             var blob = _container.GetBlockBlobReference(path);
             return blob.ToFileInfo();
         }
 
-        public bool Exists(string path) {
+        public async Task<bool> ExistsAsync(string path) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return blockBlob.Exists();
+            return await blockBlob.ExistsAsync();
         }
 
-        public bool SaveFile(string path, string contents) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            blockBlob.UploadText(contents);
+            await blockBlob.UploadFromStreamAsync(stream, cancellationToken);
 
             return true;
         }
 
-        public bool RenameFile(string oldpath, string newpath) {
+        public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
             var oldBlob = _container.GetBlockBlobReference(oldpath);
-            var newBlob = _container.GetBlockBlobReference(newpath);
-            
-            using (var stream = new MemoryStream())
-            {
-                oldBlob.DownloadToStream(stream);
-                stream.Seek(0, SeekOrigin.Begin);
-                newBlob.UploadFromStream(stream);
+            if (!(await CopyFileAsync(oldpath, newpath)))
+                return false;
 
-                oldBlob.Delete();
+            return await oldBlob.DeleteIfExistsAsync();
+        }
+
+        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
+            var oldBlob = _container.GetBlockBlobReference(path);
+            var newBlob = _container.GetBlockBlobReference(targetpath);
+
+            using (var stream = new MemoryStream()) {
+                await oldBlob.DownloadToStreamAsync(stream, cancellationToken);
+                stream.Seek(0, SeekOrigin.Begin);
+                await newBlob.UploadFromStreamAsync(stream, cancellationToken);
             }
 
             return true;
         }
 
-        public bool DeleteFile(string path) {
+        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return blockBlob.DeleteIfExists();
+            return await blockBlob.DeleteIfExistsAsync(cancellationToken);
         }
 
-        public IEnumerable<FileSpec> GetFileList(string searchPattern = null, int? limit = null) {
-            // TODO: ListBlobs only takes a blob name prefix. As such we currently do not support wildcards (E.G., q\event*.json).
-            if (searchPattern != null)
-                searchPattern = searchPattern.TrimEnd('*', '\\');
+        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            searchPattern = searchPattern != null ? searchPattern.Replace('\\', '/') : null;
+            string prefix = searchPattern;
+            Regex patternRegex = null;
+            int wildcardPos = searchPattern != null ? searchPattern.IndexOf('*') : -1;
+            if (searchPattern != null && wildcardPos >= 0) {
+                patternRegex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
+                int slashPos = searchPattern.LastIndexOf('/');
+                prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
+            }
+            prefix = prefix ?? String.Empty;
 
-            var blobItems = _container.ListBlobs(searchPattern, true);
+            BlobContinuationToken continuationToken = null;
+            var blobs = new List<CloudBlockBlob>();
+            do {
+                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, null, continuationToken, null, null, cancellationToken);
+                
+                continuationToken = listingResult.ContinuationToken;
+                blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
+            }
+            while (continuationToken != null && blobs.Count < limit);
+
             if (limit.HasValue)
-                blobItems = blobItems.Take(limit.Value);
+                blobs = blobs.Take(limit.Value).ToList();
 
-            return blobItems.OfType<CloudBlockBlob>().Select(blob => blob.ToFileInfo());
+            return blobs.Select(blob => blob.ToFileInfo());
         }
 
         public void Dispose() {}
+    }
+
+    internal static class BlobListExtensions {
+        internal static IEnumerable<CloudBlockBlob> MatchesPattern(this IEnumerable<CloudBlockBlob> blobs, Regex patternRegex) {
+            return blobs.Where(blob => patternRegex == null || patternRegex.IsMatch(blob.ToFileInfo().Path));
+        }
     }
 }

@@ -77,11 +77,8 @@
     <Compile Include="Queue\InMemoryQueueTests.cs" />
     <Compile Include="Queue\QueueTestBase.cs" />
     <Compile Include="Queue\Samples.cs" />
-    <Compile Include="Storage\FileStorage2TestsBase.cs" />
     <Compile Include="Storage\FileStorageTestsBase.cs" />
-    <Compile Include="Storage\FolderFileStorage2Tests.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />
-    <Compile Include="Storage\InMemoryFileStorage2Tests.cs" />
     <Compile Include="Storage\InMemoryFileStorageTests.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
     <Compile Include="Utility\CountDownLatch.cs" />
