@@ -90,11 +90,15 @@ namespace Foundatio.Storage {
             BlobContinuationToken continuationToken = null;
             var blobs = new List<CloudBlockBlob>();
             do {
-                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, limit, continuationToken, null, null, cancellationToken);
+                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, null, continuationToken, null, null, cancellationToken);
                 
                 continuationToken = listingResult.ContinuationToken;
                 blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
-            } while (continuationToken != null && blobs.Count < limit);
+            }
+            while (continuationToken != null && blobs.Count < limit);
+
+            if (limit.HasValue)
+                blobs = blobs.Take(limit.Value).ToList();
 
             return blobs.Select(blob => blob.ToFileInfo());
         }
