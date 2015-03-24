@@ -76,6 +76,9 @@ namespace Foundatio.Storage {
         }
 
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (limit.HasValue && limit.Value <= 0)
+                return new List<FileSpec>();
+            
             searchPattern = searchPattern != null ? searchPattern.Replace('\\', '/') : null;
             string prefix = searchPattern;
             Regex patternRegex = null;
@@ -97,7 +100,7 @@ namespace Foundatio.Storage {
             }
             while (continuationToken != null && blobs.Count < limit);
 
-            if (limit.HasValue && limit.Value > 0)
+            if (limit.HasValue)
                 blobs = blobs.Take(limit.Value).ToList();
 
             return blobs.Select(blob => blob.ToFileInfo());
