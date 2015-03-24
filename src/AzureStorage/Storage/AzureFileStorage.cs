@@ -51,10 +51,10 @@ namespace Foundatio.Storage {
 
         public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
             var oldBlob = _container.GetBlockBlobReference(oldpath);
-            if (!(await CopyFileAsync(oldpath, newpath)))
+            if (!(await CopyFileAsync(oldpath, newpath, cancellationToken)))
                 return false;
 
-            return await oldBlob.DeleteIfExistsAsync();
+            return await oldBlob.DeleteIfExistsAsync(cancellationToken);
         }
 
         public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
