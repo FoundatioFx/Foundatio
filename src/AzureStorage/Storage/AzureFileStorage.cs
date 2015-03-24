@@ -97,7 +97,7 @@ namespace Foundatio.Storage {
             }
             while (continuationToken != null && blobs.Count < limit);
 
-            if (limit.HasValue)
+            if (limit.HasValue && limit.Value > 0)
                 blobs = blobs.Take(limit.Value).ToList();
 
             return blobs.Select(blob => blob.ToFileInfo());

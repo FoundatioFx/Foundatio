@@ -123,8 +123,10 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
-            CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
+            if (limit.HasValue && limit.Value <= 0)
+                limit = null;
+
             if (searchPattern == null)
                 searchPattern = "*";
 
