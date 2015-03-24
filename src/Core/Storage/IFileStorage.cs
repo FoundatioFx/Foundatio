@@ -28,15 +28,27 @@ namespace Foundatio.Storage {
 
     public static class FileStorageExtensions {
         public static bool SaveObject<T>(this IFileStorage storage, string path, T data) {
-            return storage.SaveFile(path, JsonConvert.SerializeObject(data));
+            return storage.SaveObjectAsync(path, data).Result;
+        }
+
+        public static async Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
+            string json = JsonConvert.SerializeObject(data);
+            return await storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
         }
 
         public static T GetObject<T>(this IFileStorage storage, string path) {
-            string json = storage.GetFileContents(path);
-            if (String.IsNullOrEmpty(json))
+            return storage.GetObjectAsync<T>(path).Result;
+        }
+
+        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
+            string fileContents;
+            using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken))
+                fileContents = await new StreamReader(result).ReadToEndAsync();
+
+            if (string.IsNullOrEmpty(fileContents))
                 return default(T);
 
-            return JsonConvert.DeserializeObject<T>(json);
+            return JsonConvert.DeserializeObject<T>(fileContents);
         }
 
         public static void DeleteFiles(this IFileStorage storage, IEnumerable<FileSpec> files) {
