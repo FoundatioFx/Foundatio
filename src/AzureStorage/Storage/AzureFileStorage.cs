@@ -63,7 +63,10 @@ namespace Foundatio.Storage {
 
             using (var stream = new MemoryStream()) {
                 await oldBlob.DownloadToStreamAsync(stream, cancellationToken);
-                stream.Seek(0, SeekOrigin.Begin);
+                
+                if (stream.CanSeek)
+                    stream.Seek(0, SeekOrigin.Begin);
+
                 await newBlob.UploadFromStreamAsync(stream, cancellationToken);
             }
 

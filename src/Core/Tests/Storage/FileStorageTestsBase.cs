@@ -76,6 +76,30 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanSaveFilesAsync() {
+            Reset();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            string readmeFile = Path.GetFullPath(@"..\..\..\..\..\README.md");
+
+            using (storage) {
+                using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
+                    bool result = await storage.SaveFileAsync("README.md", stream);
+                    Assert.True(result);
+                }
+
+                Assert.Equal(1, storage.GetFileList().Count());
+
+                using (var stream = await storage.GetFileStreamAsync("README.md")) {
+                    string result = await new StreamReader(stream).ReadToEndAsync();
+                    Assert.Equal(File.ReadAllText(readmeFile), result);
+                }
+            }
+        }
+
         protected void Reset() {
             var storage = GetStorage();
             if (storage == null)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
@@ -21,6 +22,11 @@ namespace Foundatio.Azure.Tests.Storage {
         [Fact]
         public override void CanGetFileListForSingleFolder() {
             base.CanGetFileListForSingleFolder();
+        }
+
+        [Fact]
+        public override Task CanSaveFilesAsync() {
+            return base.CanSaveFilesAsync();
         }
 
         [Fact]

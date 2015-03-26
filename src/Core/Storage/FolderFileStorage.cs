@@ -66,9 +66,10 @@ namespace Foundatio.Storage {
                 Directory.CreateDirectory(directory);
 
             try {
-                using (var fileStream = File.Create(Path.Combine(Folder, path)))
-                {
-                    stream.Seek(0, SeekOrigin.Begin);
+                using (var fileStream = File.Create(Path.Combine(Folder, path))) {
+                    if (stream.CanSeek)
+                        stream.Seek(0, SeekOrigin.Begin);
+                    
                     await stream.CopyToAsync(fileStream);
                 }
             } catch (Exception) {

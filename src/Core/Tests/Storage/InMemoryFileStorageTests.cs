@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Foundatio.Storage;
 using Xunit;
 
@@ -21,6 +22,11 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override void CanManageFiles() {
             base.CanManageFiles();
+        }
+
+        [Fact]
+        public override Task CanSaveFilesAsync() {
+            return base.CanSaveFilesAsync();
         }
 
         [Fact]

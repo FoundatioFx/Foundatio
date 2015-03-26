@@ -1,4 +1,6 @@
-﻿using Foundatio.Storage;
+﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Storage;
 using Xunit;
 
 namespace Foundatio.Tests.Storage {
@@ -17,6 +19,11 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override void CanGetFileListForSingleFolder() {
             base.CanGetFileListForSingleFolder();
+        }
+
+        [Fact]
+        public override Task CanSaveFilesAsync() {
+            return base.CanSaveFilesAsync();
         }
 
         [Fact]
