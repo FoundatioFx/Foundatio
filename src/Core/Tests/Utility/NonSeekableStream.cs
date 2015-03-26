@@ -38,5 +38,15 @@ namespace Foundatio.Tests.Utility {
         public override void Write(byte[] buffer, int offset, int count) {
             _stream.Write(buffer, offset, count);
         }
+
+        public override void Close() {
+            _stream.Close();
+            base.Close();
+        }
+
+        protected override void Dispose(bool disposing) {
+            _stream.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }
