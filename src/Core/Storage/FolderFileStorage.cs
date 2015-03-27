@@ -70,7 +70,7 @@ namespace Foundatio.Storage {
                     if (stream.CanSeek)
                         stream.Seek(0, SeekOrigin.Begin);
                     
-                    await stream.CopyToAsync(fileStream);
+                    stream.CopyTo(fileStream);
                 }
             } catch (Exception) {
                 return false;
