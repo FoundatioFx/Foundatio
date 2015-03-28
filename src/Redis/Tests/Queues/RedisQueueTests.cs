@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Exceptionless.RandomData;
+using Exceptionless;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Redis.Queues;

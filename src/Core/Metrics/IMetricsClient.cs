@@ -3,17 +3,37 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Metrics {
     public interface IMetricsClient : IDisposable {
-        void Counter(string statName, int value = 1);
-        void Gauge(string statName, double value);
-        void Timer(string statName, long milliseconds);
-        IDisposable StartTimer(string statName);
-        void Time(Action action, string statName);
-        T Time<T>(Func<T> func, string statName);
-    }
-
-    public interface IMetricsClient2 {
         Task CounterAsync(string statName, int value = 1);
         Task GaugeAsync(string statName, double value);
         Task TimerAsync(string statName, long milliseconds);
+    }
+
+    public static class MetricsClientExtensions
+    {
+        public static void Counter(this IMetricsClient client, string statName, int value = 1) {
+            client.CounterAsync(statName, value).Wait();
+        }
+
+        public static void Gauge(this IMetricsClient client, string statName, double value) {
+            client.GaugeAsync(statName, value).Wait();
+        }
+
+        public static void Timer(this IMetricsClient client, string statName, long milliseconds) {
+            client.TimerAsync(statName, milliseconds).Wait();
+        }
+
+        public static IDisposable StartTimer(this IMetricsClient client, string statName) {
+            return new MetricTimer(statName, client);
+        }
+
+        public static void Time(this IMetricsClient client, Action action, string statName) {
+            using (client.StartTimer(statName))
+                action();
+        }
+
+        public static T Time<T>(this IMetricsClient client, Func<T> func, string statName) {
+            using (client.StartTimer(statName))
+                return func();
+        }
     }
 }

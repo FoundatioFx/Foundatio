@@ -5,21 +5,23 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : IMetricsClient {
         private readonly ConcurrentDictionary<string, CounterStats> _counters = new ConcurrentDictionary<string, CounterStats>();
         private readonly ConcurrentDictionary<string, GaugeStats> _gauges = new ConcurrentDictionary<string, GaugeStats>();
         private readonly ConcurrentDictionary<string, TimingStats> _timings = new ConcurrentDictionary<string, TimingStats>();
-        private readonly ConcurrentDictionary<string, AutoResetEvent> _counterEvents = new ConcurrentDictionary<string, AutoResetEvent>();
+        private readonly ConcurrentDictionary<string, AsyncAutoResetEvent> _counterEvents = new ConcurrentDictionary<string, AsyncAutoResetEvent>();
         private Timer _statsDisplayTimer;
 
-        public void StartDisplayingStats(TimeSpan? interval = null) {
+        public void StartDisplayingStats(TimeSpan? interval = null, TextWriter writer = null) {
             if (interval == null)
                 interval = TimeSpan.FromSeconds(10);
 
-            _statsDisplayTimer = new Timer(OnDisplayStats, null, interval.Value, interval.Value);
+            _statsDisplayTimer = new Timer(OnDisplayStats, writer, interval.Value, interval.Value);
         }
 
         public void StopDisplayingStats() {
@@ -36,7 +38,7 @@ namespace Foundatio.Metrics {
         }
 
         private void OnDisplayStats(object state) {
-            DisplayStats();
+            DisplayStats(state as TextWriter);
         }
 
         private static bool _isDisplayingStats = false;
@@ -93,67 +95,85 @@ namespace Foundatio.Metrics {
         public IDictionary<string, TimingStats> Timings { get { return _timings; } }
         public IDictionary<string, GaugeStats> Gauges { get { return _gauges; } }
 
-        public void Counter(string statName, int value = 1) {
+        public Task CounterAsync(string statName, int value = 1) {
             _counters.AddOrUpdate(statName, key => new CounterStats(value), (key, stats) => {
                 stats.Increment(value);
                 return stats;
             });
-            AutoResetEvent waitHandle;
+            AsyncAutoResetEvent waitHandle;
             _counterEvents.TryGetValue(statName, out waitHandle);
             if (waitHandle != null)
                 waitHandle.Set();
+
+            return TaskHelper.Completed();
         }
 
-        public bool WaitForCounter(string statName, long count = 1, double timeoutInSeconds = 10, Action work = null) {
+        public async Task<bool> WaitForCounterAsync(string statName, long count = 1, CancellationToken cancellationToken = default(CancellationToken), Func<Task> work = null) {
             if (count == 0)
                 return true;
 
-            long currentCount = GetCount(statName);
+            long startingCount = GetCount(statName);
+            long expectedCount = startingCount + count;
             if (work != null)
-                work();
+                await work();
 
-            count = count - (GetCount(statName) - currentCount);
-
-            if (count == 0)
+            if (GetCount(statName) >= expectedCount)
                 return true;
 
-            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AutoResetEvent(false));
+            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncAutoResetEvent(false));
             do {
-                if (!waitHandle.WaitOne(TimeSpan.FromSeconds(timeoutInSeconds)))
+                try {
+                    await waitHandle.WaitAsync(cancellationToken);
+                } catch (TaskCanceledException) {
                     return false;
-
-                count--;
-            } while (count > 0);
+                }
+            } while (GetCount(statName) < expectedCount);
 
             return true;
         }
 
-        public void Gauge(string statName, double value) {
+        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Func<Task> work = null) {
+            try {
+                var success = await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work);
+                return success;
+            } catch (TaskCanceledException) {
+                return false;
+            }
+        }
+
+        public bool WaitForCounter(string statName, TimeSpan timeout, long count = 1, Action work = null) {
+            try {
+                var success = WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, () => {
+                    if (work != null)
+                        work();
+                    return TaskHelper.Completed();
+                }).Result;
+                return success;
+            } catch (TaskCanceledException) {
+                return false;
+            }
+        }
+
+        public bool WaitForCounter(string statName, long count = 1, double timeoutInSeconds = 10, Action work = null) {
+            return WaitForCounter(statName, TimeSpan.FromSeconds(timeoutInSeconds), count, work);
+        }
+
+        public Task GaugeAsync(string statName, double value) {
             _gauges.AddOrUpdate(statName, key => new GaugeStats(value), (key, stats) => {
                 stats.Set(value);
                 return stats;
             });
+
+            return TaskHelper.Completed();
         }
 
-        public void Timer(string statName, long milliseconds) {
+        public Task TimerAsync(string statName, long milliseconds) {
             _timings.AddOrUpdate(statName, key => new TimingStats(milliseconds), (key, stats) => {
                 stats.Set(milliseconds);
                 return stats;
             });
-        }
 
-        public IDisposable StartTimer(string statName) {
-            return new MetricTimer(statName, this);
-        }
-
-        public void Time(Action action, string statName) {
-            using (StartTimer(statName))
-                action();
-        }
-
-        public T Time<T>(Func<T> func, string statName) {
-            using (StartTimer(statName))
-                return func();
+            return TaskHelper.Completed();
         }
 
         public long GetCount(string statName) {
