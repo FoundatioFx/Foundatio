@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Xunit.Abstractions;
@@ -16,11 +17,15 @@ namespace Foundatio.Tests.Utility {
         }
 
         public override void WriteLine(string value) {
-            _output.WriteLine(value);
+            try {
+                _output.WriteLine(value);
+            } catch (Exception ex) {
+                Trace.WriteLine(ex);
+            }
         }
 
         public override void WriteLine() {
-            _output.WriteLine(String.Empty);
+            WriteLine(String.Empty);
         }
     }
 }
