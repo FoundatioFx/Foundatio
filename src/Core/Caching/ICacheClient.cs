@@ -83,21 +83,21 @@ namespace Foundatio.Caching {
             return client.IncrementAsync(key, -(int)amount, expiresAt.Subtract(DateTime.Now)).Result;
         }
 
-        public static long Decrement(this ICacheClient2 client, string key, uint amount, TimeSpan expiresIn) { }
-        public static bool Add<T>(this ICacheClient2 client, string key, T value) { }
-        public static bool Add<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
-        public static bool Add<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
-        public static bool Set<T>(this ICacheClient2 client, string key, T value) { }
-        public static bool Set<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
-        public static bool Set<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
-        public static bool Replace<T>(this ICacheClient2 client, string key, T value) { }
-        public static bool Replace<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
-        public static bool Replace<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
-        public static void FlushAll(this ICacheClient2 client) { }
-        public static IDictionary<string, T> GetAll<T>(this ICacheClient2 client, IEnumerable<string> keys) { }
-        public static void SetAll<T>(this ICacheClient2 client, IDictionary<string, T> values) { }
-        public static DateTime? GetExpiration(this ICacheClient2 client, string cacheKey) { }
-        public static void SetExpiration(this ICacheClient2 client, string cacheKey, TimeSpan expiresIn) { }
-        public static void SetExpiration(this ICacheClient2 client, string cacheKey, DateTime expiresAt) { }
+        //public static long Decrement(this ICacheClient2 client, string key, uint amount, TimeSpan expiresIn) {}
+        //public static bool Add<T>(this ICacheClient2 client, string key, T value) { }
+        //public static bool Add<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
+        //public static bool Add<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
+        //public static bool Set<T>(this ICacheClient2 client, string key, T value) { }
+        //public static bool Set<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
+        //public static bool Set<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
+        //public static bool Replace<T>(this ICacheClient2 client, string key, T value) { }
+        //public static bool Replace<T>(this ICacheClient2 client, string key, T value, DateTime expiresAt) { }
+        //public static bool Replace<T>(this ICacheClient2 client, string key, T value, TimeSpan expiresIn) { }
+        //public static void FlushAll(this ICacheClient2 client) { }
+        //public static IDictionary<string, T> GetAll<T>(this ICacheClient2 client, IEnumerable<string> keys) { }
+        //public static void SetAll<T>(this ICacheClient2 client, IDictionary<string, T> values) { }
+        //public static DateTime? GetExpiration(this ICacheClient2 client, string cacheKey) { }
+        //public static void SetExpiration(this ICacheClient2 client, string cacheKey, TimeSpan expiresIn) { }
+        //public static void SetExpiration(this ICacheClient2 client, string cacheKey, DateTime expiresAt) { }
     }
 }

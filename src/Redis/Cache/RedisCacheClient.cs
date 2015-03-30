@@ -46,7 +46,7 @@ namespace Foundatio.Redis.Cache {
                 return false;
 
             if (typeof(T) == typeof(Int32))
-                value = redisValue as T;
+                value = (T)Convert.ChangeType(redisValue, typeof(T));
             else if (typeof(T) == typeof(Int64))
                 value = (T)Convert.ChangeType(redisValue, typeof(T));
             else if (typeof(T) == typeof(Int16))
