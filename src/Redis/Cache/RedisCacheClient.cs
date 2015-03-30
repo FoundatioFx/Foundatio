@@ -46,15 +46,15 @@ namespace Foundatio.Redis.Cache {
                 return false;
 
             if (typeof(T) == typeof(Int32))
-                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+                value = redisValue as T;
             else if (typeof(T) == typeof(Int64))
-                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+                value = (T)Convert.ChangeType(redisValue, typeof(T));
             else if (typeof(T) == typeof(Int16))
-                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+                value = (T)Convert.ChangeType(redisValue, typeof(T));
             else if (typeof(T) == typeof(bool))
-                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+                value = (T)Convert.ChangeType(redisValue, typeof(T));
             else if (typeof(T) == typeof(double))
-                value = (T)Convert.ChangeType(_db.StringGet(key, flags), typeof(T));
+                value = (T)Convert.ChangeType(redisValue, typeof(T));
             else 
                 value = _serializer.Deserialize<T>((string)redisValue);
 

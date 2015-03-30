@@ -3,10 +3,18 @@ using Foundatio.Caching;
 using Foundatio.Metrics;
 using Foundatio.Redis.Cache;
 using Foundatio.Tests.Caching;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
+        private readonly TestOutputWriter _writer;
+
+        public RedisCacheClientTests(ITestOutputHelper helper) {
+            _writer = new TestOutputWriter(helper);
+        }
+
         protected override ICacheClient GetCacheClient() {
             return new RedisCacheClient(SharedConnection.GetMuxer());
         }
@@ -44,7 +52,7 @@ namespace Foundatio.Redis.Tests.Caching {
                 Assert.True(cacheClient.Get<bool>("flag"));
                 metrics.Counter("work");
             }
-            metrics.DisplayStats();
+            metrics.DisplayStats(_writer);
         }
 
         [Fact]
