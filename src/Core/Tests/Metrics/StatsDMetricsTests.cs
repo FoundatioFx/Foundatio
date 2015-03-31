@@ -4,18 +4,20 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Metrics;
+using Foundatio.Tests.Utility;
 using Xunit;
 
-namespace Foundatio.StatsD.Tests {
-    public class UdpStatsDClientTests : IDisposable {
+namespace Foundatio.Tests.Metrics {
+    public class StatsDMetricsTests : IDisposable {
         private readonly int _port = new Random(12345).Next(10000, 15000);
-        private readonly IStatsDClient _client;
+        private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
         private Thread _listenerThread;
 
-        public UdpStatsDClientTests() {
+        public StatsDMetricsTests() {
             _listener = new UdpListener("127.0.0.1", _port);
-            _client = new UdpStatsDClient("127.0.0.1", _port, "test");
+            _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
 
         [Fact]
@@ -72,7 +74,7 @@ namespace Foundatio.StatsD.Tests {
                 await _client.CounterAsync("counter");
 
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 0, 350);
+            Assert.InRange(sw.ElapsedMilliseconds, 0, 325);
             
             var messages = GetMessages();
             Assert.Equal(iterations, messages.Count);

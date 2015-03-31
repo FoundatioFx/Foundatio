@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-namespace Foundatio.StatsD.Tests {
+namespace Foundatio.Tests.Utility {
     public class UdpListener : IDisposable {
         private readonly List<string> _receivedMessages = new List<string>();
         private UdpClient _listener;
