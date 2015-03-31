@@ -1,9 +1,9 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using NLog.Fluent;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
@@ -47,13 +47,14 @@ namespace Foundatio.Metrics {
                 byte[] data = Encoding.ASCII.GetBytes(metric);
                 await client.SendAsync(data, data.Length);
             } catch (SocketException ex) {
-                Trace.TraceError("An error occurred while sending the metrics. Message: {0}", ex.Message);
+                Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
+                
                 if (ex.ErrorCode == 10022) {
-                    Trace.TraceInformation("Attempting to reset the timed out client.");
+                    Log.Info().Message("Attempting to reset the timed out udp client.").Write();
                     ResetUdpClient();
                 }
             } catch (Exception ex) {
-                Trace.TraceError("An error occurred while sending the metrics. Message: {0}", ex.Message);
+                Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
             }
         }
 
@@ -72,7 +73,7 @@ namespace Foundatio.Metrics {
             try {
                 _udpClient.Close();
             } catch (Exception ex) {
-                Trace.TraceError("An error occurred while calling Close() on the udp client. Message: {0}", ex.Message);
+                Log.Error().Exception(ex).Message("An error occurred while calling Close() on the udp client.").Write();
             } finally {
                 _udpClient = null;
             }
