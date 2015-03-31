@@ -194,6 +194,7 @@ namespace Foundatio.Redis.Queues {
             Log.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
+
             RedisValue value = _db.ListRightPopLeftPush(QueueListName, WorkListName);
             Log.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 
@@ -201,7 +202,7 @@ namespace Foundatio.Redis.Queues {
             while (value.IsNullOrEmpty && timeout > TimeSpan.Zero && DateTime.UtcNow.Subtract(started) < timeout) {
                 Log.Trace().Message("Waiting to dequeue item...").Write();
 
-                // wait for timeout or signal or dispose
+                // Wait for timeout or signal or dispose
                 Task.WaitAny(Task.Delay(timeout.Value), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
                 if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
                     return null;
