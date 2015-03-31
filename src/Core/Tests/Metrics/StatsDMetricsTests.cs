@@ -74,7 +74,7 @@ namespace Foundatio.Tests.Metrics {
                 await _client.CounterAsync("counter");
 
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 0, 325);
+            Assert.InRange(sw.ElapsedMilliseconds, 0, 450);
             
             var messages = GetMessages();
             Assert.Equal(iterations, messages.Count);
