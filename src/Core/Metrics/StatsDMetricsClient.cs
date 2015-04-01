@@ -57,11 +57,11 @@ namespace Foundatio.Metrics {
             }
         }
 
-        private async void EnsureSocket() {
+        private void EnsureSocket() {
             if (_socket != null)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (_lock.Lock()) {
                 if (_socket == null)
                     _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             }
