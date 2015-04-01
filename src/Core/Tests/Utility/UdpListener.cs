@@ -7,11 +7,14 @@ using System.Text;
 namespace Foundatio.Tests.Utility {
     public class UdpListener : IDisposable {
         private readonly List<string> _receivedMessages = new List<string>();
+        private readonly string _serverName;
+        private readonly int _port;
         private UdpClient _listener;
         private IPEndPoint _groupEndPoint;
 
         public UdpListener(string serverName, int port) {
-            _listener = new UdpClient(new IPEndPoint(IPAddress.Parse(serverName), port)) { Client = { ReceiveTimeout = 2000 } };
+            _serverName = serverName;
+            _port = port;
             _groupEndPoint = new IPEndPoint(IPAddress.Any, 0);
         }
 
@@ -23,6 +26,9 @@ namespace Foundatio.Tests.Utility {
         }
 
         public void StartListening(object expectedMessageCount = null) {
+            if (_listener == null)
+                _listener = new UdpClient(new IPEndPoint(IPAddress.Parse(_serverName), _port)) { Client = { ReceiveTimeout = 2000 } };
+            
             if (expectedMessageCount == null)
                 expectedMessageCount = 1;
 
@@ -40,12 +46,16 @@ namespace Foundatio.Tests.Utility {
             }
         }
 
-        public void Dispose() {
+        public void StopListening() {
             if (_listener == null)
                 return;
 
             _listener.Close();
             _listener = null;
+        }
+
+        public void Dispose() {
+            StopListening();
         }
     }
 }

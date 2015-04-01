@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
@@ -9,14 +10,12 @@ using NLog.Fluent;
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
         private readonly AsyncLock _lock = new AsyncLock();
-        private UdpClient _udpClient;
+        private Socket _socket;
+        private readonly IPEndPoint _endPoint;
         private readonly string _prefix;
-        private readonly string _serverName;
-        private readonly int _port;
 
         public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 12000, string prefix = "stats") {
-            _serverName = serverName;
-            _port = port;
+            _endPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
 
             if (!String.IsNullOrEmpty(prefix))
                 _prefix = prefix.EndsWith(".") ? prefix : String.Concat(prefix, ".");
@@ -35,7 +34,7 @@ namespace Foundatio.Metrics {
         }
 
         private string BuildMetric(string type, string statName, string value) {
-            return String.Format("{0}{1}:{2}|{3}", _prefix, statName, value, type);
+            return String.Concat(_prefix, statName, ":", value, "|", type);
         }
 
         private async Task TrySendAsync(string metric) {
@@ -43,34 +42,42 @@ namespace Foundatio.Metrics {
                 return;
 
             try {
-                using (await _lock.LockAsync()) {
-                    if (_udpClient == null)
-                        _udpClient = new UdpClient(_serverName, _port);
+                byte[] data = Encoding.ASCII.GetBytes(metric);
 
-                    byte[] data = Encoding.ASCII.GetBytes(metric);
-                    await _udpClient.SendAsync(data, data.Length);
-                }
+                EnsureSocket();
+                if (_socket != null)
+                    _socket.SendTo(data, _endPoint);
             } catch (Exception ex) {
                 Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
                 var se = ex as SocketException;
                 if (se != null && se.ErrorCode == 10022) {
-                    Log.Info().Message("Attempting to reset the timed out udp client.").Write();
+                    Log.Info().Message("Attempting to reset the timed out socket.").Write();
                     ResetUdpClient();
                 }
             }
         }
 
+        private async void EnsureSocket() {
+            if (_socket != null)
+                return;
+
+            using (await _lock.LockAsync()) {
+                if (_socket == null)
+                    _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            }
+        }
+
         private void ResetUdpClient() {
-            if (_udpClient == null)
+            if (_socket == null)
                 return;
 
             using (_lock.Lock()) {
                 try {
-                    _udpClient.Close();
+                    _socket.Close();
                 } catch (Exception ex) {
-                    Log.Error().Exception(ex).Message("An error occurred while calling Close() on the udp client.").Write();
+                    Log.Error().Exception(ex).Message("An error occurred while calling Close() on the socket.").Write();
                 } finally {
-                    _udpClient = null;
+                    _socket = null;
                 }
             }
         }

@@ -68,29 +68,6 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanSendMultiple() {
-            const int iterations = 10000;
-            StartListening(iterations);
-
-            var metrics = new InMemoryMetricsClient();
-            var sw = new Stopwatch();
-            sw.Start();
-            for (int index = 0; index < iterations; index++) {
-                await _client.CounterAsync("counter");
-                await metrics.CounterAsync("counter");
-            }
-
-            sw.Stop();
-            metrics.DisplayStats(_writer);
-            Assert.InRange(sw.ElapsedMilliseconds, 0, 450);
-            
-            var messages = GetMessages();
-            Assert.Equal(iterations, messages.Count);
-            for (int index = 0; index < iterations; index++)
-                Assert.Equal("test.counter:1|c", messages[index]);
-        }
-
-        [Fact]
         public void CanSendMultithreaded() {
             const int iterations = 100;
             StartListening(iterations);
@@ -103,6 +80,40 @@ namespace Foundatio.Tests.Metrics {
             Assert.Equal(iterations, messages.Count);
         }
 
+        [Fact]
+        public async Task CanSendMultiple() {
+            const int iterations = 100000;
+            StartListening(iterations);
+
+            var metrics = new InMemoryMetricsClient();
+            var sw = new Stopwatch();
+            sw.Start();
+            for (int index = 0; index < iterations; index++) {
+                if (index % (iterations / 10) == 0)
+                    StopListening();
+
+                await _client.CounterAsync("counter");
+                await metrics.CounterAsync("counter");
+
+                if (index % (iterations / 10) == 0)
+                    StartListening(iterations - index);
+
+                if (index % (iterations / 20) == 0)
+                    metrics.DisplayStats(_writer);
+            }
+
+            sw.Stop();
+            metrics.DisplayStats(_writer);
+
+            // Require at least 65,000 operations/s
+            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 65000.0) * 1000);
+
+            var messages = GetMessages();
+            Assert.Equal(iterations - (iterations / (iterations / 10)), messages.Count);
+            foreach (string message in messages)
+                Assert.Equal("test.counter:1|c", message);
+        }
+
         private List<string> GetMessages() {
             while (_listenerThread != null && _listenerThread.IsAlive) {}
 
@@ -112,6 +123,10 @@ namespace Foundatio.Tests.Metrics {
         private void StartListening(int expectedMessageCount) {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
+        }
+
+        private void StopListening() {
+            _listenerThread.Abort();
         }
 
         public void Dispose() {
