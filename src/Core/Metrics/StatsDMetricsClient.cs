@@ -4,12 +4,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using Nito.AsyncEx;
 using NLog.Fluent;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly object _lock = new object();
         private Socket _socket;
         private readonly IPEndPoint _endPoint;
         private readonly string _prefix;
@@ -64,7 +63,7 @@ namespace Foundatio.Metrics {
             if (_socket != null)
                 return;
 
-            using (_lock.Lock()) {
+            lock (_lock) {
                 if (_socket == null)
                     _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             }
@@ -74,7 +73,7 @@ namespace Foundatio.Metrics {
             if (_socket == null)
                 return;
 
-            using (_lock.Lock()) {
+            lock (_lock) {
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
