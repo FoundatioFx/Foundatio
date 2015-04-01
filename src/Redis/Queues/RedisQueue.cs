@@ -41,12 +41,14 @@ namespace Foundatio.Redis.Queues {
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
         private readonly IMetricsClient _metrics;
         private readonly Timer _maintenanceTimer;
+        private readonly ISerializer _serializer;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
-            _cache = new RedisCacheClient(connection, serializer);
+            _serializer = serializer ?? new JsonNetSerializer();
+            _cache = new RedisCacheClient(connection, _serializer);
             _lockProvider = new CacheLockProvider(_cache);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
@@ -107,6 +109,10 @@ namespace Foundatio.Redis.Queues {
         private string WaitListName { get; set; }
         private string DeadListName { get; set; }
         protected string QueueSizeStatName { get; set; }
+
+        ISerializer IHaveSerializer.Serializer {
+            get { return _serializer; }
+        }
 
         private string GetPayloadKey(string id) {
             return String.Concat("q:", _queueName, ":", id);

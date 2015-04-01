@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Serializer;
 
 namespace Foundatio.Queues {
-    public interface IQueue<T> : IDisposable where T : class {
+    public interface IQueue<T> : IHaveSerializer, IDisposable where T : class {
         string Enqueue(T data);
         void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
         void StopWorking();

@@ -65,6 +65,12 @@
     <Compile Include="Jobs\JobBase.cs" />
     <Compile Include="Jobs\JobResult.cs" />
     <Compile Include="Jobs\JobRunner.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTaskContext.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTaskData.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTaskHandlerRegistry.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTaskQueueExtensions.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTasksJob.cs" />
+    <Compile Include="Jobs\LongRunningTasks\LongRunningTaskStatus.cs" />
     <Compile Include="Jobs\QueueProcessorJobBase.cs" />
     <Compile Include="Jobs\ShutdownEventCatcher.cs" />
     <Compile Include="Lock\CacheLockProvider.cs" />

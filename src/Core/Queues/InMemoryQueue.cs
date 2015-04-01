@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 using NLog.Fluent;
 
@@ -31,8 +31,9 @@ namespace Foundatio.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly IMetricsClient _metrics;
+        private readonly ISerializer _serializer;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null) {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null, ISerializer serializer = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _metrics = metrics;
             QueueSizeStatName = statName;
@@ -43,6 +44,8 @@ namespace Foundatio.Queues {
                 _retryMultipliers = retryMultipliers;
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
+
+            _serializer = serializer ?? new JsonNetSerializer();
 
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
             TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
@@ -60,6 +63,10 @@ namespace Foundatio.Queues {
         public long WorkItemTimeoutCount { get { return _workerItemTimeoutCount; } }
         public string QueueId { get; private set; }
         protected string QueueSizeStatName { get; set; }
+
+        ISerializer IHaveSerializer.Serializer {
+            get { return _serializer; }
+        }
 
         public string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");

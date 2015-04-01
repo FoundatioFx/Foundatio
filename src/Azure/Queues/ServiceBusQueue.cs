@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
@@ -26,8 +27,9 @@ namespace Foundatio.Azure.Queues {
         private long _workItmeTimeoutCount;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
+        private readonly ISerializer _serializer;
 
-        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null) {
+        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
@@ -49,6 +51,8 @@ namespace Foundatio.Azure.Queues {
                 _queueDescription.MaxDeliveryCount = retries + 1;
                 _queueDescription.LockDuration = _workItemTimeout;
             }
+
+            _serializer = serializer ?? new JsonNetSerializer();
 
             _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
             if (retryPolicy != null)
@@ -80,6 +84,10 @@ namespace Foundatio.Azure.Queues {
         public long WorkItemTimeoutCount { get { return _workItmeTimeoutCount; } }
 
         public string QueueId { get; private set; }
+
+        ISerializer IHaveSerializer.Serializer {
+            get { return _serializer; }
+        }
 
         public long GetQueueCount() {
             var q = _namespaceManager.GetQueue(_queueName);

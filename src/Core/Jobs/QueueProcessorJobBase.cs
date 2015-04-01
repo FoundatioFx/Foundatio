@@ -6,7 +6,7 @@ using NLog.Fluent;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase where T : class {
-        private readonly IQueue<T> _queue;
+        protected readonly IQueue<T> _queue;
 
         public QueueProcessorJobBase(IQueue<T> queue) {
             _queue = queue;
