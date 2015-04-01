@@ -22,22 +22,25 @@ namespace Foundatio.Metrics {
         }
 
         public Task CounterAsync(string statName, int value = 1) {
-            return TrySendAsync(BuildMetric("c", statName, value.ToString(CultureInfo.InvariantCulture)));
+            Send(BuildMetric("c", statName, value.ToString(CultureInfo.InvariantCulture)));
+            return Task.FromResult(0);
         }
 
         public Task GaugeAsync(string statName, double value) {
-            return TrySendAsync(BuildMetric("g", statName, value.ToString(CultureInfo.InvariantCulture)));
+            Send(BuildMetric("g", statName, value.ToString(CultureInfo.InvariantCulture)));
+            return Task.FromResult(0);
         }
 
         public Task TimerAsync(string statName, long milliseconds) {
-            return TrySendAsync(BuildMetric("ms", statName, milliseconds.ToString(CultureInfo.InvariantCulture)));
+            Send(BuildMetric("ms", statName, milliseconds.ToString(CultureInfo.InvariantCulture)));
+            return Task.FromResult(0);
         }
 
         private string BuildMetric(string type, string statName, string value) {
             return String.Concat(_prefix, statName, ":", value, "|", type);
         }
 
-        private async Task TrySendAsync(string metric) {
+        private void Send(string metric) {
             if (String.IsNullOrEmpty(metric))
                 return;
 
