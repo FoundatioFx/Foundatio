@@ -3,10 +3,13 @@ using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using Nito.AsyncEx;
 using NLog.Fluent;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
+        private readonly AsyncLock _lock = new AsyncLock();
+        private UdpClient _udpClient;
         private readonly string _prefix;
         private readonly string _serverName;
         private readonly int _port;
@@ -40,42 +43,35 @@ namespace Foundatio.Metrics {
                 return;
 
             try {
-                var client = GetClient();
-                if (client == null)
-                    return;
+                using (await _lock.LockAsync()) {
+                    if (_udpClient == null)
+                        _udpClient = new UdpClient(_serverName, _port);
 
-                byte[] data = Encoding.ASCII.GetBytes(metric);
-                await client.SendAsync(data, data.Length);
-            } catch (SocketException ex) {
-                Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
-                
-                if (ex.ErrorCode == 10022) {
-                    Log.Info().Message("Attempting to reset the timed out udp client.").Write();
-                    ResetUdpClient();
+                    byte[] data = Encoding.ASCII.GetBytes(metric);
+                    await _udpClient.SendAsync(data, data.Length);
                 }
             } catch (Exception ex) {
                 Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
+                var se = ex as SocketException;
+                if (se != null && se.ErrorCode == 10022) {
+                    Log.Info().Message("Attempting to reset the timed out udp client.").Write();
+                    ResetUdpClient();
+                }
             }
-        }
-
-        private UdpClient _udpClient;
-        private UdpClient GetClient() {
-            if (_udpClient == null)
-                _udpClient = new UdpClient(_serverName, _port);
-
-            return _udpClient;
         }
 
         private void ResetUdpClient() {
             if (_udpClient == null)
                 return;
 
-            try {
-                _udpClient.Close();
-            } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("An error occurred while calling Close() on the udp client.").Write();
-            } finally {
-                _udpClient = null;
+            using (_lock.Lock()) {
+                try {
+                    _udpClient.Close();
+                } catch (Exception ex) {
+                    Log.Error().Exception(ex).Message("An error occurred while calling Close() on the udp client.").Write();
+                } finally {
+                    _udpClient = null;
+                }
             }
         }
 
