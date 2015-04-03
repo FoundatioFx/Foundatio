@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Foundatio.Extensions {
@@ -34,6 +35,14 @@ namespace Foundatio.Extensions {
 
         public static bool TrySetFromTask<TResult>(this TaskCompletionSource<TResult> resultSetter, Task<TResult> task) {
             return TrySetFromTask(resultSetter, (Task)task);
+        }
+
+        public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task) {
+            return task.ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        public static ConfiguredTaskAwaitable AnyContext(this Task task) {
+            return task.ConfigureAwait(continueOnCapturedContext: false);
         }
     }
 }

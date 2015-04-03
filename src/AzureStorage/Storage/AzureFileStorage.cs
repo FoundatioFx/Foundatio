@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Azure.Extensions;
+using Foundatio.Extensions;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 
@@ -23,7 +24,7 @@ namespace Foundatio.Storage {
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
             try {
-                return await blockBlob.OpenReadAsync(cancellationToken);
+                return await blockBlob.OpenReadAsync(cancellationToken).AnyContext();
             } catch (StorageException ex) {
                 if (ex.RequestInformation.HttpStatusCode == 404)
                     return null;
@@ -39,22 +40,22 @@ namespace Foundatio.Storage {
 
         public async Task<bool> ExistsAsync(string path) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return await blockBlob.ExistsAsync();
+            return await blockBlob.ExistsAsync().AnyContext();
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            await blockBlob.UploadFromStreamAsync(stream, cancellationToken);
+            await blockBlob.UploadFromStreamAsync(stream, cancellationToken).AnyContext();
 
             return true;
         }
 
         public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
             var oldBlob = _container.GetBlockBlobReference(oldpath);
-            if (!(await CopyFileAsync(oldpath, newpath, cancellationToken)))
+            if (!(await CopyFileAsync(oldpath, newpath, cancellationToken).AnyContext()))
                 return false;
 
-            return await oldBlob.DeleteIfExistsAsync(cancellationToken);
+            return await oldBlob.DeleteIfExistsAsync(cancellationToken).AnyContext();
         }
 
         public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -62,12 +63,12 @@ namespace Foundatio.Storage {
             var newBlob = _container.GetBlockBlobReference(targetpath);
 
             using (var stream = new MemoryStream()) {
-                await oldBlob.DownloadToStreamAsync(stream, cancellationToken);
+                await oldBlob.DownloadToStreamAsync(stream, cancellationToken).AnyContext();
                 
                 if (stream.CanSeek)
                     stream.Seek(0, SeekOrigin.Begin);
 
-                await newBlob.UploadFromStreamAsync(stream, cancellationToken);
+                await newBlob.UploadFromStreamAsync(stream, cancellationToken).AnyContext();
             }
 
             return true;
@@ -75,7 +76,7 @@ namespace Foundatio.Storage {
 
         public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return await blockBlob.DeleteIfExistsAsync(cancellationToken);
+            return await blockBlob.DeleteIfExistsAsync(cancellationToken).AnyContext();
         }
 
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -96,7 +97,7 @@ namespace Foundatio.Storage {
             BlobContinuationToken continuationToken = null;
             var blobs = new List<CloudBlockBlob>();
             do {
-                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, null, continuationToken, null, null, cancellationToken);
+                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, null, continuationToken, null, null, cancellationToken).AnyContext();
                 
                 continuationToken = listingResult.ContinuationToken;
                 blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
