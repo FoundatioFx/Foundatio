@@ -1,10 +1,10 @@
 using System;
 
 namespace Foundatio.Jobs {
-    public class LongRunningTaskContext {
+    public class WorkItemContext {
         private readonly Action<int, string> _progressCallback;
 
-        public LongRunningTaskContext(object data, Action<int, string> progressCallback) {
+        public WorkItemContext(object data, Action<int, string> progressCallback) {
             Data = data;
             _progressCallback = progressCallback;
         }

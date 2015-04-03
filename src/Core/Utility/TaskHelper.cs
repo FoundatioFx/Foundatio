@@ -102,7 +102,7 @@ namespace Foundatio.Utility {
 
                     await Task.Delay(interval, cancellationToken);
                 }
-            }, cancellationToken);
+            }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Current);
         }
 
         public async static Task<bool> DelayUntil(Func<bool> condition, TimeSpan? timeout = null, int checkInterval = 100) {
