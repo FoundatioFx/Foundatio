@@ -6,13 +6,13 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Jobs {
     public class WorkItemJob : QueueProcessorJobBase<WorkItemData> {
-        protected readonly IMessagePublisher _publisher;
-        protected readonly WorkItemHandlers Handlers;
+        protected readonly IMessageBus _messageBus;
+        protected readonly WorkItemHandlers _handlers;
 
-        public WorkItemJob(IQueue<WorkItemData> queue, IMessagePublisher publisher, WorkItemHandlers handlers)
+        public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers)
             : base(queue) {
-            _publisher = publisher;
-            Handlers = handlers;
+            _messageBus = messageBus;
+            _handlers = handlers;
         }
 
         protected async override Task<JobResult> ProcessQueueItem(QueueEntry<WorkItemData> queueEntry) {
@@ -20,18 +20,31 @@ namespace Foundatio.Jobs {
             if (workItemDataType == null)
                 return JobResult.FailedWithMessage("Could not resolve work item data type.");
 
-            var workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
+            object workItemData;
+            try {
+                workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
+            } catch (Exception ex) {
+                return JobResult.FromException(ex, "Failed to parse work item data.");
+            }
 
-            var handler = Handlers.GetHandler(workItemDataType);
-            var progressCallback = new Action<int, string>((progress, message) => _publisher.Publish(new WorkItemStatus {
-                TaskId = queueEntry.Value.WorkItemId,
+            var handler = _handlers.GetHandler(workItemDataType);
+            if (handler == null)
+                return JobResult.FailedWithMessage("Handler for type {0} not registered.", workItemDataType.Name);
+
+            var progressCallback = new Action<int, string>((progress, message) => _messageBus.Publish(new WorkItemStatus {
+                WorkItemId = queueEntry.Value.WorkItemId,
                 Progress = progress,
                 Message = message
             }));
-            handler(new WorkItemContext(workItemData, progressCallback));
-            
+
+            try {
+                handler(new WorkItemContext(workItemData, progressCallback));
+            } catch (Exception ex) {
+                return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
+            }
+
             queueEntry.Complete();
-            _publisher.Publish(new WorkItemStatus { TaskId = queueEntry.Value.WorkItemId, Progress = 100 });
+            _messageBus.Publish(new WorkItemStatus { WorkItemId = queueEntry.Value.WorkItemId, Progress = 100 });
 
             return JobResult.Success;
         }
