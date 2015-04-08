@@ -50,12 +50,8 @@ namespace Foundatio.Metrics {
                 if (_socket != null)
                     _socket.SendTo(data, _endPoint);
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("An error occurred while sending the metrics.").Write();
-                var se = ex as SocketException;
-                if (se != null && se.ErrorCode == 10022) {
-                    Log.Info().Message("Attempting to reset the timed out socket.").Write();
-                    ResetUdpClient();
-                }
+                Log.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
+                ResetUdpClient();
             }
         }
 
