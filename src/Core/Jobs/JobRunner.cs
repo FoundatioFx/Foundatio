@@ -8,13 +8,16 @@ using NLog.Fluent;
 namespace Foundatio.Jobs {
     public class JobRunner {
         public static int RunJob(JobBase job, bool runContinuous = false, bool quietMode = false, int delay = 0, Action showHeader = null) {
-            if (job == null)
+            if (job == null) {
+                Log.Error().Message("Starting {0}job type <null> on machine \"{2}\"...", runContinuous ? "continuous " : String.Empty, Environment.MachineName).Write();
                 return -1;
+            }
 
             NLog.GlobalDiagnosticsContext.Set("job", job.GetType().FullName);
             if (!quietMode && showHeader != null) {
                 showHeader();
             }
+
             Log.Info().Message("Starting {0}job type \"{1}\" on machine \"{2}\"...", runContinuous ? "continuous " : String.Empty, job.GetType().Name, Environment.MachineName).Write();
 
             WatchForShutdown();
@@ -48,8 +51,10 @@ namespace Foundatio.Jobs {
             }
 
             var resolver = GetServiceProvider(serviceProviderType);
-            if (resolver == null)
+            if (resolver == null) {
+                Log.Error().Message("Unable to create service provider.").Write();
                 return null;
+            }
 
             var job = resolver.GetService(jobType) as JobBase;
             if (job == null) {

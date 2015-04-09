@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using CommandLine;
+using NLog.Fluent;
 
 namespace Foundatio.JobRunner {
     internal class Program {
@@ -32,13 +33,18 @@ namespace Foundatio.JobRunner {
 
                     result = Jobs.JobRunner.RunJob(job, ca.RunContinuously, ca.Quiet, ca.Delay, OutputHeader);
                 }
+
                 PauseIfDebug();
             } catch (FileNotFoundException e) {
                 Console.Error.WriteLine("{0} ({1})", e.Message, e.FileName);
+                Log.Error().Message("{0} ({1})", e.Message, e.FileName).Write();
+
                 PauseIfDebug();
                 return 1;
             } catch (Exception e) {
                 Console.Error.WriteLine(e.ToString());
+                Log.Error().Message("{0} ({1})", e.ToString()).Write();
+
                 PauseIfDebug();
                 return 1;
             }
