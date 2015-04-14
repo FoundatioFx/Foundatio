@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
@@ -25,10 +26,20 @@ namespace Foundatio.Jobs {
 
             if (queueEntry == null)
                 return Task.FromResult(JobResult.Success);
-            
-            Log.Trace().Message("Processing message '{0}'.", queueEntry.Id).Write();
 
-            return ProcessQueueItem(queueEntry);
+            var lockValue = GetQueueItemLock(queueEntry);
+            if (lockValue == null) {
+                Log.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
+                return Task.FromResult(JobResult.FailedWithMessage("Unable to acquire lock for queue entry."));
+            }
+            Log.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
+
+            using (lockValue)
+                return ProcessQueueItem(queueEntry);
+        }
+
+        protected virtual IDisposable GetQueueItemLock(QueueEntry<T> queueEntry) {
+            return Disposable.Empty;
         }
 
         public void RunUntilEmpty() {

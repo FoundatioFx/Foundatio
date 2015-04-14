@@ -1,17 +1,24 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
         protected virtual IDisposable GetJobLock() {
-            return null;
+            return Disposable.Empty;
         }
 
         public Task<JobResult> RunAsync(CancellationToken token = default(CancellationToken)) {
             try {
-                using (GetJobLock())
+                var lockValue = GetJobLock();
+                if (lockValue == null) {
+                    Log.Warn().Message("Unable to acquire job lock").Write();
+                    return Task.FromResult(JobResult.FailedWithMessage("Unable to acquire job lock."));
+                }
+
+                using (lockValue)
                     return TryRunAsync(token);
             } catch (TimeoutException) {
                 return Task.FromResult(JobResult.FailedWithMessage("Timeout attempting to acquire lock."));

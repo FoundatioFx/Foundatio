@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
@@ -26,6 +27,22 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
             Assert.Equal(JobResult.Success, jobInstance.Run());
             Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
+        }
+
+        [Fact]
+        public void CanRunJobsWithLocks() {
+            var job = new WithLockingJob();
+            Assert.Equal(0, job.RunCount);
+            job.Run();
+            Assert.Equal(1, job.RunCount);
+
+            job.RunContinuous(iterationLimit: 2);
+            Assert.Equal(3, job.RunCount);
+
+            Task.Run(() => job.Run());
+            Task.Run(() => job.Run());
+            Thread.Sleep(200);
+            Assert.Equal(4, job.RunCount);
         }
 
         [Fact]

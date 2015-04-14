@@ -102,6 +102,7 @@
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
+    <Compile Include="Utility\EmptyDisposable.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />
     <Compile Include="Utility\PathHelper.cs" />
     <Compile Include="Utility\Run.cs" />
