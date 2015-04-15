@@ -106,6 +106,8 @@ We recommend using all of the `IMessageBus` implementations as singletons.
 #### Sample
 
 ```csharp
+using Foundatio.Messaging;
+
 IMessageBus messageBus = new InMemoryMessageBus();
 
 using (messageBus) {
@@ -119,7 +121,9 @@ using (messageBus) {
 }
 ```
 
-### Jobs
+### [Jobs](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Jobs)
+
+All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).
 
 #### Sample
 
@@ -160,3 +164,18 @@ metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
 metrics.DisplayStats(TextWriter);
 ```
+
+## Roadmap
+
+This is a list of high level things that we are planning to do:
+- Async Support **(In Progress: Some of our implementations are already fully Async)** 
+- Long Running Jobs **(In Progress)** 
+- vnext support
+- [Let us know what you'd like us to work on!](https://github.com/exceptionless/Foundatio/issues)
+
+##Thanks
+Thanks to the community for your support!
+
+Thanks to [JetBrains](http://jetbrains.com) for a community [WebStorm](https://www.jetbrains.com/webstorm/) and [ReSharper](https://www.jetbrains.com/resharper/) license to use on this project. It's the best JavaScript IDE/Visual Studio productivity enhancement hands down.
+
+Thanks to [Red Gate](http://www.red-gate.com) for providing an open source license for a [.NET Developer Bundle](http://www.red-gate.com/products/dotnet-development/). It's an indepensible tool when you need to track down a performance/memory issue.
