@@ -16,7 +16,7 @@ Includes implementations in Redis, Azure and in memory (for development).
 ## Why should I use Foundatio?
 When we first started building [Exceptionless](https://github.com/exceptionless/Exceptionless). We found a lack of great solutions (that's not to say there isn't great projects out there) for many key peices to building scalable distributed applications while keeping cost of development and testing a zero sum. Here is a few examples of why we built and use Foundatio:
  * Caching: We were initially using an open source redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there wasn't any in memory implementations so every developer was required to setup and configure redis.
- * MessageBus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had a high licensing costs (they have to eat too) but was not oss friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found azure support lacking. We wanted a simple message bus that just worked locally or in the cloud.
+ * MessageBus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had a high licensing costs (they have to eat too) but was not oss friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found azure support lacking and local setup a pain. We wanted a simple message bus that just worked locally or in the cloud.
  * Storage: We couldn't find any existing projects that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
