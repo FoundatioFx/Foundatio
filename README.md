@@ -97,7 +97,7 @@ using (locker) {
 
 Allows you to do publish/subscribe to messages flowing through your application.  We provide three different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/IMessageBus.cs):
 
-1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/InMemoryMessageBus.cs): An in message bus implementation. This message bus implementation is only valid for the lifetime of the process.
+1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Messaging/RedisMessageBus.cs): An redis message bus implementation.
 3. [ServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Messaging/ServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
@@ -128,6 +128,8 @@ All jobs must derive from the  [`JobBase` class](https://github.com/exceptionles
 #### Sample
 
 ```csharp
+using Foundatio.Jobs;
+
 public class HelloWorldJob : JobBase {
   public int RunCount { get; set; }
 
@@ -144,17 +146,40 @@ job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
 job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
 ```
 
-### File Storage
+### [File Storage](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Storage)
+
+We provide three different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/IFileStorage.cs):
+
+1. [InMemoryFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
+2. [FolderFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
+3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob Storage implementation.
+
+We recommend using all of the `IFileStorage` implementations as singletons. 
 
 #### Sample
 
 ```csharp
+using Foundatio.Storage;
+
 IFileStorage storage = new InMemoryFileStorage();
 storage.SaveFile("test.txt", "test");
 string content = storage.GetFileContents("test.txt")
 ```
 
-### Metrics
+### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Metrics)
+
+We provide two different metric implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/IMetricsClient.cs):
+
+1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation. This metrics implementation is only valid for the lifetime of the process. It's worth noting that this metrics client also has the ability to display the metrics to a `TextWriter` on a timer or by calling `DisplayStats(TextWriter)`.
+  ```
+ Counter: c1 Value: 1            Rate: 48.89/s     Rate: 47.97/s
+    Gauge: g1 Value: 2.53          Avg: 2.53         Max: 2.53
+    Timing: t1   Min: 50,788ms      Avg: 50,788ms     Max: 50,788ms
+  ```
+
+2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
+
+We recommend using all of the `IMetricsClient` implementations as singletons. 
 
 #### Sample
 
@@ -162,7 +187,6 @@ string content = storage.GetFileContents("test.txt")
 metrics.Counter("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
-metrics.DisplayStats(TextWriter);
 ```
 
 ## Roadmap
@@ -172,10 +196,3 @@ This is a list of high level things that we are planning to do:
 - Long Running Jobs **(In Progress)** 
 - vnext support
 - [Let us know what you'd like us to work on!](https://github.com/exceptionless/Foundatio/issues)
-
-##Thanks
-Thanks to the community for your support!
-
-Thanks to [JetBrains](http://jetbrains.com) for a community [WebStorm](https://www.jetbrains.com/webstorm/) and [ReSharper](https://www.jetbrains.com/resharper/) license to use on this project. It's the best JavaScript IDE/Visual Studio productivity enhancement hands down.
-
-Thanks to [Red Gate](http://www.red-gate.com) for providing an open source license for a [.NET Developer Bundle](http://www.red-gate.com/products/dotnet-development/). It's an indepensible tool when you need to track down a performance/memory issue.
