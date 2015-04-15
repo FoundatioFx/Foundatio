@@ -1,5 +1,4 @@
 ﻿using Foundatio.Messaging;
-using Foundatio.Redis.Messaging;
 using Foundatio.Tests.Messaging;
 using Xunit;
 

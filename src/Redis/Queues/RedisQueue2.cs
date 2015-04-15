@@ -14,7 +14,7 @@
 //using NLog.Fluent;
 //using StackExchange.Redis;
 
-//namespace Foundatio.Redis.Queues {
+//namespace Foundatio.Queues {
 //    public class RedisQueue2<T> : IQueue2<T> where T : class {
 //        private readonly string _queueName;
 //        private readonly IDatabase _db;

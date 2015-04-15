@@ -1,14 +1,12 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
-using Foundatio.Extensions;
-using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
 
-namespace Foundatio.Azure.Messaging {
+namespace Foundatio.Messaging {
     public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
         private readonly string _topicName;
         private readonly ISerializer _serializer;

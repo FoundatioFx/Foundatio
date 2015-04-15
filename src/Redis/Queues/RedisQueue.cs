@@ -6,15 +6,14 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Metrics;
-using Foundatio.Queues;
-using Foundatio.Redis.Cache;
+using Foundatio.Caching;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using NLog.Fluent;
 using StackExchange.Redis;
 
-namespace Foundatio.Redis.Queues {
+namespace Foundatio.Queues {
     public class RedisQueue<T> : IQueue<T> where T: class {
         private readonly string _queueName;
         private readonly IDatabase _db;

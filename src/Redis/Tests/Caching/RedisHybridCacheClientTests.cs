@@ -1,5 +1,4 @@
 ﻿using Foundatio.Caching;
-using Foundatio.Redis.Cache;
 using Foundatio.Tests.Caching;
 using Xunit;
 

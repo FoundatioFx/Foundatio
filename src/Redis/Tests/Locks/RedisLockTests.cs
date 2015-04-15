@@ -1,5 +1,5 @@
 ﻿using Foundatio.Lock;
-using Foundatio.Redis.Cache;
+using Foundatio.Caching;
 using Foundatio.Tests;
 using Xunit;
 

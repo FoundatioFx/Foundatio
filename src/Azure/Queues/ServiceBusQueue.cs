@@ -2,14 +2,13 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using NLog.Fluent;
 
-namespace Foundatio.Azure.Queues {
+namespace Foundatio.Queues {
     public class ServiceBusQueue<T> : IQueue<T> where T : class {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
-using Foundatio.Redis.Queues;
+using Foundatio.Queues;
 using Foundatio.Tests.Jobs;
 using Xunit;
 

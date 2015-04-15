@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using Foundatio.Caching;
 using Foundatio.Metrics;
-using Foundatio.Redis.Cache;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;

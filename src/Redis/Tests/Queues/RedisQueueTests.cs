@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.Redis.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;

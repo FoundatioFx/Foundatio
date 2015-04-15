@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio.Azure.Queues;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;

@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio.Azure.Messaging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
