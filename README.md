@@ -37,16 +37,28 @@ We recommend using all of the `ICacheClient` implementations as singletons.
 #### Sample
 
 ```csharp
+using Foundatio.Caching;
+
 ICacheClient cache = new InMemoryCacheClient();
 cache.Set("test", 1);
 var value = cache.Get<int>("test");
 ```
 
-### Queues
+### [Queues](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Queues)
+
+Queues offer First In, First Out (FIFO) message delivery. We provide three different queue implementations that derive from the [`IQueue` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Queues/IQueue.cs):
+
+1. [InMemoryQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Queues/InMemoryQueue.cs): An in memory queue implementation. This queue implementation is only valid for the lifetime of the process.
+2. [RedisQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Queues/RedisQueue.cs): An redis queue implementation.
+3. [ServiceBusQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Queues/ServiceBusQueue.cs): An Azure Service Bus Queue implementation.
+
+We recommend using all of the `IQueue` implementations as singletons. 
 
 #### Sample
 
 ```csharp
+using Foundatio.Queues;
+
 IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
 
 queue.Enqueue(new SimpleWorkItem {
@@ -56,11 +68,20 @@ queue.Enqueue(new SimpleWorkItem {
 var workItem = queue.Dequeue(TimeSpan.Zero);
 ```
 
-### Locks
+### [Locks](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Lock)
+
+Locks ensure a resource is only accessed by one consumer at any given time. We provide two different locking implementations that derive from the [`ILockProvider` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/ILockProvider.cs):
+
+1. [CacheLockProvider](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/CacheLockProvider.cs): A basic lock implementation.
+2. [ThrottlingLockProvider](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/ThrottlingLockProvider.cs): A lock implementation that only allows a certian amount of locks through. You could use this to throttle api calls to some external service and it will throttle them across all processes asking for that lock.
+
+It's worth noting that all lock providers take a `ICacheClient`. This allows you to ensure your code locks properly across machines. We recommend using all of the `ILockProvider` implementations as singletons. 
 
 #### Sample
 
 ```csharp
+using Foundatio.Lock;
+
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
 
 using (locker) {
@@ -72,7 +93,15 @@ using (locker) {
 }
 ```
 
-### Messaging
+### [Messaging](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Messaging)
+
+Allows you to do publish/subscribe to messages flowing through your application.  We provide three different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/IMessageBus.cs):
+
+1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/InMemoryMessageBus.cs): An in message bus implementation. This message bus implementation is only valid for the lifetime of the process.
+2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Messaging/RedisMessageBus.cs): An redis message bus implementation.
+3. [ServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Messaging/ServiceBusMessageBus.cs): An Azure Service Bus implementation.
+
+We recommend using all of the `IMessageBus` implementations as singletons. 
 
 #### Sample
 
