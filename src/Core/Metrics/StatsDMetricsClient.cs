@@ -70,6 +70,9 @@ namespace Foundatio.Metrics {
                 return;
 
             lock (_lock) {
+                if (_socket == null)
+                    return;
+
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
