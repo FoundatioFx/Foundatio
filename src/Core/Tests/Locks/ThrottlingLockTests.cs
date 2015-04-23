@@ -41,7 +41,7 @@ namespace Foundatio.Tests {
             sw.Stop();
 
             Trace.WriteLine(sw.Elapsed);
-            Assert.InRange(sw.Elapsed.TotalSeconds, 1.2, 2.2);
+            Assert.InRange(sw.Elapsed.TotalSeconds, 1.0, 2.2);
         }
     }
 }

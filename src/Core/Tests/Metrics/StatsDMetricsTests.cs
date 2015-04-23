@@ -27,7 +27,6 @@ namespace Foundatio.Tests.Metrics {
         [Fact]
         public async Task CounterAsync() {
             StartListening(1);
-
             await _client.CounterAsync("counter");
             var messages = GetMessages();
             Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
@@ -108,8 +107,8 @@ namespace Foundatio.Tests.Metrics {
             sw.Stop();
             metrics.DisplayStats(_writer);
 
-            // Require at least 40,000 operations/s
-            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 40000.0) * 1000);
+            // Require at least 10,000 operations/s
+            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
             Thread.Sleep(100);
             var messages = GetMessages();
@@ -127,6 +126,8 @@ namespace Foundatio.Tests.Metrics {
         private void StartListening(int expectedMessageCount) {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
+
+            Thread.Sleep(75);
         }
 
         private void StopListening() {
