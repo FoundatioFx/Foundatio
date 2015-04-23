@@ -28,9 +28,9 @@ namespace Foundatio.Lock {
 
                 // support locks that never timeout
                 if (lockTimeout.HasValue && lockTimeout.Value == TimeSpan.Zero)
-                    return _cacheClient.Add(cacheKey, DateTime.Now);
+                    return _cacheClient.Add(cacheKey, DateTime.UtcNow);
 
-                return _cacheClient.Add(cacheKey, DateTime.Now, lockTimeout ?? TimeSpan.FromMinutes(20));
+                return _cacheClient.Add(cacheKey, DateTime.UtcNow, lockTimeout ?? TimeSpan.FromMinutes(20));
             }, acquireTimeout, TimeSpan.FromMilliseconds(50));
 
             Log.Trace().Message("Returning lock: {0}", name).Write();
