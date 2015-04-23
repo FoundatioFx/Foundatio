@@ -37,8 +37,9 @@ namespace Foundatio.Jobs {
                 Message = message
             }));
 
+            _messageBus.Publish(new WorkItemStatus { WorkItemId = queueEntry.Value.WorkItemId, Progress = 0 });
             try {
-                handler(new WorkItemContext(workItemData, progressCallback));
+                await handler.HandleItem(new WorkItemContext(workItemData, progressCallback));
             } catch (Exception ex) {
                 return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
             }

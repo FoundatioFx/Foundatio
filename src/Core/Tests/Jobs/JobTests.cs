@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.ServiceProviders;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs {
@@ -47,15 +48,15 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public void CanBootstrapJobs() {
-            var serviceProvider = JobRunner.GetServiceProvider(typeof(JobTests));
-            Assert.NotNull(serviceProvider);
-            Assert.Equal(serviceProvider.GetType(), typeof(MyBootstrappedServiceProvider));
+            ServiceProvider.SetServiceProvider(typeof(JobTests));
+            Assert.NotNull(ServiceProvider.Current);
+            Assert.Equal(ServiceProvider.Current.GetType(), typeof(MyBootstrappedServiceProvider));
 
-            serviceProvider = JobRunner.GetServiceProvider(typeof(MyBootstrappedServiceProvider));
-            Assert.NotNull(serviceProvider);
-            Assert.Equal(serviceProvider.GetType(), typeof(MyBootstrappedServiceProvider));
+            ServiceProvider.SetServiceProvider(typeof(MyBootstrappedServiceProvider));
+            Assert.NotNull(ServiceProvider.Current);
+            Assert.Equal(ServiceProvider.Current.GetType(), typeof(MyBootstrappedServiceProvider));
 
-            var job = serviceProvider.GetService<WithDependencyJob>();
+            var job = ServiceProvider.Current.GetService<WithDependencyJob>();
             Assert.NotNull(job);
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);

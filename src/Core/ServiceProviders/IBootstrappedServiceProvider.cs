@@ -1,6 +1,6 @@
 using System;
 
-namespace Foundatio.ServiceProvider {
+namespace Foundatio.ServiceProviders {
     public interface IBootstrappedServiceProvider : IServiceProvider {
         IServiceProvider Bootstrap();
     }

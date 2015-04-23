@@ -1,8 +1,7 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
-using Foundatio.ServiceProvider;
+using Foundatio.ServiceProviders;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
@@ -50,38 +49,14 @@ namespace Foundatio.Jobs {
                 }
             }
 
-            var resolver = GetServiceProvider(serviceProviderType);
-            if (resolver == null) {
-                Log.Error().Message("Unable to create service provider.").Write();
-                return null;
-            }
-
-            var job = resolver.GetService(jobType) as JobBase;
+            ServiceProvider.SetServiceProvider(serviceProviderType);
+            var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
                 Log.Error().Message("Job Type must derive from Job.").Write();
                 return null;
             }
 
             return job;
-        }
-
-        public static IServiceProvider GetServiceProvider(Type serviceProviderType) {
-            if (serviceProviderType != null && !typeof(IServiceProvider).IsAssignableFrom(serviceProviderType)) {
-                var types = serviceProviderType.Assembly.GetTypes();
-                // prefer bootstrapped service provider
-                serviceProviderType = types.Where(typeof(IBootstrappedServiceProvider).IsAssignableFrom).FirstOrDefault()
-                                      ?? types.Where(typeof(IServiceProvider).IsAssignableFrom).FirstOrDefault();
-            }
-
-            if (serviceProviderType == null)
-                return new ActivatorServiceProvider();
-
-            var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
-            if (bootstrapper != null)
-                return bootstrapper;
-
-            Log.Error().Message("Job Type must derive from Job.").Write();
-            return null;
         }
 
         private static string _webJobsShutdownFile;

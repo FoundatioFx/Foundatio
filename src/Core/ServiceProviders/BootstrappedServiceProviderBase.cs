@@ -1,6 +1,6 @@
 using System;
 
-namespace Foundatio.ServiceProvider {
+namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {
         private static IServiceProvider _serviceProvider;
         

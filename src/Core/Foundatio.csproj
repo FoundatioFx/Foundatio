@@ -95,10 +95,11 @@
     <Compile Include="Serializer\IHaveSerializer.cs" />
     <Compile Include="Serializer\ISerializer.cs" />
     <Compile Include="Serializer\JsonNetSerializer.cs" />
-    <Compile Include="ServiceProvider\ActivatorServiceProvider.cs" />
-    <Compile Include="ServiceProvider\BootstrappedServiceProviderBase.cs" />
-    <Compile Include="ServiceProvider\IBootstrappedServiceProvider.cs" />
+    <Compile Include="ServiceProviders\ActivatorServiceProvider.cs" />
+    <Compile Include="ServiceProviders\BootstrappedServiceProviderBase.cs" />
+    <Compile Include="ServiceProviders\IBootstrappedServiceProvider.cs" />
     <Compile Include="Extensions\ServiceProviderExtensions.cs" />
+    <Compile Include="ServiceProviders\ServiceProvider.cs" />
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
