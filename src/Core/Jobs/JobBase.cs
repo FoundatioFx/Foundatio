@@ -10,7 +10,7 @@ namespace Foundatio.Jobs {
             return Disposable.Empty;
         }
 
-        public Task<JobResult> RunAsync(CancellationToken token = default(CancellationToken)) {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             try {
                 var lockValue = GetJobLock();
                 if (lockValue == null) {
@@ -19,7 +19,7 @@ namespace Foundatio.Jobs {
                 }
 
                 using (lockValue)
-                    return TryRunAsync(token);
+                    return TryRunAsync(cancellationToken);
             } catch (TimeoutException) {
                 return Task.FromResult(JobResult.FailedWithMessage("Timeout attempting to acquire lock."));
             }
@@ -39,12 +39,14 @@ namespace Foundatio.Jobs {
             return RunAsync(token).Result;
         }
 
-        public async Task RunContinuousAsync(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
+        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
+            NLog.GlobalDiagnosticsContext.Set("job", GetType().FullName);
+
             int iterations = 0;
-            while (!token.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
+            while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
 
-                var result = await RunAsync(token);
+                var result = await RunAsync(cancellationToken);
                 if (result != null) {
                     if (!result.IsSuccess)
                         Log.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
@@ -57,8 +59,8 @@ namespace Foundatio.Jobs {
                 }
 
                 iterations++;
-                if (delay.HasValue && delay.Value > TimeSpan.Zero)
-                    await Task.Delay(delay.Value, token);
+                if (interval.HasValue && interval.Value > TimeSpan.Zero)
+                    await Task.Delay(interval.Value, cancellationToken);
             }
         }
 

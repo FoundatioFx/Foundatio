@@ -6,7 +6,7 @@ using Foundatio.Utility;
 using NLog.Fluent;
 
 namespace Foundatio.Jobs {
-    public abstract class QueueProcessorJobBase<T> : JobBase where T : class {
+    public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
         protected readonly IQueue<T> _queue;
 
         public QueueProcessorJobBase(IQueue<T> queue) {
@@ -42,7 +42,7 @@ namespace Foundatio.Jobs {
             return Disposable.Empty;
         }
 
-        public void RunUntilEmpty() {
+        public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
             do {
                 while (_queue.GetQueueCount() > 0)
                     Run();
@@ -52,5 +52,9 @@ namespace Foundatio.Jobs {
         }
 
         protected abstract Task<JobResult> ProcessQueueItem(QueueEntry<T> queueEntry);
+    }
+
+    public interface IQueueProcessorJob : IDisposable {
+        void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken));
     }
 }

@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Threading.Tasks;
 using CommandLine;
+using Foundatio.Jobs;
 using NLog.Fluent;
 
 namespace Foundatio.JobRunner {
@@ -16,23 +16,16 @@ namespace Foundatio.JobRunner {
                     return 0;
                 }
 
-                if (ca.RunContinuously && ca.InstanceCount > 1) {
-                    for (int i = 0; i < ca.InstanceCount; i++) {
-                        var job = Jobs.JobRunner.CreateJobInstance(ca.JobType, ca.BootstrapperType);
-                        if (job == null)
-                            return -1;
-
-                        Task.Factory.StartNew(() => Jobs.JobRunner.RunJob(job, ca.RunContinuously, ca.Quiet, ca.Delay, OutputHeader));
-                    }
-
-                    result = 0;
-                } else {
-                    var job = Jobs.JobRunner.CreateJobInstance(ca.JobType, ca.BootstrapperType);
-                    if (job == null)
-                        return -1;
-
-                    result = Jobs.JobRunner.RunJob(job, ca.RunContinuously, ca.Quiet, ca.Delay, OutputHeader);
-                }
+                if (!ca.Quiet)
+                    OutputHeader();
+                
+                result = Jobs.JobRunner.RunAsync(new JobRunOptions {
+                    JobTypeName = ca.JobType,
+                    ServiceProviderTypeName = ca.ServiceProviderType,
+                    InstanceCount = ca.InstanceCount,
+                    Interval = TimeSpan.FromMilliseconds(ca.Delay),
+                    RunContinuous = ca.RunContinuously
+                }).Result;
 
                 PauseIfDebug();
             } catch (FileNotFoundException e) {

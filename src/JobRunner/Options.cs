@@ -7,8 +7,8 @@ namespace Foundatio.JobRunner {
         [Option('t', "jobtype", Required = true, HelpText = "The type of job that you wish to run.")]
         public string JobType { get; set; }
 
-        [Option('b', "bootstrapper", Required = false, HelpText = "The type to be used to bootstrap dependency resolution for job instantiation.")]
-        public string BootstrapperType { get; set; }
+        [Option('s', "serviceprovider", Required = false, HelpText = "The type to be used to create job instances and resolve service dependencies.")]
+        public string ServiceProviderType { get; set; }
 
         [Option('c', "continuous", Required = false, DefaultValue = false, HelpText = "Run the job in a continuous loop.")]
         public bool RunContinuously { get; set; }

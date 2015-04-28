@@ -71,8 +71,8 @@ namespace Foundatio.Tests.Jobs {
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);
 
-            int result = JobRunner.RunJob(jobInstance);
-            Assert.Equal(0, result);
+            var result = jobInstance.Run();
+            Assert.Equal(true, result.IsSuccess);
             Assert.True(jobInstance is HelloWorldJob);
         }
 
