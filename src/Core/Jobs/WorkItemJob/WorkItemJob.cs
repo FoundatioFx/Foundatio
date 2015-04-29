@@ -34,10 +34,17 @@ namespace Foundatio.Jobs {
             var progressCallback = new Action<int, string>((progress, message) => _messageBus.Publish(new WorkItemStatus {
                 WorkItemId = queueEntry.Value.WorkItemId,
                 Progress = progress,
-                Message = message
+                Message = message,
+                Type = queueEntry.Value.Type
             }));
 
-            _messageBus.Publish(new WorkItemStatus { WorkItemId = queueEntry.Value.WorkItemId, Progress = 0 });
+            if (queueEntry.Value.SendProgressReports)
+                _messageBus.Publish(new WorkItemStatus {
+                    WorkItemId = queueEntry.Value.WorkItemId,
+                    Progress = 0,
+                    Type = queueEntry.Value.Type
+                });
+
             try {
                 await handler.HandleItem(new WorkItemContext(workItemData, progressCallback));
             } catch (Exception ex) {
@@ -45,7 +52,12 @@ namespace Foundatio.Jobs {
             }
 
             queueEntry.Complete();
-            _messageBus.Publish(new WorkItemStatus { WorkItemId = queueEntry.Value.WorkItemId, Progress = 100 });
+            if (queueEntry.Value.SendProgressReports)
+                _messageBus.Publish(new WorkItemStatus {
+                    WorkItemId = queueEntry.Value.WorkItemId,
+                    Progress = 100,
+                    Type = queueEntry.Value.Type
+                });
 
             return JobResult.Success;
         }
