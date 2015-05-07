@@ -27,7 +27,7 @@ namespace Foundatio.ServiceProviders {
             }
 
             var serviceProviderTypes = assemblies.SelectMany(a =>
-                a.GetTypes().Where(t => typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
+                a.GetTypes().Where(t => !t.IsInterface && !t.IsAbstract && typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
                 var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
@@ -36,7 +36,7 @@ namespace Foundatio.ServiceProviders {
             }
 
             serviceProviderTypes = assemblies.SelectMany(a => a.GetTypes()
-                .Where(t => typeof(IServiceProvider).IsAssignableFrom(t)));
+                .Where(t => !t.IsInterface && !t.IsAbstract && typeof(IServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
                 var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
