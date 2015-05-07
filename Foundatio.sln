@@ -23,6 +23,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobRunner", "src\JobRunner\Foundatio.JobRunner.csproj", "{36769D64-8EAC-45C1-9AF8-5B7E4D070071}"
+	ProjectSection(ProjectDependencies) = postProject
+		{CA7CD628-686F-4821-879B-5A8158C3EBB1} = {CA7CD628-686F-4821-879B-5A8158C3EBB1}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AzureStorage", "src\AzureStorage\Foundatio.AzureStorage.csproj", "{71CFDEF8-8C3F-444C-A562-8236FAFB51CA}"
 EndProject
