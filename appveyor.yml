@@ -24,8 +24,8 @@ before_test:
   - cinst redis-64
   - redis-server --service-install
   - redis-server --service-start
-  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
   - ps: Build\enable-rdp.ps1
+  - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\WAStorageEmulator.exe" start'
 
 deploy:
   - provider: Environment
