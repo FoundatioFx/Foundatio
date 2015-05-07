@@ -108,7 +108,7 @@ namespace Foundatio.Jobs {
                 Log.Error().Message("Job Type must derive from Job.").Write();
                 return null;
             }
-
+            
             ServiceProvider.SetServiceProvider(serviceProviderType, new[] { jobType.Assembly });
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {

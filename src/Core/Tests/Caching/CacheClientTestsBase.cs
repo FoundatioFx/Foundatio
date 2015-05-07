@@ -32,12 +32,14 @@ namespace Foundatio.Tests.Caching {
                 cache.FlushAll();
 
                 var dt = DateTimeOffset.Now;
-                cache.Set("test", new MyData {Type = "test", Date = dt, Message = "Hello World"});
-                var value = cache.Get<MyData>("test");
-                Assert.NotNull(value);
-                Assert.Equal(dt, value.Date);
-                Assert.Equal("Hello World", value.Message);
-                Assert.Equal("test", value.Type);
+                var value = new MyData {Type = "test", Date = dt, Message = "Hello World"};
+                cache.Set("test", value);
+                var cachedValue = cache.Get<MyData>("test");
+                Assert.NotNull(cachedValue);
+                Assert.Equal(dt, cachedValue.Date);
+                Assert.False(value.Equals(cachedValue), "Should not be same reference object.");
+                Assert.Equal("Hello World", cachedValue.Message);
+                Assert.Equal("test", cachedValue.Type);
             }
         }
 

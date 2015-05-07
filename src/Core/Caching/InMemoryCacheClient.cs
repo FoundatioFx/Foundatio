@@ -5,7 +5,9 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
+using Newtonsoft.Json;
 using NLog.Fluent;
 
 namespace Foundatio.Caching {
@@ -388,7 +390,7 @@ namespace Foundatio.Caching {
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
-                    return _cacheValue;
+                    return _cacheValue.Copy();
                 }
                 set {
                     _cacheValue = value;

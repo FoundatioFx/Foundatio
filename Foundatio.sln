@@ -26,6 +26,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobRunner", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AzureStorage", "src\AzureStorage\Foundatio.AzureStorage.csproj", "{71CFDEF8-8C3F-444C-A562-8236FAFB51CA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobSample", "src\JobSample\Foundatio.JobSample.csproj", "{CA7CD628-686F-4821-879B-5A8158C3EBB1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -64,6 +66,10 @@ Global
 		{71CFDEF8-8C3F-444C-A562-8236FAFB51CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{71CFDEF8-8C3F-444C-A562-8236FAFB51CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{71CFDEF8-8C3F-444C-A562-8236FAFB51CA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA7CD628-686F-4821-879B-5A8158C3EBB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA7CD628-686F-4821-879B-5A8158C3EBB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA7CD628-686F-4821-879B-5A8158C3EBB1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA7CD628-686F-4821-879B-5A8158C3EBB1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
