@@ -28,7 +28,7 @@ namespace Foundatio.Tests.Jobs {
                 }
             });
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" });
+            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -51,7 +51,7 @@ namespace Foundatio.Tests.Jobs {
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" });
+            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -77,7 +77,7 @@ namespace Foundatio.Tests.Jobs {
                 throw new ApplicationException();
             });
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" });
+            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -94,7 +94,7 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
             });
 
-            jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" });
+            jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
 
             job.RunUntilEmpty();
 
