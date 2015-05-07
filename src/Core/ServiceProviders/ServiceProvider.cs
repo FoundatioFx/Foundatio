@@ -16,7 +16,7 @@ namespace Foundatio.ServiceProviders {
 
         internal static IServiceProvider FindServiceProvider(Assembly[] assembliesToSearch = null) {
             var assemblies = new List<Assembly>();
-            if (assembliesToSearch != null) {
+            if (assembliesToSearch != null && assembliesToSearch.Length > 0) {
                 assemblies.AddRange(assembliesToSearch);
             } else {
                 try {
@@ -47,14 +47,22 @@ namespace Foundatio.ServiceProviders {
             return new ActivatorServiceProvider();
         }
 
-        internal static void SetServiceProvider(Type serviceProviderType = null) {
-            if (serviceProviderType != null && !typeof(IServiceProvider).IsAssignableFrom(serviceProviderType)) {
-                Current = FindServiceProvider(new[] {serviceProviderType.Assembly});
+        internal static void SetServiceProvider(Type serviceProviderType = null, Assembly[] assembliesToSearch = null) {
+            if (serviceProviderType == null) {
+                Current = FindServiceProvider(assembliesToSearch);
                 return;
             }
 
-            if (serviceProviderType == null)
+            if (!typeof(IServiceProvider).IsAssignableFrom(serviceProviderType)) {
+                var assemblies = new List<Assembly>();
+                if (assembliesToSearch != null)
+                    assemblies.AddRange(assembliesToSearch);
+
+                assemblies.Add(serviceProviderType.Assembly);
+
+                Current = FindServiceProvider(assemblies.ToArray());
                 return;
+            }
 
             var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
             if (bootstrapper == null)

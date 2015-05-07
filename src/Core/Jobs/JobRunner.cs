@@ -109,7 +109,7 @@ namespace Foundatio.Jobs {
                 return null;
             }
 
-            ServiceProvider.SetServiceProvider(serviceProviderType);
+            ServiceProvider.SetServiceProvider(serviceProviderType, new[] { jobType.Assembly });
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
                 Log.Error().Message("Unable to create job instance.").Write();
