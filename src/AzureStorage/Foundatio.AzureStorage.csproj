@@ -75,6 +75,7 @@
     <Compile Include="Storage\AzureFileStorage.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="app.config" />
     <None Include="Foundatio.AzureStorage.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>

@@ -1,13 +1,13 @@
-﻿namespace Foundatio.Metrics
+﻿namespace Foundatio.MetricsNet
 {
-    using System;
     using System.Threading.Tasks;
 
+    using Foundatio.Metrics;
     using Foundatio.Utility;
 
     using global::Metrics;
 
-    internal class MetricsNetClient : IMetricsClient
+    public class MetricsNetClient : IMetricsClient
     {
         public void Dispose()
         {
