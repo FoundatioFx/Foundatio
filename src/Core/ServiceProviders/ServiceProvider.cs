@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Foundatio.Utility;
 
 namespace Foundatio.ServiceProviders {
     public static class ServiceProvider {
@@ -47,28 +48,49 @@ namespace Foundatio.ServiceProviders {
             return new ActivatorServiceProvider();
         }
 
-        internal static void SetServiceProvider(Type serviceProviderType = null, Assembly[] assembliesToSearch = null) {
-            if (serviceProviderType == null) {
-                Current = FindServiceProvider(assembliesToSearch);
+        public static void SetServiceProvider(string serviceProviderTypeName, params string[] typeNamesToSearch) {
+            if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
+                var serviceProviderType = TypeHelper.ResolveType(serviceProviderTypeName, typeof (IServiceProvider));
+                if (serviceProviderType != null) {
+                    SetServiceProvider(serviceProviderType);
+                    return;
+                }
+            }
+
+            var assembliesToSearch = new List<Assembly>();
+            var assemblyType = Type.GetType(serviceProviderTypeName);
+            if (assemblyType != null)
+                assembliesToSearch.Add(assemblyType.Assembly);
+
+            foreach (var typeName in typeNamesToSearch) {
+                var type = Type.GetType(typeName);
+                if (type != null)
+                    assembliesToSearch.Add(type.Assembly);
+            }
+
+            SetServiceProvider(assembliesToSearch.Distinct().ToArray());
+        }
+
+        public static void SetServiceProvider(Type serviceProviderOrJobType) {
+            if (serviceProviderOrJobType == null)
+                return;
+
+            if (!typeof(IServiceProvider).IsAssignableFrom(serviceProviderOrJobType)) {
+                SetServiceProvider(serviceProviderOrJobType.Assembly);
                 return;
             }
 
-            if (!typeof(IServiceProvider).IsAssignableFrom(serviceProviderType)) {
-                var assemblies = new List<Assembly>();
-                if (assembliesToSearch != null)
-                    assemblies.AddRange(assembliesToSearch);
-
-                assemblies.Add(serviceProviderType.Assembly);
-
-                Current = FindServiceProvider(assemblies.ToArray());
-                return;
-            }
-
-            var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
+            var bootstrapper = Activator.CreateInstance(serviceProviderOrJobType) as IServiceProvider;
             if (bootstrapper == null)
                 return;
 
             Current = bootstrapper;
+        }
+        
+        public static void SetServiceProvider(params Assembly[] assembliesToSearch) {
+            var result = FindServiceProvider(assembliesToSearch);
+            if (result != null)
+                Current = result;
         }
     }
 }

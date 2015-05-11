@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using CommandLine;
 using Foundatio.Jobs;
+using Foundatio.ServiceProviders;
 using NLog.Fluent;
 
 namespace Foundatio.JobRunner {
@@ -18,7 +19,9 @@ namespace Foundatio.JobRunner {
 
                 if (!ca.Quiet)
                     OutputHeader();
-                
+
+                ServiceProvider.SetServiceProvider(ca.ServiceProviderType, ca.JobType);
+
                 result = Jobs.JobRunner.RunAsync(new JobRunOptions {
                     JobTypeName = ca.JobType,
                     ServiceProviderTypeName = ca.ServiceProviderType,

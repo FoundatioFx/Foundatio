@@ -66,7 +66,8 @@ namespace Foundatio.Tests.Jobs {
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);
 
-            jobInstance = JobRunner.CreateJobInstance("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests", "Foundatio.Tests.Jobs.MyBootstrappedServiceProvider,Foundatio.Tests");
+            ServiceProvider.SetServiceProvider("Foundatio.Tests.Jobs.MyBootstrappedServiceProvider,Foundatio.Tests", "Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests");
+            jobInstance = JobRunner.CreateJobInstance("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests");
             Assert.NotNull(job);
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);

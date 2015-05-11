@@ -31,7 +31,7 @@ namespace Foundatio.Jobs {
         }
         
         public static Task<JobResult> RunAsync(Type jobType, Type serviceProviderType = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            return CreateJobInstance(jobType, serviceProviderType).RunAsync(cancellationToken);
+            return CreateJobInstance(jobType).RunAsync(cancellationToken);
         }
 
         public static void RunUntilEmpty<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: IQueueProcessorJob {
@@ -47,14 +47,14 @@ namespace Foundatio.Jobs {
                 var tasks = new List<Task>();
                 for (int i = 0; i < instanceCount; i++) {
                     tasks.Add(Task.Factory.StartNew(() => {
-                        CreateJobInstance(jobType, serviceProviderType).RunContinuous(interval, iterationLimit, cancellationToken);
+                        CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken);
                     }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default));
                 }
 
                 return Task.WhenAll(tasks);
             }
 
-            return Task.Factory.StartNew(() => CreateJobInstance(jobType, serviceProviderType).RunContinuous(interval, iterationLimit, cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            return Task.Factory.StartNew(() => CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -88,28 +88,20 @@ namespace Foundatio.Jobs {
                 options.ServiceProviderType = TypeHelper.ResolveType(options.ServiceProviderTypeName, typeof(IServiceProvider));
         }
 
-        public static JobBase CreateJobInstance(string jobTypeName, string serviceProviderTypeName = null) {
+        public static JobBase CreateJobInstance(string jobTypeName) {
             var jobType = TypeHelper.ResolveType(jobTypeName, typeof(JobBase));
             if (jobType == null)
                 return null;
 
-            Type serviceProviderType = null;
-            if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
-                serviceProviderType = TypeHelper.ResolveType(serviceProviderTypeName, typeof (IServiceProvider));
-                if (serviceProviderType == null)
-                    return null;
-            }
-
-            return CreateJobInstance(jobType, serviceProviderType);
+            return CreateJobInstance(jobType);
         }
 
-        public static JobBase CreateJobInstance(Type jobType, Type serviceProviderType = null) {
+        public static JobBase CreateJobInstance(Type jobType) {
             if (!typeof(JobBase).IsAssignableFrom(jobType)) {
                 Log.Error().Message("Job Type must derive from Job.").Write();
                 return null;
             }
-            
-            ServiceProvider.SetServiceProvider(serviceProviderType, new[] { jobType.Assembly });
+
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
                 Log.Error().Message("Unable to create job instance.").Write();
