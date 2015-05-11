@@ -10,6 +10,7 @@ namespace Foundatio.JobRunner {
     internal class Program {
         private static int Main(string[] args) {
             int result;
+            string jobName = "N/A";
             try {
                 var ca = new Options();
                 if (!Parser.Default.ParseArguments(args, ca)) {
@@ -19,6 +20,10 @@ namespace Foundatio.JobRunner {
 
                 if (!ca.Quiet)
                     OutputHeader();
+
+                var jobType = Type.GetType(ca.JobType);
+                if (jobType != null)
+                    jobName = jobType.Name;
 
                 ServiceProvider.SetServiceProvider(ca.ServiceProviderType, ca.JobType);
 
@@ -39,7 +44,7 @@ namespace Foundatio.JobRunner {
                 return 1;
             } catch (Exception e) {
                 Console.Error.WriteLine(e.ToString());
-                Log.Error().Message("{0} ({1})", e.ToString()).Write();
+                Log.Error().Exception(e).Message("Job \"{0}\" error: {1}", jobName, e.Message).Write();
 
                 PauseIfDebug();
                 return 1;
