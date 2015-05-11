@@ -11,7 +11,7 @@ namespace Foundatio.ServiceProviders {
         public static IServiceProvider Current
         {
             get { return _serviceProvider ?? _defaultServiceProvider.Value; }
-            set { _serviceProvider = value; }
+            set { _serviceProvider = value ?? Current; }
         }
 
         internal static IServiceProvider FindServiceProvider(Assembly[] assembliesToSearch = null) {
