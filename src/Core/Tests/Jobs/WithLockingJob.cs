@@ -19,7 +19,7 @@ namespace Foundatio.Tests.Jobs {
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
             RunCount++;
 
-            Thread.Sleep(50);
+            Thread.Sleep(80);
             Assert.True(_locker.IsLocked("WithLockingJob"));
 
             return Task.FromResult(JobResult.Success);
