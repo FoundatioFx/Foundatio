@@ -20,6 +20,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4E12E4C1-2EC6-4EC7-8956-AF2721DA4ECE}"
 	ProjectSection(SolutionItems) = preProject
 		appveyor.yml = appveyor.yml
+		README.md = README.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobRunner", "src\JobRunner\Foundatio.JobRunner.csproj", "{36769D64-8EAC-45C1-9AF8-5B7E4D070071}"

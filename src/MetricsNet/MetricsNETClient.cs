@@ -5,7 +5,7 @@ using Foundatio.Utility;
 using Metrics;
 
 namespace Foundatio.Metrics {
-    public class MetricsNetClient : IMetricsClient {
+    public class MetricsNETClient : IMetricsClient {
         public Task CounterAsync(string statName, int value = 1) {
             Metric.Counter(statName, Unit.None).Increment();
             return TaskHelper.Completed();
