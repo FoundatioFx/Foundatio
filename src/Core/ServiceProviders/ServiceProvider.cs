@@ -50,7 +50,7 @@ namespace Foundatio.ServiceProviders {
 
         public static void SetServiceProvider(string serviceProviderTypeName, params string[] typeNamesToSearch) {
             if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
-                var serviceProviderType = TypeHelper.ResolveType(serviceProviderTypeName, typeof (IServiceProvider));
+                var serviceProviderType = TypeHelper.ResolveType(serviceProviderTypeName, typeof(IServiceProvider));
                 if (serviceProviderType != null) {
                     SetServiceProvider(serviceProviderType);
                     return;
@@ -58,12 +58,12 @@ namespace Foundatio.ServiceProviders {
             }
 
             var assembliesToSearch = new List<Assembly>();
-            var assemblyType = Type.GetType(serviceProviderTypeName);
+            var assemblyType = !String.IsNullOrEmpty(serviceProviderTypeName) ? Type.GetType(serviceProviderTypeName) : null;
             if (assemblyType != null)
                 assembliesToSearch.Add(assemblyType.Assembly);
 
             foreach (var typeName in typeNamesToSearch) {
-                var type = Type.GetType(typeName);
+                var type = !String.IsNullOrEmpty(typeName) ? Type.GetType(typeName) : null;
                 if (type != null)
                     assembliesToSearch.Add(type.Assembly);
             }

@@ -21,7 +21,7 @@ namespace Foundatio.JobRunner {
                 if (!ca.Quiet)
                     OutputHeader();
 
-                var jobType = Type.GetType(ca.JobType);
+                var jobType = !String.IsNullOrEmpty(ca.JobType) ? Type.GetType(ca.JobType) : null;
                 if (jobType != null)
                     jobName = jobType.Name;
 
@@ -38,13 +38,13 @@ namespace Foundatio.JobRunner {
                 PauseIfDebug();
             } catch (FileNotFoundException e) {
                 Console.Error.WriteLine("{0} ({1})", e.Message, e.FileName);
-                Log.Error().Message("{0} ({1})", e.Message, e.FileName).Write();
+                Log.Error().Message(String.Format("{0} ({1})", e.Message, e.FileName)).Write();
 
                 PauseIfDebug();
                 return 1;
             } catch (Exception e) {
                 Console.Error.WriteLine(e.ToString());
-                Log.Error().Exception(e).Message("Job \"{0}\" error: {1}", jobName, e.Message).Write();
+                Log.Error().Exception(e).Message(String.Format("Job \"{0}\" error: {1}", jobName, e.Message)).Write();
 
                 PauseIfDebug();
                 return 1;

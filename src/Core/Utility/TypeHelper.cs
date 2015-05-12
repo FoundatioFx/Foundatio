@@ -4,6 +4,9 @@ using NLog.Fluent;
 namespace Foundatio.Utility {
     public static class TypeHelper {
         public static Type ResolveType(string fullTypeName, Type expectedBase = null) {
+            if (String.IsNullOrEmpty(fullTypeName))
+                return null;
+            
             var type = Type.GetType(fullTypeName);
             if (type == null) {
                 Log.Error().Message("Unable to resolve type: \"{0}\".", fullTypeName).Write();
