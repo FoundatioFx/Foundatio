@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
-VisualStudioVersion = 12.0.30723.0
+VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio", "src\Core\Foundatio.csproj", "{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}"
 EndProject
@@ -31,7 +31,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AzureStorage", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobSample", "src\JobSample\Foundatio.JobSample.csproj", "{CA7CD628-686F-4821-879B-5A8158C3EBB1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNet", "Foundatio.MetricsNet\Foundatio.MetricsNet.csproj", "{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNet", "src\MetricsNet\Foundatio.MetricsNet.csproj", "{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
