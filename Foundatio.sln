@@ -31,7 +31,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AzureStorage", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobSample", "src\JobSample\Foundatio.JobSample.csproj", "{CA7CD628-686F-4821-879B-5A8158C3EBB1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNet", "src\MetricsNet\Foundatio.MetricsNet.csproj", "{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNET", "src\MetricsNET\Foundatio.MetricsNET.csproj", "{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

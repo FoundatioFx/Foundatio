@@ -7,8 +7,8 @@
     <ProjectGuid>{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Foundatio.MetricsNet</RootNamespace>
-    <AssemblyName>Foundatio.MetricsNet</AssemblyName>
+    <RootNamespace>Foundatio.MetricsNET</RootNamespace>
+    <AssemblyName>Foundatio.MetricsNET</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
@@ -52,7 +52,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Foundatio.MetricsNet.nuspec" />
+    <None Include="Foundatio.MetricsNET.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
