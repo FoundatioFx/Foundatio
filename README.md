@@ -184,6 +184,7 @@ We provide two different metric implementations that derive from the [`IMetricsC
   ```
 
 2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
+3. [MetricsNetClient](https://github.com/exceptionless/Foundatio/blob/master/src/MetricsNet/MetricsNetClient.cs): An [Metrics.NET](https://github.com/etishor/Metrics.NET) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons. 
 
