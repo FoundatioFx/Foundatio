@@ -25,6 +25,8 @@ To summarize, if you want pain free development and testing while allowing your 
 
 [Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please contact us via in-app support or [open an issue](https://github.com/exceptionless/Foundatio/issues/new). We’re always here to help if you have any questions!
 
+**This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
+
 1. You will need to have [Visual Studio 2013](http://www.visualstudio.com/products/visual-studio-community-vs) installed.
 2. Open the `Foundatio.sln` Visual Studio solution file.
 
