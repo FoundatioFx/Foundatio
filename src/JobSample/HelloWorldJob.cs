@@ -16,6 +16,9 @@ namespace Foundatio.JobSample.Jobs {
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
             RunCount++;
 
+            Console.WriteLine("Hello World!");
+            Thread.Sleep(100);
+
             return Task.FromResult(JobResult.Success);
         }
     }

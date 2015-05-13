@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Metrics;
-using Foundatio.Caching;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Nito.AsyncEx;
@@ -19,7 +19,6 @@ namespace Foundatio.Queues {
         private readonly IDatabase _db;
         private readonly ISubscriber _subscriber;
         private readonly RedisCacheClient _cache;
-        private readonly ILockProvider _lockProvider;
         private Action<QueueEntry<T>> _workerAction;
         private bool _workerAutoComplete;
         private long _enqueuedCount;
@@ -41,6 +40,7 @@ namespace Foundatio.Queues {
         private readonly IMetricsClient _metrics;
         private readonly Timer _maintenanceTimer;
         private readonly ISerializer _serializer;
+        private readonly ILockProvider _maintenanceLockProvider;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
@@ -48,7 +48,6 @@ namespace Foundatio.Queues {
             _db = connection.GetDatabase();
             _serializer = serializer ?? new JsonNetSerializer();
             _cache = new RedisCacheClient(connection, _serializer);
-            _lockProvider = new CacheLockProvider(_cache);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
             _metrics = metrics;
@@ -76,8 +75,10 @@ namespace Foundatio.Queues {
 
             if (runMaintenanceTasks) {
                 _queueDisposedCancellationTokenSource = new CancellationTokenSource();
+                // min is 1 second, max is 1 minute
                 TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
-                _maintenanceTimer = new Timer(DoMaintenanceWork, null, interval, TimeSpan.FromMilliseconds(100));
+                _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
+                _maintenanceTimer = new Timer(DoMaintenanceWork, null, TimeSpan.FromMilliseconds(250), interval);
             }
 
             Log.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
@@ -330,7 +331,6 @@ namespace Foundatio.Queues {
                 _db.KeyDelete(GetAttemptsKey(id));
                 _db.KeyDelete(GetDequeuedTimeKey(id));
                 _db.KeyDelete(GetWaitTimeKey(id));
-                _lockProvider.ReleaseLock(id);
             }
             _db.KeyDelete(name);
         }
@@ -346,7 +346,6 @@ namespace Foundatio.Queues {
                 _db.ListRemove(WorkListName, id);
                 _db.ListRemove(WaitListName, id);
                 _db.ListRemove(DeadListName, id);
-                _lockProvider.ReleaseLock(id);
             }
         }
 
@@ -386,13 +385,13 @@ namespace Foundatio.Queues {
         private void UpdateStats() {
             if (_metrics == null || String.IsNullOrEmpty(QueueSizeStatName))
                 return;
-
+            
             long count = GetQueueCount();
             _metrics.Gauge(QueueSizeStatName, count);
         }
 
-        private void DoMaintenanceWork(object state) {
-            Log.Trace().Message("DoMaintenance {0}", _queueName).Write();
+        internal void DoMaintenanceWork() {
+            Log.Trace().Message("DoMaintenance: Name={0} Id={1}", _queueName, QueueId).Write();
 
             try {
                 var workIds = _db.ListRange(WorkListName);
@@ -410,17 +409,12 @@ namespace Foundatio.Queues {
                     if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
                         continue;
 
-                    Log.Trace().Message("Getting work time out lock...").Write();
-                    _lockProvider.TryUsingLock(workId,
-                        () => {
-                            Log.Trace().Message("Got item lock for work time out").Write();
-                            Abandon(workId);
-                            Interlocked.Increment(ref _workItemTimeoutCount);
-                        },
-                        TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
+                    Log.Trace().Message("Auto abandon item {0}", workId).Write();
+                    Abandon(workId);
+                    Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error occurred while checking for work item timeouts.").Write();
+                Log.Error().Exception(ex).Message("Error checking for work item timeouts: {0}", ex.Message).Write();
             }
 
             try {
@@ -434,34 +428,33 @@ namespace Foundatio.Queues {
 
                     Log.Trace().Message("Getting retry lock").Write();
 
-                    _lockProvider.TryUsingLock(waitId,
-                        () => {
-                            Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
-                            var tx = _db.CreateTransaction();
+                    Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
+                    var tx = _db.CreateTransaction();
 #pragma warning disable 4014
-                            tx.ListRemoveAsync(WaitListName, waitId);
-                            tx.ListLeftPushAsync(QueueListName, waitId);
+                    tx.ListRemoveAsync(WaitListName, waitId);
+                    tx.ListLeftPushAsync(QueueListName, waitId);
 #pragma warning restore 4014
-                            var success = tx.Execute();
-                            if (!success)
-                                throw new Exception("Unable to move item to queue list.");
+                    var success = tx.Execute();
+                    if (!success)
+                        throw new Exception("Unable to move item to queue list.");
 
-                            _db.KeyDelete(GetWaitTimeKey(waitId));
-                            _subscriber.Publish(GetTopicName(), waitId);
-                        },
-                        TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
+                    _db.KeyDelete(GetWaitTimeKey(waitId));
+                    _subscriber.Publish(GetTopicName(), waitId);
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error occurred while adding items back to the queue after the retry delay.").Write();
+                Log.Error().Exception(ex).Message("Error adding items back to the queue after the retry delay: {0}", ex.Message).Write();
             }
 
             try {
-                _lockProvider.TryUsingLock(_queueName + "-trimdead",
-                    () => TrimDeadletterItems(_deadLetterMaxItems),
-                    TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5));
+                TrimDeadletterItems(_deadLetterMaxItems);
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error trimming deadletter items.").Write();
+                Log.Error().Exception(ex).Message("Error trimming deadletter items: {0}", ex.Message).Write();
             }
+        }
+
+        private void DoMaintenanceWork(object state) {
+            Log.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
+            _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.Zero);
         }
 
         public void Dispose() {

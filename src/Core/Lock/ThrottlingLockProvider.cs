@@ -35,7 +35,12 @@ namespace Foundatio.Lock {
                         return false;
                     }
 
-                    _cacheClient.Increment(cacheKey, 1, _throttlingPeriod);
+                    hitCount = _cacheClient.Increment(cacheKey, 1, _throttlingPeriod);
+                    if (hitCount > _maxHitsPerPeriod) {
+                        Log.Trace().Message("Max hits exceeded after increment for {0}.", name).Write();
+                        return false;
+                    }
+
                     return true;
                 } catch (Exception ex) {
                     Log.Error().Message("Error incrementing hit count for {0}: {1}", name, ex.Message).Exception(ex).Write();

@@ -59,6 +59,14 @@ namespace Foundatio.Utility {
             var i = 0;
             var firstAttempt = DateTime.UtcNow;
 
+            // if zero timeout, then only try action once.
+            if (timeOut.HasValue && timeOut.Value == TimeSpan.Zero) {
+                if (action())
+                    return;
+
+                throw new TimeoutException(string.Format("Exceeded timeout of {0}", timeOut));
+            }
+
             while (timeOut == null || DateTime.UtcNow - firstAttempt < timeOut.Value) {
                 i++;
                 if (action())

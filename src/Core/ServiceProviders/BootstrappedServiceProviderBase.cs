@@ -6,9 +6,15 @@ namespace Foundatio.ServiceProviders {
         
         public abstract IServiceProvider Bootstrap();
 
+        private static readonly object _lock = new object();
+
         public object GetService(Type serviceType) {
-            if (_serviceProvider == null)
-                _serviceProvider = Bootstrap();
+            if (_serviceProvider == null) {
+                lock (_lock) {
+                    if (_serviceProvider == null)
+                        _serviceProvider = Bootstrap();
+                }
+            }
 
             return _serviceProvider.GetService(serviceType);
         }

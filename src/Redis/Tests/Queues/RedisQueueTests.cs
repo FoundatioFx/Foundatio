@@ -10,9 +10,15 @@ using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
+        private readonly TestOutputWriter _output;
+        public RedisQueueTests(ITestOutputHelper output) {
+            _output = new TestOutputWriter(output);
+        }
+
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems);
             Debug.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
@@ -126,7 +132,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
 
                 workItem = queue.Dequeue();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
@@ -134,7 +140,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
 
                 // let the work item timeout
                 Thread.Sleep(1000);
@@ -144,7 +150,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(2, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
 
                 // should go to deadletter now
                 workItem = queue.Dequeue();
@@ -155,13 +161,13 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:dead"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(3, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
             }
         }
 
         [Fact]
         public void VerifyCacheKeysAreCorrectAfterAbandonWithRetryDelay() {
-            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250));
+            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250)) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
@@ -181,9 +187,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.Equal(5, CountAllKeys());
-
+                Assert.InRange(CountAllKeys(), 5, 6);
                 Thread.Sleep(1000);
+
+                queue.DoMaintenanceWork();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
@@ -191,7 +198,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
 
                 workItem = queue.Dequeue();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
@@ -199,13 +206,13 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 4, 5);
             }
         }
 
         [Fact]
         public void CanTrimDeadletterItems() {
-            var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3);
+            var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
@@ -229,7 +236,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
 
                 workItemIds.Reverse();
-                Thread.Sleep(1000);
+                queue.DoMaintenanceWork();
 
                 foreach (var id in workItemIds.Take(3)) {
                     Trace.WriteLine("Checking: " + id);
@@ -386,7 +393,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 var server = SharedConnection.GetMuxer().GetServer(endpoint);
 
                 try {
-                    count += server.Keys().Count();
+                    var keys = server.Keys().ToArray();
+                    foreach (var key in keys)
+                        _output.WriteLine(key);
+                    count += keys.Length;
                 } catch (Exception) { }
             }
 
