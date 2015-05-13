@@ -13,29 +13,42 @@ namespace Foundatio.Jobs {
             _queue = queue;
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+        protected bool AutoCompleteOnSuccess { get; set; }
+
+        protected async override Task<JobResult> RunInternalAsync(CancellationToken token) {
             QueueEntry<T> queueEntry = null;
             try {
                 queueEntry = _queue.Dequeue();
             } catch (Exception ex) {
                 if (!(ex is TimeoutException)) {
                     Log.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
-                    return Task.FromResult(JobResult.FromException(ex));
+                    return JobResult.FromException(ex);
                 }
             }
 
             if (queueEntry == null)
-                return Task.FromResult(JobResult.Success);
+                return JobResult.Success;
 
             var lockValue = GetQueueItemLock(queueEntry);
             if (lockValue == null) {
                 Log.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
-                return Task.FromResult(JobResult.FailedWithMessage("Unable to acquire lock for queue entry."));
+                return JobResult.FailedWithMessage("Unable to acquire lock for queue entry.");
             }
             Log.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
 
-            using (lockValue)
-                return ProcessQueueItem(queueEntry);
+            using (lockValue) {
+                var result = await ProcessQueueItem(queueEntry);
+
+                if (!AutoCompleteOnSuccess)
+                    return result;
+
+                if (result.IsSuccess)
+                    queueEntry.Complete();
+                else
+                    queueEntry.Abandon();
+
+                return result;
+            }
         }
 
         protected virtual IDisposable GetQueueItemLock(QueueEntry<T> queueEntry) {

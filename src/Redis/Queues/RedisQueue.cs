@@ -157,7 +157,7 @@ namespace Foundatio.Queues {
 
         public string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
-            Log.Trace().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
+            Log.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
             bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
@@ -225,12 +225,15 @@ namespace Foundatio.Queues {
             try {
                 var payload = _cache.Get<T>(GetPayloadKey(value));
                 if (payload == null) {
+                    Log.Error().Message("Error getting queue payload: {0}", value).Write();
                     _db.ListRemove(WorkListName, value);
                     return null;
                 }
 
                 Interlocked.Increment(ref _dequeuedCount);
                 UpdateStats();
+
+                Log.Debug().Message("Dequeued item: {0}", value).Write();
                 return new QueueEntry<T>(value, payload, this);
             } catch (Exception ex) {
                 Log.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
@@ -239,7 +242,7 @@ namespace Foundatio.Queues {
         }
 
         public void Complete(string id) {
-            Log.Trace().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+            Log.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
             var batch = _db.CreateBatch();
             batch.ListRemoveAsync(WorkListName, id);
             batch.KeyDeleteAsync(GetPayloadKey(id));
@@ -253,7 +256,7 @@ namespace Foundatio.Queues {
         }
 
         public void Abandon(string id) {
-            Log.Trace().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+            Log.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
             var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
             int attempts = 1;
             if (attemptsValue.HasValue)

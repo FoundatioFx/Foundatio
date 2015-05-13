@@ -25,11 +25,11 @@ namespace Foundatio.Jobs {
             }
         }
 
-        private Task<JobResult> TryRunAsync(CancellationToken token) {
+        private async Task<JobResult> TryRunAsync(CancellationToken token) {
             try {
-                return RunInternalAsync(token);
+                return await RunInternalAsync(token);
             } catch (Exception ex) {
-                return Task.FromResult(JobResult.FromException(ex));
+                return JobResult.FromException(ex);
             }
         }
 
