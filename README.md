@@ -150,6 +150,10 @@ job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
 job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
 ```
 
+```
+Job.exe -t "MyLib.HelloWorldJob,MyLib"
+```
+
 ### [File Storage](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Storage)
 
 We provide three different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/IFileStorage.cs):
@@ -168,10 +172,6 @@ using Foundatio.Storage;
 IFileStorage storage = new InMemoryFileStorage();
 storage.SaveFile("test.txt", "test");
 string content = storage.GetFileContents("test.txt")
-```
-
-```
-Job.exe -t "MyLib.HelloWorldJob,MyLib"
 ```
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Metrics)
