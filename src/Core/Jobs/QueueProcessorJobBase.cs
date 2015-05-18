@@ -13,7 +13,7 @@ namespace Foundatio.Jobs {
             _queue = queue;
         }
 
-        protected bool AutoCompleteOnSuccess { get; set; }
+        protected bool AutoComplete { get; set; }
 
         protected async override Task<JobResult> RunInternalAsync(CancellationToken token) {
             QueueEntry<T> queueEntry = null;
@@ -39,7 +39,7 @@ namespace Foundatio.Jobs {
             using (lockValue) {
                 var result = await ProcessQueueItem(queueEntry);
 
-                if (!AutoCompleteOnSuccess)
+                if (!AutoComplete)
                     return result;
 
                 if (result.IsSuccess)

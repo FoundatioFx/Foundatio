@@ -16,9 +16,9 @@ using StackExchange.Redis;
 namespace Foundatio.Queues {
     public class RedisQueue<T> : IQueue<T> where T: class {
         private readonly string _queueName;
-        private readonly IDatabase _db;
-        private readonly ISubscriber _subscriber;
-        private readonly RedisCacheClient _cache;
+        protected readonly IDatabase _db;
+        protected readonly ISubscriber _subscriber;
+        protected readonly RedisCacheClient _cache;
         private Action<QueueEntry<T>> _workerAction;
         private bool _workerAutoComplete;
         private long _enqueuedCount;
@@ -37,10 +37,10 @@ namespace Foundatio.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
-        private readonly IMetricsClient _metrics;
+        protected readonly IMetricsClient _metrics;
         private readonly Timer _maintenanceTimer;
-        private readonly ISerializer _serializer;
-        private readonly ILockProvider _maintenanceLockProvider;
+        protected readonly ISerializer _serializer;
+        protected readonly ILockProvider _maintenanceLockProvider;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
@@ -155,7 +155,7 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _queueName, ":in");
         }
 
-        public string Enqueue(T data) {
+        public virtual string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
             Log.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
             bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
@@ -170,7 +170,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public virtual void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
             if (handler == null)
                 throw new ArgumentNullException("handler");
 
@@ -185,7 +185,7 @@ namespace Foundatio.Queues {
             Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
         }
 
-        public void StopWorking() {
+        public virtual void StopWorking() {
             Log.Trace().Message("Queue {0} stop working", _queueName).Write();
             _workerAction = null;
             _subscriber.UnsubscribeAll();
@@ -196,7 +196,7 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
         }
 
-        public QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
+        public virtual QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
             Log.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -241,7 +241,7 @@ namespace Foundatio.Queues {
             }
         }
 
-        public void Complete(string id) {
+        public virtual void Complete(string id) {
             Log.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
             var batch = _db.CreateBatch();
             batch.ListRemoveAsync(WorkListName, id);
@@ -255,7 +255,7 @@ namespace Foundatio.Queues {
             Log.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public void Abandon(string id) {
+        public virtual void Abandon(string id) {
             Log.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
             var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
             int attempts = 1;
@@ -313,7 +313,7 @@ namespace Foundatio.Queues {
             throw new NotImplementedException();
         }
 
-        public void DeleteQueue() {
+        public virtual void DeleteQueue() {
             Log.Trace().Message("Deleting queue: {0}", _queueName).Write();
             DeleteList(QueueListName);
             DeleteList(WorkListName);
@@ -460,7 +460,7 @@ namespace Foundatio.Queues {
             _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.Zero);
         }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             Log.Trace().Message("Queue {0} dispose", _queueName).Write();
             StopWorking();
             if (_queueDisposedCancellationTokenSource != null)
