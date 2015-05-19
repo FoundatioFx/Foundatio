@@ -27,8 +27,9 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly ISerializer _serializer;
+        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>();
 
-        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null) {
+        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IQueueEventHandler<T> eventHandler = null) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
@@ -52,6 +53,9 @@ namespace Foundatio.Queues {
             }
 
             _serializer = serializer ?? new JsonNetSerializer();
+
+            if (eventHandler != null)
+                _eventHandler = eventHandler;
 
             _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
             if (retryPolicy != null)
@@ -86,6 +90,11 @@ namespace Foundatio.Queues {
 
         ISerializer IHaveSerializer.Serializer {
             get { return _serializer; }
+        }
+
+        public IQueueEventHandler<T> EventHandler {
+            get { return _eventHandler; }
+            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
         }
 
         public long GetQueueCount() {
@@ -124,14 +133,22 @@ namespace Foundatio.Queues {
         }
 
         public Task EnqueueAsync(T data) {
+            if (!EventHandler.BeforeEnqueue(this, data))
+                return null;
+
             Interlocked.Increment(ref _enqueuedCount);
             return _queueClient.SendAsync(new BrokeredMessage(data));
         }
 
         public string Enqueue(T data) {
+            if (!EventHandler.BeforeEnqueue(this, data))
+                return null;
             Interlocked.Increment(ref _enqueuedCount);
             var msg = new BrokeredMessage(data);
             _queueClient.Send(msg);
+
+            EventHandler.AfterEnqueue(this, msg.MessageId, data);
+
             return msg.MessageId;
         }
 
@@ -172,28 +189,33 @@ namespace Foundatio.Queues {
                 if (msg == null)
                     return null;
 
-                Interlocked.Increment(ref _dequeuedCount);
                 var data = msg.GetBody<T>();
+                EventHandler.OnDequeue(this, msg.MessageId, data);
+                Interlocked.Increment(ref _dequeuedCount);
                 return new QueueEntry<T>(msg.LockToken.ToString(), data, this);
             }
         }
 
         public Task CompleteAsync(string id) {
+            EventHandler.OnComplete(this, id);
             Interlocked.Increment(ref _completedCount);
             return _queueClient.CompleteAsync(new Guid(id));
         }
 
         public void Complete(string id) {
+            EventHandler.OnComplete(this, id);
             Interlocked.Increment(ref _completedCount);
             _queueClient.Complete(new Guid(id));
         }
 
         public Task AbandonAsync(string id) {
+            EventHandler.OnAbandon(this, id);
             Interlocked.Increment(ref _abandonedCount);
             return _queueClient.AbandonAsync(new Guid(id));
         }
 
         public void Abandon(string id) {
+            EventHandler.OnAbandon(this, id);
             Interlocked.Increment(ref _abandonedCount);
             _queueClient.Abandon(new Guid(id));
         }

@@ -32,8 +32,9 @@ namespace Foundatio.Queues {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly IMetricsClient _metrics;
         private readonly ISerializer _serializer;
+        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>(); 
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null, ISerializer serializer = null) {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null, ISerializer serializer = null, IQueueEventHandler<T> eventHandler = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _metrics = metrics;
             QueueSizeStatName = statName;
@@ -46,6 +47,9 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             _serializer = serializer ?? new JsonNetSerializer();
+
+            if (eventHandler != null)
+                _eventHandler = eventHandler;
 
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
             TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
@@ -71,6 +75,9 @@ namespace Foundatio.Queues {
         public string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
             Log.Trace().Message("Queue {0} enqueue item: {1}", typeof(T).Name, id).Write();
+            if (!EventHandler.BeforeEnqueue(this, data))
+                return null;
+
             var info = new QueueInfo<T> {
                 Data = data,
                 Id = id
@@ -80,6 +87,8 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
             UpdateStats();
+
+            EventHandler.AfterEnqueue(this, id, data);
             Log.Trace().Message("Enqueue done").Write();
 
             return id;
@@ -126,6 +135,7 @@ namespace Foundatio.Queues {
                 return null;
 
             Log.Trace().Message("Dequeue: Got Item").Write();
+            EventHandler.OnDequeue(this, info.Id, info.Data);
             Interlocked.Increment(ref _dequeuedCount);
 
             info.Attempts++;
@@ -140,6 +150,8 @@ namespace Foundatio.Queues {
 
         public void Complete(string id) {
             Log.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, id).Write();
+            EventHandler.OnComplete(this, id);
+
             QueueInfo<T> info = null;
             if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
@@ -151,6 +163,8 @@ namespace Foundatio.Queues {
 
         public void Abandon(string id) {
             Log.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, id).Write();
+
+            EventHandler.OnAbandon(this, id);
             QueueInfo<T> info;
             if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
@@ -185,6 +199,12 @@ namespace Foundatio.Queues {
 
         public IEnumerable<T> GetDeadletterItems() {
             return _deadletterQueue.Select(i => i.Data);
+        }
+
+        public IQueueEventHandler<T> EventHandler
+        {
+            get { return _eventHandler; }
+            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
         }
 
         public void DeleteQueue() {

@@ -17,6 +17,7 @@ namespace Foundatio.Queues {
         long GetWorkingCount();
         long GetDeadletterCount();
         IEnumerable<T> GetDeadletterItems();
+        IQueueEventHandler<T> EventHandler { get; } 
         void DeleteQueue();
         long EnqueuedCount { get; }
         long DequeuedCount { get; }

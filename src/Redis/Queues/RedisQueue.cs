@@ -41,9 +41,10 @@ namespace Foundatio.Queues {
         private readonly Timer _maintenanceTimer;
         protected readonly ISerializer _serializer;
         protected readonly ILockProvider _maintenanceLockProvider;
+        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>(); 
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null) {
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null, IQueueEventHandler<T> eventHandler = null) {
             QueueId = Guid.NewGuid().ToString("N");
             _db = connection.GetDatabase();
             _serializer = serializer ?? new JsonNetSerializer();
@@ -69,6 +70,8 @@ namespace Foundatio.Queues {
             _deadLetterMaxItems = deadLetterMaxItems;
 
             _payloadTtl = GetPayloadTtl();
+            if (eventHandler != null)
+                _eventHandler = eventHandler;
 
             _subscriber = connection.GetSubscriber();
             _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
@@ -112,6 +115,11 @@ namespace Foundatio.Queues {
 
         ISerializer IHaveSerializer.Serializer {
             get { return _serializer; }
+        }
+
+        public IQueueEventHandler<T> EventHandler {
+            get { return _eventHandler; }
+            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
         }
 
         private string GetPayloadKey(string id) {
@@ -158,6 +166,9 @@ namespace Foundatio.Queues {
         public virtual string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
             Log.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
+            if (!EventHandler.BeforeEnqueue(this, data))
+                return null;
+
             bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
@@ -165,6 +176,7 @@ namespace Foundatio.Queues {
             _subscriber.Publish(GetTopicName(), id);
             UpdateStats();
             Interlocked.Increment(ref _enqueuedCount);
+            EventHandler.AfterEnqueue(this, id, data);
             Log.Trace().Message("Enqueue done").Write();
 
             return id;
@@ -230,6 +242,8 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
+                EventHandler.OnDequeue(this, value, payload);
+
                 Interlocked.Increment(ref _dequeuedCount);
                 UpdateStats();
 
@@ -243,6 +257,7 @@ namespace Foundatio.Queues {
 
         public virtual void Complete(string id) {
             Log.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+            EventHandler.OnComplete(this, id);
             var batch = _db.CreateBatch();
             batch.ListRemoveAsync(WorkListName, id);
             batch.KeyDeleteAsync(GetPayloadKey(id));
@@ -257,6 +272,7 @@ namespace Foundatio.Queues {
 
         public virtual void Abandon(string id) {
             Log.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+            EventHandler.OnAbandon(this, id); 
             var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
             int attempts = 1;
             if (attemptsValue.HasValue)
