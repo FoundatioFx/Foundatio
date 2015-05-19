@@ -41,7 +41,7 @@ namespace Foundatio.Queues {
         private readonly Timer _maintenanceTimer;
         protected readonly ISerializer _serializer;
         protected readonly ILockProvider _maintenanceLockProvider;
-        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>(); 
+        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null, IQueueEventHandler<T> eventHandler = null) {
@@ -119,7 +119,7 @@ namespace Foundatio.Queues {
 
         public IQueueEventHandler<T> EventHandler {
             get { return _eventHandler; }
-            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
+            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
         }
 
         private string GetPayloadKey(string id) {

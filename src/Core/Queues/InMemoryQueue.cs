@@ -32,7 +32,7 @@ namespace Foundatio.Queues {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly IMetricsClient _metrics;
         private readonly ISerializer _serializer;
-        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>(); 
+        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, IMetricsClient metrics = null, string statName = null, ISerializer serializer = null, IQueueEventHandler<T> eventHandler = null) {
             QueueId = Guid.NewGuid().ToString("N");
@@ -204,7 +204,7 @@ namespace Foundatio.Queues {
         public IQueueEventHandler<T> EventHandler
         {
             get { return _eventHandler; }
-            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
+            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
         }
 
         public void DeleteQueue() {

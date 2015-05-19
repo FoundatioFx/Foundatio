@@ -27,7 +27,7 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly ISerializer _serializer;
-        private IQueueEventHandler<T> _eventHandler = new NullQueueEventHandler<T>();
+        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance;
 
         public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IQueueEventHandler<T> eventHandler = null) {
             _queueName = queueName ?? typeof(T).Name;
@@ -94,7 +94,7 @@ namespace Foundatio.Queues {
 
         public IQueueEventHandler<T> EventHandler {
             get { return _eventHandler; }
-            set { _eventHandler = value ?? new NullQueueEventHandler<T>(); }
+            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
         }
 
         public long GetQueueCount() {

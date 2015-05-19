@@ -8,5 +8,7 @@ namespace Foundatio.Queues {
         public void OnDequeue(IQueue<T> queue, string id, T data) { }
         public void OnComplete(IQueue<T> queue, string id) { }
         public void OnAbandon(IQueue<T> queue, string id) { }
+        
+        public static IQueueEventHandler<T> Instance = new NullQueueEventHandler<T>(); 
     }
 }
