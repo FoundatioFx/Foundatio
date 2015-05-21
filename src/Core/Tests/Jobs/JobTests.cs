@@ -42,7 +42,7 @@ namespace Foundatio.Tests.Jobs {
 
             Task.Run(() => job.Run());
             Task.Run(() => job.Run());
-            Thread.Sleep(200);
+            Thread.Sleep(300);
             Assert.Equal(4, job.RunCount);
         }
 
