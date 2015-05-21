@@ -31,7 +31,7 @@ namespace Foundatio.Lock {
                     return _cacheClient.Add(cacheKey, DateTime.UtcNow);
 
                 return _cacheClient.Add(cacheKey, DateTime.UtcNow, lockTimeout ?? TimeSpan.FromMinutes(20));
-            }, acquireTimeout, TimeSpan.FromMilliseconds(50));
+            }, acquireTimeout, TimeSpan.FromMilliseconds(Math.Max(acquireTimeout.Value.TotalMilliseconds / 10, 100)));
 
             Log.Trace().Message("Returning lock: {0}", name).Write();
             return new DisposableLock(name, this);

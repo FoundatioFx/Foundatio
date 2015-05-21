@@ -46,7 +46,7 @@ namespace Foundatio.Lock {
                     Log.Error().Message("Error incrementing hit count for {0}: {1}", name, ex.Message).Exception(ex).Write();
                     return false;
                 }
-            }, acquireTimeout, TimeSpan.FromMilliseconds(50));
+            }, acquireTimeout, TimeSpan.FromMilliseconds(Math.Max(acquireTimeout.Value.TotalMilliseconds / 10, 100))); // retry 10 times
 
             Log.Trace().Message("Allowing lock: {0}", name).Write();
             return new DisposableLock(name, this);

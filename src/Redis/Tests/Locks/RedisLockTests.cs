@@ -2,6 +2,7 @@
 using Foundatio.Caching;
 using Foundatio.Tests;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase {
@@ -18,5 +19,7 @@ namespace Foundatio.Redis.Tests.Locks {
         public override void LockWillTimeout() {
             base.LockWillTimeout();
         }
+
+        public RedisLockTests(ITestOutputHelper helper) : base(helper) {}
     }
 }

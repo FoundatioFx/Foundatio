@@ -1,11 +1,22 @@
 ﻿using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests {
-    public abstract class LockTestBase {
+    public class TestBase {
+        protected TextWriter _writer;
+
+        public TestBase(ITestOutputHelper helper) {
+            _writer = new TestOutputWriter(helper);
+        }
+    }
+
+    public abstract class LockTestBase : TestBase {
         protected virtual ILockProvider GetLockProvider() {
             return null;
         }
@@ -54,5 +65,7 @@ namespace Foundatio.Tests {
                 Assert.NotNull(testLock);
             }
         }
+
+        protected LockTestBase(ITestOutputHelper helper) : base(helper) {}
     }
 }

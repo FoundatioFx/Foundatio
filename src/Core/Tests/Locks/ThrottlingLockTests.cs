@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests {
     public class ThrottlingLockTests : LockTestBase {
@@ -29,19 +30,23 @@ namespace Foundatio.Tests {
 
             var sw = new Stopwatch();
             sw.Start();
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 5; i++) {
                 locker.AcquireLock("test");
+                _writer.WriteLine("Got");
+            }
             sw.Stop();
 
             Assert.True(sw.Elapsed.TotalSeconds < 1);
 
             sw.Reset();
             sw.Start();
-            locker.AcquireLock("test");
+            Assert.Throws<TimeoutException>(() => locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1)));
             sw.Stop();
 
             Trace.WriteLine(sw.Elapsed);
             Assert.InRange(sw.Elapsed.TotalSeconds, 1.0, 2.2);
         }
+
+        public ThrottlingLockTests(ITestOutputHelper helper) : base(helper) {}
     }
 }

@@ -1,6 +1,7 @@
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests {
     public class InMemoryLockTests : LockTestBase {
@@ -17,5 +18,7 @@ namespace Foundatio.Tests {
         public override void LockWillTimeout() {
             base.LockWillTimeout();
         }
+
+        public InMemoryLockTests(ITestOutputHelper helper) : base(helper) {}
     }
 }
