@@ -58,6 +58,7 @@
     <Compile Include="Caching\ICacheClient.cs" />
     <Compile Include="Caching\InMemoryCacheClient.cs" />
     <Compile Include="Extensions\ConcurrentQueueExtensions.cs" />
+    <Compile Include="Extensions\ExceptionExtensions.cs" />
     <Compile Include="Extensions\NumberExtensions.cs" />
     <Compile Include="Extensions\ObjectExtensions.cs" />
     <Compile Include="Extensions\StringExtensions.cs" />

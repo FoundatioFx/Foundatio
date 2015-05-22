@@ -10,6 +10,7 @@ namespace Foundatio.Lock {
         private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
         private readonly int _maxHitsPerPeriod;
 
+        // TODO: Use message bus to communicate and make the check more efficient
         public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null) {
             _cacheClient = cacheClient;
             _maxHitsPerPeriod = maxHitsPerPeriod;

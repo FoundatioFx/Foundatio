@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using CommandLine;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.ServiceProviders;
 using NLog.Fluent;
@@ -37,14 +38,14 @@ namespace Foundatio.JobRunner {
 
                 PauseIfDebug();
             } catch (FileNotFoundException e) {
-                Console.Error.WriteLine("{0} ({1})", e.Message, e.FileName);
-                Log.Error().Message(String.Format("{0} ({1})", e.Message, e.FileName)).Write();
+                Console.Error.WriteLine("{0} ({1})", e.GetMessage(), e.FileName);
+                Log.Error().Message(String.Format("{0} ({1})", e.GetMessage(), e.FileName)).Write();
 
                 PauseIfDebug();
                 return 1;
             } catch (Exception e) {
                 Console.Error.WriteLine(e.ToString());
-                Log.Error().Exception(e).Message(String.Format("Job \"{0}\" error: {1}", jobName, e.Message)).Write();
+                Log.Error().Exception(e).Message(String.Format("Job \"{0}\" error: {1}", jobName, e.GetMessage())).Write();
 
                 PauseIfDebug();
                 return 1;

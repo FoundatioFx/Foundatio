@@ -11,6 +11,7 @@ namespace Foundatio.Lock {
             _cacheClient = cacheClient;
         }
 
+        // TODO: Use message bus to communicate and make the check more efficient
         public IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
             Log.Trace().Message("AcquireLock: {0}", name).Write();
             if (!acquireTimeout.HasValue)

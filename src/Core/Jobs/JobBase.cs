@@ -10,18 +10,42 @@ namespace Foundatio.Jobs {
             return Disposable.Empty;
         }
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        private bool _jobNameSet = false;
+        private void EnsureJobNameSet() {
+            if (_jobNameSet)
+                return;
+
+            NLog.GlobalDiagnosticsContext.Set("job", GetType().FullName);
+            _jobNameSet = true;
+        }
+
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            EnsureJobNameSet();
+
+            Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
+
             try {
                 var lockValue = GetJobLock();
-                if (lockValue == null) {
-                    Log.Warn().Message("Unable to acquire job lock").Write();
-                    return Task.FromResult(JobResult.FailedWithMessage("Unable to acquire job lock."));
-                }
+                if (lockValue == null)
+                    return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
-                using (lockValue)
-                    return TryRunAsync(cancellationToken);
+                using (lockValue) {
+                    var result = await TryRunAsync(cancellationToken);
+                    if (result != null) {
+                        if (!result.IsSuccess)
+                            Log.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
+                        else if (!String.IsNullOrEmpty(result.Message))
+                            Log.Info().Message("Job \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
+                        else
+                            Log.Trace().Message("Job \"{0}\" succeeded", GetType().Name).Write();
+                    } else {
+                        Log.Error().Message("Null job result for \"{0}\".", GetType().Name).Write();
+                    }
+
+                    return result;
+                }
             } catch (TimeoutException) {
-                return Task.FromResult(JobResult.FailedWithMessage("Timeout attempting to acquire lock."));
+                return JobResult.SuccessWithMessage("Timeout attempting to acquire lock.");
             }
         }
 
@@ -40,23 +64,9 @@ namespace Foundatio.Jobs {
         }
 
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
-            NLog.GlobalDiagnosticsContext.Set("job", GetType().FullName);
-
             int iterations = 0;
             while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
-                Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
-
-                var result = await RunAsync(cancellationToken);
-                if (result != null) {
-                    if (!result.IsSuccess)
-                        Log.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
-                    else if (!String.IsNullOrEmpty(result.Message))
-                        Log.Info().Message("Job \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
-                    else
-                        Log.Trace().Message("Job \"{0}\" succeeded", GetType().Name).Write();
-                } else {
-                    Log.Error().Message("Null job result for \"{0}\".", GetType().Name).Write();
-                }
+                await RunAsync(cancellationToken);
 
                 iterations++;
                 if (interval.HasValue && interval.Value > TimeSpan.Zero)
