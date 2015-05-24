@@ -35,7 +35,14 @@ namespace Foundatio.Tests {
 
             sw.Reset();
             sw.Start();
-            var result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            var result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.Zero);
+            sw.Stop();
+            Assert.Null(result);
+            _output.WriteLine(sw.Elapsed.ToString());
+
+            sw.Reset();
+            sw.Start();
+            result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());

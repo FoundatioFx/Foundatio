@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 using NLog.Fluent;
 
@@ -65,13 +66,21 @@ namespace Foundatio.Jobs {
 
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
             int iterations = 0;
+
             while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 await RunAsync(cancellationToken);
 
                 iterations++;
-                if (interval.HasValue && interval.Value > TimeSpan.Zero)
+                if (!interval.HasValue || interval.Value <= TimeSpan.Zero)
+                    continue;
+
+                try {
                     await Task.Delay(interval.Value, cancellationToken);
+                } catch (TaskCanceledException) {}
             }
+
+            if (cancellationToken.IsCancellationRequested)
+                Log.Trace().Message("Job cancellation requested.").Write();
         }
 
         public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {

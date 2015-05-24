@@ -1,15 +1,20 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests {
+    public class JobTests : CaptureTests {
         [Fact]
         public void CanRunJobs() {
             var job = new HelloWorldJob();
@@ -44,6 +49,23 @@ namespace Foundatio.Tests.Jobs {
             Task.Run(() => job.Run());
             Thread.Sleep(200);
             Assert.Equal(4, job.RunCount);
+        }
+
+        [Fact]
+        public async void CanRunThrottledJobs() {
+            var client = new InMemoryCacheClient();
+            var jobs = new List<ThrottledJob>(new[] {
+                new ThrottledJob(client),
+                new ThrottledJob(client),
+                new ThrottledJob(client)
+            });
+
+            var token = new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token;
+            await Task.WhenAll(jobs.Select(
+                async job => await job.RunContinuousAsync(cancellationToken: token))
+            );
+
+            Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
         }
 
         [Fact]
@@ -92,5 +114,7 @@ namespace Foundatio.Tests.Jobs {
 
             Assert.Equal(0, queue.GetQueueCount());
         }
+
+        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 }

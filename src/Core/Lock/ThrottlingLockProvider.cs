@@ -87,7 +87,10 @@ namespace Foundatio.Lock {
         }
 
         public bool IsLocked(string name) {
-            return false;
+            string cacheKey = GetCacheKey(name, DateTime.UtcNow);
+            var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
+
+            return hitCount >= _maxHitsPerPeriod;
         }
 
         public void ReleaseLock(string name) {}
