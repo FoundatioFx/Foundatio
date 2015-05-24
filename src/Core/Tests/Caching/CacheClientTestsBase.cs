@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
@@ -57,7 +58,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, cache.Get<int>("test"));
                 Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
 
-                Task.Delay(TimeSpan.FromMilliseconds(500)).Wait();
+                Thread.Sleep(500);
                 Assert.Equal(0, cache.Get<int>("test"));
                 Assert.Null(cache.GetExpiration("test"));
             }

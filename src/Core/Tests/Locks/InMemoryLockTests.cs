@@ -1,5 +1,6 @@
 using Foundatio.Caching;
 using Foundatio.Lock;
+using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -19,6 +20,6 @@ namespace Foundatio.Tests {
             base.LockWillTimeout();
         }
 
-        public InMemoryLockTests(ITestOutputHelper helper) : base(helper) {}
+        public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 }

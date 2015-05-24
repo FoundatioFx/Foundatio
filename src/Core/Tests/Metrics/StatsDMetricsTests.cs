@@ -110,7 +110,7 @@ namespace Foundatio.Tests.Metrics {
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
-            Thread.Sleep(100);
+            Thread.Sleep(250);
             var messages = GetMessages();
             Assert.Equal(iterations - (iterations / (iterations / 10)), messages.Count);
             foreach (string message in messages)

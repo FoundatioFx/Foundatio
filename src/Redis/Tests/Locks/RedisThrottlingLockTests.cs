@@ -1,19 +1,20 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests {
-    public class ThrottlingLockTests : LockTestBase {
-        private readonly TimeSpan _period = TimeSpan.FromSeconds(1);
+namespace Foundatio.Redis.Tests {
+    public class RedisThrottlingLockTests : LockTestBase {
+        private readonly TimeSpan _period = TimeSpan.FromSeconds(3);
 
         protected override ILockProvider GetLockProvider() {
-            return new ThrottlingLockProvider(new InMemoryCacheClient(), 5, _period);
+            return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), 5, _period);
         }
 
         [Fact]
@@ -42,13 +43,12 @@ namespace Foundatio.Tests {
 
             sw.Reset();
             sw.Start();
-            result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(2));
+            result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(4));
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());
         }
 
-        public ThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output)
-            : base(fixture, output) {}
+        public RedisThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
     }
 }

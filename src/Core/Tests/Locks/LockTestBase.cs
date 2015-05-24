@@ -16,7 +16,7 @@ namespace Foundatio.Tests {
         }
     }
 
-    public abstract class LockTestBase : TestBase {
+    public abstract class LockTestBase : CaptureTests {
         protected virtual ILockProvider GetLockProvider() {
             return null;
         }
@@ -31,20 +31,20 @@ namespace Foundatio.Tests {
 
                 using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                     Assert.True(locker.IsLocked("test"));
-                    Assert.Throws<TimeoutException>(() => locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100)));
+                    Assert.Throws<TimeoutException>(() => locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250)));
                 }
 
                 Assert.False(locker.IsLocked("test"));
 
                 int counter = 0;
-                Parallel.For(0, 100, i => {
-                    using (locker.AcquireLock("test")) {
+                Parallel.For(0, 25, i => {
+                    using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                         Assert.True(locker.IsLocked("test"));
                         Interlocked.Increment(ref counter);
                     }
                 });
 
-                Assert.Equal(100, counter);
+                Assert.Equal(25, counter);
             }
         }
 
@@ -66,6 +66,6 @@ namespace Foundatio.Tests {
             }
         }
 
-        protected LockTestBase(ITestOutputHelper helper) : base(helper) {}
+        protected LockTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
     }
 }

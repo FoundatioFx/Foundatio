@@ -89,6 +89,8 @@
     <Compile Include="Storage\FileStorageTestsBase.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />
     <Compile Include="Storage\InMemoryFileStorageTests.cs" />
+    <Compile Include="Utility\CaptureCollectionFixture.cs" />
+    <Compile Include="Utility\CaptureFixture.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
     <Compile Include="Utility\CountDownLatch.cs" />
