@@ -13,7 +13,7 @@ namespace Foundatio.Tests.Jobs {
         public int RunCount { get; set; }
 
         protected override IDisposable GetJobLock() {
-            return _locker.TryAcquireLock("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(50));
+            return _locker.TryAcquireLock("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.Zero);
         }
 
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
