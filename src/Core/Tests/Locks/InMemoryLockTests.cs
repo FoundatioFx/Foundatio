@@ -1,5 +1,6 @@
 using Foundatio.Caching;
 using Foundatio.Lock;
+using Foundatio.Messaging;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -7,7 +8,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests {
     public class InMemoryLockTests : LockTestBase {
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new InMemoryCacheClient());
+            return new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
         }
 
         [Fact]

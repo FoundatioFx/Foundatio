@@ -4,11 +4,12 @@ using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Messaging;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase {
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()));
+            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber()));
         }
 
         [Fact]
