@@ -53,13 +53,13 @@ namespace Foundatio.Messaging {
         }
 
         public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
-            // TODO: Figure out if there is a way to natively delay messages in servicebus
+            var brokeredMessage = new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
+            
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                AddDelayedMessage(messageType, message, delay.Value);
-                return;
+                brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay);
             }
 
-            _topicClient.Send(new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) }));
+            _topicClient.Send(brokeredMessage);
         }
 
         public void Subscribe<T>(Action<T> handler) where T : class {
