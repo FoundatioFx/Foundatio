@@ -56,7 +56,7 @@ namespace Foundatio.Messaging {
             var brokeredMessage = new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay);
+                brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
             }
 
             _topicClient.Send(brokeredMessage);
