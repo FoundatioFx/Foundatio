@@ -2,11 +2,11 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
-using NLog.Fluent;
 
 namespace Foundatio.Queues {
     public class ServiceBusQueue<T> : IQueue<T> where T : class {
@@ -127,7 +127,7 @@ namespace Foundatio.Queues {
                     workItem.Complete();
             } catch (Exception ex) {
                 Interlocked.Increment(ref _workerErrorCount);
-                Log.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
                 workItem.Abandon();
             }
         }

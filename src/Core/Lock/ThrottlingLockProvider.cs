@@ -2,7 +2,7 @@
 using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Extensions;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -22,12 +22,12 @@ namespace Foundatio.Lock {
         }
 
         public IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
-            Log.Trace().Message("AcquireLock: {0}", name).Write();
+            Logger.Trace().Message("AcquireLock: {0}", name).Write();
             if (!acquireTimeout.HasValue)
                 acquireTimeout = TimeSpan.FromMinutes(1);
 
             var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Log.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
+            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
             bool allowLock = false;
 
             do {
@@ -35,9 +35,9 @@ namespace Foundatio.Lock {
                 string cacheKey = GetCacheKey(name, now);
 
                 try {
-                    Log.Trace().Message("Current time: {0} throttle: {1}", now.ToString("mm:ss.fff"), now.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
+                    Logger.Trace().Message("Current time: {0} throttle: {1}", now.ToString("mm:ss.fff"), now.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
                     var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
-                    Log.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
+                    Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
 
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = _cacheClient.Increment(cacheKey, 1, now.Ceiling(_throttlingPeriod));
@@ -48,33 +48,33 @@ namespace Foundatio.Lock {
                             break;
                         }
 
-                        Log.Trace().Message("Max hits exceeded after increment for {0}.", name).Write();
+                        Logger.Trace().Message("Max hits exceeded after increment for {0}.", name).Write();
                     } else {
-                        Log.Trace().Message("Max hits exceeded for {0}.", name).Write();
+                        Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
 
                     var sleepUntil = now.Ceiling(_throttlingPeriod);
                     if (sleepUntil > timeoutTime) {
                         // next period is too far away
-                        Log.Trace().Message("Next period is too far away.").Write();
+                        Logger.Trace().Message("Next period is too far away.").Write();
                         break;
                     }
 
                     if (now > timeoutTime) {
                         // timeout exceeded
-                        Log.Trace().Message("Timeout exceeded.").Write();
+                        Logger.Trace().Message("Timeout exceeded.").Write();
                         break;
                     }
 
                     if (sleepUntil > now) {
-                        Log.Trace().Message("Sleeping until key expires: {0}", sleepUntil - now).Write();
+                        Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - now).Write();
                         Thread.Sleep(sleepUntil - now);
                     } else {
-                        Log.Trace().Message("Default sleep.").Write();
+                        Logger.Trace().Message("Default sleep.").Write();
                         Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
                     }
                 } catch (Exception ex) {
-                    Log.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
+                    Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
                     Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
                 }
             } while (DateTime.UtcNow <= timeoutTime);
@@ -82,7 +82,7 @@ namespace Foundatio.Lock {
             if (!allowLock)
                 throw new TimeoutException("Unable to acquire throttled lock.");
 
-            Log.Trace().Message("Allowing lock: {0}", name).Write();
+            Logger.Trace().Message("Allowing lock: {0}", name).Write();
             return new DisposableLock(name, this);
         }
 

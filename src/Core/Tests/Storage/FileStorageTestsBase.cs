@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase {
@@ -183,7 +183,7 @@ namespace Foundatio.Tests.Storage {
                 if (!storage.Exists(path + ".x") && !storage.SaveFile(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
+                Logger.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
                 return null;
             }
 
@@ -194,7 +194,7 @@ namespace Foundatio.Tests.Storage {
             try {
                 return storage.DeleteFile(path + ".x");
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
+                Logger.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
             }
 
             return false;
@@ -216,7 +216,7 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error archiving event post data \"{0}\".", path).Write();
+                Logger.Error().Exception(ex).Message("Error archiving event post data \"{0}\".", path).Write();
                 return false;
             }
 

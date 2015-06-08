@@ -2,7 +2,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
@@ -19,7 +19,7 @@ namespace Foundatio.Messaging {
                     try {
                         subscriber.Action(message);
                     } catch (Exception ex) {
-                        Log.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
+                        Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                     }
                 }
             });

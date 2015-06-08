@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
@@ -137,7 +137,7 @@ namespace Foundatio.Caching {
                 try {
                     Remove(key);
                 } catch (Exception ex) {
-                    Log.Error().Exception(ex).Message("Error trying to remove {0} from the cache", key).Write();
+                    Logger.Error().Exception(ex).Message("Error trying to remove {0} from the cache", key).Write();
                 }
             }
         }
@@ -330,7 +330,7 @@ namespace Foundatio.Caching {
                         Remove(current.Key);
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error trying to remove items from cache with this {0} pattern", pattern).Write();
+                Logger.Error().Exception(ex).Message("Error trying to remove items from cache with this {0} pattern", pattern).Write();
             }
         }
 
@@ -343,11 +343,11 @@ namespace Foundatio.Caching {
                     if (current.Value.ExpiresAt < now) {
                         Remove(current.Key);
                         OnItemExpired(current.Key);
-                        Log.Trace().Message("Removing expired key: key={0} expiresat={1} now={2}", current.Key, current.Value.ExpiresAt, now);
+                        Logger.Trace().Message("Removing expired key: key={0} expiresat={1} now={2}", current.Key, current.Value.ExpiresAt, now);
                     }
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error trying to remove expired items from cache.").Write();
+                Logger.Error().Exception(ex).Message("Error trying to remove expired items from cache.").Write();
             }
 
             return TaskHelper.Completed();

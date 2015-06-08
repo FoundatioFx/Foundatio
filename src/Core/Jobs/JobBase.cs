@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Utility;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
@@ -16,14 +16,13 @@ namespace Foundatio.Jobs {
             if (_jobNameSet)
                 return;
 
-            NLog.GlobalDiagnosticsContext.Set("job", GetType().FullName);
             _jobNameSet = true;
         }
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             EnsureJobNameSet();
 
-            Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
+            Logger.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
 
             try {
                 var lockValue = GetJobLock();
@@ -34,13 +33,13 @@ namespace Foundatio.Jobs {
                     var result = await TryRunAsync(cancellationToken);
                     if (result != null) {
                         if (!result.IsSuccess)
-                            Log.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
+                            Logger.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
                         else if (!String.IsNullOrEmpty(result.Message))
-                            Log.Info().Message("Job \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
+                            Logger.Info().Message("Job \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
                         else
-                            Log.Trace().Message("Job \"{0}\" succeeded", GetType().Name).Write();
+                            Logger.Trace().Message("Job \"{0}\" succeeded", GetType().Name).Write();
                     } else {
-                        Log.Error().Message("Null job result for \"{0}\".", GetType().Name).Write();
+                        Logger.Error().Message("Null job result for \"{0}\".", GetType().Name).Write();
                     }
 
                     return result;
@@ -80,7 +79,7 @@ namespace Foundatio.Jobs {
             }
 
             if (cancellationToken.IsCancellationRequested)
-                Log.Trace().Message("Job cancellation requested.").Write();
+                Logger.Trace().Message("Job cancellation requested.").Write();
         }
 
         public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {

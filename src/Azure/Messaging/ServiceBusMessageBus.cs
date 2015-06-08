@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
-using NLog.Fluent;
 
 namespace Foundatio.Messaging {
     public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
@@ -39,7 +39,7 @@ namespace Foundatio.Messaging {
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
@@ -47,7 +47,7 @@ namespace Foundatio.Messaging {
                 try {
                     subscriber.Action(body);
                 } catch (Exception ex) {
-                    Log.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
+                    Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                 }
             }
         }

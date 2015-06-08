@@ -11,7 +11,7 @@
 //using Foundatio.Redis.Cache;
 //using Foundatio.Utility;
 //using Nito.AsyncEx;
-//using NLog.Fluent;
+//using Foundatio.Logging;
 //using StackExchange.Redis;
 
 //namespace Foundatio.Queues {
@@ -74,7 +74,7 @@
 //                TaskHelper.RunPeriodic(DoMaintenanceWork, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100)).IgnoreExceptions();
 //            }
 
-//            Log.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
+//            Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
 //        }
 
 //        public long GetQueueCount() {
@@ -149,7 +149,7 @@
 
 //        public async Task<string> EnqueueAsync(T data) {
 //            string id = Guid.NewGuid().ToString("N");
-//            Log.Trace().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
+//            Logger.Trace().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
 //            bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
 //            if (!success)
 //                throw new InvalidOperationException("Attempt to set payload failed.");
@@ -157,7 +157,7 @@
 //            await _subscriber.PublishAsync(GetTopicName(), id);
 //            UpdateStats();
 //            Interlocked.Increment(ref _enqueuedCount);
-//            Log.Trace().Message("Enqueue done").Write();
+//            Logger.Trace().Message("Enqueue done").Write();
 
 //            return id;
 //        }
@@ -166,7 +166,7 @@
 //            if (handler == null)
 //                throw new ArgumentNullException("handler");
 
-//            Log.Trace().Message("Queue {0} start working", _queueName).Write();
+//            Logger.Trace().Message("Queue {0} start working", _queueName).Write();
 //            _workerAction = handler;
 //            _workerAutoComplete = autoComplete;
 
@@ -178,7 +178,7 @@
 //        }
 
 //        public void StopWorking() {
-//            Log.Trace().Message("Queue {0} stop working", _queueName).Write();
+//            Logger.Trace().Message("Queue {0} stop working", _queueName).Write();
 //            _workerAction = null;
 //            _subscriber.UnsubscribeAll();
 
@@ -189,15 +189,15 @@
 //        }
 
 //        public async Task<QueueEntry2<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = new CancellationToken()) {
-//            Log.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
+//            Logger.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
 //            if (!timeout.HasValue)
 //                timeout = TimeSpan.FromSeconds(30);
 //            RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName);
-//            Log.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+//            Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 
 //            DateTime started = DateTime.UtcNow;
 //            while (timeout > TimeSpan.Zero && value.IsNullOrEmpty && DateTime.UtcNow.Subtract(started) < timeout) {
-//                Log.Trace().Message("Waiting to dequeue item...").Write();
+//                Logger.Trace().Message("Waiting to dequeue item...").Write();
 
 //                // wait for timeout or signal or dispose
 //                Task.WaitAny(Task.Delay(timeout.Value), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
@@ -205,15 +205,15 @@
 //                    return null;
 
 //                value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName);
-//                Log.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+//                Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 //            }
 
 //            if (value.IsNullOrEmpty)
 //                return null;
 
-//            Log.Trace().Message("Dequeued item: {0}", value).Write();
+//            Logger.Trace().Message("Dequeued item: {0}", value).Write();
 //            try {
-//                Log.Trace().Message("Getting item lock...", value).Write();
+//                Logger.Trace().Message("Getting item lock...", value).Write();
 //                IDisposable workItemLock = _lockProvider.AcquireLock(value, _workItemTimeout, TimeSpan.FromSeconds(2));
 //                if (workItemLock == null)
 //                    return null;
@@ -221,7 +221,7 @@
 //                return null;
 //            }
 
-//            Log.Trace().Message("Got item lock: {0}", value).Write();
+//            Logger.Trace().Message("Got item lock: {0}", value).Write();
 //            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
 
 //            try {
@@ -235,7 +235,7 @@
 //                UpdateStats();
 //                return new QueueEntry2<T>(value, payload, this);
 //            } catch (Exception ex) {
-//                Log.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
+//                Logger.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
 //                throw;
 //            }
 //        }
@@ -253,15 +253,15 @@
 //        }
 
 //        public QueueEntry2<T> Dequeue(TimeSpan? timeout = null) {
-//            Log.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
+//            Logger.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
 //            if (!timeout.HasValue)
 //                timeout = TimeSpan.FromSeconds(30);
 //            RedisValue value = _db.ListRightPopLeftPush(QueueListName, WorkListName);
-//            Log.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+//            Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 
 //            DateTime started = DateTime.UtcNow;
 //            while (timeout > TimeSpan.Zero && value.IsNullOrEmpty && DateTime.UtcNow.Subtract(started) < timeout) {
-//                Log.Trace().Message("Waiting to dequeue item...").Write();
+//                Logger.Trace().Message("Waiting to dequeue item...").Write();
 
 //                // wait for timeout or signal or dispose
 //                Task.WaitAny(Task.Delay(timeout.Value), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
@@ -269,15 +269,15 @@
 //                    return null;
 
 //                value = _db.ListRightPopLeftPush(QueueListName, WorkListName);
-//                Log.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+//                Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 //            }
 
 //            if (value.IsNullOrEmpty)
 //                return null;
 
-//            Log.Trace().Message("Dequeued item: {0}", value).Write();
+//            Logger.Trace().Message("Dequeued item: {0}", value).Write();
 //            try {
-//                Log.Trace().Message("Getting item lock...", value).Write();
+//                Logger.Trace().Message("Getting item lock...", value).Write();
 //                IDisposable workItemLock = _lockProvider.AcquireLock(value, _workItemTimeout, TimeSpan.FromSeconds(2));
 //                if (workItemLock == null)
 //                    return null;
@@ -285,7 +285,7 @@
 //                return null;
 //            }
 
-//            Log.Trace().Message("Got item lock: {0}", value).Write();
+//            Logger.Trace().Message("Got item lock: {0}", value).Write();
 //            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
 
 //            try {
@@ -299,13 +299,13 @@
 //                UpdateStats();
 //                return new QueueEntry2<T>(value, payload, this);
 //            } catch (Exception ex) {
-//                Log.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
+//                Logger.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
 //                throw;
 //            }
 //        }
 
 //        public void Complete(string id) {
-//            Log.Trace().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+//            Logger.Trace().Message("Queue {0} complete item: {1}", _queueName, id).Write();
 //            _db.ListRemove(WorkListName, id);
 //            _db.KeyDelete(GetPayloadKey(id));
 //            _db.KeyDelete(GetAttemptsKey(id));
@@ -314,26 +314,26 @@
 //            _lockProvider.ReleaseLock(id);
 //            Interlocked.Increment(ref _completedCount);
 //            UpdateStats();
-//            Log.Trace().Message("Complete done: {0}", id).Write();
+//            Logger.Trace().Message("Complete done: {0}", id).Write();
 //        }
 
 //        public void Abandon(string id) {
-//            Log.Trace().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+//            Logger.Trace().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
 //            var attemptsValue = _db.StringGet(GetAttemptsKey(id));
 //            int attempts = 1;
 //            if (attemptsValue.HasValue)
 //                attempts = (int)attemptsValue + 1;
-//            Log.Trace().Message("Item attempts: {0}", attempts).Write();
+//            Logger.Trace().Message("Item attempts: {0}", attempts).Write();
 
 //            var retryDelay = GetRetryDelay(attempts);
-//            Log.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
+//            Logger.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
 //            if (attempts > _retries) {
-//                Log.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
+//                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
 //                _db.ListRemove(WorkListName, id);
 //                _db.ListLeftPush(DeadListName, id);
 //                _db.KeyExpire(GetPayloadKey(id), _deadLetterTtl);
 //            } else if (retryDelay > TimeSpan.Zero) {
-//                Log.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
+//                Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
 //                var tx = _db.CreateTransaction();
 //                tx.ListRemoveAsync(WorkListName, id);
 //                tx.ListLeftPushAsync(WaitListName, id);
@@ -345,7 +345,7 @@
 //                _db.StringIncrement(GetAttemptsKey(id));
 //                _db.KeyExpire(GetAttemptsKey(id), GetAttemptsTtl());
 //            } else {
-//                Log.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
+//                Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
 //                var tx = _db.CreateTransaction();
 //                tx.ListRemoveAsync(WorkListName, id);
 //                tx.ListLeftPushAsync(QueueListName, id);
@@ -361,7 +361,7 @@
 //            _lockProvider.ReleaseLock(id);
 //            Interlocked.Increment(ref _abandonedCount);
 //            UpdateStats();
-//            Log.Trace().Message("Abondon complete: {0}", id).Write();
+//            Logger.Trace().Message("Abondon complete: {0}", id).Write();
 //        }
 
 //        private TimeSpan GetRetryDelay(int attempts) {
@@ -378,7 +378,7 @@
 //        }
 
 //        public void DeleteQueue() {
-//            Log.Trace().Message("Deleting queue: {0}", _queueName).Write();
+//            Logger.Trace().Message("Deleting queue: {0}", _queueName).Write();
 //            DeleteList(QueueListName);
 //            DeleteList(WorkListName);
 //            DeleteList(WaitListName);
@@ -404,14 +404,14 @@
 //        }
 
 //        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
-//            Log.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
+//            Logger.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
 //            _autoEvent.Set();
 //        }
 
 //        private Task WorkerLoop(CancellationToken token) {
-//            Log.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
+//            Logger.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
 //            while (!token.IsCancellationRequested && _workerAction != null) {
-//                Log.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
+//                Logger.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
 //                QueueEntry2<T> queueEntry = null;
 //                try {
 //                    queueEntry = Dequeue();
@@ -425,13 +425,13 @@
 //                    if (_workerAutoComplete)
 //                        queueEntry.Complete();
 //                } catch (Exception ex) {
-//                    Log.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+//                    Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
 //                    queueEntry.Abandon();
 //                    Interlocked.Increment(ref _workerErrorCount);
 //                }
 //            }
 
-//            Log.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, token.IsCancellationRequested).Write();
+//            Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, token.IsCancellationRequested).Write();
 
 //            return TaskHelper.Completed();
 //        }
@@ -445,7 +445,7 @@
 //        }
 
 //        private Task DoMaintenanceWork() {
-//            Log.Trace().Message("DoMaintenance {0}", _queueName).Write();
+//            Logger.Trace().Message("DoMaintenance {0}", _queueName).Write();
 
 //            var workIds = _db.ListRange(WorkListName);
 //            foreach (var workId in workIds) {
@@ -457,14 +457,14 @@
 //                    continue;
 //                }
 
-//                Log.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
+//                Logger.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
 //                if (DateTime.UtcNow.Subtract(dequeuedTime.Value) <= _workItemTimeout)
 //                    continue;
 
-//                Log.Trace().Message("Getting work time out lock...").Write();
+//                Logger.Trace().Message("Getting work time out lock...").Write();
 //                try {
 //                    using (_lockProvider.AcquireLock(workId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
-//                        Log.Trace().Message("Got item lock for work time out").Write();
+//                        Logger.Trace().Message("Got item lock for work time out").Write();
 //                        Abandon(workId);
 //                    }
 //                } catch { }
@@ -473,16 +473,16 @@
 //            var waitIds = _db.ListRange(WaitListName);
 //            foreach (var waitId in waitIds) {
 //                var waitTime = _cache.Get<DateTime?>(GetWaitTimeKey(waitId));
-//                Log.Trace().Message("Wait time: {0}", waitTime).Write();
+//                Logger.Trace().Message("Wait time: {0}", waitTime).Write();
 
 //                if (waitTime.HasValue && waitTime.Value > DateTime.UtcNow)
 //                    continue;
 
-//                Log.Trace().Message("Getting retry lock").Write();
+//                Logger.Trace().Message("Getting retry lock").Write();
 
 //                try {
 //                    using (_lockProvider.AcquireLock(waitId, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(5))) {
-//                        Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
+//                        Logger.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
 //                        var tx = _db.CreateTransaction();
 //#pragma warning disable 4014
 //                        tx.ListRemoveAsync(WaitListName, waitId);
@@ -502,7 +502,7 @@
 //        }
 
 //        public void Dispose() {
-//            Log.Trace().Message("Queue {0} dispose", _queueName).Write();
+//            Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
 //            StopWorking();
 //            if (_queueDisposedCancellationTokenSource != null)
 //                _queueDisposedCancellationTokenSource.Cancel();

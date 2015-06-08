@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Foundatio.Messaging;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Caching {
     public class HybridCacheClient : ICacheClient {
@@ -21,7 +21,7 @@ namespace Foundatio.Caching {
             _messageBus.Subscribe<InvalidateCache>(OnMessage);
             _localCache.ItemExpired += (sender, key) => {
                 _messageBus.Publish(new InvalidateCache {CacheId = _cacheId, Keys = new[] { key }});
-                Log.Trace().Message("Item expired event: key={0}", key).Write();
+                Logger.Trace().Message("Item expired event: key={0}", key).Write();
             };
         }
 
@@ -38,14 +38,14 @@ namespace Foundatio.Caching {
             if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
                 return;
 
-            Log.Trace().Message("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { })).Write();
+            Logger.Trace().Message("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { })).Write();
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll)
                 _localCache.FlushAll();
             else if (message.Keys != null && message.Keys.Length > 0)
                 _localCache.RemoveAll(message.Keys);
             else
-                Log.Warn().Message("Unknown invalidate cache message").Write();
+                Logger.Warn().Message("Unknown invalidate cache message").Write();
         }
 
         public bool Remove(string key) {
@@ -73,7 +73,7 @@ namespace Foundatio.Caching {
         public T Get<T>(string key) {
             T value;
             if (_localCache.TryGet(key, out value)) {
-                Log.Trace().Message("Local cache hit: {0}", key).Write();
+                Logger.Trace().Message("Local cache hit: {0}", key).Write();
                 Interlocked.Increment(ref _localCacheHits);
                 return value;
             }
@@ -99,7 +99,7 @@ namespace Foundatio.Caching {
 
         public bool TryGet<T>(string key, out T value) {
             if (_localCache.TryGet(key, out value)) {
-                Log.Trace().Message("Local cache hit: {0}", key).Write();
+                Logger.Trace().Message("Local cache hit: {0}", key).Write();
                 Interlocked.Increment(ref _localCacheHits);
                 return true;
             }

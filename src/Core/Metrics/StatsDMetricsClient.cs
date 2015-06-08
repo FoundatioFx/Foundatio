@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
@@ -50,7 +50,7 @@ namespace Foundatio.Metrics {
                 if (_socket != null)
                     _socket.SendTo(data, _endPoint);
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
                 ResetUdpClient();
             }
         }
@@ -76,7 +76,7 @@ namespace Foundatio.Metrics {
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
-                    Log.Error().Exception(ex).Message("An error occurred while calling Close() on the socket.").Write();
+                    Logger.Error().Exception(ex).Message("An error occurred while calling Close() on the socket.").Write();
                 } finally {
                     _socket = null;
                 }

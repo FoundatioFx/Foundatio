@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Messaging;
-using NLog.Fluent;
+using Foundatio.Logging;
 using Xunit;
 
 namespace Foundatio.Tests.Caching {
@@ -56,7 +56,7 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual void WillExpireRemoteItems() {
-            Log.Trace().Message("Warm the log...").Write();
+            Logger.Trace().Message("Warm the log...").Write();
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 

@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Caching;
-using NLog.Fluent;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
 using System.Threading;
@@ -20,7 +20,7 @@ namespace Foundatio.Lock {
         }
 
         private void OnLockReleased(CacheLockReleased msg) {
-            Log.Trace().Message("Got lock released message: {0}", msg.Name).Write();
+            Logger.Trace().Message("Got lock released message: {0}", msg.Name).Write();
             AsyncAutoResetEvent autoEvent;
             if (_autoEvents.TryGetValue(msg.Name, out autoEvent)) {
                 autoEvent.Set();
@@ -28,7 +28,7 @@ namespace Foundatio.Lock {
         }
 
         public IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
-            Log.Trace().Message("AcquireLock: {0}", name).Write();
+            Logger.Trace().Message("AcquireLock: {0}", name).Write();
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
             if (!acquireTimeout.HasValue)
@@ -37,7 +37,7 @@ namespace Foundatio.Lock {
             string cacheKey = GetCacheKey(name);
             var tokenSource = new CancellationTokenSource(acquireTimeout.Value);
             var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Log.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm: ss.fff")).Write();
+            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm: ss.fff")).Write();
             bool allowLock = false;
 
             do {
@@ -53,19 +53,19 @@ namespace Foundatio.Lock {
                     break;
                 }
 
-                Log.Trace().Message("Failed to acquire lock: {0}", name).Write();
+                Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
                 var keyExpiration = _cacheClient.GetExpiration(cacheKey) ?? now.AddSeconds(1);
                 if (keyExpiration < DateTime.UtcNow)
                     keyExpiration = DateTime.UtcNow;
 
                 var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(now) : keyExpiration.Subtract(now);
-                Log.Trace().Message("Delay time: {0}", delayAmount).Write();
+                Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
                 var autoEvent = _autoEvents.GetOrAdd(name, new AsyncAutoResetEvent(false));
                 
                 // wait for key expiration, release message or timeout
                 Task.WaitAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync(tokenSource.Token));
                 if (tokenSource.IsCancellationRequested) {
-                    Log.Trace().Message("Cancellation requested.").Write();
+                    Logger.Trace().Message("Cancellation requested.").Write();
                     break;
                 }
             } while (!tokenSource.IsCancellationRequested && DateTime.UtcNow <= timeoutTime);
@@ -73,7 +73,7 @@ namespace Foundatio.Lock {
             if (!allowLock)
                 throw new TimeoutException("Unable to acquire throttled lock.");
 
-            Log.Trace().Message("Returning lock: {0}", name).Write();
+            Logger.Trace().Message("Returning lock: {0}", name).Write();
             return new DisposableLock(name, this);
         }
 
@@ -83,7 +83,7 @@ namespace Foundatio.Lock {
         }
 
         public void ReleaseLock(string name) {
-            Log.Trace().Message("ReleaseLock: {0}", name).Write();
+            Logger.Trace().Message("ReleaseLock: {0}", name).Write();
             _cacheClient.Remove(GetCacheKey(name));
             _messageBus.Publish(new CacheLockReleased { Name = name });
         }

@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public class JobRunOptions {
@@ -66,7 +66,7 @@ namespace Foundatio.Jobs {
             if (options.JobType == null)
                 return -1;
 
-            Log.Info().Message("Starting {0}job type \"{1}\" on machine \"{2}\"...", options.RunContinuous ? "continuous " : String.Empty, options.JobType.Name, Environment.MachineName).Write();
+            Logger.Info().Message("Starting {0}job type \"{1}\" on machine \"{2}\"...", options.RunContinuous ? "continuous " : String.Empty, options.JobType.Name, Environment.MachineName).Write();
 
             WatchForShutdown();
             var linkedToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
@@ -98,13 +98,13 @@ namespace Foundatio.Jobs {
 
         public static JobBase CreateJobInstance(Type jobType) {
             if (!typeof(JobBase).IsAssignableFrom(jobType)) {
-                Log.Error().Message("Job Type must derive from Job.").Write();
+                Logger.Error().Message("Job Type must derive from Job.").Write();
                 return null;
             }
 
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
-                Log.Error().Message("Unable to create job instance.").Write();
+                Logger.Error().Message("Unable to create job instance.").Write();
                 return null;
             }
 
@@ -117,7 +117,7 @@ namespace Foundatio.Jobs {
         private static void WatchForShutdown() {
             ShutdownEventCatcher.Shutdown += args => {
                 _cancellationTokenSource.Cancel();
-                Log.Info().Message("Job shutdown event signaled: {0}", args.Reason).Write();
+                Logger.Info().Message("Job shutdown event signaled: {0}", args.Reason).Write();
             };
 
             _webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
@@ -135,7 +135,7 @@ namespace Foundatio.Jobs {
         private static void OnFileChanged(object sender, FileSystemEventArgs e) {
             if (e.FullPath.IndexOf(Path.GetFileName(_webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) >= 0) {
                 _cancellationTokenSource.Cancel();
-                Log.Info().Message("Job shutdown signaled.").Write();
+                Logger.Info().Message("Job shutdown signaled.").Write();
             }
         }
     }

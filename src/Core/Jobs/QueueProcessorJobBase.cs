@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Utility;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
@@ -21,7 +21,7 @@ namespace Foundatio.Jobs {
                 queueEntry = _queue.Dequeue();
             } catch (Exception ex) {
                 if (!(ex is TimeoutException)) {
-                    Log.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
+                    Logger.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
                     return JobResult.FromException(ex);
                 }
             }
@@ -31,10 +31,10 @@ namespace Foundatio.Jobs {
 
             var lockValue = GetQueueItemLock(queueEntry);
             if (lockValue == null) {
-                Log.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
+                Logger.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
                 return JobResult.FailedWithMessage("Unable to acquire lock for queue entry.");
             }
-            Log.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
+            Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
 
             using (lockValue) {
                 var result = await ProcessQueueItem(queueEntry);
