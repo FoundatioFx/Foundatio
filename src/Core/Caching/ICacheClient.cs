@@ -26,9 +26,9 @@ namespace Foundatio.Caching {
         void FlushAll();
         IDictionary<string, T> GetAll<T>(IEnumerable<string> keys);
         void SetAll<T>(IDictionary<string, T> values);
-        DateTime? GetExpiration(string cacheKey);
-        void SetExpiration(string cacheKey, TimeSpan expiresIn);
-        void SetExpiration(string cacheKey, DateTime expiresAt);
+        DateTime? GetExpiration(string key);
+        void SetExpiration(string key, TimeSpan expiresIn);
+        void SetExpiration(string key, DateTime expiresAt);
     }
 
     public interface ICacheClient2 : IDisposable {
@@ -96,8 +96,8 @@ namespace Foundatio.Caching {
         //public static void FlushAll(this ICacheClient2 client) { }
         //public static IDictionary<string, T> GetAll<T>(this ICacheClient2 client, IEnumerable<string> keys) { }
         //public static void SetAll<T>(this ICacheClient2 client, IDictionary<string, T> values) { }
-        //public static DateTime? GetExpiration(this ICacheClient2 client, string cacheKey) { }
-        //public static void SetExpiration(this ICacheClient2 client, string cacheKey, TimeSpan expiresIn) { }
-        //public static void SetExpiration(this ICacheClient2 client, string cacheKey, DateTime expiresAt) { }
+        //public static DateTime? GetExpiration(this ICacheClient2 client, string key) { }
+        //public static void SetExpiration(this ICacheClient2 client, string key, TimeSpan expiresIn) { }
+        //public static void SetExpiration(this ICacheClient2 client, string key, DateTime expiresAt) { }
     }
 }
