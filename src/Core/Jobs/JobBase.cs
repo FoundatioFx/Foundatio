@@ -16,6 +16,8 @@ namespace Foundatio.Jobs {
             if (_jobNameSet)
                 return;
 
+            Logger.ThreadProperties.Set("job", GetType().FullName);
+
             _jobNameSet = true;
         }
 
