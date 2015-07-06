@@ -60,8 +60,6 @@ namespace Foundatio.Jobs {
             if (options.JobType == null)
                 return -1;
 
-            Logger.Info().Message("Starting {0}job type \"{1}\" on machine \"{2}\"...", options.RunContinuous ? "continuous " : String.Empty, options.JobType.Name, Environment.MachineName).Write();
-
             WatchForShutdown();
             var linkedToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             if (options.RunContinuous)
