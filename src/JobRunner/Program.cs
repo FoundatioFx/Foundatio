@@ -27,10 +27,12 @@ namespace Foundatio.JobRunner {
                     jobName = jobType.Name;
 
                 ServiceProvider.SetServiceProvider(ca.ServiceProviderType, ca.JobType);
+                // force bootstrap now so logging will be configured
+                if (ServiceProvider.Current is IBootstrappedServiceProvider)
+                    ((IBootstrappedServiceProvider)ServiceProvider.Current).Bootstrap();
 
                 result = Jobs.JobRunner.RunAsync(new JobRunOptions {
                     JobTypeName = ca.JobType,
-                    ServiceProviderTypeName = ca.ServiceProviderType,
                     InstanceCount = ca.InstanceCount,
                     Interval = TimeSpan.FromMilliseconds(ca.Delay),
                     RunContinuous = ca.RunContinuously
