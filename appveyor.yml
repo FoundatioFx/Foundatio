@@ -38,5 +38,5 @@ notifications:
     channel: notifications
   - provider: Slack
     auth_token:
-      secure: wL27T2y0ImjdpBTo1PeAIcaDhr5o2cR4jT8zX7Vw0Swsxpo2jWAAfNKY1VYomBTs
+      secure: RsMRZ3Y117+f4KGVTuNhMnVwBw7frzyil9X+aZWu9cKtAT35DoDtpwaHp545aiCN
     channel: gpbot
