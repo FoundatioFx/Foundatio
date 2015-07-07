@@ -55,6 +55,10 @@ namespace Foundatio.Jobs {
             return Task.Factory.StartNew(() => CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
+        public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+            return RunContinuousAsync(typeof(T), interval, iterationLimit, instanceCount, cancellationToken);
+        }
+
         public static async Task<int> RunAsync(JobRunOptions options, CancellationToken cancellationToken = default(CancellationToken)) {
             ResolveJobType(options);
             if (options.JobType == null)
