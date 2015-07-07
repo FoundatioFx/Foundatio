@@ -11,20 +11,18 @@ namespace Foundatio.Jobs {
             return Disposable.Empty;
         }
 
-        private bool _jobNameSet = false;
-        private void EnsureJobNameSet() {
-            if (_jobNameSet)
-                return;
-
-            Logger.ThreadProperties.Set("job", GetType().FullName);
-
-            _jobNameSet = true;
+        private string _jobName;
+        private void EnsureJobNameSet()
+        {
+            if (_jobName == null)
+                _jobName = GetType().Name;
+            Logger.ThreadProperties.Set("job", _jobName);
         }
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
             EnsureJobNameSet();
-
-            Logger.Trace().Message("Job run \"{0}\" starting...", GetType().Name).Write();
+            Logger.Trace().Message("Job run \"{0}\" starting...", _jobName).Write();
 
             try {
                 var lockValue = GetJobLock();
@@ -68,6 +66,7 @@ namespace Foundatio.Jobs {
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
             int iterations = 0;
 
+            EnsureJobNameSet();
             Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
 
             while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
