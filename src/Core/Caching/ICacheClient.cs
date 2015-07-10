@@ -6,6 +6,7 @@ namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
         bool Remove(string key);
         void RemoveAll(IEnumerable<string> keys);
+        void RemoveByPrefix(string prefix);
         T Get<T>(string key);
         bool TryGet<T>(string key, out T value);
         long Increment(string key, uint amount);

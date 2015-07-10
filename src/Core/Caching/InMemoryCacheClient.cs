@@ -142,6 +142,11 @@ namespace Foundatio.Caching {
             }
         }
 
+        public void RemoveByPrefix(string prefix)
+        {
+            RemoveByPattern(prefix + "*");
+        }
+
         public object Get(string key) {
             long lastModifiedTicks;
             return Get(key, out lastModifiedTicks);

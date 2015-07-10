@@ -20,7 +20,7 @@ namespace Foundatio.Caching {
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(OnMessage);
             _localCache.ItemExpired += (sender, key) => {
-                _messageBus.Publish(new InvalidateCache {CacheId = _cacheId, Keys = new[] { key }});
+                _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
                 Logger.Trace().Message("Item expired event: key={0}", key).Write();
             };
         }
@@ -43,7 +43,12 @@ namespace Foundatio.Caching {
             if (message.FlushAll)
                 _localCache.FlushAll();
             else if (message.Keys != null && message.Keys.Length > 0)
-                _localCache.RemoveAll(message.Keys);
+            {
+                foreach (var pattern in message.Keys.Where(k => k.EndsWith("*")))
+                    _localCache.RemoveByPrefix(pattern.Substring(0, pattern.Length - 1));
+
+                _localCache.RemoveAll(message.Keys.Where(k => !k.EndsWith("*")));
+            }
             else
                 Logger.Warn().Message("Unknown invalidate cache message").Write();
         }
@@ -68,6 +73,14 @@ namespace Foundatio.Caching {
             _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = keysToRemove });
             _localCache.RemoveAll(keysToRemove);
             _distributedCache.RemoveAll(keysToRemove);
+        }
+
+        public void RemoveByPrefix(string prefix)
+        {
+            string pattern = prefix + "*";
+            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { pattern } });
+            _localCache.RemoveByPattern(pattern);
+            _distributedCache.RemoveByPrefix(prefix);
         }
 
         public T Get<T>(string key) {

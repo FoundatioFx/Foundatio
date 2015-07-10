@@ -16,8 +16,19 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override void CanUseScopedCaches()
+        {
+            base.CanUseScopedCaches();
+        }
+
+        [Fact]
         public override void CanSetAndGetObject() {
             base.CanSetAndGetObject();
+        }
+
+        [Fact]
+        public override void CanRemoveByPrefix() {
+            base.CanRemoveByPrefix();
         }
 
         [Fact]

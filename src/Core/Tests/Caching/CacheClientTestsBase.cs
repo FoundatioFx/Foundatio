@@ -24,6 +24,67 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual void CanUseScopedCaches() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+                var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
+                var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
+
+                cache.Set("test", 1);
+                scopedCache1.Set("test", 2);
+                nestedScopedCache1.Set("test", 3);
+
+                Assert.Equal(1, cache.Get<int>("test"));
+                Assert.Equal(2, scopedCache1.Get<int>("test"));
+                Assert.Equal(3, nestedScopedCache1.Get<int>("test"));
+
+                Assert.Equal(3, scopedCache1.Get<int>("nested:test"));
+                Assert.Equal(3, cache.Get<int>("scoped1:nested:test"));
+
+                scopedCache2.Set("test", 1);
+
+                scopedCache1.FlushAll();
+                Assert.Null(scopedCache1.Get<int?>("test"));
+                Assert.Null(nestedScopedCache1.Get<int?>("test"));
+                Assert.Equal(1, cache.Get<int>("test"));
+                Assert.Equal(1, scopedCache2.Get<int>("test"));
+
+                scopedCache2.FlushAll();
+                Assert.Null(scopedCache1.Get<int?>("test"));
+                Assert.Null(nestedScopedCache1.Get<int?>("test"));
+                Assert.Null(scopedCache2.Get<int?>("test"));
+                Assert.Equal(1, cache.Get<int>("test"));
+            }
+        }
+
+
+        public virtual void CanRemoveByPrefix()
+        {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                cache.FlushAll();
+                
+                string prefix = "blah:";
+                cache.Set("test", 1);
+                cache.Set(prefix + "test", 1);
+                cache.Set(prefix + "test2", 4);
+                Assert.Equal(1, cache.Get<int>(prefix + "test"));
+                Assert.Equal(1, cache.Get<int>("test"));
+
+                cache.RemoveByPrefix(prefix);
+                Assert.Null(cache.Get<int?>(prefix + "test"));
+                Assert.Null(cache.Get<int?>(prefix + "test2"));
+                Assert.Equal(1, cache.Get<int>("test"));
+            }
+        }
+
         public virtual void CanSetAndGetObject() {
             var cache = GetCacheClient();
             if (cache == null)

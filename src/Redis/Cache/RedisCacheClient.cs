@@ -29,6 +29,11 @@ namespace Foundatio.Caching {
                 _db.KeyDelete(redisKeys);
         }
 
+        public void RemoveByPrefix(string prefix)
+        {
+            var result = _db.ScriptEvaluate("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new [] { (RedisValue)(prefix + "*") });
+        }
+
         public T Get<T>(string key) {
             return ChangeType<T>(_db.StringGet(key));
         }

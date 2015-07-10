@@ -19,6 +19,16 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override void CanRemoveByPrefix() {
+            base.CanRemoveByPrefix();
+        }
+
+        [Fact]
+        public override void CanUseScopedCaches() {
+            base.CanUseScopedCaches();
+        }
+
+        [Fact]
         public override void CanSetExpiration() {
             base.CanSetExpiration();
         }

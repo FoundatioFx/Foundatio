@@ -33,6 +33,11 @@ namespace Foundatio.Caching {
             UnscopedCache.RemoveAll(GetScopedCacheKey(keys));
         }
 
+        public void RemoveByPrefix(string prefix)
+        {
+            UnscopedCache.RemoveByPrefix(GetScopedCacheKey(prefix));
+        }
+
         public T Get<T>(string key)
         {
             return UnscopedCache.Get<T>(GetScopedCacheKey(key));
@@ -90,7 +95,7 @@ namespace Foundatio.Caching {
 
         public bool Set<T>(string key, T value)
         {
-            return UnscopedCache.Set(GetScopedCacheKey(key), key);
+            return UnscopedCache.Set(GetScopedCacheKey(key), value);
         }
 
         public bool Set<T>(string key, T value, DateTime expiresAt)
@@ -120,8 +125,7 @@ namespace Foundatio.Caching {
 
         public void FlushAll()
         {
-            // TODO: flush only the scoped keys if possible.
-            UnscopedCache.FlushAll();
+            UnscopedCache.RemoveByPrefix(Scope + ":");
         }
 
         public IDictionary<string, T> GetAll<T>(IEnumerable<string> keys)

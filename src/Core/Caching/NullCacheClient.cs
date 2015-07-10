@@ -12,6 +12,10 @@ namespace Foundatio.Caching {
         {
         }
 
+        public void RemoveByPrefix(string prefix)
+        {
+        }
+
         public T Get<T>(string key)
         {
             return default(T);
