@@ -16,7 +16,7 @@ namespace Foundatio.Caching {
 
         protected string GetScopedCacheKey(string key)
         {
-            return key;
+            return String.Concat(Scope, ":", key);
         }
 
         protected IEnumerable<string> GetScopedCacheKey(IEnumerable<string> keys) {
