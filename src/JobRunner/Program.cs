@@ -27,7 +27,8 @@ namespace Foundatio.JobRunner {
                     jobName = jobType.Name;
 
                 Logger.GlobalProperties.Set("job", jobName);
-                ServiceProvider.SetServiceProvider(ca.ServiceProviderType, ca.JobType);
+                if (!(ca.NoServiceProvider.HasValue && ca.NoServiceProvider.Value == false))
+                    ServiceProvider.SetServiceProvider(ca.ServiceProviderType, ca.JobType);
 
                 // force bootstrap now so logging will be configured
                 if (ServiceProvider.Current is IBootstrappedServiceProvider)
