@@ -398,7 +398,7 @@ namespace Foundatio.Caching {
                     return _cacheValue.Copy();
                 }
                 set {
-                    _cacheValue = value;
+                    _cacheValue = value.Copy();
                     LastAccessTicks = DateTime.UtcNow.Ticks;
                     LastModifiedTicks = DateTime.UtcNow.Ticks;
                 }

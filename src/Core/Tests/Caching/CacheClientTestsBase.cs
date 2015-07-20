@@ -96,6 +96,7 @@ namespace Foundatio.Tests.Caching {
                 var dt = DateTimeOffset.Now;
                 var value = new MyData {Type = "test", Date = dt, Message = "Hello World"};
                 cache.Set("test", value);
+                value.Type = "modified";
                 var cachedValue = cache.Get<MyData>("test");
                 Assert.NotNull(cachedValue);
                 Assert.Equal(dt, cachedValue.Date);
