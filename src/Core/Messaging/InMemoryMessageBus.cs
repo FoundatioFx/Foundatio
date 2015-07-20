@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 
 namespace Foundatio.Messaging {
@@ -17,7 +18,7 @@ namespace Foundatio.Messaging {
             Task.Factory.StartNew(() => {
                 foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
                     try {
-                        subscriber.Action(message);
+                        subscriber.Action(message.Copy());
                     } catch (Exception ex) {
                         Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                     }

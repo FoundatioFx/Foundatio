@@ -79,7 +79,7 @@ namespace Foundatio.Queues {
                 return null;
 
             var info = new QueueInfo<T> {
-                Data = data,
+                Data = data.Copy(),
                 Id = id
             };
             _queue.Enqueue(info);
@@ -145,7 +145,7 @@ namespace Foundatio.Queues {
                 throw new ApplicationException("Unable to add item to the dequeued list.");
 
             UpdateStats();
-            return new QueueEntry<T>(info.Id, info.Data, this);
+            return new QueueEntry<T>(info.Id, info.Data.Copy(), this);
         }
 
         public void Complete(string id) {
