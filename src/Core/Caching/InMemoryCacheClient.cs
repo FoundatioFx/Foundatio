@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Utility;
-using Newtonsoft.Json;
 using Foundatio.Logging;
 
 namespace Foundatio.Caching {
@@ -15,6 +14,8 @@ namespace Foundatio.Caching {
         private ConcurrentDictionary<string, CacheEntry> _memory;
         private readonly CancellationTokenSource _cacheDisposedCancellationTokenSource;
         private readonly object _lock = new object();
+        private long _hits = 0;
+        private long _misses = 0;
 
         public InMemoryCacheClient() {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -26,6 +27,8 @@ namespace Foundatio.Caching {
         public bool FlushOnDispose { get; set; }
         public int Count { get { return _memory.Count; } }
         public int? MaxItems { get; set; }
+        public long Hits { get { return _hits; } }
+        public long Misses { get { return _misses; } }
 
         public ICollection<string> Keys {
             get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
@@ -157,14 +160,20 @@ namespace Foundatio.Caching {
 
             CacheEntry cacheEntry;
             if (!_memory.TryGetValue(key, out cacheEntry))
+            {
+                Interlocked.Increment(ref _misses);
                 return null;
+            }
 
             if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
                 _memory.TryRemove(key, out cacheEntry);
+                Interlocked.Increment(ref _misses);
                 return null;
             }
 
             lastModifiedTicks = cacheEntry.LastModifiedTicks;
+            Interlocked.Increment(ref _hits);
+
             return cacheEntry.Value;
         }
 
