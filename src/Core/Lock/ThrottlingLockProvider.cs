@@ -16,7 +16,7 @@ namespace Foundatio.Lock {
 
             if (maxHitsPerPeriod <= 0)
                 throw new ArgumentException("Must be a positive number.", "maxHitsPerPeriod");
-
+            
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
@@ -80,7 +80,7 @@ namespace Foundatio.Lock {
             } while (DateTime.UtcNow <= timeoutTime);
 
             if (!allowLock)
-                throw new TimeoutException("Unable to acquire throttled lock.");
+                return null;
 
             Logger.Trace().Message("Allowing lock: {0}", name).Write();
             return new DisposableLock(name, this);

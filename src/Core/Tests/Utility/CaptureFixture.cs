@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using Foundatio.Logging;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -14,8 +15,23 @@ namespace Foundatio.Tests.Utility {
         private TextWriter _oldError;
         private TextWriter _outputWriter;
 
+        public CaptureFixture()
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
+        public LogLevel MinimumLogLevel { get; set; }
+
         public void Capture(ITestOutputHelper output)
         {
+            Logger.RegisterWriter(l =>
+            {
+                if (l.LogLevel < MinimumLogLevel)
+                    return;
+
+                Trace.WriteLine(l);
+            });
+
             _outputWriter = new TestOutputWriter(output);
             _oldOut = Console.Out;
             _oldError = Console.Error;

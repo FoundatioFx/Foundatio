@@ -29,16 +29,19 @@ namespace Foundatio.Tests {
             using (locker) {
                 locker.ReleaseLock("test");
 
-                using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                using (var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                    Assert.NotNull(lock1);
                     Assert.True(locker.IsLocked("test"));
-                    Assert.Throws<TimeoutException>(() => locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250)));
+                    var lock2 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                    Assert.Null(lock2);
                 }
 
                 Assert.False(locker.IsLocked("test"));
 
                 int counter = 0;
                 Parallel.For(0, 25, i => {
-                    using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                    using (var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                        Assert.NotNull(lock1);
                         Assert.True(locker.IsLocked("test"));
                         Interlocked.Increment(ref counter);
                     }
@@ -58,8 +61,8 @@ namespace Foundatio.Tests {
 
                 var testLock = locker.AcquireLock("test", TimeSpan.FromSeconds(1));
                 Assert.NotNull(testLock);
-
-                Assert.Throws<TimeoutException>(() => locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100)));
+                var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
+                Assert.Null(lock1);
 
                 testLock = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(2));
                 Assert.NotNull(testLock);

@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using Foundatio.Caching;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
@@ -67,6 +69,10 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(cache.Get<int?>("test1"));
                 Assert.Equal(2, cache.Misses);
             }
+        }
+
+        public InMemoryCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 }

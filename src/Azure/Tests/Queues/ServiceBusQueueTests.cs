@@ -5,6 +5,7 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
 using Microsoft.ServiceBus;
+using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
@@ -78,6 +79,10 @@ namespace Foundatio.Azure.Tests.Queue {
         // not using this test because you can set specific delay times for servicebus
         public override void CanDelayRetry() {
             base.CanDelayRetry();
+        }
+
+        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 }

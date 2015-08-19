@@ -15,7 +15,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
         private readonly TestOutputWriter _output;
-        public RedisQueueTests(ITestOutputHelper output) {
+        public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
             _output = new TestOutputWriter(output);
         }
 

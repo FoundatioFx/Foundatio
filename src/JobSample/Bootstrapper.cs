@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Runtime.Remoting.Messaging;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
@@ -16,11 +15,11 @@ namespace Foundatio.JobSample.Jobs {
 
             container.Register<IAmADependency, MyDependency>();
             var muxer = ConnectionMultiplexer.Connect("localhost");
-            container.RegisterSingle(muxer);
+            container.RegisterSingleton(muxer);
 
             var q1 = new RedisQueue<PingRequest>(muxer);
             var q2 = new RedisQueue<PingRequest>(muxer);
-            container.RegisterSingle<IQueue<PingRequest>>(() => q2);
+            container.RegisterSingleton<IQueue<PingRequest>>(() => q2);
 
             Task.Run(() => {
                 var startDate = DateTime.Now;

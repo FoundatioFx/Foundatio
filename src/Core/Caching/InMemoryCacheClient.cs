@@ -6,22 +6,20 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Utility;
 using Foundatio.Logging;
 
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private ConcurrentDictionary<string, CacheEntry> _memory;
-        private readonly CancellationTokenSource _cacheDisposedCancellationTokenSource;
+        private CancellationTokenSource _maintenanceCancellationTokenSource;
         private readonly object _lock = new object();
         private long _hits = 0;
         private long _misses = 0;
+        private DateTime? _nextMaintenance = null;
 
         public InMemoryCacheClient() {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
-
-            _cacheDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenanceWork, TimeSpan.FromMilliseconds(50), _cacheDisposedCancellationTokenSource.Token);
+            _maintenanceCancellationTokenSource = new CancellationTokenSource();
         }
 
         public bool FlushOnDispose { get; set; }
@@ -43,13 +41,17 @@ namespace Foundatio.Caching {
         }
 
         private void Set(string key, CacheEntry entry) {
+            Logger.Trace().Message("Set: key={0}", key).Write();
             if (entry.ExpiresAt < DateTime.UtcNow) {
                 Remove(key);
                 return;
             }
 
             lock (_lock)
+            {
                 _memory[key] = entry;
+                ScheduleNextMaintenance(entry.ExpiresAt);
+            }
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
                 string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
@@ -86,8 +88,10 @@ namespace Foundatio.Caching {
         }
 
         private bool CacheSet(string key, object value, DateTime expiresAt, long? checkLastModified) {
+            Logger.Trace().Message("Setting cache: key={0}", key).Write();
             expiresAt = expiresAt.ToUniversalTime();
             if (expiresAt < DateTime.UtcNow) {
+                Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
                 Remove(key);
                 return false;
             }
@@ -105,6 +109,7 @@ namespace Foundatio.Caching {
 
             entry.Value = value;
             entry.ExpiresAt = expiresAt;
+            ScheduleNextMaintenance(expiresAt);
 
             return true;
         }
@@ -118,8 +123,8 @@ namespace Foundatio.Caching {
         }
 
         public void Dispose() {
-            if (_cacheDisposedCancellationTokenSource != null)
-                _cacheDisposedCancellationTokenSource.Cancel();
+            if (_maintenanceCancellationTokenSource != null)
+                _maintenanceCancellationTokenSource.Cancel();
 
             if (!FlushOnDispose) 
                 return;
@@ -322,8 +327,11 @@ namespace Foundatio.Caching {
             }
 
             CacheEntry value;
-            if (_memory.TryGetValue(key, out value))
-                value.ExpiresAt = expiresAt;
+            if (!_memory.TryGetValue(key, out value))
+                return;
+
+            value.ExpiresAt = expiresAt;
+            ScheduleNextMaintenance(expiresAt);
         }
 
         public void SetExpiration(string key, TimeSpan expiresIn) {
@@ -348,23 +356,50 @@ namespace Foundatio.Caching {
             }
         }
 
-        private Task DoMaintenanceWork() {
-            var enumerator = _memory.GetEnumerator();
-            try {
-                var now = DateTime.UtcNow;
-                while (enumerator.MoveNext()) {
-                    var current = enumerator.Current;
-                    if (current.Value.ExpiresAt < now) {
-                        Remove(current.Key);
-                        OnItemExpired(current.Key);
-                        Logger.Trace().Message("Removing expired key: key={0} expiresat={1} now={2}", current.Key, current.Value.ExpiresAt, now);
-                    }
+        private void ScheduleNextMaintenance(DateTime value)
+        {
+            Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
+            if (value == DateTime.MaxValue)
+                return;
+
+            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
+                return;
+
+            if (_maintenanceCancellationTokenSource != null)
+                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource = new CancellationTokenSource();
+            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
+            _nextMaintenance = value;
+            Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
+            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+        }
+
+        private void DoMaintenance()
+        {
+            Logger.Trace().Message("Running DoMaintenance").Write();
+            DateTime minExpiration = DateTime.MaxValue;
+            var now = DateTime.UtcNow;
+            var expiredKeys = new List<string>();
+            lock (_lock)
+            {
+                foreach (string key in _memory.Keys)
+                {
+                    var expiresAt = _memory[key].ExpiresAt;
+                    if (expiresAt <= now)
+                        expiredKeys.Add(key);
+                    else if (expiresAt < minExpiration)
+                        minExpiration = expiresAt;
                 }
-            } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error trying to remove expired items from cache.").Write();
             }
 
-            return TaskHelper.Completed();
+            foreach (var key in expiredKeys)
+            {
+                Remove(key);
+                OnItemExpired(key);
+                Logger.Trace().Message("Removing expired key: key={0}", key).Write();
+            }
+
+            ScheduleNextMaintenance(minExpiration);
         }
 
         public event EventHandler<string> ItemExpired;

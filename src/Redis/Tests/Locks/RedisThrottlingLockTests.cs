@@ -36,14 +36,14 @@ namespace Foundatio.Redis.Tests {
 
             sw.Reset();
             sw.Start();
-            var result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            var result = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
-            result = locker.TryAcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(4));
+            result = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(4));
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());

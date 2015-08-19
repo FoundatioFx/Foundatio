@@ -2,6 +2,7 @@
 using Foundatio.Caching;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
+using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Caching {
     public class AzureCacheClientTests : CacheClientTestsBase {
@@ -12,6 +13,10 @@ namespace Foundatio.Azure.Tests.Caching {
             //var muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("AzureConnectionString"));
             //return new RedisCacheClient(muxer);
             return null;
+        }
+
+        public AzureCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 }

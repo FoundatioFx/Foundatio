@@ -71,7 +71,7 @@ namespace Foundatio.Lock {
             } while (!tokenSource.IsCancellationRequested && DateTime.UtcNow <= timeoutTime);
 
             if (!allowLock)
-                throw new TimeoutException("Unable to acquire throttled lock.");
+                return null;
 
             Logger.Trace().Message("Returning lock: {0}", name).Write();
             return new DisposableLock(name, this);

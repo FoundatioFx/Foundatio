@@ -25,14 +25,34 @@ namespace Foundatio.Tests.Jobs {
             job.RunContinuous(iterationLimit: 2);
             Assert.Equal(3, job.RunCount);
 
-            job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token);
-            Assert.True(job.RunCount > 10);
+            job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token);
+            Assert.InRange(job.RunCount, 5, 12);
 
             var jobInstance = JobRunner.CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
             Assert.NotNull(jobInstance);
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
             Assert.Equal(JobResult.Success, jobInstance.Run());
             Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
+        }
+
+        [Fact]
+        public async void CanCancelContinuousJobs()
+        {
+            var job = new HelloWorldJob();
+            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            job.RunContinuous(TimeSpan.FromSeconds(1), 5, cancellationTokenSource.Token);
+            Assert.Equal(1, job.RunCount);
+
+            var jobs = new List<HelloWorldJob>(new[] {
+                new HelloWorldJob(),
+                new HelloWorldJob(),
+                new HelloWorldJob()
+            });
+
+            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var token = tokenSource.Token;
+
+            await Task.WhenAll(jobs.Select(async j => await j.RunContinuousAsync(null, -1, token)));
         }
 
         [Fact]
@@ -60,9 +80,9 @@ namespace Foundatio.Tests.Jobs {
                 new ThrottledJob(client)
             });
 
-            var token = new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token;
+            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
             await Task.WhenAll(jobs.Select(
-                async job => await job.RunContinuousAsync(cancellationToken: token))
+                async job => await job.RunContinuousAsync(cancellationToken: tokenSource.Token))
             );
 
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
@@ -101,7 +121,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public void CanRunQueueJob() {
-            const int workItemCount = 1000;
+            const int workItemCount = 500;
             var metrics = new InMemoryMetricsClient();
             var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero, metrics: metrics);
 
@@ -109,7 +129,7 @@ namespace Foundatio.Tests.Jobs {
                 queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
 
             var job = new SampleQueueJob(queue, metrics);
-            job.RunUntilEmpty();
+            job.RunUntilEmpty(new CancellationTokenSource(10000).Token);
             metrics.DisplayStats();
 
             Assert.Equal(0, queue.GetQueueCount());

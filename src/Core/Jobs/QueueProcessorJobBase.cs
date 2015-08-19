@@ -58,9 +58,9 @@ namespace Foundatio.Jobs {
         public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
             do {
                 while (_queue.GetQueueCount() > 0)
-                    Run();
+                    Run(cancellationToken);
 
-                Thread.Sleep(100);
+                Thread.Sleep(10);
             } while (_queue.GetQueueCount() != 0);
         }
 

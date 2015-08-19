@@ -10,8 +10,9 @@ namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
         private readonly TestOutputWriter _writer;
 
-        public RedisCacheClientTests(ITestOutputHelper helper) {
-            _writer = new TestOutputWriter(helper);
+        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            _writer = new TestOutputWriter(output);
         }
 
         protected override ICacheClient GetCacheClient() {

@@ -29,7 +29,8 @@ namespace Foundatio.Queues {
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
         private CancellationTokenSource _workerCancellationTokenSource;
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
+        private CancellationTokenSource _maintenanceCancellationTokenSource;
+        private DateTime? _nextMaintenance = null;
         private readonly IMetricsClient _metrics;
         private readonly ISerializer _serializer;
         private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
@@ -51,8 +52,7 @@ namespace Foundatio.Queues {
             if (eventHandler != null)
                 _eventHandler = eventHandler;
 
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            TaskHelper.RunPeriodic(DoMaintenance, _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1), _queueDisposedCancellationTokenSource.Token, TimeSpan.FromMilliseconds(100));
+            _maintenanceCancellationTokenSource = new CancellationTokenSource();
         }
 
         public long GetQueueCount() { return _queue.Count; }
@@ -137,9 +137,10 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Dequeue: Got Item").Write();
             EventHandler.OnDequeue(this, info.Id, info.Data);
             Interlocked.Increment(ref _dequeuedCount);
+            ScheduleNextMaintenance(DateTime.UtcNow.Add(_workItemTimeout));
 
             info.Attempts++;
-            info.TimeDequeued = DateTime.Now;
+            info.TimeDequeued = DateTime.UtcNow;
 
             if (!_dequeued.TryAdd(info.Id, info))
                 throw new ApplicationException("Unable to add item to the dequeued list.");
@@ -254,23 +255,54 @@ namespace Foundatio.Queues {
                 _metrics.Gauge(QueueSizeStatName, GetQueueCount());
         }
 
-        private Task DoMaintenance() {
-            Logger.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
+        private void ScheduleNextMaintenance(DateTime value)
+        {
+            Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
+            if (value == DateTime.MaxValue)
+                return;
 
-            foreach (var item in _dequeued.Where(kvp => DateTime.Now.Subtract(kvp.Value.TimeDequeued).Milliseconds > _workItemTimeout.TotalMilliseconds)) {
-                Logger.Trace().Message("DoMaintenance Abandon: {0}", item.Key).Write();
-                Abandon(item.Key);
+            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
+                return;
+
+            if (_maintenanceCancellationTokenSource != null)
+                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource = new CancellationTokenSource();
+            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
+            _nextMaintenance = value;
+            Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
+            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+        }
+
+        private void DoMaintenance() {
+            Logger.Info().Message("DoMaintenance {0}", typeof(T).Name).Write();
+
+            DateTime minAbandonAt = DateTime.MaxValue;
+            var now = DateTime.UtcNow;
+            var abandonedKeys = new List<string>();
+            foreach (string key in _dequeued.Keys)
+            {
+                var abandonAt = _dequeued[key].TimeDequeued.Add(_workItemTimeout);
+                if (abandonAt < now)
+                    abandonedKeys.Add(key);
+                else if (abandonAt < minAbandonAt)
+                    minAbandonAt = abandonAt;
+            }
+
+            foreach (var key in abandonedKeys)
+            {
+                Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
+                Abandon(key);
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
 
-            return TaskHelper.Completed();
+            ScheduleNextMaintenance(minAbandonAt);
         }
 
         public void Dispose() {
             Logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
             StopWorking();
-            if (_queueDisposedCancellationTokenSource != null)
-                _queueDisposedCancellationTokenSource.Cancel();
+            if (_maintenanceCancellationTokenSource != null)
+                _maintenanceCancellationTokenSource.Cancel();
         }
 
         private class QueueInfo<TData> {

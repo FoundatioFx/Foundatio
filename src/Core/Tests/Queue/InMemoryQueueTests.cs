@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue {
     public class InMemoryQueueTests : QueueTestBase {
@@ -67,6 +69,10 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public override void CanDelayRetry() {
             base.CanDelayRetry();
+        }
+
+        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 }

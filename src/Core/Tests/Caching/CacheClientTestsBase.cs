@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
-    public abstract class CacheClientTestsBase {
+    public abstract class CacheClientTestsBase : CaptureTests {
         protected virtual ICacheClient GetCacheClient() {
             return null;
         }
@@ -117,13 +118,21 @@ namespace Foundatio.Tests.Caching {
                 var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
                 var success = cache.Set("test", 1, expiresAt);
                 Assert.True(success);
-                Assert.Equal(1, cache.Get<int>("test"));
+                success = cache.Set("test2", 1, expiresAt.AddMilliseconds(100));
+                Assert.True(success);
+                Assert.Equal(1, cache.Get<int?>("test"));
                 Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
 
                 Thread.Sleep(500);
-                Assert.Equal(0, cache.Get<int>("test"));
+                Assert.Null(cache.Get<int?>("test"));
                 Assert.Null(cache.GetExpiration("test"));
+                Assert.Null(cache.Get<int?>("test2"));
+                Assert.Null(cache.GetExpiration("test2"));
             }
+        }
+
+        protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 

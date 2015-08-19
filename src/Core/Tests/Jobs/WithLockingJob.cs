@@ -2,11 +2,10 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Xunit;
 using Foundatio.Messaging;
+using Xunit;
 
 namespace Foundatio.Tests.Jobs {
     public class WithLockingJob : JobBase {
@@ -14,7 +13,7 @@ namespace Foundatio.Tests.Jobs {
         public int RunCount { get; set; }
 
         protected override IDisposable GetJobLock() {
-            return _locker.TryAcquireLock("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.Zero);
+            return _locker.AcquireLock("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.Zero);
         }
 
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {

@@ -4,7 +4,9 @@ using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Foundatio.Logging;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
     public class HybridCacheClientTests: CacheClientTestsBase {
@@ -90,11 +92,18 @@ namespace Foundatio.Tests.Caching {
 
             var sw = new Stopwatch();
             sw.Start();
-            while (firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0)
-                Thread.Sleep(10);
+            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0)
+                && sw.ElapsedMilliseconds < 500)
+                Thread.Sleep(25);
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);
+            Assert.Equal(0, firstCache.LocalCache.Count);
+            Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 250);
+        }
+
+        public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 }

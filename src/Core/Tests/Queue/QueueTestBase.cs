@@ -9,9 +9,10 @@ using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue {
-    public abstract class QueueTestBase {
+    public abstract class QueueTestBase : CaptureTests {
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             return null;
         }
@@ -380,6 +381,10 @@ namespace Foundatio.Tests.Queue {
             } finally {
                 latch.Signal();
             }
+        }
+
+        protected QueueTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
         }
     }
 
