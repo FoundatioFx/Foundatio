@@ -4,6 +4,7 @@ using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -11,6 +12,12 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests {
     public class ThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(1);
+
+        public ThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output)
+            : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override ILockProvider GetLockProvider() {
             return new ThrottlingLockProvider(new InMemoryCacheClient(), 5, _period);
@@ -54,8 +61,5 @@ namespace Foundatio.Tests {
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());
         }
-
-        public ThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output)
-            : base(fixture, output) {}
     }
 }

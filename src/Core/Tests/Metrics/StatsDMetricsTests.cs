@@ -10,14 +10,14 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class StatsDMetricsTests : IDisposable {
+    public class StatsDMetricsTests : CaptureTests, IDisposable {
         private readonly TestOutputWriter _writer;
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
         private Thread _listenerThread;
 
-        public StatsDMetricsTests(ITestOutputHelper output) {
+        public StatsDMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
 

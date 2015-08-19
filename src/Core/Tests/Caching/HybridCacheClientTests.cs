@@ -13,6 +13,11 @@ namespace Foundatio.Tests.Caching {
         private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
         private readonly IMessageBus _messageBus = new InMemoryMessageBus();
 
+        public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override ICacheClient GetCacheClient() {
             return new HybridCacheClient(_distributedCache, _messageBus);
         }
@@ -100,10 +105,6 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(0, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 250);
-        }
-
-        public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
         }
     }
 }

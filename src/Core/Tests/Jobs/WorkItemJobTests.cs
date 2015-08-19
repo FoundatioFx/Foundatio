@@ -1,16 +1,23 @@
 ﻿using System;
-using System.Configuration;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class WorkItemJobTests {
+    public class WorkItemJobTests : CaptureTests {
+        public WorkItemJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         [Fact]
         public void CanRunWorkItem() {
             var queue = new InMemoryQueue<WorkItemData>();

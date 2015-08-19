@@ -1,12 +1,19 @@
 ﻿using System;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Messaging {
     public class ServiceBusMessageBusTests : MessageBusTestBase {
         private static IMessageBus _messageBus;
+
+        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override IMessageBus GetMessageBus() {
             if (_messageBus != null)

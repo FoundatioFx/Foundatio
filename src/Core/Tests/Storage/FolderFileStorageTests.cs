@@ -1,11 +1,19 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Storage;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public class FolderFileStorageTests : FileStorageTestsBase {
         private const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
+
+        public FolderFileStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override IFileStorage GetStorage() {
             return new FolderFileStorage("temp");

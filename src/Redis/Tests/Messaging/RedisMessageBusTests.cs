@@ -1,9 +1,17 @@
-﻿using Foundatio.Messaging;
+﻿using Foundatio.Logging;
+using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
+        public RedisMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override IMessageBus GetMessageBus() {
             return new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), "test-messages");
         }

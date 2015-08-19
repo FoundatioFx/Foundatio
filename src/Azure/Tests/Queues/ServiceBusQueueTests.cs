@@ -4,12 +4,18 @@ using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Microsoft.ServiceBus;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
+
+        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
@@ -79,10 +85,6 @@ namespace Foundatio.Azure.Tests.Queue {
         // not using this test because you can set specific delay times for servicebus
         public override void CanDelayRetry() {
             base.CanDelayRetry();
-        }
-
-        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
         }
     }
 }

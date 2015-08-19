@@ -1,12 +1,19 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Storage {
     public class AzureStorageTests : FileStorageTestsBase {
+        public AzureStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override IFileStorage GetStorage() {
             if (ConnectionStrings.Get("AzureStorageConnectionString") == null)
                 return null;

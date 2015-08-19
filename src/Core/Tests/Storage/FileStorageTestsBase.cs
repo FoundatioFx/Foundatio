@@ -9,9 +9,15 @@ using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Logging;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
-    public abstract class FileStorageTestsBase {
+    public abstract class FileStorageTestsBase : CaptureTests {
+        protected FileStorageTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected virtual IFileStorage GetStorage() {
             return null;
         }

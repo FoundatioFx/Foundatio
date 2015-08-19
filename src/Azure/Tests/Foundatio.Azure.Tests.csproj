@@ -93,6 +93,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
+      <Link>Utility\CaptureCollectionFixture.cs</Link>
+    </Compile>
     <Compile Include="Caching\AzureCacheClient.cs" />
     <Compile Include="Messaging\ServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

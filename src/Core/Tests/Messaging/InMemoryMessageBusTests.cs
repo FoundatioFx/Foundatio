@@ -1,8 +1,16 @@
+using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public class InMemoryMessageBusTests : MessageBusTestBase {
+        public InMemoryMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override IMessageBus GetMessageBus() {
             return new InMemoryMessageBus();
         }

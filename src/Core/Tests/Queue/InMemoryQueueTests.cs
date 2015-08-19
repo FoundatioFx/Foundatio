@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -8,6 +9,11 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Queue {
     public class InMemoryQueueTests : QueueTestBase {
         private IQueue<SimpleWorkItem> _queue;
+
+        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
             if (_queue == null)
@@ -69,10 +75,6 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public override void CanDelayRetry() {
             base.CanDelayRetry();
-        }
-
-        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
         }
     }
 }

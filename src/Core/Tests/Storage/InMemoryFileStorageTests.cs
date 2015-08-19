@@ -1,10 +1,18 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Storage;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public class InMemoryFileStorageTests : FileStorageTestsBase {
+        public InMemoryFileStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override IFileStorage GetStorage() {
             return new InMemoryFileStorage();
         }

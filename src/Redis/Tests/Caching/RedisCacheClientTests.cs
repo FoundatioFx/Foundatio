@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Foundatio.Caching;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
@@ -12,6 +13,7 @@ namespace Foundatio.Redis.Tests.Caching {
 
         public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
+            MinimumLogLevel = LogLevel.Warn;
             _writer = new TestOutputWriter(output);
         }
 

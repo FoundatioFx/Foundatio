@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
@@ -15,6 +16,11 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class JobTests : CaptureTests {
+        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         [Fact]
         public void CanRunJobs() {
             var job = new HelloWorldJob();
@@ -134,7 +140,5 @@ namespace Foundatio.Tests.Jobs {
 
             Assert.Equal(0, queue.GetQueueCount());
         }
-
-        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 }

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -17,6 +18,7 @@ namespace Foundatio.Redis.Tests.Queues {
         private readonly TestOutputWriter _output;
         public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
+            MinimumLogLevel = LogLevel.Warn;
             _output = new TestOutputWriter(output);
         }
 

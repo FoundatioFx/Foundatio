@@ -92,6 +92,12 @@ namespace Foundatio.Tests.Utility {
             fixture.Capture(_output);
         }
 
+        public LogLevel MinimumLogLevel
+        {
+            get { return _fixture.MinimumLogLevel; }
+            set { _fixture.MinimumLogLevel = value; }
+        }
+
         public void Dispose()
         {
             if (_fixture != null)

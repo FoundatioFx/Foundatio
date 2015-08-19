@@ -1,12 +1,20 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Jobs;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Jobs {
-    public class RedisJobTests {
+    public class RedisJobTests : CaptureTests {
+        public RedisJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         [Fact]
         public void CanRunQueueJob() {
             const int workItemCount = 10000;

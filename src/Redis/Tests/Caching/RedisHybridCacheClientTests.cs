@@ -1,4 +1,5 @@
 ﻿using Foundatio.Caching;
+using Foundatio.Logging;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -6,6 +7,11 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisHybridCacheClientTests : HybridCacheClientTests {
+        public RedisHybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
+
         protected override ICacheClient GetCacheClient() {
             return new RedisHybridCacheClient(SharedConnection.GetMuxer());
         }
@@ -43,10 +49,6 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact]
         public override void WillExpireRemoteItems() {
             base.WillExpireRemoteItems();
-        }
-
-        public RedisHybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
         }
     }
 }

@@ -4,6 +4,7 @@ using System.Threading;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -12,6 +13,11 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests {
     public class RedisThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(3);
+
+        public RedisThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+        }
 
         protected override ILockProvider GetLockProvider() {
             return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), 5, _period);
@@ -48,7 +54,5 @@ namespace Foundatio.Redis.Tests {
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());
         }
-
-        public RedisThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
     }
 }
