@@ -17,9 +17,12 @@ namespace Foundatio.Tests.Utility {
         }
 
         public override void WriteLine(string value) {
-            try {
+            try
+            {
                 _output.WriteLine(value);
-            } catch (Exception ex) {
+            }
+            catch (InvalidOperationException) { }
+            catch (Exception ex) {
                 Trace.WriteLine(ex);
             }
         }

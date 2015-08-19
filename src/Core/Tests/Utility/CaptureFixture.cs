@@ -17,15 +17,20 @@ namespace Foundatio.Tests.Utility {
 
         public CaptureFixture()
         {
-            MinimumLogLevel = LogLevel.Warn;
+            EnableLogging = false;
+            MinimumLogLevel = LogLevel.Info;
         }
 
         public LogLevel MinimumLogLevel { get; set; }
+        public bool EnableLogging { get; set; }
 
         public void Capture(ITestOutputHelper output)
         {
             Logger.RegisterWriter(l =>
             {
+                if (!EnableLogging)
+                    return;
+
                 if (l.LogLevel < MinimumLogLevel)
                     return;
 
@@ -59,6 +64,8 @@ namespace Foundatio.Tests.Utility {
 
             if (_oldError != null)
                 Console.SetError(_oldError);
+
+            Logger.RegisterWriter(l => {});
 
             try {
                 if (_oldListeners != null) {
@@ -96,6 +103,12 @@ namespace Foundatio.Tests.Utility {
         {
             get { return _fixture.MinimumLogLevel; }
             set { _fixture.MinimumLogLevel = value; }
+        }
+
+        public bool EnableLogging
+        {
+            get { return _fixture.EnableLogging; }
+            set { _fixture.EnableLogging = value; }
         }
 
         public void Dispose()
