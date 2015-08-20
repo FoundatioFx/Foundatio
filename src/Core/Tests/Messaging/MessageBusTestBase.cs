@@ -9,6 +9,12 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
+        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+            MinimumLogLevel = LogLevel.Warn;
+            EnableLogging = false;
+        }
+
         protected virtual IMessageBus GetMessageBus() {
             return null;
         }
@@ -59,11 +65,11 @@ namespace Foundatio.Tests.Messaging {
                 messageBus.Publish(new SimpleMessageA {
                     Data = "Hello"
                 }, TimeSpan.FromMilliseconds(100));
-                Trace.WriteLine("Published one...");
+                Logger.Trace().Message("Published one...").Write();
 
                 bool success = resetEvent.WaitOne(2000);
                 sw.Stop();
-                Trace.WriteLine("Done waiting: " + success);
+                Logger.Trace().Message("Done waiting: " + success).Write();
 
                 Assert.True(success, "Failed to receive message.");
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
@@ -233,10 +239,6 @@ namespace Foundatio.Tests.Messaging {
             }
 
             Thread.Sleep(50);
-        }
-
-        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
         }
     }
 }

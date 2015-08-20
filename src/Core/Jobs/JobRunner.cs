@@ -40,19 +40,23 @@ namespace Foundatio.Jobs {
             jobInstance.RunUntilEmpty(cancellationToken);
         }
 
-        public static Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
             if (instanceCount > 1) {
                 var tasks = new List<Task>();
-                for (int i = 0; i < instanceCount; i++) {
-                    tasks.Add(Task.Factory.StartNew(() => {
-                        CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken);
-                    }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default));
-                }
+                for (int i = 0; i < instanceCount; i++)
+                    tasks.Add(Task.Run(async () =>
+                        {
+                            await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken);
+                        },
+                        cancellationToken));
 
-                return Task.WhenAll(tasks);
+                await Task.WhenAll(tasks);
+            } else {
+                await Task.Run(async () => {
+                        await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken);
+                    },
+                    cancellationToken);
             }
-
-            return Task.Factory.StartNew(() => CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {

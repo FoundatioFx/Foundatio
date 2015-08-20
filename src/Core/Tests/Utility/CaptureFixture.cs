@@ -34,7 +34,7 @@ namespace Foundatio.Tests.Utility {
                 if (l.LogLevel < MinimumLogLevel)
                     return;
 
-                Debug.WriteLine(l);
+                Trace.WriteLine(l.ToString(false, false));
             });
 
             _outputWriter = new TestOutputWriter(output);

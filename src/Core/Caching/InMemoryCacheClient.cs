@@ -380,26 +380,30 @@ namespace Foundatio.Caching {
             DateTime minExpiration = DateTime.MaxValue;
             var now = DateTime.UtcNow;
             var expiredKeys = new List<string>();
-            lock (_lock)
-            {
-                foreach (string key in _memory.Keys)
-                {
-                    var expiresAt = _memory[key].ExpiresAt;
-                    if (expiresAt <= now)
-                        expiredKeys.Add(key);
-                    else if (expiresAt < minExpiration)
-                        minExpiration = expiresAt;
-                }
-            }
 
-            foreach (var key in expiredKeys)
+            foreach (string key in _memory.Keys)
             {
-                Remove(key);
-                OnItemExpired(key);
-                Logger.Trace().Message("Removing expired key: key={0}", key).Write();
+                var expiresAt = _memory[key].ExpiresAt;
+                if (expiresAt <= now)
+                    expiredKeys.Add(key);
+                else if (expiresAt < minExpiration)
+                    minExpiration = expiresAt;
             }
 
             ScheduleNextMaintenance(minExpiration);
+
+            if (expiredKeys.Count == 0)
+                return;
+
+            lock (_lock)
+            {
+                foreach (var key in expiredKeys)
+                {
+                    Remove(key);
+                    OnItemExpired(key);
+                    Logger.Trace().Message("Removing expired key: key={0}", key).Write();
+                }
+            }
         }
 
         public event EventHandler<string> ItemExpired;

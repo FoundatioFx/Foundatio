@@ -327,14 +327,22 @@ namespace Foundatio.Logging
         /// </returns>
         public override string ToString()
         {
+            return ToString(true, true);
+        }
+
+        public string ToString(bool includeFileInfo, bool includeException)
+        {
             var message = new StringBuilder();
             message
+                .Append("[")
                 .Append(DateTime.Now.ToString("HH:mm:ss.fff"))
-                .Append(" [")
+                .Append(" ")
                 .Append(LogLevel.ToString()[0])
+                .Append(" ")
+                .Append(Logger)
                 .Append("] ");
 
-            if (!string.IsNullOrEmpty(FilePath) && !string.IsNullOrEmpty(MemberName))
+            if (includeFileInfo && !string.IsNullOrEmpty(FilePath) && !string.IsNullOrEmpty(MemberName))
             {
                 message
                     .Append("[")
@@ -352,7 +360,7 @@ namespace Foundatio.Logging
             else
                 message.Append(Message);
 
-            if (Exception != null)
+            if (includeException && Exception != null)
                 message.Append(" ").Append(Exception);
 
             return message.ToString();

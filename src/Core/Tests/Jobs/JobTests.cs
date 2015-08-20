@@ -18,7 +18,8 @@ namespace Foundatio.Tests.Jobs {
     public class JobTests : CaptureTests {
         public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
+            MinimumLogLevel = LogLevel.Trace;
+            EnableLogging = false;
         }
 
         [Fact]
@@ -39,6 +40,22 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
             Assert.Equal(JobResult.Success, jobInstance.Run());
             Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
+        }
+
+        [Fact]
+        public async void CanRunMultipleInstances()
+        {
+            HelloWorldJob.GlobalRunCount = 0;
+
+            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token);
+            Assert.Equal(5, HelloWorldJob.GlobalRunCount);
+
+            HelloWorldJob.GlobalRunCount = 0;
+
+            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 5, tokenSource.Token);
+            Assert.Equal(25, HelloWorldJob.GlobalRunCount);
         }
 
         [Fact]

@@ -90,13 +90,10 @@ namespace Foundatio.Utility {
         }
 
         public static Task InBackground(Action action, int? maxFaults = null, TimeSpan? restartInterval = null) {
-            return InBackground(t => action(), null, maxFaults, restartInterval);
+            return InBackground(t => action(), default(CancellationToken), maxFaults, restartInterval);
         }
 
-        public static Task InBackground(Action<CancellationToken> action, CancellationToken? token = null, int? maxFaults = null, TimeSpan? restartInterval = null) {
-            if (!token.HasValue)
-                token = CancellationToken.None;
-
+        public static Task InBackground(Action<CancellationToken> action, CancellationToken token = default(CancellationToken), int? maxFaults = null, TimeSpan? restartInterval = null) {
             if (!maxFaults.HasValue)
                 maxFaults = Int32.MaxValue;
 
@@ -106,18 +103,18 @@ namespace Foundatio.Utility {
             if (action == null)
                 throw new ArgumentNullException("action");
 
-            return Task.Factory.StartNew(() => {
+            return Task.Run(async () => {
                 do {
                     try {
-                        action(token.Value);
+                        action(token);
                     } catch {
                         if (maxFaults <= 0)
                             throw;
 
-                        Task.Delay(restartInterval.Value, token.Value).Wait();
+                        await Task.Delay(restartInterval.Value, token);
                     }
-                } while (!token.Value.IsCancellationRequested && maxFaults-- > 0);
-            }, token.Value, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                } while (!token.IsCancellationRequested && maxFaults-- > 0);
+            }, token);
         }
     }
 }

@@ -61,7 +61,7 @@ namespace Foundatio.Jobs {
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
             int iterations = 0;
             if (interval == null)
-                interval = TimeSpan.FromMilliseconds(10);
+                interval = TimeSpan.FromMilliseconds(1);
 
             EnsureJobNameSet();
             Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();

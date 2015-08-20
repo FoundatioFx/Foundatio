@@ -105,7 +105,7 @@ namespace Foundatio.Queues {
                 return;
 
             _workerCancellationTokenSource = new CancellationTokenSource();
-            Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
+            Task.Run(() => WorkerLoop(_workerCancellationTokenSource.Token));
         }
 
         public void StopWorking() {
@@ -274,7 +274,7 @@ namespace Foundatio.Queues {
         }
 
         private void DoMaintenance() {
-            Logger.Info().Message("DoMaintenance {0}", typeof(T).Name).Write();
+            Logger.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
 
             DateTime minAbandonAt = DateTime.MaxValue;
             var now = DateTime.UtcNow;
@@ -288,14 +288,17 @@ namespace Foundatio.Queues {
                     minAbandonAt = abandonAt;
             }
 
+            ScheduleNextMaintenance(minAbandonAt);
+
+            if (abandonedKeys.Count == 0)
+                return;
+
             foreach (var key in abandonedKeys)
             {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
                 Abandon(key);
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
-
-            ScheduleNextMaintenance(minAbandonAt);
         }
 
         public void Dispose() {
