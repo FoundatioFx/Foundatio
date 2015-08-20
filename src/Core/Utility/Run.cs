@@ -103,7 +103,7 @@ namespace Foundatio.Utility {
             if (action == null)
                 throw new ArgumentNullException("action");
 
-            return Task.Run(async () => {
+            return Task.Run(() => {
                 do {
                     try {
                         action(token);
@@ -111,7 +111,7 @@ namespace Foundatio.Utility {
                         if (maxFaults <= 0)
                             throw;
 
-                        await Task.Delay(restartInterval.Value, token);
+                        Task.Delay(restartInterval.Value, token).Wait();
                     }
                 } while (!token.IsCancellationRequested && maxFaults-- > 0);
             }, token);
