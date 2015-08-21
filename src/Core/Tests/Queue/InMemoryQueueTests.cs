@@ -12,7 +12,8 @@ namespace Foundatio.Tests.Queue {
 
         public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
+            MinimumLogLevel = LogLevel.Trace;
+            EnableLogging = false;
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {

@@ -41,22 +41,11 @@ namespace Foundatio.Jobs {
         }
 
         public static async Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (instanceCount > 1) {
-                var tasks = new List<Task>();
-                for (int i = 0; i < instanceCount; i++)
-                    tasks.Add(Task.Run(async () =>
-                        {
-                            await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken);
-                        },
-                        cancellationToken));
+            var tasks = new List<Task>();
+            for (int i = 0; i < instanceCount; i++)
+                tasks.Add(Task.Run(async () => await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken), cancellationToken));
 
-                await Task.WhenAll(tasks);
-            } else {
-                await Task.Run(async () => {
-                        await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken);
-                    },
-                    cancellationToken);
-            }
+            await Task.WhenAll(tasks);
         }
 
         public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {

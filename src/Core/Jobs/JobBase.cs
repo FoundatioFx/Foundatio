@@ -6,9 +6,16 @@ using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
+        public JobBase()
+        {
+            Id = Guid.NewGuid().ToString("N").Substring(0, 10);
+        }
+
         protected virtual IDisposable GetJobLock() {
             return Disposable.Empty;
         }
+
+        public string Id { get; private set; }
 
         private string _jobName;
         private void EnsureJobNameSet()
@@ -58,7 +65,7 @@ namespace Foundatio.Jobs {
             return RunAsync(token).Result;
         }
 
-        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<bool> continuationCallback = null) {
             int iterations = 0;
             if (interval == null)
                 interval = TimeSpan.FromMilliseconds(1);
@@ -66,7 +73,8 @@ namespace Foundatio.Jobs {
             EnsureJobNameSet();
             Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
 
-            while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit))
+            while (!cancellationToken.IsCancellationRequested
+                && (iterationLimit < 0 || iterations < iterationLimit))
             {
                 try
                 {
@@ -76,6 +84,19 @@ namespace Foundatio.Jobs {
                     await Task.Delay(interval.Value, cancellationToken);
                 }
                 catch (TaskCanceledException) { }
+
+                if (continuationCallback != null)
+                {
+                    try
+                    {
+                        if (!continuationCallback())
+                            break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
+                    }
+                }
             }
 
             Logger.Info().Message("Stopping continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();

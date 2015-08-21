@@ -181,7 +181,7 @@ namespace Foundatio.Queues {
             }
         }
 
-        public QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
+        public QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
 

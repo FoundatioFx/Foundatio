@@ -111,7 +111,7 @@ namespace Foundatio.Utility {
                         if (maxFaults <= 0)
                             throw;
 
-                        Task.Delay(restartInterval.Value, token).Wait();
+                        Task.Delay(restartInterval.Value, token).Wait(token);
                     }
                 } while (!token.IsCancellationRequested && maxFaults-- > 0);
             }, token);

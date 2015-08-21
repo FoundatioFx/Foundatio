@@ -208,7 +208,7 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
         }
 
-        public virtual QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
+        public virtual QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -221,7 +221,7 @@ namespace Foundatio.Queues {
                 Logger.Trace().Message("Waiting to dequeue item...").Write();
 
                 // Wait for timeout or signal or dispose
-                Task.WaitAny(Task.Delay(timeout.Value), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
+                Task.WaitAny(Task.Delay(timeout.Value, cancellationToken), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
                 if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
                     return null;
 

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Foundatio.Logging;
+using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
@@ -18,7 +19,7 @@ namespace Foundatio.Jobs {
         protected async override Task<JobResult> RunInternalAsync(CancellationToken token) {
             QueueEntry<T> queueEntry = null;
             try {
-                queueEntry = _queue.Dequeue();
+                queueEntry = _queue.Dequeue(null, token);
             } catch (Exception ex) {
                 if (!(ex is TimeoutException)) {
                     Logger.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
@@ -37,17 +38,25 @@ namespace Foundatio.Jobs {
             Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
 
             using (lockValue) {
-                var result = await ProcessQueueItem(queueEntry);
+                try
+                {
+                    var result = await ProcessQueueItem(queueEntry);
 
-                if (!AutoComplete)
+                    if (!AutoComplete)
+                        return result;
+
+                    if (result.IsSuccess)
+                        queueEntry.Complete();
+                    else
+                        queueEntry.Abandon();
+
                     return result;
-
-                if (result.IsSuccess)
-                    queueEntry.Complete();
-                else
+                }
+                catch
+                {
                     queueEntry.Abandon();
-
-                return result;
+                    throw;
+                }
             }
         }
 
@@ -56,12 +65,26 @@ namespace Foundatio.Jobs {
         }
 
         public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
-            do {
-                while (_queue.GetQueueCount() > 0)
-                    Run(cancellationToken);
+            RunContinuousAsync(cancellationToken: cancellationToken,
+                continuationCallback: () => {
+                    long queueCount = _queue.GetQueueCount();
+                    long workingCount = _queue.GetWorkingCount();
+                    Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", queueCount, workingCount).Write();
+                    return queueCount + workingCount > 0;
+                })
+                .WaitWithoutException(cancellationToken);
+        }
 
-                Thread.Sleep(10);
-            } while (_queue.GetQueueCount() != 0);
+        public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            await RunContinuousAsync(cancellationToken: cancellationToken,
+                continuationCallback: () =>
+                {
+                    long queueCount = _queue.GetQueueCount();
+                    long workingCount = _queue.GetWorkingCount();
+                    Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", queueCount, workingCount).Write();
+                    return queueCount + workingCount > 0;
+                });
         }
 
         protected abstract Task<JobResult> ProcessQueueItem(QueueEntry<T> queueEntry);
@@ -69,5 +92,6 @@ namespace Foundatio.Jobs {
 
     public interface IQueueProcessorJob : IDisposable {
         void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken));
+        Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken));
     }
 }

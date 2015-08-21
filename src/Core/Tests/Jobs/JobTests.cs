@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,11 +16,15 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests : CaptureTests {
+    public class JobTests : CaptureTests
+    {
+        private TextWriter _writer;
+
         public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
             MinimumLogLevel = LogLevel.Trace;
             EnableLogging = false;
+            _writer = new TestOutputWriter(output);
         }
 
         [Fact]
@@ -53,29 +58,21 @@ namespace Foundatio.Tests.Jobs {
 
             HelloWorldJob.GlobalRunCount = 0;
 
-            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 5, tokenSource.Token);
-            Assert.Equal(25, HelloWorldJob.GlobalRunCount);
+            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, tokenSource.Token);
+            Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
         [Fact]
         public async void CanCancelContinuousJobs()
         {
             var job = new HelloWorldJob();
-            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-            job.RunContinuous(TimeSpan.FromSeconds(1), 5, cancellationTokenSource.Token);
+            var tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            job.RunContinuous(TimeSpan.FromSeconds(1), 5, tokenSource.Token);
             Assert.Equal(1, job.RunCount);
 
-            var jobs = new List<HelloWorldJob>(new[] {
-                new HelloWorldJob(),
-                new HelloWorldJob(),
-                new HelloWorldJob()
-            });
-
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            var token = tokenSource.Token;
-
-            await Task.WhenAll(jobs.Select(async j => await j.RunContinuousAsync(null, -1, token)));
+            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token);
         }
 
         [Fact]
@@ -144,16 +141,16 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public void CanRunQueueJob() {
-            const int workItemCount = 500;
-            var metrics = new InMemoryMetricsClient();
-            var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero, metrics: metrics);
+            const int workItemCount = 100;
+            var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero);
 
             for (int i = 0; i < workItemCount; i++)
                 queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
 
+            var metrics = new InMemoryMetricsClient();
             var job = new SampleQueueJob(queue, metrics);
-            job.RunUntilEmpty(new CancellationTokenSource(10000).Token);
-            metrics.DisplayStats();
+            job.RunUntilEmpty(new CancellationTokenSource(30000).Token);
+            metrics.DisplayStats(_writer);
 
             Assert.Equal(0, queue.GetQueueCount());
         }

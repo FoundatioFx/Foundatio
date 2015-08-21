@@ -9,7 +9,7 @@ namespace Foundatio.Queues {
         string Enqueue(T data);
         void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
         void StopWorking();
-        QueueEntry<T> Dequeue(TimeSpan? timeout = null);
+        QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         void Complete(string id);
         void Abandon(string id);
         // TODO: Change to get all stats at the same time to allow optimization of retrieval.
@@ -35,6 +35,7 @@ namespace Foundatio.Queues {
         Task<QueueEntry2<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         Task CompleteAsync(string id);
         Task AbandonAsync(string id);
+        ICollection<IQueueEventHandler2<T>> EventHandlers { get; }
         Task<QueueStats> GetQueueStatsAsync();
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
         string QueueId { get; }
