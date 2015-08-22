@@ -11,7 +11,6 @@ namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
         public InMemoryCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ICacheClient GetCacheClient() {

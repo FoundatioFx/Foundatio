@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Jobs;
@@ -12,7 +11,6 @@ namespace Foundatio.Redis.Tests.Jobs {
     public class RedisJobTests : CaptureTests {
         public RedisJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         [Fact]

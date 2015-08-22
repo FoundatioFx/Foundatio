@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using Foundatio.Logging;
+﻿using System.Threading.Tasks;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
@@ -11,7 +9,6 @@ namespace Foundatio.Azure.Tests.Storage {
     public class AzureStorageTests : FileStorageTestsBase {
         public AzureStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override IFileStorage GetStorage() {

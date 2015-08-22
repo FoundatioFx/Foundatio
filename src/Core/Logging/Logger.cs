@@ -12,7 +12,7 @@ namespace Foundatio.Logging
     /// <summary>
     /// Defines available log levels.
     /// </summary>
-    public enum LogLevel
+    public enum LogLevel : byte
     {
         /// <summary>Trace log level.</summary>
         Trace = 0,
@@ -26,6 +26,8 @@ namespace Foundatio.Logging
         Error = 4,
         /// <summary>Fatal log level.</summary>
         Fatal = 5,
+        /// <summary>None log level.</summary>
+        None = 100,
     }
 
     /// <summary>
@@ -34,6 +36,7 @@ namespace Foundatio.Logging
     public static class Logger
     {
         private static Action<LogData> _logWriter;
+        private static LogLevel _minimumLogLevel = LogLevel.Trace;
         private static readonly object _writerLock;
 
         private static readonly ThreadLocal<IDictionary<string, string>> _threadProperties;
@@ -85,7 +88,7 @@ namespace Foundatio.Logging
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
-        public static LogBuilder Log(LogLevel logLevel, [CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Log(LogLevel logLevel, [CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(logLevel, callerFilePath);
         }
@@ -98,7 +101,7 @@ namespace Foundatio.Logging
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
-        public static LogBuilder Log(Func<LogLevel> logLevelFactory, [CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Log(Func<LogLevel> logLevelFactory, [CallerFilePath]string callerFilePath = null)
         {
             var logLevel = (logLevelFactory != null) 
                 ? logLevelFactory() 
@@ -113,7 +116,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Trace([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Trace([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Trace, callerFilePath);
         }
@@ -123,7 +126,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Debug([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Debug([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Debug, callerFilePath);
         }
@@ -133,7 +136,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Info([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Info([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Info, callerFilePath);
         }
@@ -143,7 +146,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Warn([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Warn([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Warn, callerFilePath);
         }
@@ -153,7 +156,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Error([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Error([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Error, callerFilePath);
         }
@@ -163,11 +166,19 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>A fluent Logger instance.</returns>
-        public static LogBuilder Fatal([CallerFilePath]string callerFilePath = null)
+        public static ILogBuilder Fatal([CallerFilePath]string callerFilePath = null)
         {
             return CreateBuilder(LogLevel.Fatal, callerFilePath);
         }
 
+        /// <summary>
+        /// Set the global minimum log level.
+        /// </summary>
+        /// <param name="level">The minimum log level that will be logged.</param>
+        public static void SetMinimumLogLevel(LogLevel level)
+        {
+            _minimumLogLevel = level;
+        }
 
         /// <summary>
         /// Registers a <see langword="delegate"/> to write logs to.
@@ -178,7 +189,6 @@ namespace Foundatio.Logging
             lock (_writerLock)
                 _logWriter = writer;
         }
-
 
         private static Action<LogData> ResolveWriter()
         {
@@ -191,8 +201,11 @@ namespace Foundatio.Logging
             System.Diagnostics.Debug.WriteLine(logData);
         }
 
-        private static LogBuilder CreateBuilder(LogLevel logLevel, string callerFilePath)
+        private static ILogBuilder CreateBuilder(LogLevel logLevel, string callerFilePath)
         {
+            if (logLevel < _minimumLogLevel || logLevel == LogLevel.None)
+                return new NullLogBuilder();
+
             string name = LoggerExtensions.GetFileNameWithoutExtension(callerFilePath ?? string.Empty);
 
             var writer = ResolveWriter();
@@ -223,12 +236,12 @@ namespace Foundatio.Logging
         private static void MergeProperties(LogBuilder builder)
         {
             // copy global properties to current builder only if it has been created
-            if (_globalProperties.IsValueCreated)
+            if (_globalProperties.IsValueCreated && _globalProperties.Value.Count > 0)
                 foreach (var pair in _globalProperties.Value)
                     builder.Property(pair.Key, pair.Value);
 
             // copy thread-local properties to current builder only if it has been created
-            if (_threadProperties.IsValueCreated)
+            if (_threadProperties.IsValueCreated && _threadProperties.Value.Count > 0)
                 foreach (var pair in _threadProperties.Value)
                     builder.Property(pair.Key, pair.Value);
         }
@@ -370,17 +383,158 @@ namespace Foundatio.Logging
     /// <summary>
     /// A fluent <see langword="interface"/> to build log messages.
     /// </summary>
-    public sealed class LogBuilder
+    public interface ILogBuilder
+    {
+        /// <summary>
+        /// Gets the log data that is being built.
+        /// </summary>
+        /// <value>
+        /// The log data.
+        /// </value>
+        LogData LogData { get; }
+
+        /// <summary>
+        /// Sets the level of the logging event.
+        /// </summary>
+        /// <param name="logLevel">The level of the logging event.</param>
+        /// <returns></returns>
+        ILogBuilder Level(LogLevel logLevel);
+
+        /// <summary>
+        /// Sets the logger for the logging event.
+        /// </summary>
+        /// <param name="logger">The name of the logger.</param>
+        /// <returns></returns>
+        ILogBuilder Logger(string logger);
+
+        /// <summary>
+        /// Sets the logger name using the generic type.
+        /// </summary>
+        /// <typeparam name="TLogger">The type of the logger.</typeparam>
+        /// <returns></returns>
+        ILogBuilder Logger<TLogger>();
+
+        /// <summary>
+        /// Sets the log message on the logging event.
+        /// </summary>
+        /// <param name="message">The log message for the logging event.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string message);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="arg0">The object to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string format, object arg0);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="arg0">The first object to format.</param>
+        /// <param name="arg1">The second object to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string format, object arg0, object arg1);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="arg0">The first object to format.</param>
+        /// <param name="arg1">The second object to format.</param>
+        /// <param name="arg2">The third object to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string format, object arg0, object arg1, object arg2);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="arg0">The first object to format.</param>
+        /// <param name="arg1">The second object to format.</param>
+        /// <param name="arg2">The third object to format.</param>
+        /// <param name="arg3">The fourth object to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="args">An object array that contains zero or more objects to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(string format, params object[] args);
+
+        /// <summary>
+        /// Sets the log message and parameters for formating on the logging event.
+        /// </summary>
+        /// <param name="provider">An object that supplies culture-specific formatting information.</param>
+        /// <param name="format">A composite format string.</param>
+        /// <param name="args">An object array that contains zero or more objects to format.</param>
+        /// <returns></returns>
+        ILogBuilder Message(IFormatProvider provider, string format, params object[] args);
+
+        /// <summary>
+        /// Sets a log context property on the logging event.
+        /// </summary>
+        /// <param name="name">The name of the context property.</param>
+        /// <param name="value">The value of the context property.</param>
+        /// <returns></returns>
+        /// <exception cref="System.ArgumentNullException">name</exception>
+        ILogBuilder Property(string name, object value);
+
+        /// <summary>
+        /// Sets the exception information of the logging event.
+        /// </summary>
+        /// <param name="exception">The exception information of the logging event.</param>
+        /// <returns></returns>
+        ILogBuilder Exception(Exception exception);
+
+        /// <summary>
+        /// Writes the log event to the underlying logger.
+        /// </summary>
+        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
+        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
+        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
+        void Write(
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
+
+        /// <summary>
+        /// Writes the log event to the underlying logger if the condition delegate is true.
+        /// </summary>
+        /// <param name="condition">If condition is true, write log event; otherwise ignore event.</param>
+        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
+        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
+        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
+        void WriteIf(
+            Func<bool> condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
+
+        /// <summary>
+        /// Writes the log event to the underlying logger if the condition is true.
+        /// </summary>
+        /// <param name="condition">If condition is true, write log event; otherwise ignore event.</param>
+        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
+        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
+        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
+        void WriteIf(
+            bool condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
+    }
+
+    public sealed class LogBuilder : ILogBuilder
     {
         private readonly LogData _data;
         private readonly Action<LogData> _writer;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="LogBuilder" /> class.
-        /// </summary>
-        /// <param name="logLevel">The starting trace level.</param>
-        /// <param name="writer">The delegate to write logs to.</param>
-        /// <exception cref="System.ArgumentNullException">writer</exception>
         public LogBuilder(LogLevel logLevel, Action<LogData> writer)
         {
             if (writer == null)
@@ -393,71 +547,39 @@ namespace Foundatio.Logging
             _data.Logger = typeof(Logger).FullName;
         }
 
-        /// <summary>
-        /// Gets the log data that is being built.
-        /// </summary>
-        /// <value>
-        /// The log data.
-        /// </value>
         public LogData LogData
         {
             get { return _data; }
         }
 
-        /// <summary>
-        /// Sets the level of the logging event.
-        /// </summary>
-        /// <param name="logLevel">The level of the logging event.</param>
-        /// <returns></returns>
-        public LogBuilder Level(LogLevel logLevel)
+        public ILogBuilder Level(LogLevel logLevel)
         {
             _data.LogLevel = logLevel;
             return this;
         }
 
-        /// <summary>
-        /// Sets the logger for the logging event.
-        /// </summary>
-        /// <param name="logger">The name of the logger.</param>
-        /// <returns></returns>
-        public LogBuilder Logger(string logger)
+        public ILogBuilder Logger(string logger)
         {
             _data.Logger = logger;
 
             return this;
         }
 
-        /// <summary>
-        /// Sets the logger name using the generic type.
-        /// </summary>
-        /// <typeparam name="TLogger">The type of the logger.</typeparam>
-        /// <returns></returns>
-        public LogBuilder Logger<TLogger>()
+        public ILogBuilder Logger<TLogger>()
         {
             _data.Logger = typeof(TLogger).FullName;
 
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message on the logging event.
-        /// </summary>
-        /// <param name="message">The log message for the logging event.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string message)
+        public ILogBuilder Message(string message)
         {
             _data.Message = message;
 
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="arg0">The object to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string format, object arg0)
+        public ILogBuilder Message(string format, object arg0)
         {
             _data.Message = format;
             _data.Parameters = new[] { arg0 };
@@ -465,14 +587,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="arg0">The first object to format.</param>
-        /// <param name="arg1">The second object to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string format, object arg0, object arg1)
+        public ILogBuilder Message(string format, object arg0, object arg1)
         {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1 };
@@ -480,15 +595,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="arg0">The first object to format.</param>
-        /// <param name="arg1">The second object to format.</param>
-        /// <param name="arg2">The third object to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string format, object arg0, object arg1, object arg2)
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2)
         {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2 };
@@ -496,16 +603,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="arg0">The first object to format.</param>
-        /// <param name="arg1">The second object to format.</param>
-        /// <param name="arg2">The third object to format.</param>
-        /// <param name="arg3">The fourth object to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3)
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3)
         {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2, arg3 };
@@ -513,13 +611,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="args">An object array that contains zero or more objects to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(string format, params object[] args)
+        public ILogBuilder Message(string format, params object[] args)
         {
             _data.Message = format;
             _data.Parameters = args;
@@ -527,14 +619,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the log message and parameters for formating on the logging event.
-        /// </summary>
-        /// <param name="provider">An object that supplies culture-specific formatting information.</param>
-        /// <param name="format">A composite format string.</param>
-        /// <param name="args">An object array that contains zero or more objects to format.</param>
-        /// <returns></returns>
-        public LogBuilder Message(IFormatProvider provider, string format, params object[] args)
+        public ILogBuilder Message(IFormatProvider provider, string format, params object[] args)
         {
             _data.FormatProvider = provider;
             _data.Message = format;
@@ -543,14 +628,7 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets a log context property on the logging event.
-        /// </summary>
-        /// <param name="name">The name of the context property.</param>
-        /// <param name="value">The value of the context property.</param>
-        /// <returns></returns>
-        /// <exception cref="System.ArgumentNullException">name</exception>
-        public LogBuilder Property(string name, object value)
+        public ILogBuilder Property(string name, object value)
         {
             if (name == null)
                 throw new ArgumentNullException("name");
@@ -562,23 +640,12 @@ namespace Foundatio.Logging
             return this;
         }
 
-        /// <summary>
-        /// Sets the exception information of the logging event.
-        /// </summary>
-        /// <param name="exception">The exception information of the logging event.</param>
-        /// <returns></returns>
-        public LogBuilder Exception(Exception exception)
+        public ILogBuilder Exception(Exception exception)
         {
             _data.Exception = exception;
             return this;
         }
 
-        /// <summary>
-        /// Writes the log event to the underlying logger.
-        /// </summary>
-        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
-        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
         public void Write(
             [CallerMemberName]string callerMemberName = null,
             [CallerFilePath]string callerFilePath = null,
@@ -595,13 +662,6 @@ namespace Foundatio.Logging
         }
 
 
-        /// <summary>
-        /// Writes the log event to the underlying logger if the condition delegate is true.
-        /// </summary>
-        /// <param name="condition">If condition is true, write log event; otherwise ignore event.</param>
-        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
-        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
         public void WriteIf(
             Func<bool> condition,
             [CallerMemberName]string callerMemberName = null,
@@ -614,13 +674,6 @@ namespace Foundatio.Logging
             Write(callerMemberName, callerFilePath, callerLineNumber);
         }
 
-        /// <summary>
-        /// Writes the log event to the underlying logger if the condition is true.
-        /// </summary>
-        /// <param name="condition">If condition is true, write log event; otherwise ignore event.</param>
-        /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
-        /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
         public void WriteIf(
             bool condition,
             [CallerMemberName]string callerMemberName = null,
@@ -633,6 +686,99 @@ namespace Foundatio.Logging
             Write(callerMemberName, callerFilePath, callerLineNumber);
         }
 
+    }
+
+    public sealed class NullLogBuilder : ILogBuilder
+    {
+        private LogData _data = new LogData();
+
+        public LogData LogData
+        {
+            get { return _data; }
+        }
+
+        public ILogBuilder Level(LogLevel logLevel)
+        {
+            return this;
+        }
+
+        public ILogBuilder Logger(string logger)
+        {
+            return this;
+        }
+
+        public ILogBuilder Logger<TLogger>()
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string message)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string format, object arg0)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string format, object arg0, object arg1)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(string format, params object[] args)
+        {
+            return this;
+        }
+
+        public ILogBuilder Message(IFormatProvider provider, string format, params object[] args)
+        {
+            return this;
+        }
+
+        public ILogBuilder Property(string name, object value)
+        {
+            return this;
+        }
+
+        public ILogBuilder Exception(Exception exception)
+        {
+            return this;
+        }
+
+        public void Write(
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0)
+        {
+        }
+
+        public void WriteIf(
+            Func<bool> condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0)
+        {
+        }
+
+        public void WriteIf(
+            bool condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0)
+        {
+        }
     }
 
     /// <summary>

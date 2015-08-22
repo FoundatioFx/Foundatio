@@ -15,7 +15,6 @@ namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase : CaptureTests {
         protected FileStorageTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected virtual IFileStorage GetStorage() {

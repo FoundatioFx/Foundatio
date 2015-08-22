@@ -15,7 +15,6 @@ namespace Foundatio.Tests.Caching {
 
         public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ICacheClient GetCacheClient() {

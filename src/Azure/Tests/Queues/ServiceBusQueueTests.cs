@@ -4,7 +4,6 @@ using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Microsoft.ServiceBus;
 using Xunit.Abstractions;
 
@@ -14,7 +13,6 @@ namespace Foundatio.Azure.Tests.Queue {
 
         public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {

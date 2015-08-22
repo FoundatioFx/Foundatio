@@ -1,6 +1,5 @@
 using Foundatio.Caching;
 using Foundatio.Lock;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -10,7 +9,6 @@ namespace Foundatio.Tests {
     public class InMemoryLockTests : LockTestBase {
         public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ILockProvider GetLockProvider() {

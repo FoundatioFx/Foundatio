@@ -1,5 +1,4 @@
-﻿using Foundatio.Logging;
-using Foundatio.Messaging;
+﻿using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -9,7 +8,6 @@ namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
         public RedisMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override IMessageBus GetMessageBus() {

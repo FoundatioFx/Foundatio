@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Utility;
 
@@ -8,14 +9,14 @@ namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
         public JobBase()
         {
-            Id = Guid.NewGuid().ToString("N").Substring(0, 10);
+            JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
         protected virtual IDisposable GetJobLock() {
             return Disposable.Empty;
         }
 
-        public string Id { get; private set; }
+        public string JobId { get; private set; }
 
         private string _jobName;
         private void EnsureJobNameSet()
@@ -67,8 +68,6 @@ namespace Foundatio.Jobs {
 
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<bool> continuationCallback = null) {
             int iterations = 0;
-            if (interval == null)
-                interval = TimeSpan.FromMilliseconds(1);
 
             EnsureJobNameSet();
             Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
@@ -81,21 +80,24 @@ namespace Foundatio.Jobs {
                     await RunAsync(cancellationToken);
 
                     iterations++;
-                    await Task.Delay(interval.Value, cancellationToken);
+                    if (interval.HasValue)
+                        await Task.Delay(interval.Value, cancellationToken).AnyContext();
+                    else if (iterations % 10000 == 0)
+                        Thread.Sleep(1);
                 }
                 catch (TaskCanceledException) { }
 
-                if (continuationCallback != null)
+                if (continuationCallback == null)
+                    continue;
+
+                try
                 {
-                    try
-                    {
-                        if (!continuationCallback())
-                            break;
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
-                    }
+                    if (!continuationCallback())
+                        break;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
                 }
             }
 

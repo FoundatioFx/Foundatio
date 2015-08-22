@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using Foundatio.Logging;
+﻿using System.Threading.Tasks;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -10,7 +8,6 @@ namespace Foundatio.Tests.Storage {
     public class InMemoryFileStorageTests : FileStorageTestsBase {
         public InMemoryFileStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override IFileStorage GetStorage() {

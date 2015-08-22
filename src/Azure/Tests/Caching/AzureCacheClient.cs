@@ -1,6 +1,4 @@
-﻿using System;
-using Foundatio.Caching;
-using Foundatio.Logging;
+﻿using Foundatio.Caching;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit.Abstractions;
@@ -9,7 +7,6 @@ namespace Foundatio.Azure.Tests.Caching {
     public class AzureCacheClientTests : CacheClientTestsBase {
         public AzureCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ICacheClient GetCacheClient() {

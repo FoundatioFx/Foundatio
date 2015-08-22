@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -18,7 +17,6 @@ namespace Foundatio.Redis.Tests.Queues {
         private readonly TestOutputWriter _output;
         public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
             _output = new TestOutputWriter(output);
         }
 
@@ -36,6 +34,12 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override void CanQueueAndDequeueMultipleWorkItems() {
             base.CanQueueAndDequeueMultipleWorkItems();
+        }
+
+        [Fact]
+        public override void WillNotWaitForItem()
+        {
+            base.WillNotWaitForItem();
         }
 
         [Fact]
@@ -286,7 +290,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = queue.Dequeue(TimeSpan.FromMilliseconds(100));
                 }
-                metrics.DisplayStats();
+                metrics.DisplayStats(_output);
 
                 Assert.True(queue.DequeuedCount >= workItemCount);
                 Assert.Equal(workItemCount, queue.CompletedCount + queue.GetDeadletterCount());
@@ -324,7 +328,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = queue.Dequeue(TimeSpan.Zero);
                 }
-                metrics.DisplayStats();
+                metrics.DisplayStats(_output);
 
                 Assert.Equal(workItemCount, queue.DequeuedCount);
                 Assert.Equal(workItemCount, queue.CompletedCount);
@@ -362,7 +366,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     countdown.Signal();
                 });
                 countdown.Wait(60 * 1000);
-                metrics.DisplayStats();
+                metrics.DisplayStats(_output);
 
                 Assert.Equal(workItemCount, queue.DequeuedCount);
                 Assert.Equal(workItemCount, queue.CompletedCount);

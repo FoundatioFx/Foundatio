@@ -1,6 +1,5 @@
 ﻿using Foundatio.Lock;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -11,7 +10,6 @@ namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase {
         public RedisLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ILockProvider GetLockProvider() {

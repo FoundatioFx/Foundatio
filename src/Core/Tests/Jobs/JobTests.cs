@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -7,7 +8,6 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
@@ -22,8 +22,6 @@ namespace Foundatio.Tests.Jobs {
 
         public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Trace;
-            EnableLogging = false;
             _writer = new TestOutputWriter(output);
         }
 
@@ -37,8 +35,11 @@ namespace Foundatio.Tests.Jobs {
             job.RunContinuous(iterationLimit: 2);
             Assert.Equal(3, job.RunCount);
 
+            var sw = new Stopwatch();
+            sw.Start();
             job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token);
-            Assert.InRange(job.RunCount, 5, 12);
+            sw.Stop();
+            Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
             var jobInstance = JobRunner.CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
             Assert.NotNull(jobInstance);
@@ -102,7 +103,7 @@ namespace Foundatio.Tests.Jobs {
 
             var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
             await Task.WhenAll(jobs.Select(
-                async job => await job.RunContinuousAsync(cancellationToken: tokenSource.Token))
+                async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token))
             );
 
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
@@ -141,7 +142,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public void CanRunQueueJob() {
-            const int workItemCount = 100;
+            const int workItemCount = 10000;
             var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero);
 
             for (int i = 0; i < workItemCount; i++)
@@ -153,6 +154,17 @@ namespace Foundatio.Tests.Jobs {
             metrics.DisplayStats(_writer);
 
             Assert.Equal(0, queue.GetQueueCount());
+        }
+
+        [Fact]
+        public void JobLoopPerf()
+        {
+            const int iterations = 10000;
+
+            var metrics = new InMemoryMetricsClient();
+            var job = new SampleJob(metrics);
+            job.RunContinuous(null, iterations);
+            metrics.DisplayStats(_writer);
         }
     }
 }

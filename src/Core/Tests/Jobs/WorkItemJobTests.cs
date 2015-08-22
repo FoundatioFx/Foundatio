@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
@@ -18,8 +17,6 @@ namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : CaptureTests {
         public WorkItemJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Trace;
-            EnableLogging = false;
         }
 
         [Fact]

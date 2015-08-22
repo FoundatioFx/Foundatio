@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
@@ -79,6 +80,26 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
+        public virtual void WillNotWaitForItem()
+        {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue)
+            {
+                queue.DeleteQueue();
+
+                var sw = new Stopwatch();
+                sw.Start();
+                var workItem = queue.Dequeue(TimeSpan.Zero);
+                sw.Stop();
+                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
+                Assert.Null(workItem);
+                Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(50));
+            }
+        }
+
         public virtual void WillWaitForItem() {
             var queue = GetQueue();
             if (queue == null)
@@ -92,7 +113,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Start();
                 var workItem = queue.Dequeue(timeToWait);
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
@@ -105,7 +126,7 @@ namespace Foundatio.Tests.Queue {
                 workItem = queue.Dequeue(timeToWait);
                 workItem.Complete();
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.NotNull(workItem);
             }
         }
@@ -206,7 +227,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Start();
                 workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.NotNull(workItem);
                 workItem.Complete();
                 Assert.Equal(0, queue.GetQueueCount());
@@ -277,7 +298,7 @@ namespace Foundatio.Tests.Queue {
                     return;
 
                 using (queue) {
-                    Trace.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
+                    Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
                     queue.DeleteQueue();
 
                     const int workItemCount = 10;
@@ -288,7 +309,7 @@ namespace Foundatio.Tests.Queue {
 
                     for (int i = 0; i < workerCount; i++) {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                        Trace.WriteLine(String.Format("Queue Id: {0}", q.QueueId));
+                        Logger.Trace().Message("Queue Id: {0}", q.QueueId).Write();
                         q.StartWorking(w => DoWork(w, latch, info));
                         workers.Add(q);
                     }
@@ -298,15 +319,15 @@ namespace Foundatio.Tests.Queue {
                             Data = "Hello",
                             Id = i
                         });
-                        Trace.WriteLine(String.Format("Enqueued Index: {0} Id: {1}", i, id));
+                        Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
                     });
 
                     Assert.True(latch.Wait(TimeSpan.FromSeconds(5)));
                     Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
-                    Trace.WriteLine(String.Format("Completed: {0} Abandoned: {1} Error: {2}",
+                    Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                         info.CompletedCount,
                         info.AbandonCount,
-                        info.ErrorCount));
+                        info.ErrorCount).Write();
 
                     for (int i = 0; i < workers.Count; i++)
                         Trace.WriteLine(String.Format("Worker#{0} Completed: {1} Abandoned: {2} Error: {3}", i,

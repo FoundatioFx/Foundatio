@@ -65,14 +65,7 @@ namespace Foundatio.Jobs {
         }
 
         public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
-            RunContinuousAsync(cancellationToken: cancellationToken,
-                continuationCallback: () => {
-                    long queueCount = _queue.GetQueueCount();
-                    long workingCount = _queue.GetWorkingCount();
-                    Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", queueCount, workingCount).Write();
-                    return queueCount + workingCount > 0;
-                })
-                .WaitWithoutException(cancellationToken);
+            RunUntilEmptyAsync(cancellationToken).WaitWithoutException(cancellationToken);
         }
 
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken))

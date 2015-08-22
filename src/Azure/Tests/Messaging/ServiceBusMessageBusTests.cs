@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
@@ -12,7 +11,6 @@ namespace Foundatio.Azure.Tests.Messaging {
 
         public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override IMessageBus GetMessageBus() {

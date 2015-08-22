@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -13,7 +12,6 @@ namespace Foundatio.Tests.Metrics {
 
         public InMemoryMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
             _writer = new TestOutputWriter(output);
         }
 

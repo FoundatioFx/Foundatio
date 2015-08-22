@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -12,8 +11,6 @@ namespace Foundatio.Tests.Queue {
 
         public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Trace;
-            EnableLogging = false;
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
@@ -31,6 +28,12 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public override void CanQueueAndDequeueMultipleWorkItems() {
             base.CanQueueAndDequeueMultipleWorkItems();
+        }
+
+        [Fact]
+        public override void WillNotWaitForItem()
+        {
+            base.WillNotWaitForItem();
         }
 
         [Fact]

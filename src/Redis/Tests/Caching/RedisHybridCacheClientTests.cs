@@ -1,5 +1,4 @@
 ﻿using Foundatio.Caching;
-using Foundatio.Logging;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -9,7 +8,6 @@ namespace Foundatio.Redis.Tests.Caching {
     public class RedisHybridCacheClientTests : HybridCacheClientTests {
         public RedisHybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
         }
 
         protected override ICacheClient GetCacheClient() {

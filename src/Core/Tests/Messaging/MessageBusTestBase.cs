@@ -11,8 +11,6 @@ namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
         protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
         {
-            MinimumLogLevel = LogLevel.Warn;
-            EnableLogging = false;
         }
 
         protected virtual IMessageBus GetMessageBus() {

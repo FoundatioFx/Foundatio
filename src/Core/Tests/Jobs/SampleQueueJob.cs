@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
@@ -37,5 +38,36 @@ namespace Foundatio.Tests.Jobs {
     public class SampleQueueWorkItem {
         public string Path { get; set; }
         public DateTime Created { get; set; }
+    }
+
+    public class SampleJob : JobBase
+    {
+        private readonly IMetricsClient _metrics;
+
+        public SampleJob(IMetricsClient metrics)
+        {
+            _metrics = metrics;
+        }
+
+        protected override Task<JobResult> RunInternalAsync(CancellationToken token)
+        {
+            _metrics.Counter("runs");
+
+            if (RandomData.GetBool(10))
+            {
+                _metrics.Counter("errors");
+                throw new ApplicationException("Boom!");
+            }
+
+            if (RandomData.GetBool(10))
+            {
+                _metrics.Counter("failed");
+                return Task.FromResult(JobResult.FailedWithMessage("Failed"));
+            }
+
+            _metrics.Counter("completed");
+
+            return Task.FromResult(JobResult.Success);
+        }
     }
 }
