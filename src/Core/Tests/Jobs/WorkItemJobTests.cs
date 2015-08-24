@@ -105,6 +105,7 @@ namespace Foundatio.Tests.Jobs {
             await Task.WhenAny(tasks);
             cancellationTokenSource.Cancel();
             await Task.WhenAll(tasks);
+            Thread.Sleep(1);
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
             Assert.Equal(100, jobIds.Sum(kvp => kvp.Value));
@@ -155,6 +156,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             job.RunUntilEmpty();
+            Thread.Sleep(1);
 
             Assert.Equal(1, statusCount);
 

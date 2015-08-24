@@ -82,7 +82,7 @@ namespace Foundatio.Jobs {
                     iterations++;
                     if (interval.HasValue)
                         await Task.Delay(interval.Value, cancellationToken).AnyContext();
-                    else if (iterations % 10000 == 0)
+                    else if (iterations % 10000 == 0) // allow for cancellation token to get set
                         Thread.Sleep(1);
                 }
                 catch (TaskCanceledException) { }
@@ -105,6 +105,8 @@ namespace Foundatio.Jobs {
 
             if (cancellationToken.IsCancellationRequested)
                 Logger.Trace().Message("Job cancellation requested.").Write();
+
+            Thread.Sleep(1); // allow events to process
         }
 
         public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
