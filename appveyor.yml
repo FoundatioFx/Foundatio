@@ -27,9 +27,9 @@ before_test:
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
 #  - ps: Build\enable-rdp.ps1
 
-deploy:
-  - provider: Environment
-    name: NuGet
+#deploy:
+#  - provider: Environment
+#    name: NuGet
 
 notifications:
   - provider: Slack

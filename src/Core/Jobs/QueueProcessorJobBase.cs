@@ -73,10 +73,9 @@ namespace Foundatio.Jobs {
             await RunContinuousAsync(cancellationToken: cancellationToken,
                 continuationCallback: () =>
                 {
-                    long queueCount = _queue.GetQueueCount();
-                    long workingCount = _queue.GetWorkingCount();
-                    Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", queueCount, workingCount).Write();
-                    return queueCount + workingCount > 0;
+                    var stats = _queue.GetQueueStats();
+                    Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", stats.Queued, stats.Working).Write();
+                    return stats.Queued + stats.Working > 0;
                 });
         }
 

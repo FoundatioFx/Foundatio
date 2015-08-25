@@ -12,7 +12,7 @@ using Foundatio.Logging;
 using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
-    public class InMemoryQueue<T> : IQueue<T> where T : class {
+    public class InMemoryQueue<T> : QueueBase<T> where T : class {
         private readonly ConcurrentQueue<QueueInfo<T>> _queue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
@@ -32,11 +32,10 @@ namespace Foundatio.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private CancellationTokenSource _maintenanceCancellationTokenSource;
         private DateTime? _nextMaintenance = null;
-        private readonly ISerializer _serializer;
-        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IQueueEventHandler<T> eventHandler = null) {
-            QueueId = Guid.NewGuid().ToString("N");
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviours = null)
+            : base(serializer, behaviours)
+        {
             _retries = retries;
             if (retryDelay.HasValue)
                 _retryDelay = retryDelay.Value;
@@ -45,55 +44,50 @@ namespace Foundatio.Queues {
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
 
-            _serializer = serializer ?? new JsonNetSerializer();
-
-            if (eventHandler != null)
-                _eventHandler = eventHandler;
-
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
         }
 
-        public long GetQueueCount() { return _queue.Count; }
-        public long GetWorkingCount() { return _dequeued.Count; }
-        public long GetDeadletterCount() { return _deadletterQueue.Count; }
-
-        public long EnqueuedCount { get { return _enqueuedCount; } }
-        public long DequeuedCount { get { return _dequeuedCount; } }
-        public long CompletedCount { get { return _completedCount; } }
-        public long AbandonedCount { get { return _abandonedCount; } }
-        public long WorkerErrorCount { get { return _workerErrorCount; } }
-        public long WorkItemTimeoutCount { get { return _workerItemTimeoutCount; } }
-        public string QueueId { get; private set; }
-        protected string QueueSizeStatName { get; set; }
-
-        ISerializer IHaveSerializer.Serializer {
-            get { return _serializer; }
+        public override QueueStats GetQueueStats()
+        {
+            return new QueueStats
+            {
+                Queued = _queue.Count,
+                Working = _dequeued.Count,
+                Deadletter = _deadletterQueue.Count,
+                Enqueued = _enqueuedCount,
+                Dequeued = _dequeuedCount,
+                Completed = _completedCount,
+                Abandoned = _abandonedCount,
+                Errors = _workerErrorCount,
+                Timeouts = _workerItemTimeoutCount
+            };
         }
 
-        public string Enqueue(T data) {
+        public override string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
             Logger.Trace().Message("Queue {0} enqueue item: {1}", typeof(T).Name, id).Write();
-            if (!EventHandler.BeforeEnqueue(this, data))
+            if (!OnEnqueuing(data))
                 return null;
 
             var info = new QueueInfo<T> {
                 Data = data.Copy(),
-                Id = id
+                Id = id,
+                TimeEnqueued = DateTime.UtcNow
             };
             _queue.Enqueue(info);
             Logger.Trace().Message("Enqueue: Set Event").Write();
             _autoEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
-            EventHandler.AfterEnqueue(this, id, data);
+            OnEnqueued(data, id);
             Logger.Trace().Message("Enqueue done").Write();
 
             return id;
         }
 
-        public void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
             if (handler == null)
-                throw new ArgumentNullException("handler");
+                throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
             _workerAction = handler;
@@ -105,16 +99,15 @@ namespace Foundatio.Queues {
             Task.Run(() => WorkerLoop(_workerCancellationTokenSource.Token));
         }
 
-        public void StopWorking() {
+        public override void StopWorking() {
             Logger.Trace().Message("Queue {0} stop working", typeof(T).Name).Write();
-            if (_workerCancellationTokenSource != null)
-                _workerCancellationTokenSource.Cancel();
+            _workerCancellationTokenSource?.Cancel();
 
             _workerCancellationTokenSource = null;
             _workerAction = null;
         }
 
-        public QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Queue {0} dequeued item", typeof(T).Name).Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -146,48 +139,49 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _dequeuedCount);
             Logger.Trace().Message("Dequeue: Got Item").Write();
-            EventHandler.OnDequeue(this, info.Id, info.Data);
+            var entry = new QueueEntry<T>(info.Id, info.Data.Copy(), this, info.TimeEnqueued, info.Attempts);
+            OnDequeued(entry);
             ScheduleNextMaintenance(DateTime.UtcNow.Add(_workItemTimeout));
 
-            return new QueueEntry<T>(info.Id, info.Data.Copy(), this);
+            return entry;
         }
 
-        public void Complete(string id) {
-            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, id).Write();
+        public override void Complete(IQueueEntryMetadata entry) {
+            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, entry.Id).Write();
 
             QueueInfo<T> info = null;
-            if (!_dequeued.TryRemove(id, out info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
 
-            EventHandler.OnComplete(this, id);
-            Logger.Trace().Message("Complete done: {0}", id).Write();
+            OnCompleted(entry);
+            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
         }
 
-        public void Abandon(string id) {
-            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, id).Write();
+        public override void Abandon(IQueueEntryMetadata entry) {
+            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, entry.Id).Write();
 
             QueueInfo<T> info;
-            if (!_dequeued.TryRemove(id, out info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _abandonedCount);
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
-                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
+                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
                     Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info));
                 } else {
-                    Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
+                    Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
                     Retry(info);
                 }
             } else {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
                 _deadletterQueue.Enqueue(info);
             }
 
-            EventHandler.OnAbandon(this, id);
-            Logger.Trace().Message("Abondon complete: {0}", id).Write();
+            OnAbandoned(entry);
+            Logger.Trace().Message("Abondon complete: {0}", entry.Id).Write();
         }
 
         private void Retry(QueueInfo<T> info) {
@@ -201,17 +195,11 @@ namespace Foundatio.Queues {
             return (int)(_retryDelay.TotalMilliseconds * multiplier);
         }
 
-        public IEnumerable<T> GetDeadletterItems() {
+        public override IEnumerable<T> GetDeadletterItems() {
             return _deadletterQueue.Select(i => i.Data);
         }
 
-        public IQueueEventHandler<T> EventHandler
-        {
-            get { return _eventHandler; }
-            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
-        }
-
-        public void DeleteQueue() {
+        public override void DeleteQueue() {
             Logger.Trace().Message("Deleting queue: {0}", typeof(T).Name).Write();
             _queue.Clear();
             _deadletterQueue.Clear();
@@ -261,8 +249,7 @@ namespace Foundatio.Queues {
             if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
                 return;
 
-            if (_maintenanceCancellationTokenSource != null)
-                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource?.Cancel();
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
@@ -293,16 +280,16 @@ namespace Foundatio.Queues {
             foreach (var key in abandonedKeys)
             {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
-                Abandon(key);
+                var info = _dequeued[key];
+                Abandon(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts));
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
         }
 
-        public void Dispose() {
-            Logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
+        public override void Dispose() {
+            base.Dispose();
             StopWorking();
-            if (_maintenanceCancellationTokenSource != null)
-                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource?.Cancel();
         }
 
         private class QueueInfo<TData> {
@@ -310,6 +297,7 @@ namespace Foundatio.Queues {
             public string Id { get; set; }
             public int Attempts { get; set; }
             public DateTime TimeDequeued { get; set; }
+            public DateTime TimeEnqueued { get; set; }
         }
     }
 }

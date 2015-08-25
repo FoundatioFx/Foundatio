@@ -33,16 +33,16 @@ namespace Foundatio.Tests.Queue {
                 queue.Enqueue(new SimpleWorkItem {
                     Data = "Hello"
                 });
-                Assert.Equal(1, queue.GetQueueCount());
+                Assert.Equal(1, queue.GetQueueStats().Enqueued);
 
                 var workItem = queue.Dequeue(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(1, queue.DequeuedCount);
+                Assert.Equal(1, queue.GetQueueStats().Dequeued);
 
                 workItem.Complete();
-                Assert.Equal(1, queue.CompletedCount);
-                Assert.Equal(0, queue.GetQueueCount());
+                Assert.Equal(1, queue.GetQueueStats().Completed);
+                Assert.Equal(0, queue.GetQueueStats().Queued);
             }
         }
 
@@ -60,7 +60,7 @@ namespace Foundatio.Tests.Queue {
                         Data = "Hello"
                     });
                 }
-                Assert.Equal(workItemCount, queue.GetQueueCount());
+                Assert.Equal(workItemCount, queue.GetQueueStats().Queued);
 
                 var sw = new Stopwatch();
                 sw.Start();
@@ -74,9 +74,9 @@ namespace Foundatio.Tests.Queue {
                 Trace.WriteLine(sw.Elapsed);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
 
-                Assert.Equal(workItemCount, queue.DequeuedCount);
-                Assert.Equal(workItemCount, queue.CompletedCount);
-                Assert.Equal(0, queue.GetQueueCount());
+                Assert.Equal(workItemCount, queue.GetQueueStats().Dequeued);
+                Assert.Equal(workItemCount, queue.GetQueueStats().Completed);
+                Assert.Equal(0, queue.GetQueueStats().Queued);
             }
         }
 
@@ -172,9 +172,9 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Assert.Equal(1, queue.CompletedCount);
-                Assert.Equal(0, queue.GetQueueCount());
-                Assert.Equal(0, queue.WorkerErrorCount);
+                Assert.Equal(1, queue.GetQueueStats().Completed);
+                Assert.Equal(0, queue.GetQueueStats().Queued);
+                Assert.Equal(0, queue.GetQueueStats().Errors);
             }
         }
 
@@ -196,14 +196,14 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(() => queue.WorkerErrorCount > 0, TimeSpan.FromSeconds(5));
+                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Errors > 0, TimeSpan.FromSeconds(5));
                 Assert.True(success);
-                Assert.Equal(0, queue.CompletedCount);
-                Assert.Equal(1, queue.WorkerErrorCount);
+                Assert.Equal(0, queue.GetQueueStats().Completed);
+                Assert.Equal(1, queue.GetQueueStats().Errors);
 
-                success = await TaskHelper.DelayUntil(() => queue.GetQueueCount() > 0, TimeSpan.FromSeconds(5));
+                success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Queued > 0, TimeSpan.FromSeconds(5));
                 Assert.True(success);
-                Assert.Equal(1, queue.GetQueueCount());
+                Assert.Equal(1, queue.GetQueueStats().Queued);
             }
         }
 
@@ -230,7 +230,7 @@ namespace Foundatio.Tests.Queue {
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.NotNull(workItem);
                 workItem.Complete();
-                Assert.Equal(0, queue.GetQueueCount());
+                Assert.Equal(0, queue.GetQueueStats().Queued);
             }
         }
 
@@ -247,21 +247,21 @@ namespace Foundatio.Tests.Queue {
                 });
                 var workItem = queue.Dequeue(TimeSpan.Zero);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(1, queue.DequeuedCount);
+                Assert.Equal(1, queue.GetQueueStats().Dequeued);
 
                 workItem.Abandon();
-                Assert.Equal(1, queue.AbandonedCount);
+                Assert.Equal(1, queue.GetQueueStats().Abandoned);
 
                 // work item should be retried 1 time.
                 workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(2, queue.DequeuedCount);
+                Assert.Equal(2, queue.GetQueueStats().Dequeued);
 
                 workItem.Abandon();
                 // work item should be moved to deadletter _queue after retries.
-                Assert.Equal(1, queue.GetDeadletterCount());
-                Assert.Equal(2, queue.AbandonedCount);
+                Assert.Equal(1, queue.GetQueueStats().Deadletter);
+                Assert.Equal(2, queue.GetQueueStats().Abandoned);
             }
         }
 
@@ -282,12 +282,12 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                Assert.Equal(1, queue.EnqueuedCount);
+                Assert.Equal(1, queue.GetQueueStats().Enqueued);
                 resetEvent.WaitOne(TimeSpan.FromSeconds(5));
                 Thread.Sleep(100);
-                Assert.Equal(0, queue.GetQueueCount());
-                Assert.Equal(1, queue.CompletedCount);
-                Assert.Equal(0, queue.WorkerErrorCount);
+                Assert.Equal(0, queue.GetQueueStats().Queued);
+                Assert.Equal(1, queue.GetQueueStats().Completed);
+                Assert.Equal(0, queue.GetQueueStats().Errors);
             }
         }
 
@@ -330,20 +330,23 @@ namespace Foundatio.Tests.Queue {
                         info.ErrorCount).Write();
 
                     for (int i = 0; i < workers.Count; i++)
-                        Trace.WriteLine(String.Format("Worker#{0} Completed: {1} Abandoned: {2} Error: {3}", i,
-                            workers[i].CompletedCount, workers[i].AbandonedCount, workers[i].WorkerErrorCount));
+                    {
+                        var workerStats = workers[i].GetQueueStats();
+                        Trace.WriteLine($"Worker#{i} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
+                    }
 
                     Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
+                    var stats = queue.GetQueueStats();
                     // In memory queue doesn't share state.
                     if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
-                        Assert.Equal(info.CompletedCount, queue.CompletedCount);
-                        Assert.Equal(info.AbandonCount, queue.AbandonedCount - queue.WorkerErrorCount);
-                        Assert.Equal(info.ErrorCount, queue.WorkerErrorCount);
+                        Assert.Equal(info.CompletedCount, stats.Completed);
+                        Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
+                        Assert.Equal(info.ErrorCount, stats.Errors);
                     } else {
-                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.CompletedCount));
-                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.AbandonedCount) - workers.Sum(q => q.WorkerErrorCount));
-                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.WorkerErrorCount));
+                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStats().Completed));
+                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStats().Abandoned) - workers.Sum(q => q.GetQueueStats().Errors));
+                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStats().Errors));
                     }
 
                     workers.ForEach(w => w.Dispose());
@@ -372,7 +375,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Start();
 
                 workItem.Abandon();
-                Assert.Equal(1, queue.AbandonedCount);
+                Assert.Equal(1, queue.GetQueueStats().Abandoned);
 
                 workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
                 sw.Stop();
@@ -380,26 +383,26 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.True(sw.Elapsed > TimeSpan.FromSeconds(.95));
                 workItem.Complete();
-                Assert.Equal(0, queue.GetQueueCount());
+                Assert.Equal(0, queue.GetQueueStats().Queued);
             }
         }
 
         protected void DoWork(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {
-            Trace.WriteLine(String.Format("Starting: {0}", w.Value.Id));
+            Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 
             try {
                 // randomly complete, abandon or blowup.
                 if (RandomData.GetBool()) {
-                    Trace.WriteLine(String.Format("Completing: {0}", w.Value.Id));
+                    Trace.WriteLine($"Completing: {w.Value.Id}");
                     w.Complete();
                     info.IncrementCompletedCount();
                 } else if (RandomData.GetBool()) {
-                    Trace.WriteLine(String.Format("Abandoning: {0}", w.Value.Id));
+                    Trace.WriteLine($"Abandoning: {w.Value.Id}");
                     w.Abandon();
                     info.IncrementAbandonCount();
                 } else {
-                    Trace.WriteLine(String.Format("Erroring: {0}", w.Value.Id));
+                    Trace.WriteLine($"Erroring: {w.Value.Id}");
                     info.IncrementErrorCount();
                     throw new ApplicationException();
                 }
@@ -414,9 +417,9 @@ namespace Foundatio.Tests.Queue {
         private int _errorCount = 0;
         private int _completedCount = 0;
 
-        public int AbandonCount { get { return _abandonCount; } }
-        public int ErrorCount { get { return _errorCount; } }
-        public int CompletedCount { get { return _completedCount; } }
+        public int AbandonCount => _abandonCount;
+        public int ErrorCount => _errorCount;
+        public int CompletedCount => _completedCount;
 
         public void IncrementAbandonCount() {
             Interlocked.Increment(ref _abandonCount);

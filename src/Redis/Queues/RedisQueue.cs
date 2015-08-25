@@ -14,7 +14,7 @@ using Foundatio.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Queues {
-    public class RedisQueue<T> : IQueue<T> where T: class {
+    public class RedisQueue<T> : QueueBase<T> where T: class {
         private readonly string _queueName;
         protected readonly IDatabase _db;
         protected readonly ISubscriber _subscriber;
@@ -39,20 +39,16 @@ namespace Foundatio.Queues {
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
         protected readonly IMetricsClient _metrics;
         private readonly Timer _maintenanceTimer;
-        protected readonly ISerializer _serializer;
         protected readonly ILockProvider _maintenanceLockProvider;
-        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null, IQueueEventHandler<T> eventHandler = null) {
-            QueueId = Guid.NewGuid().ToString("N");
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviours = null)
+            : base(serializer, behaviours)
+        {
             _db = connection.GetDatabase();
-            _serializer = serializer ?? new JsonNetSerializer();
             _cache = new RedisCacheClient(connection, _serializer);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
-            _metrics = metrics;
-            QueueSizeStatName = statName;
             QueueListName = "q:" + _queueName + ":in";
             WorkListName = "q:" + _queueName + ":work";
             WaitListName = "q:" + _queueName + ":wait";
@@ -70,8 +66,6 @@ namespace Foundatio.Queues {
             _deadLetterMaxItems = deadLetterMaxItems;
 
             _payloadTtl = GetPayloadTtl();
-            if (eventHandler != null)
-                _eventHandler = eventHandler;
 
             _subscriber = connection.GetSubscriber();
             _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
@@ -87,40 +81,26 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
         }
 
-        public long GetQueueCount() {
-            return _db.ListLength(QueueListName);
+        public override QueueStats GetQueueStats()
+        {
+            return new QueueStats
+            {
+                Queued = _db.ListLength(QueueListName),
+                Working = _db.ListLength(WorkListName),
+                Deadletter = _db.ListLength(DeadListName),
+                Enqueued = _enqueuedCount,
+                Dequeued = _dequeuedCount,
+                Completed = _completedCount,
+                Abandoned = _abandonedCount,
+                Errors = _workerErrorCount,
+                Timeouts = _workItemTimeoutCount
+            };
         }
-
-        public long GetWorkingCount() {
-            return _db.ListLength(WorkListName);
-        }
-
-        public long GetDeadletterCount() {
-            return _db.ListLength(DeadListName);
-        }
-
-        public long EnqueuedCount { get { return _enqueuedCount; } }
-        public long DequeuedCount { get { return _dequeuedCount; } }
-        public long CompletedCount { get { return _completedCount; } }
-        public long AbandonedCount { get { return _abandonedCount; } }
-        public long WorkerErrorCount { get { return _workerErrorCount; } }
-        public long WorkItemTimeoutCount { get { return _workItemTimeoutCount; } }
-        public string QueueId { get; private set; }
 
         private string QueueListName { get; set; }
         private string WorkListName { get; set; }
         private string WaitListName { get; set; }
         private string DeadListName { get; set; }
-        protected string QueueSizeStatName { get; set; }
-
-        ISerializer IHaveSerializer.Serializer {
-            get { return _serializer; }
-        }
-
-        public IQueueEventHandler<T> EventHandler {
-            get { return _eventHandler; }
-            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
-        }
 
         private string GetPayloadKey(string id) {
             return String.Concat("q:", _queueName, ":", id);
@@ -143,6 +123,11 @@ namespace Foundatio.Queues {
             return _payloadTtl;
         }
 
+        private string GetEnqueuedTimeKey(string id)
+        {
+            return String.Concat("q:", _queueName, ":", id, ":enqueued");
+        }
+
         private string GetDequeuedTimeKey(string id) {
             return String.Concat("q:", _queueName, ":", id, ":dequeued");
         }
@@ -163,10 +148,10 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _queueName, ":in");
         }
 
-        public virtual string Enqueue(T data) {
+        public override string Enqueue(T data) {
             string id = Guid.NewGuid().ToString("N");
             Logger.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
-            if (!EventHandler.BeforeEnqueue(this, data))
+            if (!OnEnqueuing(data))
                 return null;
 
             bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
@@ -174,15 +159,14 @@ namespace Foundatio.Queues {
                 throw new InvalidOperationException("Attempt to set payload failed.");
             _db.ListLeftPush(QueueListName, id);
             _subscriber.Publish(GetTopicName(), id);
-            UpdateStats();
             Interlocked.Increment(ref _enqueuedCount);
-            EventHandler.AfterEnqueue(this, id, data);
+            OnEnqueued(data, id);
             Logger.Trace().Message("Enqueue done").Write();
 
             return id;
         }
 
-        public virtual void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
             if (handler == null)
                 throw new ArgumentNullException("handler");
 
@@ -197,7 +181,7 @@ namespace Foundatio.Queues {
             Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
         }
 
-        public virtual void StopWorking() {
+        public override void StopWorking() {
             Logger.Trace().Message("Queue {0} stop working", _queueName).Write();
             _workerAction = null;
             _subscriber.UnsubscribeAll();
@@ -208,7 +192,7 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
         }
 
-        public virtual QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -242,38 +226,36 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
-                EventHandler.OnDequeue(this, value, payload);
-
+                // TODO: Fix params
+                var entry = new QueueEntry<T>(value, payload, this, DateTime.MinValue, 1);
                 Interlocked.Increment(ref _dequeuedCount);
-                UpdateStats();
+                OnDequeued(entry);
 
                 Logger.Debug().Message("Dequeued item: {0}", value).Write();
-                return new QueueEntry<T>(value, payload, this);
+                return entry;
             } catch (Exception ex) {
                 Logger.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
                 throw;
             }
         }
 
-        public virtual void Complete(string id) {
-            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
-            EventHandler.OnComplete(this, id);
+        public override void Complete(IQueueEntryMetadata entry) {
+            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, entry.Id).Write();
             var batch = _db.CreateBatch();
-            batch.ListRemoveAsync(WorkListName, id);
-            batch.KeyDeleteAsync(GetPayloadKey(id));
-            batch.KeyDeleteAsync(GetAttemptsKey(id));
-            batch.KeyDeleteAsync(GetDequeuedTimeKey(id));
-            batch.KeyDeleteAsync(GetWaitTimeKey(id));
+            batch.ListRemoveAsync(WorkListName, entry.Id);
+            batch.KeyDeleteAsync(GetPayloadKey(entry.Id));
+            batch.KeyDeleteAsync(GetAttemptsKey(entry.Id));
+            batch.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id));
+            batch.KeyDeleteAsync(GetWaitTimeKey(entry.Id));
             batch.Execute();
             Interlocked.Increment(ref _completedCount);
-            UpdateStats();
-            Logger.Trace().Message("Complete done: {0}", id).Write();
+            OnCompleted(entry);
+            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
         }
 
-        public virtual void Abandon(string id) {
-            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
-            EventHandler.OnAbandon(this, id); 
-            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
+        public override void Abandon(IQueueEntryMetadata entry) {
+            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, entry.Id).Write();
+            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(entry.Id));
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
@@ -282,38 +264,38 @@ namespace Foundatio.Queues {
             var retryDelay = GetRetryDelay(attempts);
             Logger.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
             if (attempts > _retries) {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
-                _db.ListRemove(WorkListName, id);
-                _db.ListLeftPush(DeadListName, id);
-                _db.KeyExpire(GetPayloadKey(id), _deadLetterTtl);
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
+                _db.ListRemove(WorkListName, entry.Id);
+                _db.ListLeftPush(DeadListName, entry.Id);
+                _db.KeyExpire(GetPayloadKey(entry.Id), _deadLetterTtl);
+                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
             } else if (retryDelay > TimeSpan.Zero) {
-                Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
+                Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, id);
-                tx.ListLeftPushAsync(WaitListName, id);
+                tx.ListRemoveAsync(WorkListName, entry.Id);
+                tx.ListLeftPushAsync(WaitListName, entry.Id);
                 var success = tx.Execute();
                 if (!success)
                     throw new Exception("Unable to move item to wait list.");
 
-                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
+                _cache.Set(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
+                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
             } else {
-                Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
+                Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, id);
-                tx.ListLeftPushAsync(QueueListName, id);
+                tx.ListRemoveAsync(WorkListName, entry.Id);
+                tx.ListLeftPushAsync(QueueListName, entry.Id);
                 var success = tx.Execute();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
-                _subscriber.Publish(GetTopicName(), id);
+                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                _subscriber.Publish(GetTopicName(), entry.Id);
             }
 
             Interlocked.Increment(ref _abandonedCount);
-            UpdateStats();
-            Logger.Trace().Message("Abondon complete: {0}", id).Write();
+            OnAbandoned(entry);
+            Logger.Trace().Message("Abondon complete: {0}", entry.Id).Write();
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -325,11 +307,11 @@ namespace Foundatio.Queues {
             return TimeSpan.FromMilliseconds(_retryDelay.TotalMilliseconds * multiplier);
         }
 
-        public IEnumerable<T> GetDeadletterItems() {
+        public override IEnumerable<T> GetDeadletterItems() {
             throw new NotImplementedException();
         }
 
-        public virtual void DeleteQueue() {
+        public override void DeleteQueue() {
             Logger.Trace().Message("Deleting queue: {0}", _queueName).Write();
             DeleteList(QueueListName);
             DeleteList(WorkListName);
@@ -340,7 +322,6 @@ namespace Foundatio.Queues {
             _completedCount = 0;
             _abandonedCount = 0;
             _workerErrorCount = 0;
-            UpdateStats();
         }
 
         private void DeleteList(string name) {
@@ -401,14 +382,6 @@ namespace Foundatio.Queues {
             return TaskHelper.Completed();
         }
 
-        private void UpdateStats() {
-            if (_metrics == null || String.IsNullOrEmpty(QueueSizeStatName))
-                return;
-            
-            long count = GetQueueCount();
-            _metrics.Gauge(QueueSizeStatName, count);
-        }
-
         internal void DoMaintenanceWork() {
             Logger.Trace().Message("DoMaintenance: Name={0} Id={1}", _queueName, QueueId).Write();
 
@@ -429,7 +402,8 @@ namespace Foundatio.Queues {
                         continue;
 
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
-                    Abandon(workId);
+                    // TODO: Fix parameters
+                    Abandon(new QueueEntry<T>(workId, null, this, DateTime.MinValue, 1));
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
@@ -476,13 +450,11 @@ namespace Foundatio.Queues {
             _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.Zero);
         }
 
-        public virtual void Dispose() {
+        public override void Dispose() {
             Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
             StopWorking();
-            if (_queueDisposedCancellationTokenSource != null)
-                _queueDisposedCancellationTokenSource.Cancel();
-            if (_maintenanceTimer != null)
-                _maintenanceTimer.Dispose();
+            _queueDisposedCancellationTokenSource?.Cancel();
+            _maintenanceTimer?.Dispose();
         }
     }
 }

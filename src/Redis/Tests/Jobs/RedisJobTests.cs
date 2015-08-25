@@ -17,7 +17,8 @@ namespace Foundatio.Redis.Tests.Jobs {
         public void CanRunQueueJob() {
             const int workItemCount = 10000;
             var metrics = new InMemoryMetricsClient();
-            var queue = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), null, null, 0, TimeSpan.Zero, metrics: metrics);
+            var queue = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), null, null, 0, TimeSpan.Zero);
+            queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics));
 
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100));
             Task.Factory.StartNew(() => {
@@ -30,7 +31,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             job.RunUntilEmpty();
             metrics.DisplayStats();
 
-            Assert.Equal(0, queue.GetQueueCount());
+            Assert.Equal(0, queue.GetQueueStats().Queued);
         }
     }
 }

@@ -153,7 +153,7 @@ namespace Foundatio.Tests.Jobs {
             job.RunUntilEmpty(new CancellationTokenSource(30000).Token);
             metrics.DisplayStats(_writer);
 
-            Assert.Equal(0, queue.GetQueueCount());
+            Assert.Equal(0, queue.GetQueueStats().Queued);
         }
 
         [Fact]

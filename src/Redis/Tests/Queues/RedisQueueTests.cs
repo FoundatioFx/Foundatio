@@ -151,7 +151,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 // let the work item timeout
                 Thread.Sleep(1000);
-                Assert.Equal(1, queue.WorkItemTimeoutCount);
+                Assert.Equal(1, queue.GetQueueStats().Timeouts);
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
@@ -276,7 +276,7 @@ namespace Foundatio.Redis.Tests.Queues {
                         Data = "Hello"
                     });
                 }
-                Assert.Equal(workItemCount, queue.GetQueueCount());
+                Assert.Equal(workItemCount, queue.GetQueueStats().Queued);
 
                 var metrics = new InMemoryMetricsClient();
                 var workItem = queue.Dequeue(TimeSpan.Zero);
@@ -292,9 +292,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 metrics.DisplayStats(_output);
 
-                Assert.True(queue.DequeuedCount >= workItemCount);
-                Assert.Equal(workItemCount, queue.CompletedCount + queue.GetDeadletterCount());
-                Assert.Equal(0, queue.GetQueueCount());
+                var stats = queue.GetQueueStats();
+                Assert.True(stats.Dequeued >= workItemCount);
+                Assert.Equal(workItemCount, stats.Completed + stats.Deadletter);
+                Assert.Equal(0, stats.Queued);
 
                 Trace.WriteLine(CountAllKeys());
             }
@@ -317,7 +318,7 @@ namespace Foundatio.Redis.Tests.Queues {
                         Data = "Hello"
                     });
                 }
-                Assert.Equal(workItemCount, queue.GetQueueCount());
+                Assert.Equal(workItemCount, queue.GetQueueStats().Queued);
 
                 var metrics = new InMemoryMetricsClient();
                 var workItem = queue.Dequeue(TimeSpan.Zero);
@@ -330,9 +331,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 metrics.DisplayStats(_output);
 
-                Assert.Equal(workItemCount, queue.DequeuedCount);
-                Assert.Equal(workItemCount, queue.CompletedCount);
-                Assert.Equal(0, queue.GetQueueCount());
+                var stats = queue.GetQueueStats();
+                Assert.Equal(workItemCount, stats.Dequeued);
+                Assert.Equal(workItemCount, stats.Completed);
+                Assert.Equal(0, stats.Queued);
 
                 Trace.WriteLine(CountAllKeys());
             }
@@ -355,7 +357,7 @@ namespace Foundatio.Redis.Tests.Queues {
                         Data = "Hello"
                     });
                 }
-                Assert.Equal(workItemCount, queue.GetQueueCount());
+                Assert.Equal(workItemCount, queue.GetQueueStats().Queued);
 
                 var countdown = new CountDownLatch(workItemCount);
                 var metrics = new InMemoryMetricsClient();
@@ -368,9 +370,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 countdown.Wait(60 * 1000);
                 metrics.DisplayStats(_output);
 
-                Assert.Equal(workItemCount, queue.DequeuedCount);
-                Assert.Equal(workItemCount, queue.CompletedCount);
-                Assert.Equal(0, queue.GetQueueCount());
+                var stats = queue.GetQueueStats();
+                Assert.Equal(workItemCount, stats.Dequeued);
+                Assert.Equal(workItemCount, stats.Completed);
+                Assert.Equal(0, stats.Queued);
 
                 Trace.WriteLine(CountAllKeys());
             }
