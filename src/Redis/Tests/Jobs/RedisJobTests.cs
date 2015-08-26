@@ -18,7 +18,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             const int workItemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             var queue = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), null, null, 0, TimeSpan.Zero);
-            queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics));
+            queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100));
             Task.Factory.StartNew(() => {

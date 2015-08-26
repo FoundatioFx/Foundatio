@@ -9,18 +9,24 @@ namespace Foundatio.Queues {
     public interface IQueue<T> : IHaveSerializer, IDisposable where T : class
     {
         void AttachBehavior(IQueueBehavior<T> behavior);
+
         string Enqueue(T data);
+
         void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
         void StopWorking();
+
         QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         void Complete(IQueueEntryMetadata entry);
         void Abandon(IQueueEntryMetadata entry);
+
         IEnumerable<T> GetDeadletterItems();
+
         event EventHandler<EnqueuingEventArgs<T>> Enqueuing;
         event EventHandler<EnqueuedEventArgs<T>> Enqueued;
         event EventHandler<DequeuedEventArgs<T>> Dequeued;
         event EventHandler<CompletedEventArgs<T>> Completed;
         event EventHandler<AbandonedEventArgs<T>> Abandoned;
+
         void DeleteQueue();
         QueueStats GetQueueStats();
         string QueueId { get; }

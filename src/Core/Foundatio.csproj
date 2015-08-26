@@ -87,6 +87,7 @@
     <Compile Include="Messaging\InMemoryMessageBus.cs" />
     <Compile Include="Messaging\MessageBusBase.cs" />
     <Compile Include="Messaging\MessageBusData.cs" />
+    <Compile Include="Metrics\IMetricStatName.cs" />
     <Compile Include="Metrics\MetricTimer.cs" />
     <Compile Include="Metrics\IMetricsClient.cs" />
     <Compile Include="Metrics\InMemoryMetricsClient.cs" />
