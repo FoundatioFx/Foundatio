@@ -17,7 +17,7 @@ namespace Foundatio.Queues {
 
         Task<string> EnqueueAsync(T data);
 
-        Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
 
         Task StopWorkingAsync();
 

@@ -13,7 +13,7 @@ namespace Foundatio.Queues {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
-        private Action<QueueEntry<T>> _workerAction;
+        private Func<QueueEntry<T>, Task> _workerAction;
         private bool _workerAutoComplete;
         private bool _isWorking;
         private static object _workerLock = new object();
@@ -100,7 +100,7 @@ namespace Foundatio.Queues {
 
             var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
             try {
-                _workerAction(workItem);
+                await _workerAction(workItem);
                 if (_workerAutoComplete)
                     await workItem.CompleteAsync();
             } catch (Exception ex) {
@@ -123,7 +123,7 @@ namespace Foundatio.Queues {
             return message.MessageId;
         }
         
-        public override Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (_isWorking)
                 throw new ApplicationException("Already working.");
 

@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly AsyncManualResetEvent _autoEvent = new AsyncManualResetEvent(false);
-        private Action<QueueEntry<T>> _workerAction;
+        private Func<QueueEntry<T>, Task> _workerAction;
         private bool _workerAutoComplete;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
@@ -81,18 +81,19 @@ namespace Foundatio.Queues {
             return Task.FromResult(id);
         }
 
-        public override Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
             _workerAction = handler;
             _workerAutoComplete = autoComplete;
+            
             if (_workerCancellationTokenSource != null)
                 return Task.FromResult(0);
 
             _workerCancellationTokenSource = new CancellationTokenSource();
-            return Task.Run(() => WorkerLoop(_workerCancellationTokenSource.Token));
+            return Task.Run(() => WorkerLoopAsync(_workerCancellationTokenSource.Token), cancellationToken);
         }
 
         public override Task StopWorkingAsync() {
@@ -213,7 +214,7 @@ namespace Foundatio.Queues {
             return Task.FromResult(0);
         }
 
-        private async Task WorkerLoop(CancellationToken token) {
+        private async Task WorkerLoopAsync(CancellationToken token) {
             Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
             while (!token.IsCancellationRequested) {
                 if (_queue.Count == 0 || _workerAction == null)
@@ -222,14 +223,14 @@ namespace Foundatio.Queues {
                 Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
                 QueueEntry<T> queueEntry = null;
                 try {
-                    queueEntry = await DequeueAsync(TimeSpan.Zero);
+                    queueEntry = await DequeueAsync(TimeSpan.Zero, token);
                 } catch (TimeoutException) {}
 
                 if (queueEntry == null || _workerAction == null)
                     return;
 
                 try {
-                    _workerAction(queueEntry);
+                    await _workerAction(queueEntry);
                     if (_workerAutoComplete)
                         await queueEntry.CompleteAsync();
                 } catch (Exception ex) {

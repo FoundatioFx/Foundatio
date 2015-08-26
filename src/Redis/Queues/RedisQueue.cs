@@ -19,7 +19,7 @@ namespace Foundatio.Queues {
         protected readonly IDatabase _db;
         protected readonly ISubscriber _subscriber;
         protected readonly RedisCacheClient _cache;
-        private Action<QueueEntry<T>> _workerAction;
+        private Func<QueueEntry<T>, Task> _workerAction;
         private bool _workerAutoComplete;
         private long _enqueuedCount;
         private long _dequeuedCount;
@@ -165,7 +165,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException("handler");
 
@@ -368,7 +368,7 @@ namespace Foundatio.Queues {
                     continue;
 
                 try {
-                    _workerAction(queueEntry);
+                    await _workerAction(queueEntry);
                     if (_workerAutoComplete)
                         await queueEntry.CompleteAsync();
                 } catch (Exception ex) {

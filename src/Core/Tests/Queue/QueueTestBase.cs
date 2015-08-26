@@ -160,7 +160,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
 
                 var resetEvent = new AutoResetEvent(false);
-                await queue.StartWorkingAsync(async w => {
+                queue.StartWorkingAsync(async w => {
                     Assert.Equal("Hello", w.Value.Data);
                     await w.CompleteAsync();
                     resetEvent.Set();
@@ -184,7 +184,7 @@ namespace Foundatio.Tests.Queue {
 
             using (queue) {
                 await queue.DeleteQueueAsync();
-                await queue.StartWorkingAsync(async w => {
+                queue.StartWorkingAsync(async w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     await queue.StopWorkingAsync();
@@ -195,12 +195,12 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(async () => (await queue.GetQueueStatsAsync()).Errors > 0, TimeSpan.FromSeconds(5));
+                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().Result.Errors > 0, TimeSpan.FromSeconds(5));
                 Assert.True(success);
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Completed);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Errors);
 
-                success = await TaskHelper.DelayUntil(async () => (await queue.GetQueueStatsAsync()).Queued > 0, TimeSpan.FromSeconds(5));
+                success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().Result.Queued > 0, TimeSpan.FromSeconds(5));
                 Assert.True(success);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Queued);
             }
@@ -273,7 +273,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
 
                 var resetEvent = new AutoResetEvent(false);
-                await queue.StartWorkingAsync(w => {
+                queue.StartWorkingAsync(async w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
                 }, true);
@@ -309,7 +309,7 @@ namespace Foundatio.Tests.Queue {
                     for (int i = 0; i < workerCount; i++) {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                         Logger.Trace().Message("Queue Id: {0}", q.QueueId).Write();
-                        await q.StartWorkingAsync(w => DoWork(w, latch, info));
+                        q.StartWorkingAsync(async w => await DoWorkAsync(w, latch, info));
                         workers.Add(q);
                     }
 
@@ -386,7 +386,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        protected async Task DoWork(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {
+        protected async Task DoWorkAsync(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {
             Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 

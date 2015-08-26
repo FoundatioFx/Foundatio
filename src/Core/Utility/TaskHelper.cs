@@ -105,9 +105,9 @@ namespace Foundatio.Utility {
             }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Current);
         }
 
-        public async static Task<bool> DelayUntil(Func<Task<bool>> condition, TimeSpan? timeout = null, int checkInterval = 100) {
+        public async static Task<bool> DelayUntil(Func<bool> condition, TimeSpan? timeout = null, int checkInterval = 100) {
             DateTime start = DateTime.Now;
-            while (!await condition()) {
+            while (!condition()) {
                 if (timeout.HasValue && DateTime.Now.Subtract(start) > timeout.Value)
                     return false;
 
