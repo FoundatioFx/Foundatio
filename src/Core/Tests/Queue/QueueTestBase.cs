@@ -322,7 +322,7 @@ namespace Foundatio.Tests.Queue {
                         Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
                     });
 
-                    Assert.True(latch.Wait(TimeSpan.FromSeconds(5)));
+                    Assert.True(latch.Wait(TimeSpan.FromSeconds(10)));
                     Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
                     Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                         info.CompletedCount,
