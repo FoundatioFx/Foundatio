@@ -167,7 +167,7 @@ namespace Foundatio.Caching {
 
         public Task RemoveByPrefixAsync(string prefix) {
             var keysToRemove = new List<string>();
-            var regex = new Regex(String.Concat(prefix, ".*").Replace("?", ".+"));
+            var regex = new Regex(String.Concat(prefix, "*").Replace("*", ".*").Replace("?", ".+"));
             var enumerator = _memory.GetEnumerator();
             try {
                 while (enumerator.MoveNext()) {
