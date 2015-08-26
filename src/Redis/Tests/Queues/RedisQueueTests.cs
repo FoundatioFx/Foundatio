@@ -242,7 +242,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
 
                 workItemIds.Reverse();
-                await queue.DoMaintenanceWorAsync();
+                await queue.DoMaintenanceWorkAsync();
 
                 foreach (var id in workItemIds.Take(3)) {
                     Trace.WriteLine("Checking: " + id);

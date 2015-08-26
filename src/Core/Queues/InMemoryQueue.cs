@@ -199,18 +199,19 @@ namespace Foundatio.Queues {
             return Task.FromResult(_deadletterQueue.Select(i => i.Data));
         }
 
-        // TODO: Implement IQueueManager
-        //public override void DeleteQueue() {
-        //    Logger.Trace().Message("Deleting queue: {0}", typeof(T).Name).Write();
-        //    _queue.Clear();
-        //    _deadletterQueue.Clear();
-        //    _dequeued.Clear();
-        //    _enqueuedCount = 0;
-        //    _dequeuedCount = 0;
-        //    _completedCount = 0;
-        //    _abandonedCount = 0;
-        //    _workerErrorCount = 0;
-        //}
+        public override Task DeleteQueueAsync() {
+            Logger.Trace().Message("Deleting queue: {0}", typeof(T).Name).Write();
+            _queue.Clear();
+            _deadletterQueue.Clear();
+            _dequeued.Clear();
+            _enqueuedCount = 0;
+            _dequeuedCount = 0;
+            _completedCount = 0;
+            _abandonedCount = 0;
+            _workerErrorCount = 0;
+
+            return Task.FromResult(0);
+        }
 
         private async Task WorkerLoop(CancellationToken token) {
             Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();

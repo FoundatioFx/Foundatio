@@ -40,6 +40,8 @@ namespace Foundatio.Queues {
         
         public abstract Task<QueueStats> GetQueueStatsAsync();
 
+        public abstract Task DeleteQueueAsync();
+
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 
         public virtual event EventHandler<EnqueuingEventArgs<T>> Enqueuing;

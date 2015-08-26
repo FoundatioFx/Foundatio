@@ -54,23 +54,23 @@ namespace Foundatio.Queues {
                 _queueClient.RetryPolicy = retryPolicy;
         }
 
-        // TODO: Implement IQueueManager
-        //public override void DeleteQueue() {
-        //    if (_namespaceManager.QueueExists(_queueName))
-        //        _namespaceManager.DeleteQueue(_queueName);
+        public override async Task DeleteQueueAsync() {
+            if (await _namespaceManager.QueueExistsAsync(_queueName))
+                await _namespaceManager.DeleteQueueAsync(_queueName);
 
-        //    _queueDescription = new QueueDescription(_queueName) {
-        //        MaxDeliveryCount = _retries + 1,
-        //        LockDuration = _workItemTimeout
-        //    };
-        //    _namespaceManager.CreateQueue(_queueDescription);
+            _queueDescription = new QueueDescription(_queueName) {
+                MaxDeliveryCount = _retries + 1,
+                LockDuration = _workItemTimeout
+            };
 
-        //    _enqueuedCount = 0;
-        //    _dequeuedCount = 0;
-        //    _completedCount = 0;
-        //    _abandonedCount = 0;
-        //    _workerErrorCount = 0;
-        //}
+            await _namespaceManager.CreateQueueAsync(_queueDescription);
+
+            _enqueuedCount = 0;
+            _dequeuedCount = 0;
+            _completedCount = 0;
+            _abandonedCount = 0;
+            _workerErrorCount = 0;
+        }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
             var q = await _namespaceManager.GetQueueAsync(_queueName);

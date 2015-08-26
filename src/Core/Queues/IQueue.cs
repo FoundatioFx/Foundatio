@@ -31,6 +31,8 @@ namespace Foundatio.Queues {
 
         Task<QueueStats> GetQueueStatsAsync();
 
+        Task DeleteQueueAsync();
+
         string QueueId { get; }
     }
 

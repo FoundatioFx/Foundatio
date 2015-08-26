@@ -14,7 +14,7 @@ namespace Foundatio.Redis.Tests.Jobs {
         }
 
         [Fact]
-        public void CanRunQueueJob() {
+        public async Task CanRunQueueJob() {
             const int workItemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             var queue = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), null, null, 0, TimeSpan.Zero);

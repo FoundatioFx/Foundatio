@@ -309,19 +309,18 @@ namespace Foundatio.Queues {
             throw new NotImplementedException();
         }
 
-        // TODO: Implement IQueueManager
-        //public override void DeleteQueue() {
-        //    Logger.Trace().Message("Deleting queue: {0}", _queueName).Write();
-        //    DeleteList(QueueListName);
-        //    DeleteList(WorkListName);
-        //    DeleteList(WaitListName);
-        //    DeleteList(DeadListName);
-        //    _enqueuedCount = 0;
-        //    _dequeuedCount = 0;
-        //    _completedCount = 0;
-        //    _abandonedCount = 0;
-        //    _workerErrorCount = 0;
-        //}
+        public override async Task DeleteQueueAsync() {
+            Logger.Trace().Message("Deleting queue: {0}", _queueName).Write();
+            await DeleteListAsync(QueueListName);
+            await DeleteListAsync(WorkListName);
+            await DeleteListAsync(WaitListName);
+            await DeleteListAsync(DeadListName);
+            _enqueuedCount = 0;
+            _dequeuedCount = 0;
+            _completedCount = 0;
+            _abandonedCount = 0;
+            _workerErrorCount = 0;
+        }
 
         private async Task DeleteListAsync(string name) {
             // TODO Look into running this as a batch query.
