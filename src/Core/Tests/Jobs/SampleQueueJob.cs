@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override Task<JobResult> ProcessQueueItem(QueueEntry<SampleQueueWorkItem> queueEntry) {
+        protected override async Task<JobResult> ProcessQueueItem(QueueEntry<SampleQueueWorkItem> queueEntry) {
             _metrics.Counter("dequeued");
 
             if (RandomData.GetBool(10)) {
@@ -24,14 +24,14 @@ namespace Foundatio.Tests.Jobs {
 
             if (RandomData.GetBool(10)) {
                 _metrics.Counter("abandoned");
-                queueEntry.Abandon();
-                return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
+                await queueEntry.AbandonAsync();
+                return JobResult.FailedWithMessage("Abandoned");
             }
 
-            queueEntry.Complete();
+            await queueEntry.CompleteAsync();
             _metrics.Counter("completed");
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 

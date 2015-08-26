@@ -12,17 +12,17 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> ProcessQueueItem(QueueEntry<PingRequest> queueEntry) {
+        protected override async Task<JobResult> ProcessQueueItem(QueueEntry<PingRequest> queueEntry) {
             RunCount++;
 
             Console.WriteLine("Pong!");
 
             if (RandomData.GetBool(80))
-                queueEntry.Complete();
+                await queueEntry.CompleteAsync();
             else if (RandomData.GetBool(80))
-                queueEntry.Abandon();
+                await queueEntry.AbandonAsync();
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 

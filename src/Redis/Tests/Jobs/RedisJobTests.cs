@@ -22,8 +22,8 @@ namespace Foundatio.Redis.Tests.Jobs {
 
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100));
             Task.Factory.StartNew(() => {
-                Parallel.For(0, workItemCount, i => {
-                    queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
+                Parallel.For(0, workItemCount, async i => {
+                    await queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
                 });
             });
 
@@ -31,7 +31,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             job.RunUntilEmpty();
             metrics.DisplayStats();
 
-            Assert.Equal(0, queue.GetQueueStats().Queued);
+            Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
         }
     }
 }

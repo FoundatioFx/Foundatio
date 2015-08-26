@@ -141,19 +141,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public void CanRunQueueJob() {
+        public async Task CanRunQueueJob() {
             const int workItemCount = 10000;
             var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero);
 
             for (int i = 0; i < workItemCount; i++)
-                queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
+                await queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
 
             var metrics = new InMemoryMetricsClient();
             var job = new SampleQueueJob(queue, metrics);
             job.RunUntilEmpty(new CancellationTokenSource(30000).Token);
             metrics.DisplayStats(_writer);
 
-            Assert.Equal(0, queue.GetQueueStats().Queued);
+            Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
         }
 
         [Fact]

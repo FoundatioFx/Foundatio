@@ -21,11 +21,11 @@ namespace Foundatio.JobSample.Jobs {
             var q2 = new RedisQueue<PingRequest>(muxer);
             container.RegisterSingleton<IQueue<PingRequest>>(() => q2);
 
-            Task.Run(() => {
+            Task.Run(async () => {
                 var startDate = DateTime.Now;
                 while (startDate.AddSeconds(30) > DateTime.Now) {
                     Console.WriteLine("Enqueueing ping.");
-                    q1.Enqueue(new PingRequest {Data = "Hi"});
+                    await q1.EnqueueAsync(new PingRequest { Data = "Hi" });
                     Thread.Sleep(RandomData.GetInt(100, 1000));
                 }
             });
