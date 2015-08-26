@@ -15,7 +15,7 @@ namespace Foundatio.Caching {
         private readonly object _lock = new object();
         private long _hits = 0;
         private long _misses = 0;
-        private DateTime? _nextMaintenance = null;
+        private DateTime? _nextMaintenance;
 
         public InMemoryCacheClient() {
             _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -23,341 +23,36 @@ namespace Foundatio.Caching {
         }
 
         public bool FlushOnDispose { get; set; }
-        public int Count { get { return _memory.Count; } }
+
+        public int Count {
+            get { return _memory.Count; }
+        }
+
         public int? MaxItems { get; set; }
-        public long Hits { get { return _hits; } }
-        public long Misses { get { return _misses; } }
+
+        public long Hits {
+            get { return _hits; }
+        }
+
+        public long Misses {
+            get { return _misses; }
+        }
 
         public ICollection<string> Keys {
             get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
-        } 
-
-        private bool CacheAdd(string key, object value) {
-            return CacheAdd(key, value, DateTime.MaxValue);
-        }
-
-        private bool TryGetValue(string key, out CacheEntry entry) {
-            return _memory.TryGetValue(key, out entry);
-        }
-
-        private void Set(string key, CacheEntry entry) {
-            Logger.Trace().Message("Set: key={0}", key).Write();
-            if (entry.ExpiresAt < DateTime.UtcNow) {
-                Remove(key);
-                return;
-            }
-
-            lock (_lock)
-            {
-                _memory[key] = entry;
-                ScheduleNextMaintenance(entry.ExpiresAt);
-            }
-
-            if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
-                string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
-                CacheEntry cacheEntry;
-                _memory.TryRemove(oldest, out cacheEntry);
-            }
-        }
-
-        private bool CacheAdd(string key, object value, DateTime expiresAt) {
-           expiresAt = expiresAt.ToUniversalTime();
-           if (expiresAt < DateTime.UtcNow) {
-                Remove(key);
-                return false;
-            }
-
-            lock (_lock) {
-                CacheEntry entry;
-                if (TryGetValue(key, out entry))
-                    return false;
-
-                entry = new CacheEntry(value, expiresAt);
-                Set(key, entry);
-
-                return true;
-            }
-        }
-
-        private bool CacheSet(string key, object value) {
-            return CacheSet(key, value, DateTime.MaxValue);
-        }
-
-        private bool CacheSet(string key, object value, DateTime expiresAt) {
-            return CacheSet(key, value, expiresAt, null);
-        }
-
-        private bool CacheSet(string key, object value, DateTime expiresAt, long? checkLastModified) {
-            Logger.Trace().Message("Setting cache: key={0}", key).Write();
-            expiresAt = expiresAt.ToUniversalTime();
-            if (expiresAt < DateTime.UtcNow) {
-                Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
-                Remove(key);
-                return false;
-            }
-
-            CacheEntry entry;
-            if (!TryGetValue(key, out entry)) {
-                entry = new CacheEntry(value, expiresAt);
-                Set(key, entry);
-                return true;
-            }
-
-            if (checkLastModified.HasValue
-                && entry.LastModifiedTicks != checkLastModified.Value)
-                return false;
-
-            entry.Value = value;
-            entry.ExpiresAt = expiresAt;
-            ScheduleNextMaintenance(expiresAt);
-
-            return true;
-        }
-
-        private bool CacheReplace(string key, object value) {
-            return CacheReplace(key, value, DateTime.MaxValue);
-        }
-
-        private bool CacheReplace(string key, object value, DateTime expiresAt) {
-            return !CacheSet(key, value, expiresAt);
         }
 
         public void Dispose() {
-            if (_maintenanceCancellationTokenSource != null)
-                _maintenanceCancellationTokenSource.Cancel();
-
-            if (!FlushOnDispose) 
+            _maintenanceCancellationTokenSource?.Cancel();
+            if (!FlushOnDispose)
                 return;
 
             _memory = new ConcurrentDictionary<string, CacheEntry>();
         }
 
-        public bool Remove(string key) {
-            if (String.IsNullOrEmpty(key))
-                return true;
-
-            CacheEntry item;
-            return _memory.TryRemove(key, out item);
-        }
-
-        public void RemoveAll(IEnumerable<string> keys) {
-            foreach (var key in keys) {
-                try {
-                    Remove(key);
-                } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Error trying to remove {0} from the cache", key).Write();
-                }
-            }
-        }
-
-        public void RemoveByPrefix(string prefix)
-        {
-            RemoveByPattern(prefix + "*");
-        }
-
-        public object Get(string key) {
-            long lastModifiedTicks;
-            return Get(key, out lastModifiedTicks);
-        }
-
-        public object Get(string key, out long lastModifiedTicks) {
-            lastModifiedTicks = 0;
-
-            CacheEntry cacheEntry;
-            if (!_memory.TryGetValue(key, out cacheEntry))
-            {
-                Interlocked.Increment(ref _misses);
-                return null;
-            }
-
-            if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
-                _memory.TryRemove(key, out cacheEntry);
-                Interlocked.Increment(ref _misses);
-                return null;
-            }
-
-            lastModifiedTicks = cacheEntry.LastModifiedTicks;
-            Interlocked.Increment(ref _hits);
-
-            return cacheEntry.Value;
-        }
-
-        public T Get<T>(string key) {
-            var value = Get(key);
-            if (value != null) return (T)value;
-            return default(T);
-        }
-
-        public bool TryGet<T>(string key, out T value) {
-            value = default(T);
-            if (!_memory.ContainsKey(key))
-                return false;
-
-            try {
-                value = Get<T>(key);
-                return true;
-            } catch {
-                return false;
-            }
-        }
-
         private readonly object _lockObject = new object();
-        private long UpdateCounter(string key, long value, TimeSpan? expiresIn = null) {
-            if (expiresIn.HasValue && expiresIn.Value.Ticks < 0) {
-                Remove(key);
-                return -1;
-            }
 
-            lock (_lockObject) {
-                if (!_memory.ContainsKey(key)) {
-                    if (expiresIn.HasValue)
-                        Set(key, value, expiresIn.Value);
-                    else
-                        Set(key, value);
-                    return value;
-                }
-
-                var current = Get<long>(key);
-                if (expiresIn.HasValue)
-                    Set(key, current += value, expiresIn.Value);
-                else
-                    Set(key, current += value);
-                return current;
-            }
-        }
-
-        public long Increment(string key, uint amount) {
-            return UpdateCounter(key, amount);
-        }
-
-        public long Increment(string key, uint amount, DateTime expiresAt) {
-            return UpdateCounter(key, amount, expiresAt.ToUniversalTime().Subtract(DateTime.UtcNow));
-        }
-
-        public long Increment(string key, uint amount, TimeSpan expiresIn) {
-            return UpdateCounter(key, amount, expiresIn);
-        }
-
-        public long Decrement(string key, uint amount) {
-            return UpdateCounter(key, amount * -1);
-        }
-
-        public long Decrement(string key, uint amount, DateTime expiresAt) {
-            return UpdateCounter(key, amount * -1, expiresAt.ToUniversalTime().Subtract(DateTime.UtcNow));
-        }
-
-        public long Decrement(string key, uint amount, TimeSpan expiresIn) {
-            return UpdateCounter(key, amount * -1, expiresIn);
-        }
-
-        public bool Add<T>(string key, T value) {
-            return CacheAdd(key, value);
-        }
-
-        public bool Set<T>(string key, T value) {
-            return CacheSet(key, value);
-        }
-
-        public bool Replace<T>(string key, T value) {
-            return CacheReplace(key, value);
-        }
-
-        public bool Add<T>(string key, T value, DateTime expiresAt) {
-            return CacheAdd(key, value, expiresAt);
-        }
-
-        public bool Set<T>(string key, T value, DateTime expiresAt) {
-            return CacheSet(key, value, expiresAt);
-        }
-
-        public bool Replace<T>(string key, T value, DateTime expiresAt) {
-            return CacheReplace(key, value, expiresAt);
-        }
-
-        public bool Add<T>(string key, T value, TimeSpan expiresIn) {
-            return CacheAdd(key, value, DateTime.UtcNow.Add(expiresIn));
-        }
-
-        public bool Set<T>(string key, T value, TimeSpan expiresIn) {
-            return CacheSet(key, value, DateTime.UtcNow.Add(expiresIn));
-        }
-
-        public bool Replace<T>(string key, T value, TimeSpan expiresIn) {
-            return CacheReplace(key, value, DateTime.UtcNow.Add(expiresIn));
-        }
-
-        public void FlushAll() {
-            _memory.Clear();
-        }
-
-        public IDictionary<string, T> GetAll<T>(IEnumerable<string> keys) {
-            var valueMap = new Dictionary<string, T>();
-            foreach (var key in keys) {
-                var value = Get<T>(key);
-                valueMap[key] = value;
-            }
-            return valueMap;
-        }
-
-        public void SetAll<T>(IDictionary<string, T> values) {
-            if (values == null)
-                return;
-
-            foreach (var entry in values)
-                Set(entry.Key, entry.Value);
-        }
-
-        public DateTime? GetExpiration(string key) {
-            CacheEntry value;
-            if (!_memory.TryGetValue(key, out value))
-                return null;
-
-            if (value.ExpiresAt >= DateTime.UtcNow)
-                return value.ExpiresAt;
-
-            _memory.TryRemove(key, out value);
-            return null;
-        }
-
-        public void SetExpiration(string key, DateTime expiresAt) {
-            expiresAt = expiresAt.ToUniversalTime();
-            if (expiresAt < DateTime.UtcNow) {
-                Remove(key);
-                return;
-            }
-
-            CacheEntry value;
-            if (!_memory.TryGetValue(key, out value))
-                return;
-
-            value.ExpiresAt = expiresAt;
-            ScheduleNextMaintenance(expiresAt);
-        }
-
-        public void SetExpiration(string key, TimeSpan expiresIn) {
-            SetExpiration(key, DateTime.UtcNow.Add(expiresIn));
-        }
-
-        public void RemoveByPattern(string pattern) {
-            RemoveByRegex(pattern.Replace("*", ".*").Replace("?", ".+"));
-        }
-
-        public void RemoveByRegex(string pattern) {
-            var regex = new Regex(pattern);
-            var enumerator = _memory.GetEnumerator();
-            try {
-                while (enumerator.MoveNext()) {
-                    var current = enumerator.Current;
-                    if (regex.IsMatch(current.Key) || current.Value.ExpiresAt < DateTime.UtcNow)
-                        Remove(current.Key);
-                }
-            } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error trying to remove items from cache with this {0} pattern", pattern).Write();
-            }
-        }
-
-        private void ScheduleNextMaintenance(DateTime value)
-        {
+        private void ScheduleNextMaintenance(DateTime value) {
             Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
             if (value == DateTime.MaxValue)
                 return;
@@ -365,8 +60,7 @@ namespace Foundatio.Caching {
             if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
                 return;
 
-            if (_maintenanceCancellationTokenSource != null)
-                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource?.Cancel();
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
@@ -374,15 +68,13 @@ namespace Foundatio.Caching {
             Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
         }
 
-        private void DoMaintenance()
-        {
+        private void DoMaintenance() {
             Logger.Trace().Message("Running DoMaintenance").Write();
             DateTime minExpiration = DateTime.MaxValue;
             var now = DateTime.UtcNow;
             var expiredKeys = new List<string>();
 
-            foreach (string key in _memory.Keys)
-            {
+            foreach (string key in _memory.Keys) {
                 var expiresAt = _memory[key].ExpiresAt;
                 if (expiresAt <= now)
                     expiredKeys.Add(key);
@@ -395,11 +87,9 @@ namespace Foundatio.Caching {
             if (expiredKeys.Count == 0)
                 return;
 
-            lock (_lock)
-            {
-                foreach (var key in expiredKeys)
-                {
-                    Remove(key);
+            lock (_lock) {
+                foreach (var key in expiredKeys) {
+                    this.RemoveAsync(key).Wait();
                     OnItemExpired(key);
                     Logger.Trace().Message("Removing expired key: key={0}", key).Write();
                 }
@@ -408,11 +98,8 @@ namespace Foundatio.Caching {
 
         public event EventHandler<string> ItemExpired;
 
-        protected void OnItemExpired(string key) {
-            if (ItemExpired == null)
-                return;
-
-            ItemExpired(this, key);
+        private void OnItemExpired(string key) {
+            ItemExpired?.Invoke(this, key);
         }
 
         private class CacheEntry {
@@ -434,23 +121,198 @@ namespace Foundatio.Caching {
             internal long LastAccessTicks { get; private set; }
             internal long LastModifiedTicks { get; private set; }
 #if DEBUG
-            internal long UsageCount { get { return _usageCount; } }
+            internal long UsageCount
+            {
+                get { return _usageCount; }
+            }
 #endif
 
-            internal object Value {
-                get {
+            internal object Value
+            {
+                get
+                {
                     LastAccessTicks = DateTime.UtcNow.Ticks;
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
                     return _cacheValue.Copy();
                 }
-                set {
+                set
+                {
                     _cacheValue = value.Copy();
                     LastAccessTicks = DateTime.UtcNow.Ticks;
                     LastModifiedTicks = DateTime.UtcNow.Ticks;
                 }
             }
+        }
+
+        public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
+            if (keys == null) {
+                _memory.Clear();
+                return Task.FromResult(0);
+            }
+
+            int removed = 0;
+            foreach (var key in keys) {
+                if (String.IsNullOrEmpty(key))
+                    continue;
+                
+                CacheEntry item;
+                if (_memory.TryRemove(key, out item))
+                    removed++;
+            }
+
+            return Task.FromResult(removed);
+        }
+
+        public Task RemoveByPrefixAsync(string prefix) {
+            var keysToRemove = new List<string>();
+            var regex = new Regex(String.Concat(prefix, ".*").Replace("?", ".+"));
+            var enumerator = _memory.GetEnumerator();
+            try {
+                while (enumerator.MoveNext()) {
+                    var current = enumerator.Current;
+                    if (regex.IsMatch(current.Key) || current.Value.ExpiresAt < DateTime.UtcNow)
+                        keysToRemove.Add(current.Key);
+                }
+            } catch (Exception ex) {
+                Logger.Error().Exception(ex).Message("Error trying to remove items from cache with this {0} prefix", prefix).Write();
+            }
+
+            return RemoveAllAsync(keysToRemove);
+        }
+
+        public Task<bool> TryGetAsync<T>(string key, out T value) {
+            value = default(T);
+            if (!_memory.ContainsKey(key))
+                return Task.FromResult(false);
+
+            try {
+                TryGetAsync(key, out value).Wait();
+                return Task.FromResult(true);
+            } catch {
+                return Task.FromResult(false);
+            }
+        }
+
+        public async Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) {
+            var valueMap = new Dictionary<string, object>();
+            foreach (var key in keys) {
+                var value = await this.GetAsync<object>(key);
+                valueMap[key] = value;
+            }
+
+            return valueMap;
+        }
+
+        public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn ?? TimeSpan.Zero);
+            if (expiresAt < DateTime.UtcNow) {
+                await this.RemoveAsync(key);
+                return false;
+            }
+
+            lock (_lock) {
+                CacheEntry entry;
+                if (TryGetAsync(key, out entry).Result)
+                    return false;
+
+                entry = new CacheEntry(value, expiresAt);
+                SetAsync(key, entry).Wait();
+
+                return true;
+            }
+        }
+
+        public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            Logger.Trace().Message("Setting cache: key={0}", key).Write();
+
+            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn ?? TimeSpan.Zero);
+            if (expiresAt < DateTime.UtcNow) {
+                Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
+                await this.RemoveAsync(key);
+                return false;
+            }
+
+            CacheEntry entry;
+            if (!await TryGetAsync(key, out entry)) {
+                entry = new CacheEntry(value, expiresAt);
+                await SetAsync(key, entry);
+                return true;
+            }
+            
+            entry.Value = value;
+            entry.ExpiresAt = expiresAt;
+            ScheduleNextMaintenance(expiresAt);
+
+            return true;
+        }
+
+        public async Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+            if (values == null)
+                return 0;
+
+            var result = 0;
+            foreach (var entry in values)
+                if (await SetAsync(entry.Key, entry.Value))
+                    result++;
+
+            return result;
+        }
+
+        public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            return !(await SetAsync(key, value, expiresIn));
+        }
+
+        public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+            if (expiresIn.HasValue && expiresIn.Value.Ticks < 0) {
+                await this.RemoveAsync(key);
+                return -1;
+            }
+
+            lock (_lockObject) {
+                if (!_memory.ContainsKey(key)) {
+                    if (expiresIn.HasValue)
+                        SetAsync(key, amount, expiresIn.Value).Wait();
+                    else
+                        SetAsync(key, amount).Wait();
+
+                    return amount;
+                }
+
+                var current = this.GetAsync<long>(key).Result;
+                if (expiresIn.HasValue)
+                    SetAsync(key, current += amount, expiresIn.Value).Wait();
+                else
+                    SetAsync(key, current += amount).Wait();
+                return current;
+            }
+        }
+
+        public Task<TimeSpan?> GetExpirationAsync(string key) {
+            CacheEntry value;
+            if (!_memory.TryGetValue(key, out value))
+                return Task.FromResult<TimeSpan?>(null);
+
+            if (value.ExpiresAt >= DateTime.UtcNow)
+                return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(DateTime.UtcNow));
+
+            _memory.TryRemove(key, out value);
+            return Task.FromResult<TimeSpan?>(null);
+        }
+
+        public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
+            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn);
+            if (expiresAt < DateTime.UtcNow)
+                return this.RemoveAsync(key);
+
+            CacheEntry value;
+            if (_memory.TryGetValue(key, out value)) {
+                value.ExpiresAt = expiresAt;
+                ScheduleNextMaintenance(expiresAt);
+            }
+
+            return Task.FromResult(0);
         }
     }
 }

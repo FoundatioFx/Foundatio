@@ -1,134 +1,54 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public class NullCacheClient : ICacheClient {
-        public bool Remove(string key)
-        {
-            return false;
+        public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
+            return Task.FromResult(0);
         }
 
-        public void RemoveAll(IEnumerable<string> keys)
-        {
+        public Task RemoveByPrefixAsync(string prefix) {
+            return Task.FromResult(0);
         }
 
-        public void RemoveByPrefix(string prefix)
-        {
-        }
-
-        public T Get<T>(string key)
-        {
-            return default(T);
-        }
-
-        public bool TryGet<T>(string key, out T value)
-        {
+        public Task<bool> TryGetAsync<T>(string key, out T value) {
             value = default(T);
-            return false;
+            return Task.FromResult(false);
         }
 
-        public long Increment(string key, uint amount)
-        {
-            return amount;
+        public Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) { 
+            return Task.FromResult<IDictionary<string, object>>(new Dictionary<string, object>());
         }
 
-        public long Increment(string key, uint amount, DateTime expiresAt)
-        {
-            return amount;
+        public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(true);
         }
 
-        public long Increment(string key, uint amount, TimeSpan expiresIn)
-        {
-            return amount;
+        public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(true);
         }
 
-        public long Decrement(string key, uint amount)
-        {
-            return -amount;
+        public Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+            return Task.FromResult(0);
         }
 
-        public long Decrement(string key, uint amount, DateTime expiresAt)
-        {
-            return -amount;
+        public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(true);
         }
 
-        public long Decrement(string key, uint amount, TimeSpan expiresIn)
-        {
-            return amount;
+        public Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+            return Task.FromResult(0L);
         }
 
-        public bool Add<T>(string key, T value)
-        {
-            return true;
+        public Task<TimeSpan?> GetExpirationAsync(string key) {
+            return Task.FromResult<TimeSpan?>(null);
         }
 
-        public bool Add<T>(string key, T value, DateTime expiresAt)
-        {
-            return true;
+        public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
+            return Task.FromResult(0);
         }
 
-        public bool Add<T>(string key, T value, TimeSpan expiresIn)
-        {
-            return true;
-        }
-
-        public bool Set<T>(string key, T value)
-        {
-            return true;
-        }
-
-        public bool Set<T>(string key, T value, DateTime expiresAt)
-        {
-            return true;
-        }
-
-        public bool Set<T>(string key, T value, TimeSpan expiresIn)
-        {
-            return true;
-        }
-
-        public bool Replace<T>(string key, T value)
-        {
-            return true;
-        }
-
-        public bool Replace<T>(string key, T value, DateTime expiresAt)
-        {
-            return true;
-        }
-
-        public bool Replace<T>(string key, T value, TimeSpan expiresIn)
-        {
-            return true;
-        }
-
-        public void FlushAll()
-        {
-        }
-
-        public IDictionary<string, T> GetAll<T>(IEnumerable<string> keys)
-        {
-            return new Dictionary<string, T>();
-        }
-
-        public void SetAll<T>(IDictionary<string, T> values)
-        {
-        }
-
-        public DateTime? GetExpiration(string key)
-        {
-            return null;
-        }
-
-        public void SetExpiration(string key, TimeSpan expiresIn)
-        {
-        }
-
-        public void SetExpiration(string key, DateTime expiresAt)
-        {
-        }
-
-        public void Dispose() {
-        }
+        public void Dispose() {}
     }
 }
