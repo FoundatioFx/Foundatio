@@ -30,14 +30,12 @@ namespace Foundatio.Jobs {
             if (queueEntry == null)
                 return JobResult.Success;
 
-            var lockValue = GetQueueItemLock(queueEntry);
-            if (lockValue == null) {
-                Logger.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
-                return JobResult.FailedWithMessage("Unable to acquire lock for queue entry.");
-            }
-            Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
+            using (var lockValue = GetQueueItemLock(queueEntry))
+            {
+                if (lockValue == null)
+                    return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 
-            using (lockValue) {
+                Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
                 try
                 {
                     var result = await ProcessQueueItem(queueEntry);

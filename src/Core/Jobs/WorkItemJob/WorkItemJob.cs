@@ -45,22 +45,33 @@ namespace Foundatio.Jobs {
                     Type = queueEntry.Value.Type
                 });
 
-            try {
-                await handler.HandleItem(new WorkItemContext(workItemData, JobId, progressCallback));
-            } catch (Exception ex) {
-                queueEntry.Abandon();
-                return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
+            var ctx = new WorkItemContext(workItemData, JobId, progressCallback);
+            using (var lockValue = handler.GetWorkItemLock(ctx))
+            {
+                if (lockValue == null)
+                    return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
+
+                try
+                {
+                    await handler.HandleItem(ctx);
+                }
+                catch (Exception ex)
+                {
+                    queueEntry.Abandon();
+                    return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
+                }
+
+                queueEntry.Complete();
+                if (queueEntry.Value.SendProgressReports)
+                    _messageBus.Publish(new WorkItemStatus
+                    {
+                        WorkItemId = queueEntry.Value.WorkItemId,
+                        Progress = 100,
+                        Type = queueEntry.Value.Type
+                    });
+
+                return JobResult.Success;
             }
-
-            queueEntry.Complete();
-            if (queueEntry.Value.SendProgressReports)
-                _messageBus.Publish(new WorkItemStatus {
-                    WorkItemId = queueEntry.Value.WorkItemId,
-                    Progress = 100,
-                    Type = queueEntry.Value.Type
-                });
-
-            return JobResult.Success;
         }
     }
 }
