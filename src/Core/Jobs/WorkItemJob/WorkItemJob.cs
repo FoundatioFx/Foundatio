@@ -48,11 +48,11 @@ namespace Foundatio.Jobs {
             try {
                 await handler.HandleItem(new WorkItemContext(workItemData, JobId, progressCallback));
             } catch (Exception ex) {
-                queueEntry.Abandon();
+                await queueEntry.AbandonAsync();
                 return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
             }
 
-            queueEntry.Complete();
+            await queueEntry.CompleteAsync();
             if (queueEntry.Value.SendProgressReports)
                 _messageBus.Publish(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,

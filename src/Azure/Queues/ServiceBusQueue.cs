@@ -13,7 +13,7 @@ namespace Foundatio.Queues {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
-        private Func<QueueEntry<T>, Task> _workerAction;
+        private Action<QueueEntry<T>> _workerAction;
         private bool _workerAutoComplete;
         private bool _isWorking;
         private static object _workerLock = new object();
@@ -54,28 +54,27 @@ namespace Foundatio.Queues {
                 _queueClient.RetryPolicy = retryPolicy;
         }
 
-        public override void DeleteQueue() {
-            if (_namespaceManager.QueueExists(_queueName))
-                _namespaceManager.DeleteQueue(_queueName);
+        // TODO: Implement IQueueManager
+        //public override void DeleteQueue() {
+        //    if (_namespaceManager.QueueExists(_queueName))
+        //        _namespaceManager.DeleteQueue(_queueName);
 
-            _queueDescription = new QueueDescription(_queueName) {
-                MaxDeliveryCount = _retries + 1,
-                LockDuration = _workItemTimeout
-            };
-            _namespaceManager.CreateQueue(_queueDescription);
+        //    _queueDescription = new QueueDescription(_queueName) {
+        //        MaxDeliveryCount = _retries + 1,
+        //        LockDuration = _workItemTimeout
+        //    };
+        //    _namespaceManager.CreateQueue(_queueDescription);
 
-            _enqueuedCount = 0;
-            _dequeuedCount = 0;
-            _completedCount = 0;
-            _abandonedCount = 0;
-            _workerErrorCount = 0;
-        }
+        //    _enqueuedCount = 0;
+        //    _dequeuedCount = 0;
+        //    _completedCount = 0;
+        //    _abandonedCount = 0;
+        //    _workerErrorCount = 0;
+        //}
 
-        public override QueueStats GetQueueStats()
-        {
-            var q = _namespaceManager.GetQueue(_queueName);
-            return new QueueStats
-            {
+        public override async Task<QueueStats> GetQueueStatsAsync() {
+            var q = await _namespaceManager.GetQueueAsync(_queueName);
+            return new QueueStats {
                 Queued = q.MessageCount,
                 Working = -1,
                 Deadletter = q.MessageCountDetails.DeadLetterMessageCount,
@@ -88,7 +87,7 @@ namespace Foundatio.Queues {
             };
         }
 
-        public override IEnumerable<T> GetDeadletterItems() {
+        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             throw new NotImplementedException();
         }
 
@@ -101,44 +100,30 @@ namespace Foundatio.Queues {
 
             var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
             try {
-                await _workerAction(workItem);
+                _workerAction(workItem);
                 if (_workerAutoComplete)
-                    workItem.Complete();
+                    await workItem.CompleteAsync();
             } catch (Exception ex) {
                 Interlocked.Increment(ref _workerErrorCount);
                 Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
-                workItem.Abandon();
+                await workItem.AbandonAsync();
             }
         }
 
-        public Task EnqueueAsync(T data) {
+        public override async Task<string> EnqueueAsync(T data) {
             if (!OnEnqueuing(data))
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            return _queueClient.SendAsync(new BrokeredMessage(data));
+            var message = new BrokeredMessage(data);
+            await _queueClient.SendAsync(message);
+
+            OnEnqueued(data, message.MessageId);
+
+            return message.MessageId;
         }
-
-        public override string Enqueue(T data) {
-            if (!OnEnqueuing(data))
-                return null;
-            Interlocked.Increment(ref _enqueuedCount);
-            var msg = new BrokeredMessage(data);
-            _queueClient.Send(msg);
-
-            OnEnqueued(data, msg.MessageId);
-
-            return msg.MessageId;
-        }
-
-        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
-            StartWorking(entry => {
-                handler(entry);
-                return TaskHelper.Completed();
-            }, autoComplete);
-        }
-
-        public void StartWorking(Func<QueueEntry<T>, Task> handler, bool autoComplete = false) {
+        
+        public override Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (_isWorking)
                 throw new ApplicationException("Already working.");
 
@@ -148,23 +133,26 @@ namespace Foundatio.Queues {
                 _workerAutoComplete = autoComplete;
                 _queueClient.OnMessageAsync(OnMessage);
             }
+
+            return Task.FromResult(0);
         }
 
-        public override void StopWorking() {
-            if (!_isWorking)
-                return;
-
-            lock (_workerLock) {
-                _isWorking = false;
-                _workerAction = null;
+        public override Task StopWorkingAsync() {
+            if (_isWorking) {
+                lock (_workerLock) {
+                    _isWorking = false;
+                    _workerAction = null;
+                }
             }
+
+            return Task.FromResult(0);
         }
 
-        public override QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
 
-            using (var msg = _queueClient.Receive(timeout.Value)) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout.Value)) {
                 if (msg == null)
                     return null;
                 
@@ -176,31 +164,21 @@ namespace Foundatio.Queues {
             }
         }
 
-        public async Task CompleteAsync(IQueueEntryMetadata entry) {
+        public override async Task CompleteAsync(IQueueEntryMetadata entry) {
             Interlocked.Increment(ref _completedCount);
             await _queueClient.CompleteAsync(new Guid(entry.Id)).ConfigureAwait(false);
             OnCompleted(entry);
         }
-
-        public override void Complete(IQueueEntryMetadata entry)
-        {
-            CompleteAsync(entry).Wait();
-        }
-
-        public async Task AbandonAsync(IQueueEntryMetadata entry) {
+        
+        public override async Task AbandonAsync(IQueueEntryMetadata entry) {
             Interlocked.Increment(ref _abandonedCount);
             await _queueClient.AbandonAsync(new Guid(entry.Id)).ConfigureAwait(false);
             OnAbandoned(entry);
         }
-
-        public override void Abandon(IQueueEntryMetadata entry)
-        {
-            AbandonAsync(entry).Wait();
-        }
-
+        
         public override void Dispose() {
             base.Dispose();
-            StopWorking();
+            StopWorkingAsync().Wait();
             _queueClient.Close();
         }
     }

@@ -66,7 +66,7 @@ namespace Foundatio.Jobs {
             return RunAsync(token).Result;
         }
 
-        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<bool> continuationCallback = null) {
+        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
 
             EnsureJobNameSet();
@@ -92,7 +92,7 @@ namespace Foundatio.Jobs {
 
                 try
                 {
-                    if (!continuationCallback())
+                    if (!await continuationCallback())
                         break;
                 }
                 catch (Exception ex)

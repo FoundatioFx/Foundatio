@@ -6,42 +6,39 @@ using System.Threading.Tasks;
 using Foundatio.Serializer;
 
 namespace Foundatio.Queues {
-    public interface IQueue<T> : IHaveSerializer, IDisposable where T : class
-    {
-        void AttachBehavior(IQueueBehavior<T> behavior);
-        string Enqueue(T data);
-        void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
-        void StopWorking();
-        QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
-        void Complete(IQueueEntryMetadata entry);
-        void Abandon(IQueueEntryMetadata entry);
-        IEnumerable<T> GetDeadletterItems();
+    public interface IQueue<T> : IHaveSerializer, IDisposable where T : class {
         event EventHandler<EnqueuingEventArgs<T>> Enqueuing;
         event EventHandler<EnqueuedEventArgs<T>> Enqueued;
         event EventHandler<DequeuedEventArgs<T>> Dequeued;
         event EventHandler<CompletedEventArgs<T>> Completed;
         event EventHandler<AbandonedEventArgs<T>> Abandoned;
-        void DeleteQueue();
-        QueueStats GetQueueStats();
-        string QueueId { get; }
-    }
 
-    public interface IQueue2<T> : IDisposable where T : class {
+        void AttachBehavior(IQueueBehavior<T> behavior);
+
         Task<string> EnqueueAsync(T data);
-        Task StartWorking(Func<QueueEntry2<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
-        void StopWorking();
-        Task<QueueEntry2<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
-        Task CompleteAsync(string id);
-        Task AbandonAsync(string id);
-        IReadOnlyCollection<IQueueBehavior<T>> Behaviours { get; }
-        Task<QueueStats> GetQueueStatsAsync();
+
+        Task StartWorkingAsync(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+
+        Task StopWorkingAsync();
+
+        Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
+
+        Task CompleteAsync(IQueueEntryMetadata entry);
+
+        Task AbandonAsync(IQueueEntryMetadata entry);
+        
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
+
+        Task<QueueStats> GetQueueStatsAsync();
+
         string QueueId { get; }
     }
 
     public interface IQueueManager {
         Task<IQueue<T>> CreateQueueAsync<T>(string name = null, object config = null) where T : class;
+
         Task DeleteQueueAsync(string name);
+
         Task ClearQueueAsync(string name);
     }
 
@@ -57,34 +54,29 @@ namespace Foundatio.Queues {
         public long Timeouts { get; set; }
     }
 
-    public class EnqueuingEventArgs<T> : CancelEventArgs where T : class
-    {
+    public class EnqueuingEventArgs<T> : CancelEventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public T Data { get; set; }
     }
 
-    public class EnqueuedEventArgs<T> : EventArgs where T : class
-    {
+    public class EnqueuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public string Id { get; set; }
         public T Data { get; set; }
     }
 
-    public class DequeuedEventArgs<T> : EventArgs where T : class
-    {
+    public class DequeuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public T Data { get; set; }
         public IQueueEntryMetadata Metadata { get; set; }
     }
 
-    public class CompletedEventArgs<T> : EventArgs where T : class
-    {
+    public class CompletedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public IQueueEntryMetadata Metadata { get; set; }
     }
 
-    public class AbandonedEventArgs<T> : EventArgs where T : class
-    {
+    public class AbandonedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public IQueueEntryMetadata Metadata { get; set; }
     }
