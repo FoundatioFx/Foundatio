@@ -13,76 +13,74 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase : CaptureTests {
-        protected FileStorageTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        protected FileStorageTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected virtual IFileStorage GetStorage() {
             return null;
         }
 
-        public virtual void CanGetEmptyFileListOnMissingDirectory() {
-            Reset();
+        public virtual async Task CanGetEmptyFileListOnMissingDirectory() {
+            await ResetAsync();
 
             IFileStorage storage = GetStorage();
             if (storage == null)
                 return;
 
             using (storage) {
-                Assert.Equal(0, storage.GetFileList(Guid.NewGuid() + "\\*").Count());
+                Assert.Equal(0, (await storage.GetFileListAsync(Guid.NewGuid() + "\\*")).Count());
             }
         }
 
-        public virtual void CanGetFileListForSingleFolder() {
-            Reset();
+        public virtual async Task CanGetFileListForSingleFolder() {
+            await ResetAsync();
 
             IFileStorage storage = GetStorage();
             if (storage == null)
                 return;
 
             using (storage) {
-                storage.SaveFile(@"archived\archived.txt", "archived");
-                storage.SaveFile(@"q\new.txt", "new");
-                Assert.Equal(2, storage.GetFileList().Count());
-                Assert.Equal(1, storage.GetFileList(limit: 1).Count());
-                Assert.Equal(1, storage.GetFileList(@"archived\*").Count());
-                Assert.Equal(1, storage.GetFileList(@"q\*").Count());
+                await storage.SaveFileAsync(@"archived\archived.txt", "archived");
+                await storage.SaveFileAsync(@"q\new.txt", "new");
+                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"archived\*")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"q\*")).Count());
 
-                var file = storage.GetFileList(@"archived\*").FirstOrDefault();
+                var file = (await storage.GetFileListAsync(@"archived\*")).FirstOrDefault();
                 Assert.NotNull(file);
-                Assert.Equal("archived", storage.GetFileContents(@"archived\archived.txt"));
+                Assert.Equal("archived", await storage.GetFileContentsAsync(@"archived\archived.txt"));
 
 
-                file = storage.GetFileList(@"q\*").FirstOrDefault();
+                file = (await storage.GetFileListAsync(@"q\*")).FirstOrDefault();
                 Assert.NotNull(file);
-                Assert.Equal("new", storage.GetFileContents(@"q\new.txt"));
+                Assert.Equal("new", await storage.GetFileContentsAsync(@"q\new.txt"));
             }
         }
 
-        public virtual void CanManageFiles() {
-            Reset();
+        public virtual async Task CanManageFiles() {
+            await ResetAsync();
 
             IFileStorage storage = GetStorage();
             if (storage == null)
                 return;
 
             using (storage) {
-                storage.SaveFile("test.txt", "test");
-                Assert.Equal(1, storage.GetFileList().Count());
-                var file = storage.GetFileList().FirstOrDefault();
+                await storage.SaveFileAsync("test.txt", "test");
+                Assert.Equal(1, (await storage.GetFileListAsync()).Count());
+                var file = (await storage.GetFileListAsync()).FirstOrDefault();
                 Assert.NotNull(file);
                 Assert.Equal("test.txt", file.Path);
-                string content = storage.GetFileContents("test.txt");
+                string content = await storage.GetFileContentsAsync("test.txt");
                 Assert.Equal("test", content);
-                storage.RenameFile("test.txt", "new.txt");
-                Assert.True(storage.GetFileList().Any(f => f.Path == "new.txt"));
-                storage.DeleteFile("new.txt");
-                Assert.Equal(0, storage.GetFileList().Count());
+                await storage.RenameFileAsync("test.txt", "new.txt");
+                Assert.True((await storage.GetFileListAsync()).Any(f => f.Path == "new.txt"));
+                await storage.DeleteFileAsync("new.txt");
+                Assert.Equal(0, (await storage.GetFileListAsync()).Count());
             }
         }
 
         public virtual async Task CanSaveFilesAsync() {
-            Reset();
+            await ResetAsync();
 
             IFileStorage storage = GetStorage();
             if (storage == null)
@@ -96,7 +94,7 @@ namespace Foundatio.Tests.Storage {
                     Assert.True(result);
                 }
 
-                Assert.Equal(1, storage.GetFileList().Count());
+                Assert.Equal(1, (await storage.GetFileListAsync()).Count());
 
                 using (var stream = await storage.GetFileStreamAsync("README.md")) {
                     string result = await new StreamReader(stream).ReadToEndAsync();
@@ -105,24 +103,24 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected void Reset() {
+        protected async Task ResetAsync() {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             using (storage) {
-                var files = storage.GetFileList().ToList();
+                var files = (await storage.GetFileListAsync()).ToList();
                 if (files.Any())
                     Debug.WriteLine("Got files");
                 else
                     Debug.WriteLine("No files");
-                storage.DeleteFiles(files);
-                Assert.Equal(0, storage.GetFileList().Count());
+                await storage.DeleteFilesAsync(files);
+                Assert.Equal(0, (await storage.GetFileListAsync()).Count());
             }
         }
 
-        public virtual void CanConcurrentlyManageFiles() {
-            Reset();
+        public virtual async Task CanConcurrentlyManageFiles() {
+            await ResetAsync();
 
             IFileStorage storage = GetStorage();
             if (storage == null)
@@ -132,10 +130,10 @@ namespace Foundatio.Tests.Storage {
                 const string queueFolder = "q";
                 var queueItems = new BlockingCollection<int>();
 
-                var info = storage.GetFileInfo("nope");
+                var info = await storage.GetFileInfoAsync("nope");
                 Assert.Null(info);
 
-                Parallel.For(0, 10, i => {
+                Parallel.For(0, 10, async i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,
                         CharSet = "utf8",
@@ -146,21 +144,21 @@ namespace Foundatio.Tests.Storage {
                         ProjectId = i.ToString(),
                         UserAgent = "test"
                     };
-                    storage.SaveObject(Path.Combine(queueFolder, i + ".json"), ev);
+                    await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev);
                     queueItems.Add(i);
                 });
-                Assert.Equal(10, storage.GetFileList().Count());
+                Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
-                Parallel.For(0, 10, i => {
+                Parallel.For(0, 10, async i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
-                    var eventPost = storage.GetEventPostAndSetActive(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"));
+                    var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"));
                     if (eventPost == null)
                         return;
 
                     if (RandomData.GetBool()) {
-                        storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true);
+                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true);
                     } else
-                        storage.SetNotActive(path);
+                        await storage.SetNotActiveAsync(path);
                 });
             }
         }
@@ -178,14 +176,14 @@ namespace Foundatio.Tests.Storage {
     }
 
     public static class StorageExtensions {
-        public static PostInfo GetEventPostAndSetActive(this IFileStorage storage, string path) {
+        public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path) {
             PostInfo eventPostInfo = null;
             try {
-                eventPostInfo = storage.GetObject<PostInfo>(path);
+                eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
                 if (eventPostInfo == null)
                     return null;
 
-                if (!storage.Exists(path + ".x") && !storage.SaveFile(path + ".x", String.Empty))
+                if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
@@ -195,9 +193,9 @@ namespace Foundatio.Tests.Storage {
             return eventPostInfo;
         }
 
-        public static bool SetNotActive(this IFileStorage storage, string path) {
+        public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path) {
             try {
-                return storage.DeleteFile(path + ".x");
+                return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
             }
@@ -205,7 +203,7 @@ namespace Foundatio.Tests.Storage {
             return false;
         }
 
-        public static bool CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true) {
+        public static async Task<bool> CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true) {
             // don't move files that are already in the archive
             if (path.StartsWith("archive"))
                 return true;
@@ -214,10 +212,10 @@ namespace Foundatio.Tests.Storage {
 
             try {
                 if (shouldArchive) {
-                    if (!storage.RenameFile(path, archivePath))
+                    if (!await storage.RenameFileAsync(path, archivePath))
                         return false;
                 } else {
-                    if (!storage.DeleteFile(path))
+                    if (!await storage.DeleteFileAsync(path))
                         return false;
                 }
             } catch (Exception ex) {
@@ -225,10 +223,9 @@ namespace Foundatio.Tests.Storage {
                 return false;
             }
 
-            storage.SetNotActive(path);
+            await storage.SetNotActiveAsync(path);
 
             return true;
         }
-
     }
 }

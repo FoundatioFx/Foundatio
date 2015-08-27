@@ -7,9 +7,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Storage {
     public class AzureStorageTests : FileStorageTestsBase {
-        public AzureStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public AzureStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IFileStorage GetStorage() {
             if (ConnectionStrings.Get("AzureStorageConnectionString") == null)
@@ -19,13 +17,13 @@ namespace Foundatio.Azure.Tests.Storage {
         }
 
         [Fact]
-        public override void CanGetEmptyFileListOnMissingDirectory() {
-            base.CanGetEmptyFileListOnMissingDirectory();
+        public override Task CanGetEmptyFileListOnMissingDirectory() {
+            return base.CanGetEmptyFileListOnMissingDirectory();
         }
         
         [Fact]
-        public override void CanGetFileListForSingleFolder() {
-            base.CanGetFileListForSingleFolder();
+        public override Task CanGetFileListForSingleFolder() {
+            return base.CanGetFileListForSingleFolder();
         }
 
         [Fact]
@@ -34,13 +32,13 @@ namespace Foundatio.Azure.Tests.Storage {
         }
 
         [Fact]
-        public override void CanManageFiles() {
-            base.CanManageFiles();
+        public override Task CanManageFiles() {
+            return base.CanManageFiles();
         }
 
         [Fact]
-        public override void CanConcurrentlyManageFiles() {
-            base.CanConcurrentlyManageFiles();
+        public override Task CanConcurrentlyManageFiles() {
+            return base.CanConcurrentlyManageFiles();
         }
     }
 }

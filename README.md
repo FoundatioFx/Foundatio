@@ -170,8 +170,8 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 using Foundatio.Storage;
 
 IFileStorage storage = new InMemoryFileStorage();
-storage.SaveFile("test.txt", "test");
-string content = storage.GetFileContents("test.txt")
+await storage.SaveFileAsync("test.txt", "test");
+string content = await storage.GetFileContentsAsync("test.txt")
 ```
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Metrics)
