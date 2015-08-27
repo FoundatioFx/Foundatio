@@ -152,7 +152,7 @@ namespace Foundatio.Queues {
             if (!OnEnqueuing(data))
                 return null;
 
-            bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
+            bool success = await _cache.AddAsync(GetPayloadKey(id), data, _payloadTtl);
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
 
@@ -213,13 +213,13 @@ namespace Foundatio.Queues {
             if (value.IsNullOrEmpty)
                 return null;
 
-            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
+            await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
 
             try {
-                var payload = _cache.Get<T>(GetPayloadKey(value));
+                var payload = await _cache.GetAsync<T>(GetPayloadKey(value));
                 if (payload == null) {
                     Logger.Error().Message("Error getting queue payload: {0}", value).Write();
-                    _db.ListRemove(WorkListName, value);
+                    await _db.ListRemoveAsync(WorkListName, value);
                     return null;
                 }
 
@@ -253,7 +253,7 @@ namespace Foundatio.Queues {
 
         public override async Task AbandonAsync(IQueueEntryMetadata entry) {
             Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, entry.Id).Write();
-            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(entry.Id));
+            var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(entry.Id));
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
@@ -266,7 +266,7 @@ namespace Foundatio.Queues {
                 await _db.ListRemoveAsync(WorkListName, entry.Id);
                 await _db.ListLeftPushAsync(DeadListName, entry.Id);
                 await _db.KeyExpireAsync(GetPayloadKey(entry.Id), _deadLetterTtl);
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
             } else if (retryDelay > TimeSpan.Zero) {
                 Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
                 var tx = _db.CreateTransaction();
@@ -276,8 +276,8 @@ namespace Foundatio.Queues {
                 if (!success)
                     throw new Exception("Unable to move item to wait list.");
 
-                _cache.Set(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                await _cache.SetAsync(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
             } else {
                 Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
                 var tx = _db.CreateTransaction();
@@ -287,7 +287,7 @@ namespace Foundatio.Queues {
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
                 await _subscriber.PublishAsync(GetTopicName(), entry.Id);
             }
 
@@ -387,11 +387,11 @@ namespace Foundatio.Queues {
             try {
                 var workIds = await _db.ListRangeAsync(WorkListName);
                 foreach (var workId in workIds) {
-                    var dequeuedTimeTicks = _cache.Get<long?>(GetDequeuedTimeKey(workId));
+                    var dequeuedTimeTicks = await _cache.GetAsync<long?>(GetDequeuedTimeKey(workId));
 
                     // dequeue time should be set, use current time
                     if (!dequeuedTimeTicks.HasValue) {
-                        _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
+                        await _cache.SetAsync(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
                         continue;
                     }
 
@@ -410,9 +410,9 @@ namespace Foundatio.Queues {
             }
 
             try {
-                var waitIds = _db.ListRange(WaitListName);
+                var waitIds = await _db.ListRangeAsync(WaitListName);
                 foreach (var waitId in waitIds) {
-                    var waitTimeTicks = _cache.Get<long?>(GetWaitTimeKey(waitId));
+                    var waitTimeTicks = await _cache.GetAsync<long?>(GetWaitTimeKey(waitId));
                     Logger.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
 
                     if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)
@@ -444,9 +444,11 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async Task DoMaintenanceWorkAsync(object state) {
+        private Task DoMaintenanceWorkAsync(object state) {
             Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
             _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync(), acquireTimeout: TimeSpan.Zero);
+
+            return Task.FromResult(0);
         }
 
         public override void Dispose() {

@@ -48,8 +48,8 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 using Foundatio.Caching;
 
 ICacheClient cache = new InMemoryCacheClient();
-cache.Set("test", 1);
-var value = cache.Get<int>("test");
+await cache.SetAsync("test", 1);
+var value = await cache.GetAsync<int>("test");
 ```
 
 ### [Queues](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Queues)

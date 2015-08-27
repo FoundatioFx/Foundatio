@@ -222,10 +222,10 @@
 //            }
 
 //            Logger.Trace().Message("Got item lock: {0}", value).Write();
-//            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
+//            _await cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
 
 //            try {
-//                var payload = _cache.Get<T>(GetPayloadKey(value));
+//                var payload = _await cache.GetAsync<T>(GetPayloadKey(value));
 //                if (payload == null) {
 //                    _db.ListRemove(WorkListName, value);
 //                    return null;
@@ -286,10 +286,10 @@
 //            }
 
 //            Logger.Trace().Message("Got item lock: {0}", value).Write();
-//            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
+//            _await cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow, GetDequeuedTimeTtl());
 
 //            try {
-//                var payload = _cache.Get<T>(GetPayloadKey(value));
+//                var payload = _await cache.GetAsync<T>(GetPayloadKey(value));
 //                if (payload == null) {
 //                    _db.ListRemove(WorkListName, value);
 //                    return null;
@@ -341,7 +341,7 @@
 //                if (!success)
 //                    throw new Exception("Unable to move item to wait list.");
 
-//                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay), GetWaitTimeTtl());
+//                _await cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay), GetWaitTimeTtl());
 //                _db.StringIncrement(GetAttemptsKey(id));
 //                _db.KeyExpire(GetAttemptsKey(id), GetAttemptsTtl());
 //            } else {
@@ -449,11 +449,11 @@
 
 //            var workIds = _db.ListRange(WorkListName);
 //            foreach (var workId in workIds) {
-//                var dequeuedTime = _cache.Get<DateTime?>(GetDequeuedTimeKey(workId));
+//                var dequeuedTime = _await cache.GetAsync<DateTime?>(GetDequeuedTimeKey(workId));
 
 //                // dequeue time should be set, use current time
 //                if (!dequeuedTime.HasValue) {
-//                    _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow, GetDequeuedTimeTtl());
+//                    _await cache.SetAsync(GetDequeuedTimeKey(workId), DateTime.UtcNow, GetDequeuedTimeTtl());
 //                    continue;
 //                }
 
@@ -472,7 +472,7 @@
 
 //            var waitIds = _db.ListRange(WaitListName);
 //            foreach (var waitId in waitIds) {
-//                var waitTime = _cache.Get<DateTime?>(GetWaitTimeKey(waitId));
+//                var waitTime = _await cache.GetAsync<DateTime?>(GetWaitTimeKey(waitId));
 //                Logger.Trace().Message("Wait time: {0}", waitTime).Write();
 
 //                if (waitTime.HasValue && waitTime.Value > DateTime.UtcNow)

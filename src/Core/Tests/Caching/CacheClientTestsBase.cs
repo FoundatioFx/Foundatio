@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -11,21 +12,21 @@ namespace Foundatio.Tests.Caching {
             return null;
         }
 
-        public virtual void CanSetAndGetValue() {
+        public virtual async Task CanSetAndGetValue() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
             using (cache) {
-                cache.FlushAll();
+                await cache.RemoveAllAsync();
 
-                cache.Set("test", 1);
-                var value = cache.Get<int>("test");
+                await cache.SetAsync("test", 1);
+                var value = await cache.GetAsync<int>("test");
                 Assert.Equal(1, value);
             }
         }
 
-        public virtual void CanUseScopedCaches() {
+        public virtual async Task CanUseScopedCaches() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -35,70 +36,69 @@ namespace Foundatio.Tests.Caching {
                 var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
                 var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
 
-                cache.Set("test", 1);
-                scopedCache1.Set("test", 2);
-                nestedScopedCache1.Set("test", 3);
+                await cache.SetAsync("test", 1);
+                await scopedCache1.SetAsync("test", 2);
+                await nestedScopedCache1.SetAsync("test", 3);
 
-                Assert.Equal(1, cache.Get<int>("test"));
-                Assert.Equal(2, scopedCache1.Get<int>("test"));
-                Assert.Equal(3, nestedScopedCache1.Get<int>("test"));
+                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.Equal(2, await scopedCache1.GetAsync<int>("test"));
+                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test"));
 
-                Assert.Equal(3, scopedCache1.Get<int>("nested:test"));
-                Assert.Equal(3, cache.Get<int>("scoped1:nested:test"));
+                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test"));
+                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test"));
 
-                scopedCache2.Set("test", 1);
+                await scopedCache2.SetAsync("test", 1);
 
-                scopedCache1.FlushAll();
-                Assert.Null(scopedCache1.Get<int?>("test"));
-                Assert.Null(nestedScopedCache1.Get<int?>("test"));
-                Assert.Equal(1, cache.Get<int>("test"));
-                Assert.Equal(1, scopedCache2.Get<int>("test"));
+                await scopedCache1.RemoveAllAsync();
+                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
+                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
+                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.Equal(1, await scopedCache2.GetAsync<int>("test"));
 
-                scopedCache2.FlushAll();
-                Assert.Null(scopedCache1.Get<int?>("test"));
-                Assert.Null(nestedScopedCache1.Get<int?>("test"));
-                Assert.Null(scopedCache2.Get<int?>("test"));
-                Assert.Equal(1, cache.Get<int>("test"));
+                await scopedCache2.RemoveAllAsync();
+                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
+                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
+                Assert.Null(await scopedCache2.GetAsync<int?>("test"));
+                Assert.Equal(1, await cache.GetAsync<int>("test"));
             }
         }
 
 
-        public virtual void CanRemoveByPrefix()
-        {
+        public virtual async Task CanRemoveByPrefix() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
             using (cache) {
-                cache.FlushAll();
+                await cache.RemoveAllAsync();
                 
                 string prefix = "blah:";
-                cache.Set("test", 1);
-                cache.Set(prefix + "test", 1);
-                cache.Set(prefix + "test2", 4);
-                Assert.Equal(1, cache.Get<int>(prefix + "test"));
-                Assert.Equal(1, cache.Get<int>("test"));
+                await cache.SetAsync("test", 1);
+                await cache.SetAsync(prefix + "test", 1);
+                await cache.SetAsync(prefix + "test2", 4);
+                Assert.Equal(1, await cache.GetAsync<int>(prefix + "test"));
+                Assert.Equal(1, await cache.GetAsync<int>("test"));
 
-                cache.RemoveByPrefix(prefix);
-                Assert.Null(cache.Get<int?>(prefix + "test"));
-                Assert.Null(cache.Get<int?>(prefix + "test2"));
-                Assert.Equal(1, cache.Get<int>("test"));
+                await cache.RemoveByPrefixAsync(prefix);
+                Assert.Null(await cache.GetAsync<int?>(prefix + "test"));
+                Assert.Null(await cache.GetAsync<int?>(prefix + "test2"));
+                Assert.Equal(1, await cache.GetAsync<int>("test"));
             }
         }
 
-        public virtual void CanSetAndGetObject() {
+        public virtual async Task CanSetAndGetObject() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
             using (cache) {
-                cache.FlushAll();
+                await cache.RemoveAllAsync();
 
                 var dt = DateTimeOffset.Now;
                 var value = new MyData {Type = "test", Date = dt, Message = "Hello World"};
-                cache.Set("test", value);
+                await cache.SetAsync("test", value);
                 value.Type = "modified";
-                var cachedValue = cache.Get<MyData>("test");
+                var cachedValue = await cache.GetAsync<MyData>("test");
                 Assert.NotNull(cachedValue);
                 Assert.Equal(dt, cachedValue.Date);
                 Assert.False(value.Equals(cachedValue), "Should not be same reference object.");
@@ -107,27 +107,27 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual void CanSetExpiration() {
+        public virtual async Task CanSetExpiration() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
             using (cache) {
-                cache.FlushAll();
+                await cache.RemoveAllAsync();
 
                 var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
-                var success = cache.Set("test", 1, expiresAt);
+                var success = await cache.SetAsync("test", 1, expiresAt);
                 Assert.True(success);
-                success = cache.Set("test2", 1, expiresAt.AddMilliseconds(100));
+                success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
                 Assert.True(success);
-                Assert.Equal(1, cache.Get<int?>("test"));
-                Assert.True(cache.GetExpiration("test").Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
+                Assert.Equal(1, await cache.GetAsync<int?>("test"));
+                Assert.True((await cache.GetExpirationAsync("test")).Value.Subtract(expiresAt) < TimeSpan.FromSeconds(1));
 
                 Thread.Sleep(500);
-                Assert.Null(cache.Get<int?>("test"));
-                Assert.Null(cache.GetExpiration("test"));
-                Assert.Null(cache.Get<int?>("test2"));
-                Assert.Null(cache.GetExpiration("test2"));
+                Assert.Null(await cache.GetAsync<int?>("test"));
+                Assert.Null(await cache.GetExpirationAsync("test"));
+                Assert.Null(await cache.GetAsync<int?>("test2"));
+                Assert.Null(await cache.GetExpirationAsync("test2"));
             }
         }
 

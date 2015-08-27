@@ -36,11 +36,11 @@ namespace Foundatio.Lock {
 
                 try {
                     Logger.Trace().Message("Current time: {0} throttle: {1}", now.ToString("mm:ss.fff"), now.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
-                    var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
+                    var hitCount = await _cacheClient.GetAsync<long?>(cacheKey) ?? 0;
                     Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
 
                     if (hitCount <= _maxHitsPerPeriod - 1) {
-                        hitCount = _cacheClient.Increment(cacheKey, 1, now.Ceiling(_throttlingPeriod));
+                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, now.Ceiling(_throttlingPeriod));
                         
                         // make sure some didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
@@ -88,7 +88,7 @@ namespace Foundatio.Lock {
 
         public bool IsLocked(string name) {
             string cacheKey = GetCacheKey(name, DateTime.UtcNow);
-            var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
+            var hitCount = await _cacheClient.GetAsync<long?>(cacheKey) ?? 0;
 
             return hitCount >= _maxHitsPerPeriod;
         }

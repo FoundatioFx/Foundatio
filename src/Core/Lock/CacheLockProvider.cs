@@ -44,9 +44,9 @@ namespace Foundatio.Lock {
                 var now = DateTime.UtcNow;
                 bool gotLock = false;
                 if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = _cacheClient.Add(cacheKey, now);
+                    gotLock = await _cacheClient.AddAsync(cacheKey, now);
                 else
-                    gotLock = _cacheClient.Add(cacheKey, now, lockTimeout.Value);
+                    gotLock = await _cacheClient.AddAsync(cacheKey, now, lockTimeout.Value);
 
                 if (gotLock) {
                     allowLock = true;
@@ -54,7 +54,7 @@ namespace Foundatio.Lock {
                 }
 
                 Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
-                var keyExpiration = _cacheClient.GetExpiration(cacheKey) ?? now.AddSeconds(1);
+                var keyExpiration = await _cacheClient.GetExpirationAsync(cacheKey) ?? now.AddSeconds(1);
                 if (keyExpiration < DateTime.UtcNow)
                     keyExpiration = DateTime.UtcNow;
 
@@ -79,12 +79,12 @@ namespace Foundatio.Lock {
 
         public bool IsLocked(string name) {
             string cacheKey = GetCacheKey(name);
-            return _cacheClient.Get<object>(cacheKey) != null;
+            return await _cacheClient.GetAsync<object>(cacheKey) != null;
         }
 
         public void ReleaseLock(string name) {
             Logger.Trace().Message("ReleaseLock: {0}", name).Write();
-            _cacheClient.Remove(GetCacheKey(name));
+            await _cacheClient.RemoveAsync(GetCacheKey(name));
             _messageBus.Publish(new CacheLockReleased { Name = name });
         }
 

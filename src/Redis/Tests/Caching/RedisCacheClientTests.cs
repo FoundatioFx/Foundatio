@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Metrics;
 using Foundatio.Tests.Caching;
@@ -20,68 +21,68 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override void CanSetAndGetValue() {
-            base.CanSetAndGetValue();
+        public override Task CanSetAndGetValue() {
+            return base.CanSetAndGetValue();
         }
 
         [Fact]
-        public override void CanSetAndGetObject() {
-            base.CanSetAndGetObject();
+        public override Task CanSetAndGetObject() {
+            return base.CanSetAndGetObject();
         }
 
         [Fact]
-        public override void CanSetExpiration() {
-            base.CanSetExpiration();
+        public override Task CanSetExpiration() {
+            return base.CanSetExpiration();
         }
 
 
         [Fact]
-        public override void CanRemoveByPrefix() {
-            base.CanRemoveByPrefix();
+        public override Task CanRemoveByPrefix() {
+            return base.CanRemoveByPrefix();
         }
 
         [Fact]
-        public override void CanUseScopedCaches() {
-            base.CanUseScopedCaches();
+        public override Task CanUseScopedCaches() {
+            return base.CanUseScopedCaches();
         }
 
         [Fact]
-        public void MeasureThroughput() {
+        public async Task MeasureThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
-                cacheClient.Set("test", 13422);
-                cacheClient.Set("flag", true);
-                Assert.Equal(13422, cacheClient.Get<int>("test"));
-                Assert.Null(cacheClient.Get<int?>("test2"));
-                Assert.True(cacheClient.Get<bool>("flag"));
+                await cacheClient.SetAsync("test", 13422);
+                await cacheClient.SetAsync("flag", true);
+                Assert.Equal(13422, await cacheClient.GetAsync<int>("test"));
+                Assert.Null(await cacheClient.GetAsync<int?>("test2"));
+                Assert.True(await cacheClient.GetAsync<bool>("flag"));
                 metrics.Counter("work");
             }
             metrics.DisplayStats(_writer);
         }
 
         [Fact]
-        public void MeasureSerializerSimpleThroughput() {
+        public async Task MeasureSerializerSimpleThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
-                cacheClient.Set("test", new SimpleModel {
+                await cacheClient.SetAsync("test", new SimpleModel {
                     Data1 = "Hello",
                     Data2 = 12
                 });
-                var model = cacheClient.Get<SimpleModel>("test");
+                var model = await cacheClient.GetAsync<SimpleModel>("test");
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
@@ -91,17 +92,17 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public void MeasureSerializerComplexThroughput() {
+        public async Task MeasureSerializerComplexThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
-                cacheClient.Set("test", new ComplexModel {
+                await cacheClient.SetAsync("test", new ComplexModel {
                     Data1 = "Hello",
                     Data2 = 12,
                     Data3 = true,
@@ -109,7 +110,7 @@ namespace Foundatio.Redis.Tests.Caching {
                     Simples = new List<SimpleModel> { new SimpleModel { Data1 = "hey", Data2 = 45 }, new SimpleModel { Data1 = "next", Data2 = 3423 } },
                     DictionarySimples = new Dictionary<string, SimpleModel> { { "sdf", new SimpleModel { Data1 = "Sachin" } } }
                 });
-                var model = cacheClient.Get<SimpleModel>("test");
+                var model = await cacheClient.GetAsync<SimpleModel>("test");
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
