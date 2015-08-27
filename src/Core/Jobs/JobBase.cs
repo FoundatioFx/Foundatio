@@ -58,11 +58,7 @@ namespace Foundatio.Jobs {
         }
 
         protected abstract Task<JobResult> RunInternalAsync(CancellationToken token);
-
-        public JobResult Run(CancellationToken token = default(CancellationToken)) {
-            return RunAsync(token).Result;
-        }
-
+        
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
 
@@ -98,11 +94,7 @@ namespace Foundatio.Jobs {
 
             Thread.Sleep(1); // allow events to process
         }
-
-        public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
-            RunContinuousAsync(delay, iterationLimit, token).Wait();
-        }
-
+        
         public virtual void Dispose() {}
     }
 }

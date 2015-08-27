@@ -12,17 +12,15 @@ namespace Foundatio.Messaging {
         private CancellationTokenSource _maintenanceCancellationTokenSource;
         private readonly Timer _maintenanceTimer;
 
-        public abstract void Publish(Type messageType, object message, TimeSpan? delay = null);
+        public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
 
         protected void AddDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException("message");
 
-            lock (_lock)
-            {
+            lock (_lock) {
                 var sendTime = DateTime.UtcNow.Add(delay);
-                _delayedMessages.Add(new DelayedMessage
-                {
+                _delayedMessages.Add(new DelayedMessage {
                     Message = message,
                     MessageType = messageType,
                     SendTime = sendTime
@@ -32,8 +30,7 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private void ScheduleNextMaintenance(DateTime value)
-        {
+        private void ScheduleNextMaintenance(DateTime value) {
             Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
             if (value == DateTime.MaxValue)
                 return;
@@ -51,8 +48,8 @@ namespace Foundatio.Messaging {
         }
 
         private readonly object _lock = new object();
-        private void DoMaintenance()
-        {
+
+        private void DoMaintenance() {
             Logger.Trace().Message("DoMaintenance").Write();
             if (_delayedMessages == null || _delayedMessages.Count == 0)
                 return;
@@ -61,8 +58,7 @@ namespace Foundatio.Messaging {
             var now = DateTime.UtcNow;
             var messagesToSend = new List<DelayedMessage>();
 
-            foreach (var message in _delayedMessages)
-            {
+            foreach (var message in _delayedMessages) {
                 if (message.SendTime <= now)
                     messagesToSend.Add(message);
                 else if (message.SendTime < nextMessageSendTime)
@@ -74,13 +70,11 @@ namespace Foundatio.Messaging {
             if (messagesToSend.Count == 0)
                 return;
 
-            lock (_lock)
-            {
-                foreach (var message in messagesToSend)
-                {
+            lock (_lock) {
+                foreach (var message in messagesToSend) {
                     Logger.Trace().Message("DoMaintenance Send Delayed: {0}", message.MessageType).Write();
                     _delayedMessages.Remove(message);
-                    Publish(message.MessageType, message.Message);
+                    await PublishAsync(message.MessageType, message.Message);
                 }
             }
         }

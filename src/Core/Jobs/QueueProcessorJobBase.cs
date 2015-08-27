@@ -39,7 +39,7 @@ namespace Foundatio.Jobs {
 
             using (lockValue) {
                 try {
-                    var result = await ProcessQueueItem(queueEntry);
+                    var result = await ProcessQueueItemAsync(queueEntry);
 
                     if (!AutoComplete)
                         return result;
@@ -60,11 +60,7 @@ namespace Foundatio.Jobs {
         protected virtual IDisposable GetQueueItemLock(QueueEntry<T> queueEntry) {
             return Disposable.Empty;
         }
-
-        public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
-            RunUntilEmptyAsync(cancellationToken).WaitWithoutException(cancellationToken);
-        }
-
+        
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             await RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () => {
                 var stats = await _queue.GetQueueStatsAsync();
@@ -73,11 +69,10 @@ namespace Foundatio.Jobs {
             });
         }
 
-        protected abstract Task<JobResult> ProcessQueueItem(QueueEntry<T> queueEntry);
+        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry);
     }
 
     public interface IQueueProcessorJob : IDisposable {
-        void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken));
         Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken));
     }
 }

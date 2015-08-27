@@ -14,22 +14,22 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> ProcessQueueItem(QueueEntry<SampleQueueWorkItem> queueEntry) {
-            _metrics.Counter("dequeued");
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry) {
+            await _metrics.CounterAsync("dequeued");
 
             if (RandomData.GetBool(10)) {
-                _metrics.Counter("errors");
+                await _metrics.CounterAsync("errors");
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                _metrics.Counter("abandoned");
+                await _metrics.CounterAsync("abandoned");
                 await queueEntry.AbandonAsync();
                 return JobResult.FailedWithMessage("Abandoned");
             }
 
             await queueEntry.CompleteAsync();
-            _metrics.Counter("completed");
+            await _metrics.CounterAsync("completed");
 
             return JobResult.Success;
         }
@@ -40,34 +40,29 @@ namespace Foundatio.Tests.Jobs {
         public DateTime Created { get; set; }
     }
 
-    public class SampleJob : JobBase
-    {
+    public class SampleJob : JobBase {
         private readonly IMetricsClient _metrics;
 
-        public SampleJob(IMetricsClient metrics)
-        {
+        public SampleJob(IMetricsClient metrics) {
             _metrics = metrics;
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token)
-        {
-            _metrics.Counter("runs");
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
+            await _metrics.CounterAsync("runs");
 
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("errors");
+            if (RandomData.GetBool(10)) {
+                await _metrics.CounterAsync("errors");
                 throw new ApplicationException("Boom!");
             }
 
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("failed");
-                return Task.FromResult(JobResult.FailedWithMessage("Failed"));
+            if (RandomData.GetBool(10)) {
+                await _metrics.CounterAsync("failed");
+                return JobResult.FailedWithMessage("Failed");
             }
 
-            _metrics.Counter("completed");
+            await _metrics.CounterAsync("completed");
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 }

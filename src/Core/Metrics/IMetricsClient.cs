@@ -8,20 +8,7 @@ namespace Foundatio.Metrics {
         Task TimerAsync(string statName, long milliseconds);
     }
 
-    public static class MetricsClientExtensions
-    {
-        public static void Counter(this IMetricsClient client, string statName, int value = 1) {
-            client.CounterAsync(statName, value).Wait();
-        }
-
-        public static void Gauge(this IMetricsClient client, string statName, double value) {
-            client.GaugeAsync(statName, value).Wait();
-        }
-
-        public static void Timer(this IMetricsClient client, string statName, long milliseconds) {
-            client.TimerAsync(statName, milliseconds).Wait();
-        }
-
+    public static class MetricsClientExtensions {
         public static IDisposable StartTimer(this IMetricsClient client, string statName) {
             return new MetricTimer(statName, client);
         }

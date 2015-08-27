@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
@@ -52,17 +54,17 @@ namespace Foundatio.Messaging {
             }
         }
 
-        public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             var brokeredMessage = new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
             }
 
-            _topicClient.Send(brokeredMessage);
+            return _topicClient.SendAsync(brokeredMessage);
         }
 
-        public void Subscribe<T>(Action<T> handler) where T : class {
+        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
                 Action = m => {

@@ -115,11 +115,11 @@ using Foundatio.Messaging;
 IMessageBus messageBus = new InMemoryMessageBus();
 
 using (messageBus) {
-  messageBus.Subscribe<SimpleMessageA>(msg => {
+  await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
     // Got message
   });
   
-  messageBus.Publish(new SimpleMessageA {
+  await messageBus.PublishAsync(new SimpleMessageA {
       Data = "Hello"
   });
 }
@@ -193,7 +193,7 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 #### Sample
 
 ```csharp
-metrics.Counter("c1");
+await metrics.CounterAsync("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
 ```

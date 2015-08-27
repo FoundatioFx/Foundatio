@@ -20,7 +20,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public void CanRunWorkItem() {
+        public async Task CanRunWorkItem() {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
@@ -36,15 +36,15 @@ namespace Foundatio.Tests.Jobs {
                 }
             });
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
-            messageBus.Subscribe<WorkItemStatus>(status => {
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
 
-            job.RunUntilEmpty();
+            await job.RunUntilEmptyAsync();
 
             Assert.Equal(12, statusCount);
         }
@@ -80,12 +80,11 @@ namespace Foundatio.Tests.Jobs {
             });
 
             for (int i = 0; i < 100; i++)
-                queue.Enqueue(new MyWorkItem { SomeData = "Test", Index = i }, true);
+                await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test", Index = i }, true);
             
             var completedItems = new List<string>();
             object completedItemsLock = new object();
-            messageBus.Subscribe<WorkItemStatus>(status =>
-            {
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 if (status.Progress < 100)
                     return;
 
@@ -112,7 +111,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public void CanRunWorkItemWithClassHandler() {
+        public async Task CanRunWorkItemWithClassHandler() {
             ServiceProvider.SetServiceProvider(typeof(MyBootstrappedServiceProvider));
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
@@ -121,21 +120,21 @@ namespace Foundatio.Tests.Jobs {
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
-            messageBus.Subscribe<WorkItemStatus>(status => {
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
 
-            job.RunUntilEmpty();
+            await job.RunUntilEmptyAsync();
 
             Assert.Equal(12, statusCount);
         }
 
         [Fact]
-        public void CanRunBadWorkItem() {
+        public async Task CanRunBadWorkItem() {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
@@ -147,15 +146,15 @@ namespace Foundatio.Tests.Jobs {
                 throw new ApplicationException();
             });
 
-            var jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
 
             int statusCount = 0;
-            messageBus.Subscribe<WorkItemStatus>(status => {
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
 
-            job.RunUntilEmpty();
+            await job.RunUntilEmptyAsync();
             Thread.Sleep(1);
 
             Assert.Equal(1, statusCount);
@@ -166,9 +165,9 @@ namespace Foundatio.Tests.Jobs {
                 return TaskHelper.Completed();
             });
 
-            jobId = queue.Enqueue(new MyWorkItem { SomeData = "Test" }, true);
+            jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
 
-            job.RunUntilEmpty();
+            await job.RunUntilEmptyAsync();
 
             Assert.Equal(2, statusCount);
         }

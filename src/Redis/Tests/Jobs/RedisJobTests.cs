@@ -9,9 +9,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Jobs {
     public class RedisJobTests : CaptureTests {
-        public RedisJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public RedisJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
         public async Task CanRunQueueJob() {
@@ -28,7 +26,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             });
 
             var job = new SampleQueueJob(queue, metrics);
-            job.RunUntilEmpty();
+            await job.RunUntilEmptyAsync();
             metrics.DisplayStats();
 
             Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);

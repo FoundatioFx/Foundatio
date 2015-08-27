@@ -15,7 +15,7 @@ namespace Foundatio.Jobs {
             _handlers = handlers;
         }
 
-        protected async override Task<JobResult> ProcessQueueItem(QueueEntry<WorkItemData> queueEntry) {
+        protected async override Task<JobResult> ProcessQueueItemAsync(QueueEntry<WorkItemData> queueEntry) {
             var workItemDataType = Type.GetType(queueEntry.Value.Type);
             if (workItemDataType == null)
                 return JobResult.FailedWithMessage("Could not resolve work item data type.");
@@ -31,7 +31,7 @@ namespace Foundatio.Jobs {
             if (handler == null)
                 return JobResult.FailedWithMessage("Handler for type {0} not registered.", workItemDataType.Name);
 
-            var progressCallback = new Action<int, string>((progress, message) => _messageBus.Publish(new WorkItemStatus {
+            var progressCallback = new Action<int, string>(async (progress, message) => await _messageBus.PublishAsync(new WorkItemStatus {
                 WorkItemId = queueEntry.Value.WorkItemId,
                 Progress = progress,
                 Message = message,
@@ -39,7 +39,7 @@ namespace Foundatio.Jobs {
             }));
 
             if (queueEntry.Value.SendProgressReports)
-                _messageBus.Publish(new WorkItemStatus {
+                await _messageBus.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,
                     Progress = 0,
                     Type = queueEntry.Value.Type
@@ -54,7 +54,7 @@ namespace Foundatio.Jobs {
 
             await queueEntry.CompleteAsync();
             if (queueEntry.Value.SendProgressReports)
-                _messageBus.Publish(new WorkItemStatus {
+                await _messageBus.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,
                     Progress = 100,
                     Type = queueEntry.Value.Type

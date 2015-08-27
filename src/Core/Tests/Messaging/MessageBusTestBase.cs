@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
@@ -17,21 +18,21 @@ namespace Foundatio.Tests.Messaging {
             return null;
         }
 
-        public virtual void CanSendMessage() {
+        public virtual async Task CanSendMessage() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                     Logger.Trace().Message("Set event").Write();
                 });
                 Thread.Sleep(100);
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
                 Trace.WriteLine("Published one...");
@@ -44,14 +45,14 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void CanSendDelayedMessage() {
+        public virtual async Task CanSendDelayedMessage() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
@@ -60,7 +61,7 @@ namespace Foundatio.Tests.Messaging {
 
                 var sw = new Stopwatch();
                 sw.Start();
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 }, TimeSpan.FromMilliseconds(100));
                 Logger.Trace().Message("Published one...").Write();
@@ -76,26 +77,26 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void CanSendMessageToMultipleSubscribers() {
+        public virtual async Task CanSendMessageToMultipleSubscribers() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var latch = new CountDownLatch(3);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
 
@@ -106,25 +107,25 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void CanTolerateSubscriberFailure() {
+        public virtual async Task CanTolerateSubscriberFailure() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var latch = new CountDownLatch(2);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     throw new ApplicationException();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
 
@@ -135,21 +136,21 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void WillOnlyReceiveSubscribedMessageType() {
+        public virtual async Task WillOnlyReceiveSubscribedMessageType() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
-                messageBus.Subscribe<SimpleMessageB>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
 
@@ -160,24 +161,24 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void WillReceiveDerivedMessageTypes() {
+        public virtual async Task WillReceiveDerivedMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var latch = new CountDownLatch(2);
-                messageBus.Subscribe<ISimpleMessage>(msg => {
+                await messageBus.SubscribeAsync<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
-                messageBus.Publish(new SimpleMessageB {
+                await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
                 });
-                messageBus.Publish(new SimpleMessageC {
+                await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
                 });
 
@@ -188,23 +189,23 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void CanSubscribeToAllMessageTypes() {
+        public virtual async Task CanSubscribeToAllMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
                 var latch = new CountDownLatch(3);
-                messageBus.Subscribe<object>(msg => {
+                await messageBus.SubscribeAsync<object>(msg => {
                     latch.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
-                messageBus.Publish(new SimpleMessageB {
+                await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
                 });
-                messageBus.Publish(new SimpleMessageC {
+                await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
                 });
 
@@ -215,19 +216,19 @@ namespace Foundatio.Tests.Messaging {
             Thread.Sleep(50);
         }
 
-        public virtual void WontKeepMessagesWithNoSubscribers() {
+        public virtual async Task WontKeepMessagesWithNoSubscribers() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
 
                 Thread.Sleep(1000);
                 var resetEvent = new AutoResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });

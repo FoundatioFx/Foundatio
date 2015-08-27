@@ -254,10 +254,10 @@ namespace Foundatio.Queues {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
         }
 
-        private void DoMaintenance() {
+        private async Task DoMaintenanceAsync() {
             Logger.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
 
             DateTime minAbandonAt = DateTime.MaxValue;
@@ -279,7 +279,7 @@ namespace Foundatio.Queues {
             foreach (var key in abandonedKeys) {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
                 var info = _dequeued[key];
-                AbandonAsync(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts)).Wait();
+                await AbandonAsync(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts));
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
         }

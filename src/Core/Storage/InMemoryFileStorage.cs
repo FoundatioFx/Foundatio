@@ -123,21 +123,20 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
             if (limit.HasValue && limit.Value <= 0)
-                return new List<FileSpec>();
+                return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 
             if (searchPattern == null)
                 searchPattern = "*";
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock)
-                return _storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList();
+                return Task.FromResult<IEnumerable<FileSpec>>(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList());
         }
 
         public void Dispose() {
-            if (_storage != null)
-                _storage.Clear();
+            _storage?.Clear();
         }
     }
 }

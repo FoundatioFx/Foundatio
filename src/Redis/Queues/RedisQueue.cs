@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
                 // min is 1 second, max is 1 minute
                 TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
                 _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
-                _maintenanceTimer = new Timer(t => DoMaintenanceWorkAsync().Wait(), null, TimeSpan.FromMilliseconds(250), interval);
+                _maintenanceTimer = new Timer(async t => await DoMaintenanceWorkAsync(), null, TimeSpan.FromMilliseconds(250), interval);
             }
 
             Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();

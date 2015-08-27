@@ -16,7 +16,7 @@ namespace Foundatio.Lock {
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
-            _messageBus.Subscribe<CacheLockReleased>(OnLockReleased);
+            _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleased);
         }
 
         private void OnLockReleased(CacheLockReleased msg) {
@@ -83,7 +83,7 @@ namespace Foundatio.Lock {
         public async Task ReleaseLockAsync(string name) {
             Logger.Trace().Message("ReleaseLock: {0}", name).Write();
             await _cacheClient.RemoveAsync(name);
-            _messageBus.Publish(new CacheLockReleased { Name = name });
+            await _messageBus.PublishAsync(new CacheLockReleased { Name = name });
         }
         
         public void Dispose() { }

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Logging;
 using StackExchange.Redis;
@@ -43,18 +45,18 @@ namespace Foundatio.Messaging {
             }
         }
 
-        public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 AddDelayedMessage(messageType, message, delay.Value);
-                return;
+                return Task.FromResult(0);
             }
 
             var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
-            _subscriber.Publish(_topic, data, CommandFlags.FireAndForget);
+            return _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget);
         }
 
-        public void Subscribe<T>(Action<T> handler) where T: class {
+        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),

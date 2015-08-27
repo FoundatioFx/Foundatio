@@ -102,8 +102,7 @@ namespace Foundatio.Metrics {
             });
             AsyncAutoResetEvent waitHandle;
             _counterEvents.TryGetValue(statName, out waitHandle);
-            if (waitHandle != null)
-                waitHandle.Set();
+            waitHandle?.Set();
 
             return TaskHelper.Completed();
         }

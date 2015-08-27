@@ -80,7 +80,14 @@
     <Compile Include="Lock\ILockProvider.cs" />
     <Compile Include="Extensions\LockProviderExtensions.cs" />
     <Compile Include="Lock\ThrottlingLockProvider.cs" />
+    <Compile Include="Logging\DisposeAction.cs" />
+    <Compile Include="Logging\ILogBuilder.cs" />
+    <Compile Include="Logging\LogBuilder.cs" />
+    <Compile Include="Logging\LogData.cs" />
     <Compile Include="Logging\Logger.cs" />
+    <Compile Include="Logging\LoggerExtensions.cs" />
+    <Compile Include="Logging\LogLevel.cs" />
+    <Compile Include="Logging\NullLogBuilder.cs" />
     <Compile Include="Messaging\IMessageBus.cs" />
     <Compile Include="Messaging\IMessagePublisher.cs" />
     <Compile Include="Messaging\IMessageSubscriber.cs" />

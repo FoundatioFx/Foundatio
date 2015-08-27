@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
@@ -9,7 +10,7 @@ namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
-        public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 AddDelayedMessage(messageType, message, delay.Value);
                 return;
@@ -26,7 +27,7 @@ namespace Foundatio.Messaging {
             });
         }
 
-        public void Subscribe<T>(Action<T> handler) where T: class {
+        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
                 Action = m => {

@@ -19,9 +19,9 @@ namespace Foundatio.Caching {
             _distributedCache = distributedCacheClient;
             _localCache.MaxItems = 100;
             _messageBus = messageBus;
-            _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache));
-            _localCache.ItemExpired += (sender, key) => {
-                _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
+            _messageBus.SubscribeAsync<InvalidateCache>(async cache => await OnMessageAsync(cache)).Wait();
+            _localCache.ItemExpired += async (sender, key) => {
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
                 Logger.Trace().Message("Item expired event: key={0}", key).Write();
             };
         }
@@ -53,13 +53,13 @@ namespace Foundatio.Caching {
         }
         
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, FlushAll = keys == null, Keys = keys.ToArray() });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = keys == null, Keys = keys.ToArray() });
             await _localCache.RemoveAllAsync(keys);
             return await _distributedCache.RemoveAllAsync(keys);
         }
 
         public async Task RemoveByPrefixAsync(string prefix) {
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { prefix + "*" } });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { prefix + "*" } });
             await _localCache.RemoveByPrefixAsync(prefix);
             await _distributedCache.RemoveByPrefixAsync(prefix);
         }
@@ -89,7 +89,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
             await _localCache.SetAsync(key, value, expiresIn);
             return await _distributedCache.SetAsync(key, value, expiresIn);
         }
@@ -98,13 +98,13 @@ namespace Foundatio.Caching {
             if (values == null)
                 return 0;
 
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() });
             await _localCache.SetAllAsync(values);
             return await _distributedCache.SetAllAsync(values);
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
             await _localCache.ReplaceAsync(key, value, expiresIn);
             return await _distributedCache.ReplaceAsync(key, value, expiresIn);
         }
@@ -118,7 +118,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
-            _messageBus.Publish(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } });
             await _localCache.RemoveAsync(key);
             await _distributedCache.SetExpirationAsync(key, expiresIn);
         }

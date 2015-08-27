@@ -12,7 +12,7 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override async Task<JobResult> ProcessQueueItem(QueueEntry<PingRequest> queueEntry) {
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<PingRequest> queueEntry) {
             RunCount++;
 
             Console.WriteLine("Pong!");

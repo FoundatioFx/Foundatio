@@ -62,7 +62,7 @@ namespace Foundatio.Redis.Tests.Caching {
                 Assert.Equal(13422, await cacheClient.GetAsync<int>("test"));
                 Assert.Null(await cacheClient.GetAsync<int?>("test2"));
                 Assert.True(await cacheClient.GetAsync<bool>("flag"));
-                metrics.Counter("work");
+                await metrics.CounterAsync("work");
             }
             metrics.DisplayStats(_writer);
         }
@@ -86,7 +86,7 @@ namespace Foundatio.Redis.Tests.Caching {
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                metrics.Counter("work");
+                await metrics.CounterAsync("work");
             }
             metrics.DisplayStats();
         }
@@ -114,7 +114,7 @@ namespace Foundatio.Redis.Tests.Caching {
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                metrics.Counter("work");
+                await metrics.CounterAsync("work");
             }
             metrics.DisplayStats();
         }

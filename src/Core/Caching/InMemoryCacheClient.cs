@@ -89,7 +89,7 @@ namespace Foundatio.Caching {
 
             lock (_lock) {
                 foreach (var key in expiredKeys) {
-                    this.RemoveAsync(key).Wait();
+                    await this.RemoveAsync(key);
                     OnItemExpired(key);
                     Logger.Trace().Message("Removing expired key: key={0}", key).Write();
                 }
@@ -214,11 +214,11 @@ namespace Foundatio.Caching {
 
             lock (_lock) {
                 CacheEntry entry;
-                if (TryGetAsync(key, out entry).Result)
+                if (await TryGetAsync(key, out entry))
                     return false;
 
                 entry = new CacheEntry(value, expiresAt);
-                SetAsync(key, entry).Wait();
+                await SetAsync(key, entry);
 
                 return true;
             }
@@ -273,21 +273,21 @@ namespace Foundatio.Caching {
             lock (_lockObject) {
                 if (!_memory.ContainsKey(key)) {
                     if (expiresIn.HasValue)
-                        SetAsync(key, amount, expiresIn.Value).Wait();
+                        await SetAsync(key, amount, expiresIn.Value);
                     else
-                        SetAsync(key, amount).Wait();
+                        await SetAsync(key, amount);
 
                     return amount;
                 }
 
-                var current = this.GetAsync<long>(key).Result;
+                var current = await this.GetAsync<long>(key);
                 if (amount == 0)
                     return current;
 
                 if (expiresIn.HasValue)
-                    SetAsync(key, current += amount, expiresIn.Value).Wait();
+                    await SetAsync(key, current += amount, expiresIn.Value);
                 else
-                    SetAsync(key, current += amount).Wait();
+                    await SetAsync(key, current += amount);
 
                 return current;
             }

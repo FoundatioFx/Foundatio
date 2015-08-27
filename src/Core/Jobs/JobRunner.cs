@@ -24,20 +24,16 @@ namespace Foundatio.Jobs {
     }
 
     public class JobRunner {
-        public static JobResult Run<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: JobBase {
-            return CreateJobInstance(typeof(T)).Run(cancellationToken);
-        }
-        
         public static Task<JobResult> RunAsync(Type jobType, CancellationToken cancellationToken = default(CancellationToken)) {
             return CreateJobInstance(jobType).RunAsync(cancellationToken);
         }
 
-        public static void RunUntilEmpty<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: IQueueProcessorJob {
+        public static Task RunUntilEmptyAsync<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: IQueueProcessorJob {
             var jobInstance = CreateJobInstance(typeof(T)) as IQueueProcessorJob;
             if (jobInstance == null)
                 throw new ArgumentException("Type T must derive from IQueueProcessorJob.");
 
-            jobInstance.RunUntilEmpty(cancellationToken);
+            return jobInstance.RunUntilEmptyAsync(cancellationToken);
         }
 
         public static async Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
