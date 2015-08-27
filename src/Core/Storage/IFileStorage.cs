@@ -66,5 +66,9 @@ namespace Foundatio.Storage {
                 }
             }
         }
+
+        public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents)));
+        }
     }
 }
