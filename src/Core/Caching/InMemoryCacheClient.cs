@@ -147,7 +147,7 @@ namespace Foundatio.Caching {
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            if (keys == null) {
+            if (keys == null || !keys.Any()) {
                 _memory.Clear();
                 return Task.FromResult(0);
             }
@@ -265,7 +265,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
-            if (expiresIn.HasValue && expiresIn.Value.Ticks < 0) {
+            if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key);
                 return -1;
             }
@@ -281,10 +281,14 @@ namespace Foundatio.Caching {
                 }
 
                 var current = this.GetAsync<long>(key).Result;
+                if (amount == 0)
+                    return current;
+
                 if (expiresIn.HasValue)
                     SetAsync(key, current += amount, expiresIn.Value).Wait();
                 else
                     SetAsync(key, current += amount).Wait();
+
                 return current;
             }
         }
