@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
+using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
@@ -52,7 +53,9 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanHandleMultipleWorkItemInstances()
         {
+            var metrics = new InMemoryMetricsClient();
             var queue = new InMemoryQueue<WorkItemData>(retryDelay: TimeSpan.Zero, retries: 0);
+            queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
             var j1 = new WorkItemJob(queue, messageBus, handlerRegistry);
@@ -75,7 +78,7 @@ namespace Foundatio.Tests.Jobs {
                     Interlocked.Increment(ref errors);
                     throw new ApplicationException("Boom!");
                 }
-
+                
                 return TaskHelper.Completed();
             });
 
@@ -93,7 +96,7 @@ namespace Foundatio.Tests.Jobs {
                     completedItems.Add(status.WorkItemId);
             });
             
-            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var token = cancellationTokenSource.Token;
             var tasks = new List<Task>();
             tasks.AddRange(new[] {
@@ -102,10 +105,8 @@ namespace Foundatio.Tests.Jobs {
                 Task.Run(async () => await j3.RunUntilEmptyAsync(token), token),
             });
 
-            await Task.WhenAny(tasks);
-            cancellationTokenSource.Cancel();
             await Task.WhenAll(tasks);
-            Thread.Sleep(1);
+            Thread.Sleep(10);
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
             Assert.Equal(100, jobIds.Sum(kvp => kvp.Value));

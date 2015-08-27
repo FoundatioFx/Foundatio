@@ -26,6 +26,21 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
+        public void CanCancelJob()
+        {
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var result = JobRunner.RunAsync(new JobRunOptions
+            {
+                JobTypeName = typeof(HelloWorldJob).AssemblyQualifiedName,
+                InstanceCount = 1,
+                Interval = null,
+                RunContinuous = true
+            }, cts.Token).Result;
+
+            Assert.Equal(0, result);
+        }
+
+        [Fact]
         public void CanRunJobs() {
             var job = new HelloWorldJob();
             Assert.Equal(0, job.RunCount);
