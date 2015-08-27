@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
@@ -15,13 +16,13 @@ namespace Foundatio.Lock {
             _maxHitsPerPeriod = maxHitsPerPeriod;
 
             if (maxHitsPerPeriod <= 0)
-                throw new ArgumentException("Must be a positive number.", "maxHitsPerPeriod");
+                throw new ArgumentException("Must be a positive number.", nameof(maxHitsPerPeriod));
             
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
+        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("AcquireLock: {0}", name).Write();
             if (!acquireTimeout.HasValue)
                 acquireTimeout = TimeSpan.FromMinutes(1);
@@ -86,14 +87,16 @@ namespace Foundatio.Lock {
             return new DisposableLock(name, this);
         }
 
-        public bool IsLocked(string name) {
+        public async Task<bool> IsLockedAsync(string name) {
             string cacheKey = GetCacheKey(name, DateTime.UtcNow);
             var hitCount = await _cacheClient.GetAsync<long?>(cacheKey) ?? 0;
 
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public void ReleaseLock(string name) {}
+        public Task ReleaseLockAsync(string name) {
+            return Task.FromResult(0);
+        }
 
         private string GetCacheKey(string name, DateTime now) {
             return String.Concat("throttling-lock:", name, ":", now.Floor(_throttlingPeriod).Ticks);

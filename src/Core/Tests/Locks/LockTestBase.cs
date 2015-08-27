@@ -21,28 +21,28 @@ namespace Foundatio.Tests {
             return null;
         }
 
-        public virtual void CanAcquireAndReleaseLock() {
+        public virtual async Task CanAcquireAndReleaseLock() {
             var locker = GetLockProvider();
             if (locker == null)
                 return;
 
             using (locker) {
-                locker.ReleaseLock("test");
+                await locker.ReleaseLockAsync("test");
 
-                using (var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                     Assert.NotNull(lock1);
-                    Assert.True(locker.IsLocked("test"));
-                    var lock2 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                    Assert.True(await locker.IsLockedAsync("test"));
+                    var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
                     Assert.Null(lock2);
                 }
 
-                Assert.False(locker.IsLocked("test"));
+                Assert.False(await locker.IsLockedAsync("test"));
 
                 int counter = 0;
-                Parallel.For(0, 25, i => {
-                    using (var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                Parallel.For(0, 25, async i => {
+                    using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                         Assert.NotNull(lock1);
-                        Assert.True(locker.IsLocked("test"));
+                        Assert.True(await locker.IsLockedAsync("test"));
                         Interlocked.Increment(ref counter);
                     }
                 });
@@ -51,20 +51,20 @@ namespace Foundatio.Tests {
             }
         }
 
-        public virtual void LockWillTimeout() {
+        public virtual async Task LockWillTimeout() {
             var locker = GetLockProvider();
             if (locker == null)
                 return;
 
             using (locker) {
-                locker.ReleaseLock("test");
+                await locker.ReleaseLockAsync("test");
 
-                var testLock = locker.AcquireLock("test", TimeSpan.FromSeconds(1));
+                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromSeconds(1));
                 Assert.NotNull(testLock);
-                var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
+                var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
                 Assert.Null(lock1);
 
-                testLock = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(2));
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2));
                 Assert.NotNull(testLock);
             }
         }

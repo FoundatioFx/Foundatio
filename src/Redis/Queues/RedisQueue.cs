@@ -446,9 +446,7 @@ namespace Foundatio.Queues {
 
         private Task DoMaintenanceWorkAsync(object state) {
             Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
-            _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync(), acquireTimeout: TimeSpan.Zero);
-
-            return Task.FromResult(0);
+            return _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync(), acquireTimeout: TimeSpan.Zero);
         }
 
         public override void Dispose() {

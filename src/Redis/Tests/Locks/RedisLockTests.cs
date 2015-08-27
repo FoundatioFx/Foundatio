@@ -1,4 +1,5 @@
-﻿using Foundatio.Lock;
+﻿using System.Threading.Tasks;
+using Foundatio.Lock;
 using Foundatio.Caching;
 using Foundatio.Tests;
 using Foundatio.Tests.Utility;
@@ -17,13 +18,13 @@ namespace Foundatio.Redis.Tests.Locks {
         }
 
         [Fact]
-        public override void CanAcquireAndReleaseLock() {
-            base.CanAcquireAndReleaseLock();
+        public override Task CanAcquireAndReleaseLock() {
+            return base.CanAcquireAndReleaseLock();
         }
 
         [Fact]
-        public override void LockWillTimeout() {
-            base.LockWillTimeout();
+        public override Task LockWillTimeout() {
+            return base.LockWillTimeout();
         }
     }
 }

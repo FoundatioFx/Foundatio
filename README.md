@@ -91,9 +91,9 @@ using Foundatio.Lock;
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
 
 using (locker) {
-  locker.ReleaseLock("test");
+  await locker.ReleaseLockAsync("test");
 
-  using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+  using (await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
     // ...
   }
 }

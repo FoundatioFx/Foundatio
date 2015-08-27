@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
@@ -22,7 +23,7 @@ namespace Foundatio.Tests {
         }
 
         [Fact]
-        public void WillThrottleCalls() {
+        public async Task WillThrottleCalls() {
             var locker = GetLockProvider();
             if (locker == null)
                 return;
@@ -32,7 +33,7 @@ namespace Foundatio.Tests {
             var sw = new Stopwatch();
             sw.Start();
             for (int i = 0; i < 5; i++)
-                locker.AcquireLock("test");
+                await locker.AcquireLockAsync("test");
             sw.Stop();
 
             _output.WriteLine(sw.Elapsed.ToString());
@@ -40,21 +41,21 @@ namespace Foundatio.Tests {
 
             sw.Reset();
             sw.Start();
-            var result = locker.AcquireLock("test", acquireTimeout: TimeSpan.Zero);
+            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.Zero);
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
-            result = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
-            result = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(2));
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2));
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());

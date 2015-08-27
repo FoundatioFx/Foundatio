@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
@@ -16,13 +17,13 @@ namespace Foundatio.Tests {
         }
 
         [Fact]
-        public override void CanAcquireAndReleaseLock() {
-            base.CanAcquireAndReleaseLock();
+        public override Task CanAcquireAndReleaseLock() {
+            return base.CanAcquireAndReleaseLock();
         }
 
         [Fact]
-        public override void LockWillTimeout() {
-            base.LockWillTimeout();
+        public override Task LockWillTimeout() {
+            return base.LockWillTimeout();
         }
     }
 }

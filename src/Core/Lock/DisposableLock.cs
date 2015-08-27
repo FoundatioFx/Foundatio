@@ -11,7 +11,7 @@ namespace Foundatio.Lock {
         }
 
         public void Dispose() {
-            _lockProvider.ReleaseLock(_name);
+            _lockProvider.ReleaseLockAsync(_name).Wait();
         }
     }
 }

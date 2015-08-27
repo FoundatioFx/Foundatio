@@ -7,32 +7,29 @@ using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
-        public JobBase()
-        {
+        public JobBase() {
             JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
-        protected virtual IDisposable GetJobLock() {
-            return Disposable.Empty;
+        protected virtual Task<IDisposable> GetJobLockAsync() {
+            return Task.FromResult(Disposable.Empty);
         }
 
         public string JobId { get; private set; }
 
         private string _jobName;
-        private void EnsureJobNameSet()
-        {
+
+        private void EnsureJobNameSet() {
             if (_jobName == null)
                 _jobName = GetType().Name;
             Logger.ThreadProperties.Set("job", _jobName);
         }
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken))
-        {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             EnsureJobNameSet();
             Logger.Trace().Message("Job run \"{0}\" starting...", _jobName).Write();
 
-            using (var lockValue = GetJobLock())
-            {
+            using (var lockValue = await GetJobLockAsync()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
@@ -72,11 +69,8 @@ namespace Foundatio.Jobs {
             EnsureJobNameSet();
             Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
 
-            while (!cancellationToken.IsCancellationRequested
-                && (iterationLimit < 0 || iterations < iterationLimit))
-            {
-                try
-                {
+            while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
+                try {
                     await RunAsync(cancellationToken);
 
                     iterations++;
@@ -84,19 +78,15 @@ namespace Foundatio.Jobs {
                         await Task.Delay(interval.Value, cancellationToken).AnyContext();
                     else if (iterations % 10000 == 0) // allow for cancellation token to get set
                         Thread.Sleep(1);
-                }
-                catch (TaskCanceledException) { }
+                } catch (TaskCanceledException) {}
 
                 if (continuationCallback == null)
                     continue;
 
-                try
-                {
+                try {
                     if (!await continuationCallback())
                         break;
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
                 }
             }
