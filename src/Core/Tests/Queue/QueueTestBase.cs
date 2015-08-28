@@ -179,7 +179,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanHandleErrorInWorker() {
+        public virtual void CanHandleErrorInWorker() {
             var queue = GetQueue(retries: 0);
             if (queue == null)
                 return;
