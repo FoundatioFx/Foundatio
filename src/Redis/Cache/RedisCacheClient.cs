@@ -53,36 +53,27 @@ namespace Foundatio.Caching {
             return _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] { (RedisValue)(prefix + "*") });
         }
 
-        public async Task<bool> TryGetAsync<T>(string key, out T value) {
-            value = default(T);
-
+        public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
             var redisValue = await _db.StringGetAsync(key);
             if (redisValue == RedisValue.Null)
-                return false;
+                return CacheValue<T>.Null;
 
-            if (typeof(T) == typeof(Int32))
-                value = (T)Convert.ChangeType(redisValue, typeof(T));
-            else if (typeof(T) == typeof(Int64))
-                value = (T)Convert.ChangeType(redisValue, typeof(T));
-            else if (typeof(T) == typeof(Int16))
-                value = (T)Convert.ChangeType(redisValue, typeof(T));
-            else if (typeof(T) == typeof(bool))
-                value = (T)Convert.ChangeType(redisValue, typeof(T));
-            else if (typeof(T) == typeof(double))
+            T value;
+            if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
                 value = (T)Convert.ChangeType(redisValue, typeof(T));
             else
                 value = _serializer.Deserialize<T>((string)redisValue);
 
-            return true;
+            return new CacheValue<T>(value, true);
         }
 
-        public async Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) {
+        public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
             var keyArray = keys.ToArray();
             var values = await _db.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray());
 
-            var result = new Dictionary<string, object>();
+            var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
-                object value = _serializer.Deserialize<object>((string)values[i]);
+                T value = _serializer.Deserialize<T>((string)values[i]);
                 result.Add(keyArray[i], value);
             }
 
@@ -116,7 +107,7 @@ namespace Foundatio.Caching {
             return _db.StringSetAsync(key, data, expiresIn, when, flags);
         }
 
-        public async Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+        public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             if (values == null)
                 return 0;
 

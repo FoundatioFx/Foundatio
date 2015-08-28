@@ -40,24 +40,24 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<FileSpec> GetFileInfoAsync(string path) {
+        public Task<FileSpec> GetFileInfoAsync(string path) {
             var info = new FileInfo(path);
             if (!info.Exists)
                 return null;
 
-            return new FileSpec {
+            return Task.FromResult(new FileSpec {
                 Path = path.Replace(Folder, String.Empty),
                 Created = info.CreationTime,
                 Modified = info.LastWriteTime,
                 Size = info.Length
-            };
+            });
         }
 
-        public async Task<bool> ExistsAsync(string path) {
-            return File.Exists(Path.Combine(Folder, path));
+        public Task<bool> ExistsAsync(string path) {
+            return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
-        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 
@@ -73,13 +73,13 @@ namespace Foundatio.Storage {
                     stream.CopyTo(fileStream);
                 }
             } catch (Exception) {
-                return false;
+                return Task.FromResult(false);
             }
 
-            return true;
+            return Task.FromResult(true);
         }
 
-        public async Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(newpath))
@@ -94,13 +94,13 @@ namespace Foundatio.Storage {
                     File.Move(Path.Combine(Folder, path), Path.Combine(Folder, newpath));
                 }
             } catch (Exception) {
-                return false;
+                return Task.FromResult(false);
             }
 
-            return true;
+            return Task.FromResult(true);
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
             if (String.IsNullOrWhiteSpace(targetpath))
@@ -115,35 +115,35 @@ namespace Foundatio.Storage {
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
                 }
             } catch (Exception) {
-                return false;
+                return Task.FromResult(false);
             }
 
-            return true;
+            return Task.FromResult(true);
         }
 
-        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException("path");
 
             try {
                 File.Delete(Path.Combine(Folder, path));
             } catch (Exception) {
-                return false;
+                return Task.FromResult(false);
             }
 
-            return true;
+            return Task.FromResult(true);
         }
 
-        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
             if (limit.HasValue && limit.Value <= 0)
-                return new List<FileSpec>();
+                return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 
             if (String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
 
             var list = new List<FileSpec>();
             if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))
-                return list;
+                return Task.FromResult<IEnumerable<FileSpec>>(list);
 
             foreach (var path in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue)) {
                 var info = new FileInfo(path);
@@ -158,7 +158,7 @@ namespace Foundatio.Storage {
                 });
             }
 
-            return list;
+            return Task.FromResult<IEnumerable<FileSpec>>(list);
         }
 
         public void Dispose() { }

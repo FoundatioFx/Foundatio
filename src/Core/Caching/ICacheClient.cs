@@ -6,11 +6,11 @@ namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
         Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
         Task RemoveByPrefixAsync(string prefix);
-        Task<bool> TryGetAsync<T>(string key, out T value);
-        Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys);
+        Task<CacheValue<T>> TryGetAsync<T>(string key);
+        Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys);
         Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null);
         Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null);
-        Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null);
+        Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null);
         Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
         Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null);
         Task<TimeSpan?> GetExpirationAsync(string key);
@@ -23,9 +23,8 @@ namespace Foundatio.Caching {
         }
         
         public static async Task<T> GetAsync<T>(this ICacheClient client, string key) {
-            T value;
-            await client.TryGetAsync(key, out value);
-            return value;
+            var cacheValue = await client.TryGetAsync<T>(key);
+            return cacheValue.HasValue ? cacheValue.Value : default(T);
         }
         
         public static Task<long> IncrementAsync(this ICacheClient client, string key, int amount = 1, DateTime? expiresAt = null) {

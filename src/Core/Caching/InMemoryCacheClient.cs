@@ -183,23 +183,32 @@ namespace Foundatio.Caching {
             return RemoveAllAsync(keysToRemove);
         }
 
-        public Task<bool> TryGetAsync<T>(string key, out T value) {
-            value = default(T);
+        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
             if (!_memory.ContainsKey(key))
-                return Task.FromResult(false);
-
-            try {
-                TryGetAsync(key, out value).Wait();
-                return Task.FromResult(true);
-            } catch {
-                return Task.FromResult(false);
+                return Task.FromResult(CacheValue<T>.Null);
+            
+            CacheEntry cacheEntry;
+            if (!_memory.TryGetValue(key, out cacheEntry)) {
+                Interlocked.Increment(ref _misses);
+                return Task.FromResult(CacheValue<T>.Null);
             }
+
+            if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
+                _memory.TryRemove(key, out cacheEntry);
+                Interlocked.Increment(ref _misses);
+                return Task.FromResult(CacheValue<T>.Null);
+            }
+
+            Interlocked.Increment(ref _hits);
+
+            var value = cacheEntry.Value != null ? (T)cacheEntry.Value : default(T);
+            return Task.FromResult(new CacheValue<T>(value, true));
         }
 
-        public async Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) {
-            var valueMap = new Dictionary<string, object>();
+        public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+            var valueMap = new Dictionary<string, T>();
             foreach (var key in keys) {
-                var value = await this.GetAsync<object>(key);
+                var value = await this.GetAsync<T>(key);
                 valueMap[key] = value;
             }
 
@@ -215,11 +224,11 @@ namespace Foundatio.Caching {
 
             using (await _asyncLock.LockAsync()) {
                 CacheEntry entry;
-                if (await TryGetAsync(key, out entry))
+                if (TryGetValueInternal(key, out entry))
                     return false;
 
                 entry = new CacheEntry(value, expiresAt);
-                await SetAsync(key, entry);
+                await SetInternalAsync(key, entry);
 
                 return true;
             }
@@ -236,9 +245,9 @@ namespace Foundatio.Caching {
             }
 
             CacheEntry entry;
-            if (!await TryGetAsync(key, out entry)) {
+            if (!TryGetValueInternal(key, out entry)) {
                 entry = new CacheEntry(value, expiresAt);
-                await SetAsync(key, entry);
+                await SetInternalAsync(key, entry);
                 return true;
             }
             
@@ -249,7 +258,30 @@ namespace Foundatio.Caching {
             return true;
         }
 
-        public async Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+        private bool TryGetValueInternal(string key, out CacheEntry entry) {
+            return _memory.TryGetValue(key, out entry);
+        }
+
+        private async Task SetInternalAsync(string key, CacheEntry entry) {
+            Logger.Trace().Message("Set: key={0}", key).Write();
+            if (entry.ExpiresAt < DateTime.UtcNow) {
+                await this.RemoveAsync(key);
+                return;
+            }
+
+            using (await _asyncLock.LockAsync()) {
+                _memory[key] = entry;
+                ScheduleNextMaintenance(entry.ExpiresAt);
+            }
+
+            if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
+                string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
+                CacheEntry cacheEntry;
+                _memory.TryRemove(oldest, out cacheEntry);
+            }
+        }
+
+        public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             if (values == null)
                 return 0;
 

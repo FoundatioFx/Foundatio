@@ -53,7 +53,7 @@ namespace Foundatio.Caching {
         }
         
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = keys == null, Keys = keys.ToArray() });
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = keys == null, Keys = keys?.ToArray() });
             await _localCache.RemoveAllAsync(keys);
             return await _distributedCache.RemoveAllAsync(keys);
         }
@@ -64,23 +64,25 @@ namespace Foundatio.Caching {
             await _distributedCache.RemoveByPrefixAsync(prefix);
         }
 
-        public async Task<bool> TryGetAsync<T>(string key, out T value) {
-            if (await _localCache.TryGetAsync(key, out value)) {
+        public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
+            var cacheValue = await _localCache.TryGetAsync<T>(key);
+            if (cacheValue.HasValue) {
                 Logger.Trace().Message("Local cache hit: {0}", key).Write();
                 Interlocked.Increment(ref _localCacheHits);
-                return true;
+                return cacheValue;
             }
 
-            if (await _distributedCache.TryGetAsync(key, out value)) {
-                await _localCache.SetAsync(key, value);
-                return true;
+            cacheValue = await _distributedCache.TryGetAsync<T>(key);
+            if (cacheValue.HasValue) {
+                await _localCache.SetAsync(key, cacheValue.Value);
+                return cacheValue;
             }
 
-            return false;
+            return CacheValue<T>.Null;
         }
 
-        public Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) {
-            return _distributedCache.GetAllAsync(keys);
+        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+            return _distributedCache.GetAllAsync<T>(keys);
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -94,13 +96,13 @@ namespace Foundatio.Caching {
             return await _distributedCache.SetAsync(key, value, expiresIn);
         }
 
-        public async Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+        public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             if (values == null)
                 return 0;
 
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() });
-            await _localCache.SetAllAsync(values);
-            return await _distributedCache.SetAllAsync(values);
+            await _localCache.SetAllAsync<T>(values);
+            return await _distributedCache.SetAllAsync<T>(values);
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

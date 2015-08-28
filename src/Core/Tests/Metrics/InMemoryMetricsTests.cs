@@ -84,13 +84,15 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanDisplayStatsMultithreaded() {
+        public Task CanDisplayStatsMultithreaded() {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
             Parallel.For(0, 100, async i => {
                 await metrics.CounterAsync("Test");
                 Thread.Sleep(50);
             });
+
+            return Task.FromResult(0);
         }
     }
 }

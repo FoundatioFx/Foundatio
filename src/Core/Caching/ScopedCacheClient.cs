@@ -30,12 +30,12 @@ namespace Foundatio.Caching {
             return UnscopedCache.RemoveByPrefixAsync(GetScopedCacheKey(prefix));
         }
 
-        public Task<bool> TryGetAsync<T>(string key, out T value) {
-            return UnscopedCache.TryGetAsync(GetScopedCacheKey(key), out value);
+        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
+            return UnscopedCache.TryGetAsync<T>(GetScopedCacheKey(key));
         }
 
-        public Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) {
-            return UnscopedCache.GetAllAsync(GetScopedCacheKey(keys));
+        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+            return UnscopedCache.GetAllAsync<T>(GetScopedCacheKey(keys));
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -43,10 +43,10 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetAsync<T>(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetAsync(GetScopedCacheKey(key), value, expiresIn);
         }
 
-        public Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+        public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             return UnscopedCache.SetAllAsync(values.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value));
         }
 

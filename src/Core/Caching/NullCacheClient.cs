@@ -12,13 +12,12 @@ namespace Foundatio.Caching {
             return Task.FromResult(0);
         }
 
-        public Task<bool> TryGetAsync<T>(string key, out T value) {
-            value = default(T);
-            return Task.FromResult(false);
+        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
+            return Task.FromResult(CacheValue<T>.Null);
         }
 
-        public Task<IDictionary<string, object>> GetAllAsync(IEnumerable<string> keys) { 
-            return Task.FromResult<IDictionary<string, object>>(new Dictionary<string, object>());
+        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) { 
+            return Task.FromResult<IDictionary<string, T>>(new Dictionary<string, T>());
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -29,7 +28,7 @@ namespace Foundatio.Caching {
             return Task.FromResult(true);
         }
 
-        public Task<int> SetAllAsync(IDictionary<string, object> values, TimeSpan? expiresIn = null) {
+        public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             return Task.FromResult(0);
         }
 
