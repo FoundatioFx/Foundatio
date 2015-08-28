@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Utility {
 
         static CaptureFixture()
         {
-            Logger.SetMinimumLogLevel(Debugger.IsAttached ? LogLevel.Warn : LogLevel.None);
+            Logger.SetMinimumLogLevel(Debugger.IsAttached ? LogLevel.Trace : LogLevel.Trace);
             Logger.RegisterWriter(l => Trace.WriteLine(l.ToString(false, false)));
         }
 

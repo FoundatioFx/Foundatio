@@ -21,6 +21,8 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
         private readonly int _retries = 2;
+        private readonly Timer _maintenanceTimer;
+
         private int _enqueuedCount;
         private int _dequeuedCount;
         private int _completedCount;
@@ -44,6 +46,7 @@ namespace Foundatio.Queues {
 
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
             _disposeTokenSource = new CancellationTokenSource();
+            _maintenanceTimer = new Timer(DoMaintenance);
         }
 
         public override QueueStats GetQueueStats()
@@ -248,11 +251,10 @@ namespace Foundatio.Queues {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Run.Delay(DoMaintenance, TimeSpan.FromSeconds(delay), _maintenanceCancellationTokenSource.Token);
-            //Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            _maintenanceTimer.Change(delay, Timeout.Infinite);
         }
 
-        private void DoMaintenance() {
+        private void DoMaintenance(object state = null) {
             Logger.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
 
             DateTime minAbandonAt = DateTime.MaxValue;
@@ -286,6 +288,8 @@ namespace Foundatio.Queues {
 
             _maintenanceCancellationTokenSource?.Cancel();
             _disposeTokenSource?.Cancel();
+
+            _maintenanceTimer.Dispose();
         }
 
         private class QueueInfo<TData> {
