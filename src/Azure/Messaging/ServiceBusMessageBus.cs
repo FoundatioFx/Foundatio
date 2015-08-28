@@ -67,13 +67,15 @@ namespace Foundatio.Messaging {
         public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
-                Action = m => {
+                Action = async m => {
                     if (!(m is T))
                         return;
 
-                    handler((T)m);
+                    await handler((T)m, cancellationToken);
                 }
-            });
+            }, cancellationToken);
+
+            return Task.FromResult(0);
         }
 
         private class Subscriber {

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Nito.AsyncEx;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase : IMessagePublisher, IDisposable {
@@ -14,11 +15,11 @@ namespace Foundatio.Messaging {
 
         public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
 
-        protected void AddDelayedMessage(Type messageType, object message, TimeSpan delay) {
+        protected async Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException("message");
 
-            lock (_lock) {
+            using (await _asyncLock.LockAsync()) {
                 var sendTime = DateTime.UtcNow.Add(delay);
                 _delayedMessages.Add(new DelayedMessage {
                     Message = message,
@@ -38,18 +39,17 @@ namespace Foundatio.Messaging {
             if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
                 return;
 
-            if (_maintenanceCancellationTokenSource != null)
-                _maintenanceCancellationTokenSource.Cancel();
+            _maintenanceCancellationTokenSource?.Cancel();
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
-            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
+            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
         }
+        
+        private readonly AsyncLock _asyncLock = new AsyncLock();
 
-        private readonly object _lock = new object();
-
-        private void DoMaintenance() {
+        private async Task DoMaintenanceAsync() {
             Logger.Trace().Message("DoMaintenance").Write();
             if (_delayedMessages == null || _delayedMessages.Count == 0)
                 return;
@@ -70,7 +70,7 @@ namespace Foundatio.Messaging {
             if (messagesToSend.Count == 0)
                 return;
 
-            lock (_lock) {
+            using (await _asyncLock.LockAsync()) {
                 foreach (var message in messagesToSend) {
                     Logger.Trace().Message("DoMaintenance Send Delayed: {0}", message.MessageType).Write();
                     _delayedMessages.Remove(message);

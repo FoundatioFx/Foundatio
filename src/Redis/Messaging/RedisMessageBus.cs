@@ -47,10 +47,8 @@ namespace Foundatio.Messaging {
 
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                AddDelayedMessage(messageType, message, delay.Value);
-                return Task.FromResult(0);
-            }
+            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+                return AddDelayedMessageAsync(messageType, message, delay.Value);
 
             var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             return _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget);
@@ -64,9 +62,11 @@ namespace Foundatio.Messaging {
                     if (!(m is T))
                         return;
 
-                    handler(m as T);
+                    handler((T)m, cancellationToken);
                 }
-            });
+            }, cancellationToken);
+
+            return Task.FromResult(0);
         }
 
         public override void Dispose() {

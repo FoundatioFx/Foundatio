@@ -7,12 +7,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Nito.AsyncEx;
 
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private ConcurrentDictionary<string, CacheEntry> _memory;
         private CancellationTokenSource _maintenanceCancellationTokenSource;
-        private readonly object _lock = new object();
+        private readonly AsyncLock _asyncLock = new AsyncLock();
         private long _hits = 0;
         private long _misses = 0;
         private DateTime? _nextMaintenance;
@@ -65,10 +66,10 @@ namespace Foundatio.Caching {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
         }
 
-        private void DoMaintenance() {
+        private async Task DoMaintenanceAsync() {
             Logger.Trace().Message("Running DoMaintenance").Write();
             DateTime minExpiration = DateTime.MaxValue;
             var now = DateTime.UtcNow;
@@ -87,7 +88,7 @@ namespace Foundatio.Caching {
             if (expiredKeys.Count == 0)
                 return;
 
-            lock (_lock) {
+            using (await _asyncLock.LockAsync()) {
                 foreach (var key in expiredKeys) {
                     await this.RemoveAsync(key);
                     OnItemExpired(key);
@@ -212,7 +213,7 @@ namespace Foundatio.Caching {
                 return false;
             }
 
-            lock (_lock) {
+            using (await _asyncLock.LockAsync()) {
                 CacheEntry entry;
                 if (await TryGetAsync(key, out entry))
                     return false;
@@ -270,7 +271,7 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
-            lock (_lockObject) {
+            using (await _asyncLock.LockAsync()) {
                 if (!_memory.ContainsKey(key)) {
                     if (expiresIn.HasValue)
                         await SetAsync(key, amount, expiresIn.Value);

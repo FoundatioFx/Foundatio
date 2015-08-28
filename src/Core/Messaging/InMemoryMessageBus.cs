@@ -11,10 +11,8 @@ namespace Foundatio.Messaging {
         private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                AddDelayedMessage(messageType, message, delay.Value);
-                return;
-            }
+            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+                return AddDelayedMessageAsync(messageType, message, delay.Value);
 
             Task.Factory.StartNew(() => {
                 foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
@@ -25,18 +23,22 @@ namespace Foundatio.Messaging {
                     }
                 }
             });
+
+            return Task.FromResult(0);
         }
 
         public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
-                Action = m => {
+                Action = async m => {
                     if (!(m is T))
                         return;
 
-                    handler(m as T);
+                    await handler((T)m, cancellationToken);
                 }
-            });
+            }, cancellationToken);
+
+            return Task.FromResult(0);
         }
 
         private class Subscriber {

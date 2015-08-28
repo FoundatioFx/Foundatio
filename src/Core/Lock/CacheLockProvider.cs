@@ -16,7 +16,7 @@ namespace Foundatio.Lock {
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
-            _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleased);
+            _messageBus.SubscribeAsync<CacheLockReleased>(message => OnLockReleased(message)).Wait();
         }
 
         private void OnLockReleased(CacheLockReleased msg) {
