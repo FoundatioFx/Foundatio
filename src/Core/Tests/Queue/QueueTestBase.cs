@@ -139,7 +139,7 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 queue.DeleteQueue();
 
-                Task.Factory.StartNewDelayed(250, () => GetQueue().Enqueue(new SimpleWorkItem {
+                Task.Factory.StartNewDelayed(250, () => queue.Enqueue(new SimpleWorkItem {
                     Data = "Hello"
                 }));
 
@@ -186,12 +186,15 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 queue.DeleteQueue();
 
+                var tokenSource = new CancellationTokenSource();
+
                 queue.StartWorking(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
-                    queue.StopWorking();
+                    tokenSource.Cancel();
                     throw new ApplicationException();
-                });
+                }, token: tokenSource.Token);
+
                 queue.Enqueue(new SimpleWorkItem {
                     Data = "Hello"
                 });
@@ -292,65 +295,63 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual void CanHaveMultipleQueueInstances() {
-            for (int x = 0; x < 5; x++) {
-                var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                if (queue == null)
-                    return;
+            var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
 
-                using (queue) {
-                    Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
-                    queue.DeleteQueue();
+            using (queue) {
+                Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
+                queue.DeleteQueue();
 
-                    const int workItemCount = 10;
-                    const int workerCount = 3;
-                    var latch = new CountdownEvent(workItemCount);
-                    var info = new WorkInfo();
-                    var workers = new List<IQueue<SimpleWorkItem>> {queue};
+                const int workItemCount = 10;
+                const int workerCount = 3;
+                var latch = new CountdownEvent(workItemCount);
+                var info = new WorkInfo();
+                var workers = new List<IQueue<SimpleWorkItem>> {queue};
 
-                    for (int i = 0; i < workerCount; i++) {
-                        var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                        Logger.Trace().Message("Queue Id: {0}", q.QueueId).Write();
-                        q.StartWorking(w => DoWork(w, latch, info));
-                        workers.Add(q);
-                    }
-
-                    Parallel.For(0, workItemCount, i => {
-                        var id = queue.Enqueue(new SimpleWorkItem {
-                            Data = "Hello",
-                            Id = i
-                        });
-                        Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
-                    });
-
-                    Assert.True(latch.Wait(TimeSpan.FromSeconds(60)));
-                    Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
-                    Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
-                        info.CompletedCount,
-                        info.AbandonCount,
-                        info.ErrorCount).Write();
-
-                    for (int i = 0; i < workers.Count; i++)
-                    {
-                        var workerStats = workers[i].GetQueueStats();
-                        Trace.WriteLine($"Worker#{i} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
-                    }
-
-                    Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
-
-                    var stats = queue.GetQueueStats();
-                    // In memory queue doesn't share state.
-                    if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
-                        Assert.Equal(info.CompletedCount, stats.Completed);
-                        Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
-                        Assert.Equal(info.ErrorCount, stats.Errors);
-                    } else {
-                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStats().Completed));
-                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStats().Abandoned) - workers.Sum(q => q.GetQueueStats().Errors));
-                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStats().Errors));
-                    }
-
-                    workers.ForEach(w => w.Dispose());
+                for (int i = 0; i < workerCount; i++) {
+                    var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                    Logger.Trace().Message("Queue Id: {0}, I: {1}", q.QueueId, i).Write();
+                    q.StartWorking(w => DoWork(w, latch, info));
+                    workers.Add(q);
                 }
+
+                Parallel.For(0, workItemCount, i => {
+                    var id = queue.Enqueue(new SimpleWorkItem {
+                        Data = "Hello",
+                        Id = i
+                    });
+                    Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
+                });
+
+                Assert.True(latch.Wait(TimeSpan.FromSeconds(20)));
+                Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
+                Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
+                    info.CompletedCount,
+                    info.AbandonCount,
+                    info.ErrorCount).Write();
+
+                for (int i = 0; i < workers.Count; i++)
+                {
+                    var workerStats = workers[i].GetQueueStats();
+                    Trace.WriteLine($"Worker#{i} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
+                }
+
+                Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
+
+                var stats = queue.GetQueueStats();
+                // In memory queue doesn't share state.
+                if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
+                    Assert.Equal(info.CompletedCount, stats.Completed);
+                    Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
+                    Assert.Equal(info.ErrorCount, stats.Errors);
+                } else {
+                    Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStats().Completed));
+                    Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStats().Abandoned) - workers.Sum(q => q.GetQueueStats().Errors));
+                    Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStats().Errors));
+                }
+
+                workers.ForEach(w => w.Dispose());
             }
         }
 
@@ -407,6 +408,8 @@ namespace Foundatio.Tests.Queue {
                     throw new ApplicationException();
                 }
             } finally {
+               
+                Trace.WriteLine($"Signal {latch.CurrentCount}");
                 latch.Signal();
             }
         }

@@ -81,6 +81,12 @@ namespace Foundatio.Utility {
             throw new TimeoutException(string.Format("Exceeded timeout of {0}", timeOut.Value));
         }
 
+        public static void Delay(Action action, TimeSpan delay, CancellationToken token = default(CancellationToken))
+        {
+            Task.Delay(delay, token)
+                .ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
+        }
+
         private static void SleepBackOffMultiplier(int i) {
             var rand = new Random(Guid.NewGuid().GetHashCode());
             var nextTry = rand.Next(

@@ -28,8 +28,7 @@ namespace Foundatio.Queues
         }
 
         public abstract string Enqueue(T data);
-        public abstract void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
-        public abstract void StopWorking();
+        public abstract void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken token = default(CancellationToken));
         public abstract QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = new CancellationToken());
         public abstract void Complete(IQueueEntryMetadata entry);
         public abstract void Abandon(IQueueEntryMetadata entry);

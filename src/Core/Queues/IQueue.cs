@@ -12,8 +12,7 @@ namespace Foundatio.Queues {
 
         string Enqueue(T data);
 
-        void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false);
-        void StopWorking();
+        void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken token = default(CancellationToken));
 
         QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
         void Complete(IQueueEntryMetadata entry);

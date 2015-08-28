@@ -166,7 +166,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken token = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException("handler");
 
@@ -181,7 +181,7 @@ namespace Foundatio.Queues {
             Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
         }
 
-        public override void StopWorking() {
+        public  void StopWorking() {
             Logger.Trace().Message("Queue {0} stop working", _queueName).Write();
             _workerAction = null;
             _subscriber.UnsubscribeAll();

@@ -131,7 +131,7 @@ namespace Foundatio.Queues {
             return msg.MessageId;
         }
 
-        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken token = default(CancellationToken)) {
             StartWorking(entry => {
                 handler(entry);
                 return TaskHelper.Completed();
@@ -150,7 +150,7 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override void StopWorking() {
+        public  void StopWorking() {
             if (!_isWorking)
                 return;
 

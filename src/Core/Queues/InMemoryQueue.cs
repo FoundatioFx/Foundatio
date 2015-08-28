@@ -17,8 +17,6 @@ namespace Foundatio.Queues {
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly AsyncManualResetEvent _autoEvent = new AsyncManualResetEvent(false);
-        private Action<QueueEntry<T>> _workerAction;
-        private bool _workerAutoComplete;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -29,8 +27,8 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private CancellationTokenSource _workerCancellationTokenSource;
         private CancellationTokenSource _maintenanceCancellationTokenSource;
+        private CancellationTokenSource _disposeTokenSource;
         private DateTime? _nextMaintenance = null;
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviours = null)
@@ -45,6 +43,7 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             _maintenanceCancellationTokenSource = new CancellationTokenSource();
+            _disposeTokenSource = new CancellationTokenSource();
         }
 
         public override QueueStats GetQueueStats()
@@ -85,26 +84,15 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false, CancellationToken token = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
-            _workerAction = handler;
-            _workerAutoComplete = autoComplete;
-            if (_workerCancellationTokenSource != null)
-                return;
 
-            _workerCancellationTokenSource = new CancellationTokenSource();
-            Task.Run(() => WorkerLoop(_workerCancellationTokenSource.Token));
-        }
+            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, token);
 
-        public override void StopWorking() {
-            Logger.Trace().Message("Queue {0} stop working", typeof(T).Name).Write();
-            _workerCancellationTokenSource?.Cancel();
-
-            _workerCancellationTokenSource = null;
-            _workerAction = null;
+            Task.Run(() => WorkerLoop(handler, autoComplete, tokenSource.Token), tokenSource.Token);
         }
 
         public override QueueEntry<T> Dequeue(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -211,24 +199,30 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
         }
 
-        private Task WorkerLoop(CancellationToken token) {
+        private Task WorkerLoop(Action<QueueEntry<T>> handler, bool autoComplete, CancellationToken token) {
             Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
             while (!token.IsCancellationRequested) {
-                if (_queue.Count == 0 || _workerAction == null)
-                    _autoEvent.Wait(token);
-
                 Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
-                QueueEntry<T> queueEntry = null;
-                try {
-                    queueEntry = Dequeue(TimeSpan.Zero);
-                } catch (TimeoutException) { }
 
-                if (queueEntry == null || _workerAction == null)
+                QueueEntry<T> queueEntry = null;
+                try
+                {
+                    queueEntry = Dequeue(cancellationToken: token);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error()
+                        .Message("Error on Dequeue: " + ex.Message)
+                        .Exception(ex)
+                        .Write();
+                }
+              
+                if (queueEntry == null)
                     return TaskHelper.Completed();
 
                 try {
-                    _workerAction(queueEntry);
-                    if (_workerAutoComplete)
+                    handler(queueEntry);
+                    if (autoComplete)
                         queueEntry.Complete();
                 } catch (Exception ex) {
                     Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
@@ -236,7 +230,7 @@ namespace Foundatio.Queues {
                     Interlocked.Increment(ref _workerErrorCount);
                 }
             }
-
+            Logger.Trace().Message("WorkLoop End").Write();
             return TaskHelper.Completed();
         }
 
@@ -254,7 +248,8 @@ namespace Foundatio.Queues {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            Run.Delay(DoMaintenance, TimeSpan.FromSeconds(delay), _maintenanceCancellationTokenSource.Token);
+            //Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
         }
 
         private void DoMaintenance() {
@@ -288,8 +283,9 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             base.Dispose();
-            StopWorking();
+
             _maintenanceCancellationTokenSource?.Cancel();
+            _disposeTokenSource?.Cancel();
         }
 
         private class QueueInfo<TData> {
