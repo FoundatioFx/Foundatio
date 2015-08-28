@@ -43,7 +43,7 @@ namespace Foundatio.Storage {
         public Task<FileSpec> GetFileInfoAsync(string path) {
             var info = new FileInfo(path);
             if (!info.Exists)
-                return null;
+                return Task.FromResult<FileSpec>(null);
 
             return Task.FromResult(new FileSpec {
                 Path = path.Replace(Folder, String.Empty),

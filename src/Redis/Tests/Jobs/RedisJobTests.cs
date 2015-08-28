@@ -20,8 +20,8 @@ namespace Foundatio.Redis.Tests.Jobs {
 
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100));
             Task.Factory.StartNew(() => {
-                Parallel.For(0, workItemCount, async i => {
-                    await queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
+                Parallel.For(0, workItemCount, i => {
+                    queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i }).Wait();
                 });
             });
 

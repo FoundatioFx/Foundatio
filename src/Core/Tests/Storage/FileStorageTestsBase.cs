@@ -133,7 +133,7 @@ namespace Foundatio.Tests.Storage {
                 var info = await storage.GetFileInfoAsync("nope");
                 Assert.Null(info);
 
-                Parallel.For(0, 10, async i => {
+                Parallel.For(0, 10, i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,
                         CharSet = "utf8",
@@ -144,9 +144,10 @@ namespace Foundatio.Tests.Storage {
                         ProjectId = i.ToString(),
                         UserAgent = "test"
                     };
-                    await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev);
+                    storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).Wait();
                     queueItems.Add(i);
                 });
+
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
                 Parallel.For(0, 10, async i => {
