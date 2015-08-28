@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
@@ -179,9 +180,12 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHandleErrorInWorker() {
-            var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+            var queue = GetQueue(retries: 0);
             if (queue == null)
                 return;
+
+            var metrics = new InMemoryMetricsClient();
+            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
 
             using (queue) {
                 queue.DeleteQueue();
@@ -191,8 +195,6 @@ namespace Foundatio.Tests.Queue {
                 queue.StartWorking(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
-                    tokenSource.Cancel();
-                    Thread.Sleep(1);
                     throw new ApplicationException();
                 }, token: tokenSource.Token);
 
@@ -200,14 +202,12 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Errors > 0, TimeSpan.FromSeconds(1));
+                metrics.DisplayStats(_writer);
+                var success = metrics.WaitForCounter("simpleworkitem.hello.abandoned", TimeSpan.FromSeconds(1));
                 Assert.True(success);
                 Assert.Equal(0, queue.GetQueueStats().Completed);
                 Assert.Equal(1, queue.GetQueueStats().Errors);
-
-                success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Queued > 0, TimeSpan.FromSeconds(1));
-                Assert.True(success);
-                Assert.Equal(1, queue.GetQueueStats().Queued);
+                Assert.Equal(1, queue.GetQueueStats().Deadletter);
             }
         }
 
