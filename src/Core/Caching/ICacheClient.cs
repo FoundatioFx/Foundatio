@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
         Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
-        Task RemoveByPrefixAsync(string prefix);
+        Task<int> RemoveByPrefixAsync(string prefix);
         Task<CacheValue<T>> TryGetAsync<T>(string key);
         Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys);
         Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null);

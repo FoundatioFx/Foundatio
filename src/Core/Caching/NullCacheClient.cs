@@ -8,7 +8,7 @@ namespace Foundatio.Caching {
             return Task.FromResult(0);
         }
 
-        public Task RemoveByPrefixAsync(string prefix) {
+        public Task<int> RemoveByPrefixAsync(string prefix) {
             return Task.FromResult(0);
         }
 

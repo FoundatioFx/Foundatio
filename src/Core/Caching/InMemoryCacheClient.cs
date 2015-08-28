@@ -166,7 +166,7 @@ namespace Foundatio.Caching {
             return Task.FromResult(removed);
         }
 
-        public Task RemoveByPrefixAsync(string prefix) {
+        public Task<int> RemoveByPrefixAsync(string prefix) {
             var keysToRemove = new List<string>();
             var regex = new Regex(String.Concat(prefix, "*").Replace("*", ".*").Replace("?", ".+"));
             var enumerator = _memory.GetEnumerator();
@@ -184,9 +184,6 @@ namespace Foundatio.Caching {
         }
 
         public Task<CacheValue<T>> TryGetAsync<T>(string key) {
-            if (!_memory.ContainsKey(key))
-                return Task.FromResult(CacheValue<T>.Null);
-            
             CacheEntry cacheEntry;
             if (!_memory.TryGetValue(key, out cacheEntry)) {
                 Interlocked.Increment(ref _misses);
@@ -216,7 +213,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn ?? TimeSpan.Zero);
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
                 await this.RemoveAsync(key);
                 return false;
@@ -237,7 +234,7 @@ namespace Foundatio.Caching {
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             Logger.Trace().Message("Setting cache: key={0}", key).Write();
 
-            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn ?? TimeSpan.Zero);
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
                 Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
                 await this.RemoveAsync(key);

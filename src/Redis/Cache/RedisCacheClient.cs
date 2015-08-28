@@ -49,8 +49,9 @@ namespace Foundatio.Caching {
             return 0;
         }
 
-        public Task RemoveByPrefixAsync(string prefix) {
-            return _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] { (RedisValue)(prefix + "*") });
+        public async Task<int> RemoveByPrefixAsync(string prefix) {
+            await _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] { (RedisValue)(prefix + "*") });
+            return 0;
         }
 
         public async Task<CacheValue<T>> TryGetAsync<T>(string key) {

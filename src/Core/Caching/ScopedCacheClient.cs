@@ -19,14 +19,17 @@ namespace Foundatio.Caching {
         }
 
         protected IEnumerable<string> GetScopedCacheKey(IEnumerable<string> keys) {
-            return keys.Select(GetScopedCacheKey);
+            return keys?.Select(GetScopedCacheKey);
         }
         
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
+            if (keys == null || !keys.Any())
+                return RemoveByPrefixAsync(String.Empty);
+
             return UnscopedCache.RemoveAllAsync(GetScopedCacheKey(keys));
         }
 
-        public Task RemoveByPrefixAsync(string prefix) {
+        public Task<int> RemoveByPrefixAsync(string prefix) {
             return UnscopedCache.RemoveByPrefixAsync(GetScopedCacheKey(prefix));
         }
 

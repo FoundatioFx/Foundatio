@@ -58,10 +58,10 @@ namespace Foundatio.Caching {
             return await _distributedCache.RemoveAllAsync(keys);
         }
 
-        public async Task RemoveByPrefixAsync(string prefix) {
+        public async Task<int> RemoveByPrefixAsync(string prefix) {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { prefix + "*" } });
             await _localCache.RemoveByPrefixAsync(prefix);
-            await _distributedCache.RemoveByPrefixAsync(prefix);
+            return await _distributedCache.RemoveByPrefixAsync(prefix);
         }
 
         public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
