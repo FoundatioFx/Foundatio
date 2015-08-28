@@ -56,8 +56,8 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorker() {
-            return base.CanHandleErrorInWorker();
+        public override void CanHandleErrorInWorker() {
+            base.CanHandleErrorInWorker();
         }
 
         [Fact]
