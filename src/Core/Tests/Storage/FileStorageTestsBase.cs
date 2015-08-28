@@ -150,16 +150,16 @@ namespace Foundatio.Tests.Storage {
 
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
-                Parallel.For(0, 10, async i => {
+                Parallel.For(0, 10, i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
-                    var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"));
+                    var eventPost = storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).Result;
                     if (eventPost == null)
                         return;
 
                     if (RandomData.GetBool()) {
-                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true);
+                        storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true).Wait();
                     } else
-                        await storage.SetNotActiveAsync(path);
+                        storage.SetNotActiveAsync(path).Wait();
                 });
             }
         }

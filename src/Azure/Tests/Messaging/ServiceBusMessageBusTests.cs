@@ -10,9 +10,7 @@ namespace Foundatio.Azure.Tests.Messaging {
     public class ServiceBusMessageBusTests : MessageBusTestBase {
         private static IMessageBus _messageBus;
 
-        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IMessageBus GetMessageBus() {
             if (_messageBus != null)

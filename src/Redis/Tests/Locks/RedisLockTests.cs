@@ -9,9 +9,7 @@ using Foundatio.Messaging;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase {
-        public RedisLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public RedisLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override ILockProvider GetLockProvider() {
             return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber()));

@@ -50,8 +50,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public async Task CanHandleMultipleWorkItemInstances()
-        {
+        public async Task CanHandleMultipleWorkItemInstances() {
             var queue = new InMemoryQueue<WorkItemData>(retryDelay: TimeSpan.Zero, retries: 0);
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();

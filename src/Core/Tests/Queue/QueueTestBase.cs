@@ -313,11 +313,11 @@ namespace Foundatio.Tests.Queue {
                         workers.Add(q);
                     }
 
-                    Parallel.For(0, workItemCount, async i => {
-                        var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    Parallel.For(0, workItemCount, i => {
+                        var id = queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello",
                             Id = i
-                        });
+                        }).Result;
                         Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
                     });
 

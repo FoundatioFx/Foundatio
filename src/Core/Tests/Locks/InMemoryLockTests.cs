@@ -8,9 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests {
     public class InMemoryLockTests : LockTestBase {
-        public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override ILockProvider GetLockProvider() {
             return new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());

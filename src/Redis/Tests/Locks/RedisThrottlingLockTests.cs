@@ -14,9 +14,7 @@ namespace Foundatio.Redis.Tests {
     public class RedisThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(3);
 
-        public RedisThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public RedisThrottlingLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override ILockProvider GetLockProvider() {
             return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), 5, _period);

@@ -71,9 +71,9 @@ namespace Foundatio.Tests.Metrics {
             const int iterations = 100;
             StartListening(iterations);
             
-            var result = Parallel.For(0, iterations, async i => {
+            var result = Parallel.For(0, iterations, i => {
                 Thread.Sleep(50);
-                await _client.CounterAsync("counter");
+                _client.CounterAsync("counter").Wait();
             });
 
             while (!result.IsCompleted) {}

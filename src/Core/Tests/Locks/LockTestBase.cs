@@ -39,10 +39,10 @@ namespace Foundatio.Tests {
                 Assert.False(await locker.IsLockedAsync("test"));
 
                 int counter = 0;
-                Parallel.For(0, 25, async i => {
-                    using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                Parallel.For(0, 25, i => {
+                    using (var lock1 = locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).Result) {
                         Assert.NotNull(lock1);
-                        Assert.True(await locker.IsLockedAsync("test"));
+                        Assert.True(locker.IsLockedAsync("test").Result);
                         Interlocked.Increment(ref counter);
                     }
                 });
