@@ -67,7 +67,7 @@ namespace Foundatio.Tests.Jobs {
         public async void CanRunMultipleInstances()
         {
             HelloWorldJob.GlobalRunCount = 0;
-
+            
             var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
             await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token);
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
@@ -87,8 +87,8 @@ namespace Foundatio.Tests.Jobs {
             job.RunContinuous(TimeSpan.FromSeconds(1), 5, tokenSource.Token);
             Assert.Equal(1, job.RunCount);
 
-            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token);
+            tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: tokenSource.Token, interval: TimeSpan.FromMilliseconds(1));
         }
 
         [Fact]

@@ -81,7 +81,7 @@ namespace Foundatio.Utility {
             throw new TimeoutException(string.Format("Exceeded timeout of {0}", timeOut.Value));
         }
 
-        public static void Delay(Action action, TimeSpan delay, CancellationToken token = default(CancellationToken))
+        public static void Delayed(Action action, TimeSpan delay, CancellationToken token = default(CancellationToken))
         {
             Task.Delay(delay, token)
                 .ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);

@@ -179,7 +179,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHandleErrorInWorker() {
-            var queue = GetQueue(1, retryDelay: TimeSpan.Zero);
+            var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
 
@@ -192,6 +192,7 @@ namespace Foundatio.Tests.Queue {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     tokenSource.Cancel();
+                    Thread.Sleep(1);
                     throw new ApplicationException();
                 }, token: tokenSource.Token);
 
@@ -199,12 +200,12 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Errors > 0, TimeSpan.FromSeconds(5));
+                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Errors > 0, TimeSpan.FromSeconds(1));
                 Assert.True(success);
                 Assert.Equal(0, queue.GetQueueStats().Completed);
                 Assert.Equal(1, queue.GetQueueStats().Errors);
 
-                success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Queued > 0, TimeSpan.FromSeconds(5));
+                success = await TaskHelper.DelayUntil(() => queue.GetQueueStats().Queued > 0, TimeSpan.FromSeconds(1));
                 Assert.True(success);
                 Assert.Equal(1, queue.GetQueueStats().Queued);
             }

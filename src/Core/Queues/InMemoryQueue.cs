@@ -27,9 +27,9 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private CancellationTokenSource _maintenanceCancellationTokenSource;
-        private CancellationTokenSource _disposeTokenSource;
+        private readonly CancellationTokenSource _disposeTokenSource;
         private DateTime? _nextMaintenance = null;
+        private readonly Timer _maintenanceTimer;
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviours = null)
             : base(serializer, behaviours)
@@ -42,7 +42,7 @@ namespace Foundatio.Queues {
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
 
-            _maintenanceCancellationTokenSource = new CancellationTokenSource();
+            _maintenanceTimer = new Timer(s => DoMaintenance(), null, Timeout.Infinite, Timeout.Infinite);
             _disposeTokenSource = new CancellationTokenSource();
         }
 
@@ -109,7 +109,7 @@ namespace Foundatio.Queues {
                 sw.Stop();
                 Logger.Trace().Message("Waited for dequeue: timeout={0} actual={1}", timeout.Value.ToString(), sw.Elapsed.ToString()).Write();
             }
-            if (_queue.Count == 0)
+            if (_queue.Count == 0 || cancellationToken.IsCancellationRequested)
                 return null;
 
             _autoEvent.Reset();
@@ -243,13 +243,10 @@ namespace Foundatio.Queues {
             if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
                 return;
 
-            _maintenanceCancellationTokenSource?.Cancel();
-            _maintenanceCancellationTokenSource = new CancellationTokenSource();
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
-            Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Run.Delay(DoMaintenance, TimeSpan.FromSeconds(delay), _maintenanceCancellationTokenSource.Token);
-            //Task.Factory.StartNewDelayed(delay, DoMaintenance, _maintenanceCancellationTokenSource.Token);
+            Logger.Trace().Message("Scheduling maintenance: delay={0}", delay).Write();
+            _maintenanceTimer.Change(delay, Timeout.Infinite);
         }
 
         private void DoMaintenance() {
@@ -283,8 +280,6 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             base.Dispose();
-
-            _maintenanceCancellationTokenSource?.Cancel();
             _disposeTokenSource?.Cancel();
         }
 
