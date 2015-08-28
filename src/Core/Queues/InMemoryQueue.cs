@@ -21,6 +21,7 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
         private readonly int _retries = 2;
+
         private int _enqueuedCount;
         private int _dequeuedCount;
         private int _completedCount;
@@ -281,6 +282,8 @@ namespace Foundatio.Queues {
         public override void Dispose() {
             base.Dispose();
             _disposeTokenSource?.Cancel();
+
+            _maintenanceTimer.Dispose();
         }
 
         private class QueueInfo<TData> {
