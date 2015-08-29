@@ -67,8 +67,7 @@ namespace Foundatio.Tests.Metrics {
             success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2);
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 1,
-                async () => await metrics.CounterAsync("Test"));
+            success = await metrics.WaitForCounterAsync("Test", () => metrics.CounterAsync("Test"), TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
             Task.Run(() => {

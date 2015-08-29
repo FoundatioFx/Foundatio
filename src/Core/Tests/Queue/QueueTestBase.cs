@@ -190,20 +190,18 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 queue.DeleteQueue();
 
-                var tokenSource = new CancellationTokenSource();
-
                 queue.StartWorking(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
-                }, token: tokenSource.Token);
-
-                queue.Enqueue(new SimpleWorkItem {
-                    Data = "Hello"
                 });
 
                 metrics.DisplayStats(_writer);
-                var success = metrics.WaitForCounter("simpleworkitem.hello.abandoned", TimeSpan.FromSeconds(1));
+                var success = metrics.WaitForCounter("simpleworkitem.hello.abandoned", () => queue.Enqueue(new SimpleWorkItem
+                {
+                    Data = "Hello"
+                }), TimeSpan.FromSeconds(1));
+                metrics.DisplayStats(_writer);
                 Assert.True(success);
                 Assert.Equal(0, queue.GetQueueStats().Completed);
                 Assert.Equal(1, queue.GetQueueStats().Errors);
