@@ -14,7 +14,7 @@ namespace Foundatio.Messaging {
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 
-            Task.Factory.StartNew(() => {
+            Task.Run(() => {
                 foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
                     try {
                         subscriber.Action(message.Copy());
@@ -22,7 +22,7 @@ namespace Foundatio.Messaging {
                         Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                     }
                 }
-            }).AnyContext();
+            });
 
             return Task.FromResult(0);
         }
