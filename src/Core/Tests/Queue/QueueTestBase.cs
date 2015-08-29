@@ -192,12 +192,12 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().Result.Errors > 0, TimeSpan.FromSeconds(5)).AnyContext();
+                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Errors > 0, TimeSpan.FromSeconds(5)).AnyContext();
                 Assert.True(success);
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
 
-                success = await TaskHelper.DelayUntil(async () => await queue.GetQueueStatsAsync().AnyContext().Queued > 0, TimeSpan.FromSeconds(5)).AnyContext();
+                success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Queued > 0, TimeSpan.FromSeconds(5)).AnyContext();
                 Assert.True(success);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
             }
@@ -315,7 +315,7 @@ namespace Foundatio.Tests.Queue {
                         var id = queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello",
                             Id = i
-                        }).Result;
+                        }).AnyContext().GetAwaiter().GetResult();
                         Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
                     });
 
@@ -341,9 +341,9 @@ namespace Foundatio.Tests.Queue {
                         Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
                         Assert.Equal(info.ErrorCount, stats.Errors);
                     } else {
-                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStatsAsync().Result.Completed));
-                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStatsAsync().Result.Abandoned) - workers.Sum(q => q.GetQueueStatsAsync().Result.Errors));
-                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStatsAsync().Result.Errors));
+                        Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Completed));
+                        Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Abandoned) - workers.Sum(q => q.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Errors));
+                        Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Errors));
                     }
 
                     workers.ForEach(w => w.Dispose());

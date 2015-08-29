@@ -28,7 +28,7 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                Assert.Equal(0, (await storage.GetFileListAsync(Guid.NewGuid() + "\\*").AnyContext().AnyContext()).Count());
+                Assert.Equal(0, (await storage.GetFileListAsync(Guid.NewGuid() + "\\*").AnyContext()).Count());
             }
         }
 
@@ -145,7 +145,7 @@ namespace Foundatio.Tests.Storage {
                         ProjectId = i.ToString(),
                         UserAgent = "test"
                     };
-                    storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).Wait();
+                    storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).AnyContext().GetAwaiter().GetResult();
                     queueItems.Add(i);
                 });
 
@@ -153,14 +153,14 @@ namespace Foundatio.Tests.Storage {
 
                 Parallel.For(0, 10, i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
-                    var eventPost = storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).Result;
+                    var eventPost = storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).AnyContext().GetAwaiter().GetResult();
                     if (eventPost == null)
                         return;
 
                     if (RandomData.GetBool()) {
-                        storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true).Wait();
+                        storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true).AnyContext().GetAwaiter().GetResult();
                     } else
-                        storage.SetNotActiveAsync(path).Wait();
+                        storage.SetNotActiveAsync(path).AnyContext().GetAwaiter().GetResult();
                 });
             }
         }

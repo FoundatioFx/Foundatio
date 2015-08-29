@@ -143,7 +143,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 workItem = await queue.DequeueAsync().AnyContext();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in".AnyContext()));
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());

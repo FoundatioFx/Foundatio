@@ -451,7 +451,7 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
-            StopWorkingAsync().Wait();
+            StopWorkingAsync().AnyContext().GetAwaiter().GetResult();
             _queueDisposedCancellationTokenSource?.Cancel();
             _maintenanceTimer?.Dispose();
         }

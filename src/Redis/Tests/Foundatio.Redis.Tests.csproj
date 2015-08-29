@@ -67,9 +67,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\Core\Extensions\TaskExtensions.cs">
-      <Link>Extensions\TaskExtensions.cs</Link>
-    </Compile>
     <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
       <Link>Utility\CaptureCollectionFixture.cs</Link>
     </Compile>

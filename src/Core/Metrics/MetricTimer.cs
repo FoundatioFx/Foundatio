@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using Foundatio.Extensions;
 
 namespace Foundatio.Metrics {
     public class MetricTimer : IDisposable {
@@ -21,7 +22,7 @@ namespace Foundatio.Metrics {
 
             _disposed = true;
             _stopWatch.Stop();
-            _client.TimerAsync(_name, _stopWatch.ElapsedMilliseconds).Wait();
+            _client.TimerAsync(_name, _stopWatch.ElapsedMilliseconds).AnyContext().GetAwaiter().GetResult();
         }
     }
 }

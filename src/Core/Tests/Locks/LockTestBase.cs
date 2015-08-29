@@ -41,9 +41,9 @@ namespace Foundatio.Tests {
 
                 int counter = 0;
                 Parallel.For(0, 25, i => {
-                    using (var lock1 = locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).Result) {
+                    using (var lock1 = locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext().GetAwaiter().GetResult()) {
                         Assert.NotNull(lock1);
-                        Assert.True(locker.IsLockedAsync("test").Result);
+                        Assert.True(locker.IsLockedAsync("test").AnyContext().GetAwaiter().GetResult());
                         Interlocked.Increment(ref counter);
                     }
                 });

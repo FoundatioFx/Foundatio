@@ -286,7 +286,7 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             base.Dispose();
-            StopWorkingAsync().Wait();
+            StopWorkingAsync().AnyContext().GetAwaiter().GetResult();
             _maintenanceCancellationTokenSource?.Cancel();
         }
 

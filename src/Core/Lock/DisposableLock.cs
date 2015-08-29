@@ -1,4 +1,5 @@
 using System;
+using Foundatio.Extensions;
 
 namespace Foundatio.Lock {
     internal class DisposableLock : IDisposable {
@@ -11,7 +12,7 @@ namespace Foundatio.Lock {
         }
 
         public void Dispose() {
-            _lockProvider.ReleaseLockAsync(_name).Wait();
+            _lockProvider.ReleaseLockAsync(_name).AnyContext().GetAwaiter().GetResult();
         }
     }
 }

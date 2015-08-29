@@ -107,6 +107,14 @@ namespace Foundatio.Metrics {
 
             return TaskHelper.Completed();
         }
+        
+        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Func<Task> work = null) {
+            try {
+                return await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work).AnyContext();
+            } catch (TaskCanceledException) {
+                return false;
+            }
+        }
 
         public async Task<bool> WaitForCounterAsync(string statName, long count = 1, CancellationToken cancellationToken = default(CancellationToken), Func<Task> work = null) {
             if (count == 0)
@@ -131,32 +139,7 @@ namespace Foundatio.Metrics {
 
             return true;
         }
-
-        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Func<Task> work = null) {
-            try {
-                return await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work).AnyContext();
-            } catch (TaskCanceledException) {
-                return false;
-            }
-        }
-
-        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Action work = null) {
-            try {
-                var success = await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, () => {
-                    if (work != null)
-                        work();
-                    return TaskHelper.Completed();
-                }).AnyContext();
-                return success;
-            } catch (TaskCanceledException) {
-                return false;
-            }
-        }
-
-        public Task<bool> WaitForCounterAsync(string statName, long count = 1, double timeoutInSeconds = 10, Action work = null) {
-            return WaitForCounterAsync(statName, TimeSpan.FromSeconds(timeoutInSeconds), count, work);
-        }
-
+        
         public Task GaugeAsync(string statName, double value) {
             _gauges.AddOrUpdate(statName, key => new GaugeStats(value), (key, stats) => {
                 stats.Set(value);
