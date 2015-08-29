@@ -44,7 +44,7 @@ namespace Foundatio.Messaging {
             _nextMaintenance = value;
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync().AnyContext(), _maintenanceCancellationTokenSource.Token).AnyContext();
         }
         
         private readonly AsyncLock _asyncLock = new AsyncLock();
@@ -74,7 +74,7 @@ namespace Foundatio.Messaging {
                 foreach (var message in messagesToSend) {
                     Logger.Trace().Message("DoMaintenance Send Delayed: {0}", message.MessageType).Write();
                     _delayedMessages.Remove(message);
-                    await PublishAsync(message.MessageType, message.Message);
+                    await PublishAsync(message.MessageType, message.Message).AnyContext();
                 }
             }
         }
@@ -86,8 +86,7 @@ namespace Foundatio.Messaging {
         }
 
         public virtual void Dispose() {
-            if (_maintenanceTimer != null)
-                _maintenanceTimer.Dispose();
+            _maintenanceTimer?.Dispose();
         }
     }
 }

@@ -48,27 +48,27 @@ namespace Foundatio.Tests.Caching {
                 if (cache == null)
                     return;
 
-                await cache.RemoveAllAsync();
+                await cache.RemoveAllAsync().AnyContext();
 
                 cache.MaxItems = 10;
                 for (int i = 0; i < cache.MaxItems; i++)
-                    await cache.SetAsync("test" + i, i);
+                    await cache.SetAsync("test" + i, i).AnyContext();
 
                 Trace.WriteLine(String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
-                await cache.SetAsync("next", 1);
+                await cache.SetAsync("next", 1).AnyContext();
                 Trace.WriteLine(String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
-                Assert.Null(await cache.GetAsync<int?>("test0"));
+                Assert.Null(await cache.GetAsync<int?>("test0").AnyContext());
                 Assert.Equal(1, cache.Misses);
                 Thread.Sleep(50); // keep the last access ticks from being the same for all items
-                Assert.NotNull(await cache.GetAsync<int?>("test1"));
+                Assert.NotNull(await cache.GetAsync<int?>("test1").AnyContext());
                 Assert.Equal(1, cache.Hits);
-                await cache.SetAsync("next2", 2);
+                await cache.SetAsync("next2", 2).AnyContext();
                 Trace.WriteLine(String.Join(",", cache.Keys));
-                Assert.Null(await cache.GetAsync<int?>("test2"));
+                Assert.Null(await cache.GetAsync<int?>("test2").AnyContext());
                 Assert.Equal(2, cache.Misses);
-                Assert.NotNull(await cache.GetAsync<int?>("test1"));
+                Assert.NotNull(await cache.GetAsync<int?>("test1").AnyContext());
                 Assert.Equal(2, cache.Misses);
             }
         }

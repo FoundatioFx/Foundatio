@@ -27,7 +27,7 @@ namespace Foundatio.Tests.Metrics {
         [Fact]
         public async Task CounterAsync() {
             StartListening(1);
-            await _client.CounterAsync("counter");
+            await _client.CounterAsync("counter").AnyContext();
             var messages = GetMessages();
             Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
         }
@@ -36,7 +36,7 @@ namespace Foundatio.Tests.Metrics {
         public async Task CounterAsyncWithValue() {
             StartListening(1);
 
-            await _client.CounterAsync("counter", 5);
+            await _client.CounterAsync("counter", 5).AnyContext();
             var messages = GetMessages();
             Assert.Equal("test.counter:5|c", messages.FirstOrDefault());
         }
@@ -45,7 +45,7 @@ namespace Foundatio.Tests.Metrics {
         public async Task GaugeAsync() {
             StartListening(1);
 
-            await _client.GaugeAsync("gauge", 1.1);
+            await _client.GaugeAsync("gauge", 1.1).AnyContext();
             var messages = GetMessages();
             Assert.Equal("test.gauge:1.1|g", messages.FirstOrDefault());
         }
@@ -54,14 +54,14 @@ namespace Foundatio.Tests.Metrics {
         public async Task TimerAsync() {
             StartListening(1);
 
-            await _client.TimerAsync("timer", 1);
+            await _client.TimerAsync("timer", 1).AnyContext();
             var messages = GetMessages();
             Assert.Equal("test.timer:1|ms", messages.FirstOrDefault());
         }
 
         [Fact]
         public async Task CanSendOffline() {
-            await _client.CounterAsync("counter");
+            await _client.CounterAsync("counter").AnyContext();
             var messages = GetMessages();
             Assert.Equal(0, messages.Count);
         }
@@ -94,8 +94,8 @@ namespace Foundatio.Tests.Metrics {
                 if (index % (iterations / 10) == 0)
                     StopListening();
 
-                await _client.CounterAsync("counter");
-                await metrics.CounterAsync("counter");
+                await _client.CounterAsync("counter").AnyContext();
+                await metrics.CounterAsync("counter").AnyContext();
 
                 if (index % (iterations / 10) == 0)
                     StartListening(iterations - index);

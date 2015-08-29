@@ -18,10 +18,10 @@ namespace Foundatio.Tests.Caching {
                 return;
 
             using (cache) {
-                await cache.RemoveAllAsync();
+                await cache.RemoveAllAsync().AnyContext();
 
-                await cache.SetAsync("test", 1);
-                var value = await cache.GetAsync<int>("test");
+                await cache.SetAsync("test", 1).AnyContext();
+                var value = await cache.GetAsync<int>("test").AnyContext();
                 Assert.Equal(1, value);
             }
         }
@@ -36,30 +36,30 @@ namespace Foundatio.Tests.Caching {
                 var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
                 var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
 
-                await cache.SetAsync("test", 1);
-                await scopedCache1.SetAsync("test", 2);
-                await nestedScopedCache1.SetAsync("test", 3);
+                await cache.SetAsync("test", 1).AnyContext();
+                await scopedCache1.SetAsync("test", 2).AnyContext();
+                await nestedScopedCache1.SetAsync("test", 3).AnyContext();
 
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
-                Assert.Equal(2, await scopedCache1.GetAsync<int>("test"));
-                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test"));
+                Assert.Equal(1, await cache.GetAsync<int>("test")).AnyContext();
+                Assert.Equal(2, await scopedCache1.GetAsync<int>("test")).AnyContext();
+                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test")).AnyContext();
 
-                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test"));
-                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test"));
+                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test")).AnyContext();
+                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test")).AnyContext();
 
-                await scopedCache2.SetAsync("test", 1);
+                await scopedCache2.SetAsync("test", 1).AnyContext();
 
-                await scopedCache1.RemoveAllAsync();
-                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
-                Assert.Equal(1, await scopedCache2.GetAsync<int>("test"));
+                await scopedCache1.RemoveAllAsync().AnyContext();
+                Assert.Null(await scopedCache1.GetAsync<int?>("test").AnyContext());
+                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test").AnyContext());
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
+                Assert.Equal(1, await scopedCache2.GetAsync<int>("test").AnyContext());
 
-                await scopedCache2.RemoveAllAsync();
-                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await scopedCache2.GetAsync<int?>("test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                await scopedCache2.RemoveAllAsync().AnyContext();
+                Assert.Null(await scopedCache1.GetAsync<int?>("test").AnyContext());
+                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test").AnyContext());
+                Assert.Null(await scopedCache2.GetAsync<int?>("test").AnyContext());
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
             }
         }
 
@@ -70,19 +70,19 @@ namespace Foundatio.Tests.Caching {
                 return;
 
             using (cache) {
-                await cache.RemoveAllAsync();
+                await cache.RemoveAllAsync().AnyContext();
                 
                 string prefix = "blah:";
-                await cache.SetAsync("test", 1);
-                await cache.SetAsync(prefix + "test", 1);
-                await cache.SetAsync(prefix + "test2", 4);
-                Assert.Equal(1, await cache.GetAsync<int>(prefix + "test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                await cache.SetAsync("test", 1).AnyContext();
+                await cache.SetAsync(prefix + "test", 1).AnyContext();
+                await cache.SetAsync(prefix + "test2", 4).AnyContext();
+                Assert.Equal(1, await cache.GetAsync<int>(prefix + "test").AnyContext());
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
 
-                await cache.RemoveByPrefixAsync(prefix);
-                Assert.Null(await cache.GetAsync<int?>(prefix + "test"));
-                Assert.Null(await cache.GetAsync<int?>(prefix + "test2"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                await cache.RemoveByPrefixAsync(prefix).AnyContext();
+                Assert.Null(await cache.GetAsync<int?>(prefix + "test").AnyContext());
+                Assert.Null(await cache.GetAsync<int?>(prefix + "test2").AnyContext());
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
             }
         }
 
@@ -92,13 +92,13 @@ namespace Foundatio.Tests.Caching {
                 return;
 
             using (cache) {
-                await cache.RemoveAllAsync();
+                await cache.RemoveAllAsync().AnyContext();
 
                 var dt = DateTimeOffset.Now;
                 var value = new MyData {Type = "test", Date = dt, Message = "Hello World"};
-                await cache.SetAsync("test", value);
+                await cache.SetAsync("test", value).AnyContext();
                 value.Type = "modified";
-                var cachedValue = await cache.GetAsync<MyData>("test");
+                var cachedValue = await cache.GetAsync<MyData>("test").AnyContext();
                 Assert.NotNull(cachedValue);
                 Assert.Equal(dt, cachedValue.Date);
                 Assert.False(value.Equals(cachedValue), "Should not be same reference object.");
@@ -113,31 +113,28 @@ namespace Foundatio.Tests.Caching {
                 return;
 
             using (cache) {
-                await cache.RemoveAllAsync();
+                await cache.RemoveAllAsync().AnyContext();
 
                 var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
-                var success = await cache.SetAsync("test", 1, expiresAt);
+                var success = await cache.SetAsync("test", 1, expiresAt).AnyContext();
                 Assert.True(success);
-                success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
+                success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100)).AnyContext();
                 Assert.True(success);
-                Assert.Equal(1, await cache.GetAsync<int?>("test"));
-                Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
+                Assert.Equal(1, await cache.GetAsync<int?>("test").AnyContext());
+                Assert.True((await cache.GetExpirationAsync("test").AnyContext()).Value < TimeSpan.FromSeconds(1));
 
                 Thread.Sleep(500);
-                Assert.Null(await cache.GetAsync<int?>("test"));
-                Assert.Null(await cache.GetExpirationAsync("test"));
-                Assert.Null(await cache.GetAsync<int?>("test2"));
-                Assert.Null(await cache.GetExpirationAsync("test2"));
+                Assert.Null(await cache.GetAsync<int?>("test").AnyContext());
+                Assert.Null(await cache.GetExpirationAsync("test").AnyContext());
+                Assert.Null(await cache.GetAsync<int?>("test2").AnyContext());
+                Assert.Null(await cache.GetExpirationAsync("test2").AnyContext());
             }
         }
 
-        protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 
-    public class MyData
-    {
+    public class MyData {
         public string Type { get; set; }
         public DateTimeOffset Date { get; set; }
         public string Message { get; set; }

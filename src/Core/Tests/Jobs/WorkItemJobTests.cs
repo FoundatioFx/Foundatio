@@ -31,20 +31,20 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
 
                 for (int i = 0; i < 10; i++) {
-                    await Task.Delay(100);
+                    await Task.Delay(100).AnyContext();
                     ctx.ReportProgress(10 * i);
                 }
             });
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
 
             int statusCount = 0;
             await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
-            });
+            }).AnyContext();
 
-            await job.RunUntilEmptyAsync();
+            await job.RunUntilEmptyAsync().AnyContext();
 
             Assert.Equal(12, statusCount);
         }
@@ -79,7 +79,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             for (int i = 0; i < 100; i++)
-                await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test", Index = i }, true);
+                await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test", Index = i }, true).AnyContext();
             
             var completedItems = new List<string>();
             object completedItemsLock = new object();
@@ -89,20 +89,20 @@ namespace Foundatio.Tests.Jobs {
 
                 lock (completedItemsLock)
                     completedItems.Add(status.WorkItemId);
-            });
+            }).AnyContext();
             
             var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var token = cancellationTokenSource.Token;
             var tasks = new List<Task>();
             tasks.AddRange(new[] {
-                Task.Run(async () => await j1.RunUntilEmptyAsync(token), token),
-                Task.Run(async () => await j2.RunUntilEmptyAsync(token), token),
-                Task.Run(async () => await j3.RunUntilEmptyAsync(token), token),
+                Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token),
+                Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token),
+                Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token),
             });
 
-            await Task.WhenAny(tasks);
+            await Task.WhenAny(tasks).AnyContext();
             cancellationTokenSource.Cancel();
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).AnyContext();
             Thread.Sleep(1);
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
@@ -119,15 +119,15 @@ namespace Foundatio.Tests.Jobs {
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
 
             int statusCount = 0;
             await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
-            });
+            }).AnyContext();
 
-            await job.RunUntilEmptyAsync();
+            await job.RunUntilEmptyAsync().AnyContext();
 
             Assert.Equal(12, statusCount);
         }
@@ -145,15 +145,15 @@ namespace Foundatio.Tests.Jobs {
                 throw new ApplicationException();
             });
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
 
             int statusCount = 0;
             await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
-            });
+            }).AnyContext();
 
-            await job.RunUntilEmptyAsync();
+            await job.RunUntilEmptyAsync().AnyContext();
             Thread.Sleep(1);
 
             Assert.Equal(1, statusCount);
@@ -164,9 +164,9 @@ namespace Foundatio.Tests.Jobs {
                 return TaskHelper.Completed();
             });
 
-            jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+            jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
 
-            await job.RunUntilEmptyAsync();
+            await job.RunUntilEmptyAsync().AnyContext();
 
             Assert.Equal(2, statusCount);
         }

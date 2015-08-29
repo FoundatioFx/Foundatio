@@ -18,19 +18,19 @@ namespace Foundatio.Tests.Metrics {
         public async Task CanIncrementCounter() {
             var metrics = new InMemoryMetricsClient();
 
-            await metrics.CounterAsync("c1");
+            await metrics.CounterAsync("c1").AnyContext();
             Assert.Equal(1, metrics.GetCount("c1"));
 
-            await metrics.CounterAsync("c1", 5);
+            await metrics.CounterAsync("c1", 5).AnyContext();
             Assert.Equal(6, metrics.GetCount("c1"));
 
             var counter = metrics.Counters["c1"];
             Assert.True(counter.Rate > 400);
 
-            await metrics.GaugeAsync("g1", 2.534);
+            await metrics.GaugeAsync("g1", 2.534).AnyContext();
             Assert.Equal(2.534, metrics.GetGaugeValue("g1"));
 
-            await metrics.TimerAsync("t1", 50788);
+            await metrics.TimerAsync("t1", 50788).AnyContext();
             var stats = metrics.GetMetricStats();
             Assert.Equal(1, stats.Timings.Count);
 
@@ -43,39 +43,39 @@ namespace Foundatio.Tests.Metrics {
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(50), _writer);
             Task.Run(async () => {
                 Thread.Sleep(50);
-                await metrics.CounterAsync("Test");
-                await metrics.CounterAsync("Test");
-            });
+                await metrics.CounterAsync("Test").AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
+            }).AnyContext();
 
-            var success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2);
+            var success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
             Assert.True(success);
 
             Task.Run(async () => {
                 Thread.Sleep(50);
-                await metrics.CounterAsync("Test");
-            });
+                await metrics.CounterAsync("Test").AnyContext();
+            }).AnyContext();
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500));
+            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(100));
+            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(100)).AnyContext();
             Assert.False(success);
 
             Task.Run(async () => {
                 Thread.Sleep(50);
-                await metrics.CounterAsync("Test", 2);
-            });
+                await metrics.CounterAsync("Test", 2).AnyContext();
+            }).AnyContext();
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2);
+            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 1, async () => await metrics.CounterAsync("Test"));
+            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 1, async () => await metrics.CounterAsync("Test").AnyContext()).AnyContext();
             Assert.True(success);
 
             Task.Run(async () => {
                 Thread.Sleep(50);
-                await metrics.CounterAsync("Test");
-            });
+                await metrics.CounterAsync("Test").AnyContext();
+            }).AnyContext();
 
             success = metrics.WaitForCounter("Test", TimeSpan.FromMilliseconds(500));
             Assert.True(success);
@@ -88,7 +88,7 @@ namespace Foundatio.Tests.Metrics {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
             Parallel.For(0, 100, i => {
-                metrics.CounterAsync("Test").Wait();
+                metrics.CounterAsync("Test").AnyContext().GetAwaiter().GetResult();
                 Thread.Sleep(50);
             });
 

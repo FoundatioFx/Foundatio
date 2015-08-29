@@ -6,6 +6,7 @@ using Nito.AsyncEx;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
+using Foundatio.Extensions;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
@@ -43,9 +44,9 @@ namespace Foundatio.Lock {
                 var now = DateTime.UtcNow;
                 bool gotLock = false;
                 if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = await _cacheClient.AddAsync(name, now);
+                    gotLock = await _cacheClient.AddAsync(name, now).AnyContext();
                 else
-                    gotLock = await _cacheClient.AddAsync(name, now, lockTimeout.Value);
+                    gotLock = await _cacheClient.AddAsync(name, now, lockTimeout.Value).AnyContext();
 
                 if (gotLock) {
                     allowLock = true;
@@ -53,7 +54,7 @@ namespace Foundatio.Lock {
                 }
 
                 Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
-                var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name) ?? TimeSpan.FromSeconds(1));
+                var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.FromSeconds(1));
                 if (keyExpiration < DateTime.UtcNow)
                     keyExpiration = DateTime.UtcNow;
 
@@ -77,13 +78,13 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            return await _cacheClient.GetAsync<object>(name) != null;
+            return await _cacheClient.GetAsync<object>(name).AnyContext() != null;
         }
 
         public async Task ReleaseLockAsync(string name) {
             Logger.Trace().Message("ReleaseLock: {0}", name).Write();
-            await _cacheClient.RemoveAsync(name);
-            await _messageBus.PublishAsync(new CacheLockReleased { Name = name });
+            await _cacheClient.RemoveAsync(name).AnyContext();
+            await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }
         
         public void Dispose() { }

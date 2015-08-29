@@ -30,7 +30,7 @@ namespace Foundatio.Tests {
             var sw = new Stopwatch();
             sw.Start();
             for (int i = 0; i < 5; i++)
-                await locker.AcquireLockAsync("test");
+                await locker.AcquireLockAsync("test").AnyContext();
             sw.Stop();
 
             _output.WriteLine(sw.Elapsed.ToString());
@@ -38,21 +38,21 @@ namespace Foundatio.Tests {
 
             sw.Reset();
             sw.Start();
-            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.Zero);
+            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.Zero).AnyContext();
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
-            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
-            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2));
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2)).AnyContext();
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());

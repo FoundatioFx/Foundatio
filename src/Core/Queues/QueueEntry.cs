@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Queues {
     public class QueueEntry<T> : IQueueEntryMetadata, IDisposable where T : class {
@@ -32,17 +33,17 @@ namespace Foundatio.Queues {
 
             _isCompleted = true;
             _processingTimer.Stop();
-            await _queue.CompleteAsync(this);
+            await _queue.CompleteAsync(this).AnyContext();
         }
 
         public async Task AbandonAsync() {
             _processingTimer.Stop();
-            await _queue.AbandonAsync(this);
+            await _queue.AbandonAsync(this).AnyContext();
         }
 
         public virtual void Dispose() {
             if (!_isCompleted)
-                AbandonAsync().Wait();
+                AbandonAsync().AnyContext().GetAwaiter().GetResult();
         }
     }
 

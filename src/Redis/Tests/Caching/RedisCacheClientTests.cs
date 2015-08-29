@@ -52,17 +52,17 @@ namespace Foundatio.Redis.Tests.Caching {
             if (cacheClient == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
-                await cacheClient.SetAsync("test", 13422);
-                await cacheClient.SetAsync("flag", true);
-                Assert.Equal(13422, await cacheClient.GetAsync<int>("test"));
-                Assert.Null(await cacheClient.GetAsync<int?>("test2"));
-                Assert.True(await cacheClient.GetAsync<bool>("flag"));
-                await metrics.CounterAsync("work");
+                await cacheClient.SetAsync("test", 13422).AnyContext();
+                await cacheClient.SetAsync("flag", true).AnyContext();
+                Assert.Equal(13422, await cacheClient.GetAsync<int>("test").AnyContext());
+                Assert.Null(await cacheClient.GetAsync<int?>("test2").AnyContext());
+                Assert.True(await cacheClient.GetAsync<bool>("flag").AnyContext());
+                await metrics.CounterAsync("work").AnyContext();
             }
             metrics.DisplayStats(_writer);
         }
@@ -73,7 +73,7 @@ namespace Foundatio.Redis.Tests.Caching {
             if (cacheClient == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
@@ -81,12 +81,12 @@ namespace Foundatio.Redis.Tests.Caching {
                 await cacheClient.SetAsync("test", new SimpleModel {
                     Data1 = "Hello",
                     Data2 = 12
-                });
-                var model = await cacheClient.GetAsync<SimpleModel>("test");
+                }).AnyContext();
+                var model = await cacheClient.GetAsync<SimpleModel>("test").AnyContext();
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                await metrics.CounterAsync("work");
+                await metrics.CounterAsync("work").AnyContext();
             }
             metrics.DisplayStats();
         }
@@ -97,7 +97,7 @@ namespace Foundatio.Redis.Tests.Caching {
             if (cacheClient == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
@@ -109,12 +109,12 @@ namespace Foundatio.Redis.Tests.Caching {
                     Simple = new SimpleModel { Data1 = "hi", Data2 = 13 },
                     Simples = new List<SimpleModel> { new SimpleModel { Data1 = "hey", Data2 = 45 }, new SimpleModel { Data1 = "next", Data2 = 3423 } },
                     DictionarySimples = new Dictionary<string, SimpleModel> { { "sdf", new SimpleModel { Data1 = "Sachin" } } }
-                });
-                var model = await cacheClient.GetAsync<SimpleModel>("test");
+                }).AnyContext();
+                var model = await cacheClient.GetAsync<SimpleModel>("test").AnyContext();
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                await metrics.CounterAsync("work");
+                await metrics.CounterAsync("work").AnyContext();
             }
             metrics.DisplayStats();
         }

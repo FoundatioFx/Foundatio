@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
 using StackExchange.Redis;
 
@@ -27,21 +28,21 @@ namespace Foundatio.Caching {
                     var server = _connectionMultiplexer.GetServer(endpoint);
 
                     try {
-                        await server.FlushDatabaseAsync();
+                        await server.FlushDatabaseAsync().AnyContext();
                         continue;
                     } catch (Exception) {}
 
                     try {
                         var redisKeys = server.Keys().ToArray();
                         if (redisKeys.Length > 0) {
-                            await _db.KeyDeleteAsync(redisKeys);
+                            await _db.KeyDeleteAsync(redisKeys).AnyContext();
                         }
                     } catch (Exception) {}
                 }
             } else {
                 var redisKeys = keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).ToArray();
                 if (redisKeys.Length > 0) {
-                    await _db.KeyDeleteAsync(redisKeys);
+                    await _db.KeyDeleteAsync(redisKeys).AnyContext();
                     return redisKeys.Length;
                 }
             }
@@ -50,12 +51,12 @@ namespace Foundatio.Caching {
         }
 
         public async Task<int> RemoveByPrefixAsync(string prefix) {
-            await _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] { (RedisValue)(prefix + "*") });
+            await _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] { (RedisValue)(prefix + "*") }).AnyContext();
             return 0;
         }
 
         public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
-            var redisValue = await _db.StringGetAsync(key);
+            var redisValue = await _db.StringGetAsync(key).AnyContext();
             if (redisValue == RedisValue.Null)
                 return CacheValue<T>.Null;
 
@@ -70,7 +71,7 @@ namespace Foundatio.Caching {
 
         public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
             var keyArray = keys.ToArray();
-            var values = await _db.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray());
+            var values = await _db.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray()).AnyContext();
 
             var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
@@ -83,11 +84,11 @@ namespace Foundatio.Caching {
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return false;
             }
 
-            return await InternalSetAsync(key, value, expiresIn, When.NotExists);
+            return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -112,7 +113,7 @@ namespace Foundatio.Caching {
             if (values == null)
                 return 0;
 
-            await _db.StringSetAsync(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)_serializer.Serialize(v.Value)).ToArray());
+            await _db.StringSetAsync(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)_serializer.Serialize(v.Value)).ToArray()).AnyContext();
             return values.Count;
         }
 
@@ -122,11 +123,11 @@ namespace Foundatio.Caching {
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return -1;
             }
             
-            var result = amount >= 0 ? await _db.StringIncrementAsync(key, amount) : await _db.StringDecrementAsync(key, -amount);
+            var result = amount >= 0 ? await _db.StringIncrementAsync(key, amount).AnyContext() : await _db.StringDecrementAsync(key, -amount).AnyContext();
             _db.KeyExpire(key, expiresIn);
             return result;
         }

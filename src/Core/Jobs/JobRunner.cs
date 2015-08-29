@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 using Foundatio.Logging;
@@ -39,9 +40,9 @@ namespace Foundatio.Jobs {
         public static async Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
             var tasks = new List<Task>();
             for (int i = 0; i < instanceCount; i++)
-                tasks.Add(Task.Run(async () => await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken), cancellationToken));
+                tasks.Add(Task.Run(async () => await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken).AnyContext(), cancellationToken));
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).AnyContext();
         }
 
         public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -56,10 +57,9 @@ namespace Foundatio.Jobs {
             WatchForShutdown();
             var linkedToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             if (options.RunContinuous)
-                await RunContinuousAsync(options.JobType, options.Interval,
-                    options.IterationLimit, options.InstanceCount, linkedToken);
+                await RunContinuousAsync(options.JobType, options.Interval, options.IterationLimit, options.InstanceCount, linkedToken).AnyContext();
             else
-                return (await RunAsync(options.JobType, linkedToken)).IsSuccess ? 0 : -1;
+                return (await RunAsync(options.JobType, linkedToken).AnyContext()).IsSuccess ? 0 : -1;
 
             return 0;
         }

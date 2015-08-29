@@ -29,11 +29,11 @@ namespace Foundatio.Jobs {
             EnsureJobNameSet();
             Logger.Trace().Message("Job run \"{0}\" starting...", _jobName).Write();
 
-            using (var lockValue = await GetJobLockAsync()) {
+            using (var lockValue = await GetJobLockAsync().AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
-                var result = await TryRunAsync(cancellationToken);
+                var result = await TryRunAsync(cancellationToken).AnyContext();
                 if (result != null) {
                     if (!result.IsSuccess)
                         Logger.Error().Message("Job run \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
@@ -51,7 +51,7 @@ namespace Foundatio.Jobs {
 
         private async Task<JobResult> TryRunAsync(CancellationToken token) {
             try {
-                return await RunInternalAsync(token);
+                return await RunInternalAsync(token).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex);
             }
@@ -67,7 +67,7 @@ namespace Foundatio.Jobs {
 
             while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 try {
-                    await RunAsync(cancellationToken);
+                    await RunAsync(cancellationToken).AnyContext();
 
                     iterations++;
                     if (interval.HasValue)
@@ -80,7 +80,7 @@ namespace Foundatio.Jobs {
                     continue;
 
                 try {
-                    if (!await continuationCallback())
+                    if (!await continuationCallback().AnyContext())
                         break;
                 } catch (Exception ex) {
                     Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();

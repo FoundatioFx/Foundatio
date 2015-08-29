@@ -98,22 +98,22 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
-                string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
+                string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 }.AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
                 Assert.Equal(2, CountAllKeys());
 
-                var workItem = await queue.DequeueAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
+                var workItem = await queue.DequeueAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
                 Assert.Equal(3, CountAllKeys());
 
-                await workItem.CompleteAsync();
-                Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
+                await workItem.CompleteAsync().AnyContext();
+                Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
                 Assert.Equal(0, CountAllKeys());
             }
         }
@@ -130,43 +130,43 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
-                var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
-                var workItem = await queue.DequeueAsync();
-                await workItem.AbandonAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+                var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 }).AnyContext();
+                var workItem = await queue.DequeueAsync().AnyContext();
+                await workItem.AbandonAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
 
-                workItem = await queue.DequeueAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+                workItem = await queue.DequeueAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in".AnyContext()));
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
 
                 // let the work item timeout
                 Thread.Sleep(1000);
-                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Timeouts);
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(2, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Timeouts);
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(2, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
 
                 // should go to deadletter now
-                workItem = await queue.DequeueAsync();
-                await workItem.AbandonAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:dead"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(3, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+                workItem = await queue.DequeueAsync().AnyContext();
+                await workItem.AbandonAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:dead").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(3, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
             }
         }
@@ -183,35 +183,35 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
-                var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
-                var workItem = await queue.DequeueAsync();
-                await workItem.AbandonAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:wait"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
+                var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 }).AnyContext();
+                var workItem = await queue.DequeueAsync().AnyContext();
+                await workItem.AbandonAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:wait").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait").AnyContext());
                 Assert.InRange(CountAllKeys(), 5, 6);
                 Thread.Sleep(1000);
 
-                await queue.DoMaintenanceWorkAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
+                await queue.DoMaintenanceWorkAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
+                Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
 
-                workItem = await queue.DequeueAsync();
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
+                workItem = await queue.DequeueAsync().AnyContext();
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued").AnyContext());
+                Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.InRange(CountAllKeys(), 4, 5);
             }
         }
@@ -230,29 +230,29 @@ namespace Foundatio.Redis.Tests.Queues {
                 var workItemIds = new List<string>();
 
                 for (int i = 0; i < 10; i++) {
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
+                    var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i}).AnyContext();
                     Trace.WriteLine(id);
                     workItemIds.Add(id);
                 }
 
                 for (int i = 0; i < 10; i++) {
-                    var workItem = await queue.DequeueAsync();
-                    await workItem.AbandonAsync();
+                    var workItem = await queue.DequeueAsync().AnyContext();
+                    await workItem.AbandonAsync().AnyContext();
                     Trace.WriteLine("Abondoning: " + workItem.Id);
                 }
 
                 workItemIds.Reverse();
-                await queue.DoMaintenanceWorkAsync();
+                await queue.DoMaintenanceWorkAsync().AnyContext();
 
                 foreach (var id in workItemIds.Take(3)) {
                     Trace.WriteLine("Checking: " + id);
-                    Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+                    Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
                 }
 
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait"));
-                Assert.Equal(3, await db.ListLengthAsync("q:SimpleWorkItem:dead"));
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work").AnyContext());
+                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait").AnyContext());
+                Assert.Equal(3, await db.ListLengthAsync("q:SimpleWorkItem:dead").AnyContext());
                 Assert.Equal(10, CountAllKeys());
             }
         }
@@ -268,32 +268,32 @@ namespace Foundatio.Redis.Tests.Queues {
             FlushAll();
 
             using (queue) {
-                await queue.DeleteQueueAsync();
+                await queue.DeleteQueueAsync().AnyContext();
 
                 const int workItemCount = 10000;
                 for (int i = 0; i < workItemCount; i++) {
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
-                    });
+                    }).AnyContext();
                 }
-                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
+                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
 
                 var metrics = new InMemoryMetricsClient();
-                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
                     if (RandomData.GetBool(10))
-                        await workItem.AbandonAsync();
+                        await workItem.AbandonAsync().AnyContext();
                     else
-                        await workItem.CompleteAsync();
+                        await workItem.CompleteAsync().AnyContext();
 
-                    await metrics.CounterAsync("work");
+                    await metrics.CounterAsync("work").AnyContext();
 
-                    workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
+                    workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100)).AnyContext();
                 }
                 metrics.DisplayStats(_output);
 
-                var stats = await queue.GetQueueStatsAsync();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.True(stats.Dequeued >= workItemCount);
                 Assert.Equal(workItemCount, stats.Completed + stats.Deadletter);
                 Assert.Equal(0, stats.Queued);
@@ -311,28 +311,28 @@ namespace Foundatio.Redis.Tests.Queues {
             FlushAll();
 
             using (queue) {
-                await queue.DeleteQueueAsync();
+                await queue.DeleteQueueAsync().AnyContext();
 
                 const int workItemCount = 10000;
                 for (int i = 0; i < workItemCount; i++) {
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
-                    });
+                    }).AnyContext();
                 }
-                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
+                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
 
                 var metrics = new InMemoryMetricsClient();
-                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
-                    await workItem.CompleteAsync();
-                    await metrics.CounterAsync("work");
+                    await workItem.CompleteAsync().AnyContext();
+                    await metrics.CounterAsync("work").AnyContext();
 
-                    workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                    workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 }
                 metrics.DisplayStats(_output);
 
-                var stats = await queue.GetQueueStatsAsync();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.Equal(workItemCount, stats.Dequeued);
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
@@ -350,28 +350,28 @@ namespace Foundatio.Redis.Tests.Queues {
             FlushAll();
 
             using (queue) {
-                await queue.DeleteQueueAsync();
+                await queue.DeleteQueueAsync().AnyContext();
 
                 const int workItemCount = 10000;
                 for (int i = 0; i < workItemCount; i++) {
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
-                    });
+                    }).AnyContext();
                 }
-                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
+                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
 
                 var countdown = new CountDownLatch(workItemCount);
                 var metrics = new InMemoryMetricsClient();
                 queue.StartWorkingAsync(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
-                    await workItem.CompleteAsync();
-                    await metrics.CounterAsync("work");
+                    await workItem.CompleteAsync().AnyContext();
+                    await metrics.CounterAsync("work").AnyContext();
                     countdown.Signal();
-                });
+                }).AnyContext();
                 countdown.Wait(60 * 1000);
                 metrics.DisplayStats(_output);
 
-                var stats = await queue.GetQueueStatsAsync();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.Equal(workItemCount, stats.Dequeued);
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);

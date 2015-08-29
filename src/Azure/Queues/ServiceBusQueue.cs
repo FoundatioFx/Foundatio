@@ -55,15 +55,15 @@ namespace Foundatio.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
-            if (await _namespaceManager.QueueExistsAsync(_queueName))
-                await _namespaceManager.DeleteQueueAsync(_queueName);
+            if (await _namespaceManager.QueueExistsAsync(_queueName).AnyContext())
+                await _namespaceManager.DeleteQueueAsync(_queueName).AnyContext();
 
             _queueDescription = new QueueDescription(_queueName) {
                 MaxDeliveryCount = _retries + 1,
                 LockDuration = _workItemTimeout
             };
 
-            await _namespaceManager.CreateQueueAsync(_queueDescription);
+            await _namespaceManager.CreateQueueAsync(_queueDescription).AnyContext();
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -73,7 +73,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
-            var q = await _namespaceManager.GetQueueAsync(_queueName);
+            var q = await _namespaceManager.GetQueueAsync(_queueName).AnyContext();
             return new QueueStats {
                 Queued = q.MessageCount,
                 Working = -1,
@@ -100,13 +100,13 @@ namespace Foundatio.Queues {
 
             var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
             try {
-                await _workerAction(workItem);
+                await _workerAction(workItem).AnyContext();
                 if (_workerAutoComplete)
-                    await workItem.CompleteAsync();
+                    await workItem.CompleteAsync().AnyContext();
             } catch (Exception ex) {
                 Interlocked.Increment(ref _workerErrorCount);
                 Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
-                await workItem.AbandonAsync();
+                await workItem.AbandonAsync().AnyContext();
             }
         }
 
@@ -116,7 +116,7 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
-            await _queueClient.SendAsync(message);
+            await _queueClient.SendAsync(message).AnyContext();
 
             OnEnqueued(data, message.MessageId);
 
@@ -152,7 +152,7 @@ namespace Foundatio.Queues {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
 
-            using (var msg = await _queueClient.ReceiveAsync(timeout.Value)) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout.Value).AnyContext()) {
                 if (msg == null)
                     return null;
                 
@@ -166,19 +166,19 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(IQueueEntryMetadata entry) {
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(entry.Id)).ConfigureAwait(false);
+            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
             OnCompleted(entry);
         }
         
         public override async Task AbandonAsync(IQueueEntryMetadata entry) {
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(entry.Id)).ConfigureAwait(false);
+            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
             OnAbandoned(entry);
         }
         
         public override void Dispose() {
             base.Dispose();
-            StopWorkingAsync().Wait();
+            StopWorkingAsync().AnyContext().GetAwaiter().GetResult();
             _queueClient.Close();
         }
     }

@@ -35,7 +35,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
-            return await ExistsAsync(path) ? _storage[path].Item1 : null;
+            return await ExistsAsync(path).AnyContext() ? _storage[path].Item1 : null;
         }
 
         public Task<bool> ExistsAsync(string path) {

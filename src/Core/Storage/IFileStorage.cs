@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Newtonsoft.Json;
 
 namespace Foundatio.Storage {
@@ -27,15 +28,15 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static async Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
             string json = JsonConvert.SerializeObject(data);
-            return await storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
         }
         
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
             string fileContents;
-            using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken))
-                fileContents = await new StreamReader(result).ReadToEndAsync();
+            using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext())
+                fileContents = await new StreamReader(result).ReadToEndAsync().AnyContext();
 
             if (string.IsNullOrEmpty(fileContents))
                 return default(T);
@@ -45,20 +46,20 @@ namespace Foundatio.Storage {
 
         public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files) {
             foreach (var file in files)
-                await storage.DeleteFileAsync(file.Path);
+                await storage.DeleteFileAsync(file.Path).AnyContext();
         }
 
         public static async Task<string> GetFileContentsAsync(this IFileStorage storage, string path) {
-            using (var stream = await storage.GetFileStreamAsync(path))
-                return new StreamReader(stream).ReadToEnd();
+            using (var stream = await storage.GetFileStreamAsync(path).AnyContext())
+                return await new StreamReader(stream).ReadToEndAsync().AnyContext();
         }
 
         public static async Task<byte[]> GetFileContentsRawAsync(this IFileStorage storage, string path) {
-            using (var stream = await storage.GetFileStreamAsync(path)) {
+            using (var stream = await storage.GetFileStreamAsync(path).AnyContext()) {
                 byte[] buffer = new byte[16 * 1024];
                 using (var ms = new MemoryStream()) {
                     int read;
-                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0) {
+                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
                         ms.Write(buffer, 0, read);
                     }
 

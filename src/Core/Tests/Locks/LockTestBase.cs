@@ -27,16 +27,16 @@ namespace Foundatio.Tests {
                 return;
 
             using (locker) {
-                await locker.ReleaseLockAsync("test");
+                await locker.ReleaseLockAsync("test").AnyContext();
 
-                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
                     Assert.NotNull(lock1);
-                    Assert.True(await locker.IsLockedAsync("test"));
-                    var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                    Assert.True(await locker.IsLockedAsync("test").AnyContext());
+                    var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
                     Assert.Null(lock2);
                 }
 
-                Assert.False(await locker.IsLockedAsync("test"));
+                Assert.False(await locker.IsLockedAsync("test").AnyContext());
 
                 int counter = 0;
                 Parallel.For(0, 25, i => {
@@ -57,14 +57,14 @@ namespace Foundatio.Tests {
                 return;
 
             using (locker) {
-                await locker.ReleaseLockAsync("test");
+                await locker.ReleaseLockAsync("test").AnyContext();
 
-                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromSeconds(1));
+                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromSeconds(1)).AnyContext();
                 Assert.NotNull(testLock);
-                var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
+                var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
                 Assert.Null(lock1);
 
-                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2));
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2)).AnyContext();
                 Assert.NotNull(testLock);
             }
         }

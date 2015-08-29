@@ -21,15 +21,15 @@ namespace Foundatio.Redis.Tests.Jobs {
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100));
             Task.Factory.StartNew(() => {
                 Parallel.For(0, workItemCount, i => {
-                    queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i }).Wait();
+                    queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i }).AnyContext().GetAwaiter().GetResult();
                 });
             });
 
             var job = new SampleQueueJob(queue, metrics);
-            await job.RunUntilEmptyAsync();
+            await job.RunUntilEmptyAsync().AnyContext();
             metrics.DisplayStats();
 
-            Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+            Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
         }
     }
 }

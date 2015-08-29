@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
@@ -36,29 +37,29 @@ namespace Foundatio.Jobs {
                 Progress = progress,
                 Message = message,
                 Type = queueEntry.Value.Type
-            }));
+            }).AnyContext());
 
             if (queueEntry.Value.SendProgressReports)
                 await _messageBus.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,
                     Progress = 0,
                     Type = queueEntry.Value.Type
-                });
+                }).AnyContext();
 
             try {
-                await handler.HandleItem(new WorkItemContext(workItemData, JobId, progressCallback));
+                await handler.HandleItem(new WorkItemContext(workItemData, JobId, progressCallback)).AnyContext();
             } catch (Exception ex) {
-                await queueEntry.AbandonAsync();
+                await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
             }
 
-            await queueEntry.CompleteAsync();
+            await queueEntry.CompleteAsync().AnyContext();
             if (queueEntry.Value.SendProgressReports)
                 await _messageBus.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,
                     Progress = 100,
                     Type = queueEntry.Value.Type
-                });
+                }).AnyContext();
 
             return JobResult.Success;
         }

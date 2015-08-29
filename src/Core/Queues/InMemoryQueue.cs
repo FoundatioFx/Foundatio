@@ -223,19 +223,19 @@ namespace Foundatio.Queues {
                 Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
                 QueueEntry<T> queueEntry = null;
                 try {
-                    queueEntry = await DequeueAsync(TimeSpan.Zero, token);
+                    queueEntry = await DequeueAsync(TimeSpan.Zero, token).AnyContext();
                 } catch (TimeoutException) {}
 
                 if (queueEntry == null || _workerAction == null)
                     return;
 
                 try {
-                    await _workerAction(queueEntry);
+                    await _workerAction(queueEntry).AnyContext();
                     if (_workerAutoComplete)
-                        await queueEntry.CompleteAsync();
+                        await queueEntry.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
                     Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
-                    await queueEntry.AbandonAsync();
+                    await queueEntry.AbandonAsync().AnyContext();
                     Interlocked.Increment(ref _workerErrorCount);
                 }
             }
@@ -254,7 +254,7 @@ namespace Foundatio.Queues {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync().AnyContext(), _maintenanceCancellationTokenSource.Token).AnyContext();
         }
 
         private async Task DoMaintenanceAsync() {
@@ -279,7 +279,7 @@ namespace Foundatio.Queues {
             foreach (var key in abandonedKeys) {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
                 var info = _dequeued[key];
-                await AbandonAsync(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts));
+                await AbandonAsync(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts)).AnyContext();
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
         }

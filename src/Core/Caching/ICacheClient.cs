@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
@@ -19,11 +20,11 @@ namespace Foundatio.Caching {
 
     public static class CacheClientExtensions {
         public static async Task<bool> RemoveAsync(this ICacheClient client, string key) {
-            return await client.RemoveAllAsync(new[] { key }) == 1;
+            return await client.RemoveAllAsync(new[] { key }).AnyContext() == 1;
         }
         
         public static async Task<T> GetAsync<T>(this ICacheClient client, string key) {
-            var cacheValue = await client.TryGetAsync<T>(key);
+            var cacheValue = await client.TryGetAsync<T>(key).AnyContext();
             return cacheValue.HasValue ? cacheValue.Value : default(T);
         }
         

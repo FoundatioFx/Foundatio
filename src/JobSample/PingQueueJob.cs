@@ -18,9 +18,9 @@ namespace Foundatio.JobSample.Jobs {
             Console.WriteLine("Pong!");
 
             if (RandomData.GetBool(80))
-                await queueEntry.CompleteAsync();
+                await queueEntry.CompleteAsync().AnyContext();
             else if (RandomData.GetBool(80))
-                await queueEntry.AbandonAsync();
+                await queueEntry.AbandonAsync().AnyContext();
 
             return JobResult.Success;
         }

@@ -34,7 +34,7 @@ namespace Foundatio.Messaging {
                     if (!(m is T))
                         return;
 
-                    await handler((T)m, cancellationToken);
+                    await handler((T)m, cancellationToken).AnyContext();
                 }
             }, cancellationToken);
 

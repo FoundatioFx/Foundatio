@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Utility {
     internal static class TaskHelper {
@@ -91,16 +92,16 @@ namespace Foundatio.Utility {
         public static Task RunPeriodic(Func<Task> action, TimeSpan interval, CancellationToken cancellationToken = default(CancellationToken), TimeSpan? initialDelay = null) {
             return Task.Factory.StartNew(async () => {
                 if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
-                    await Task.Delay(initialDelay.Value, cancellationToken);
+                    await Task.Delay(initialDelay.Value, cancellationToken).AnyContext();
 
                 while (!cancellationToken.IsCancellationRequested) {
                     try {
-                        await action();
+                        await action().AnyContext();
                     } catch (Exception ex) {
                         Trace.TraceError(ex.Message);
                     }
 
-                    await Task.Delay(interval, cancellationToken);
+                    await Task.Delay(interval, cancellationToken).AnyContext();
                 }
             }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Current);
         }
@@ -111,7 +112,7 @@ namespace Foundatio.Utility {
                 if (timeout.HasValue && DateTime.Now.Subtract(start) > timeout.Value)
                     return false;
 
-                await Task.Delay(TimeSpan.FromMilliseconds(checkInterval));
+                await Task.Delay(TimeSpan.FromMilliseconds(checkInterval)).AnyContext();
             }
 
             return true;

@@ -20,7 +20,7 @@ namespace Foundatio.Tests.Jobs {
             RunCount++;
 
             Thread.Sleep(150);
-            Assert.True(await _locker.IsLockedAsync("WithLockingJob"));
+            Assert.True(await _locker.IsLockedAsync("WithLockingJob").AnyContext());
 
             return JobResult.Success;
         }

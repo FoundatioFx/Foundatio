@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 
@@ -13,7 +14,7 @@ namespace Foundatio.Jobs {
                 WorkItemId = id,
                 Type = typeof(T).AssemblyQualifiedName,
                 SendProgressReports = includeProgressReporting
-            });
+            }).AnyContext();
 
             return id;
         }

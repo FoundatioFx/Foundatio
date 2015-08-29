@@ -27,22 +27,22 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanRunJobs() {
             var job = new HelloWorldJob();
             Assert.Equal(0, job.RunCount);
-            await job.RunAsync();
+            await job.RunAsync().AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            await job.RunContinuousAsync(iterationLimit: 2);
+            await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
             var sw = new Stopwatch();
             sw.Start();
-            await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token);
+            await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token).AnyContext();
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
             var jobInstance = JobRunner.CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
             Assert.NotNull(jobInstance);
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
-            Assert.Equal(JobResult.Success, await jobInstance.RunAsync());
+            Assert.Equal(JobResult.Success, await jobInstance.RunAsync().AnyContext());
             Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
         }
 
@@ -51,13 +51,13 @@ namespace Foundatio.Tests.Jobs {
             HelloWorldJob.GlobalRunCount = 0;
 
             var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token);
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token).AnyContext();
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
 
             tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, tokenSource.Token);
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, tokenSource.Token).AnyContext();
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
@@ -65,25 +65,25 @@ namespace Foundatio.Tests.Jobs {
         public async void CanCancelContinuousJobs() {
             var job = new HelloWorldJob();
             var tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, tokenSource.Token);
+            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, tokenSource.Token).AnyContext();
             Assert.Equal(1, job.RunCount);
 
             tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token);
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token).AnyContext();
         }
 
         [Fact]
         public async Task CanRunJobsWithLocks() {
             var job = new WithLockingJob();
             Assert.Equal(0, job.RunCount);
-            await job.RunAsync();
+            await job.RunAsync().AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            await job.RunContinuousAsync(iterationLimit: 2);
+            await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            Task.Run(async () => await job.RunAsync());
-            Task.Run(async () => await job.RunAsync());
+            Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
+            Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
             Thread.Sleep(200);
             Assert.Equal(4, job.RunCount);
         }
@@ -94,7 +94,7 @@ namespace Foundatio.Tests.Jobs {
             var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
 
             var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token)));
+            await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token).AnyContext())).AnyContext();
 
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
         }
@@ -125,7 +125,7 @@ namespace Foundatio.Tests.Jobs {
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);
 
-            var result = await jobInstance.RunAsync();
+            var result = await jobInstance.RunAsync().AnyContext();
             Assert.Equal(true, result.IsSuccess);
             Assert.True(jobInstance is HelloWorldJob);
         }
@@ -139,14 +139,14 @@ namespace Foundatio.Tests.Jobs {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,
                     Path = "somepath" + i
-                });
+                }).AnyContext();
 
             var metrics = new InMemoryMetricsClient();
             var job = new SampleQueueJob(queue, metrics);
-            await job.RunUntilEmptyAsync(new CancellationTokenSource(30000).Token);
+            await job.RunUntilEmptyAsync(new CancellationTokenSource(30000).Token).AnyContext();
             metrics.DisplayStats(_writer);
 
-            Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+            Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
         }
 
         [Fact]
@@ -155,7 +155,7 @@ namespace Foundatio.Tests.Jobs {
 
             var metrics = new InMemoryMetricsClient();
             var job = new SampleJob(metrics);
-            await job.RunContinuousAsync(null, iterations);
+            await job.RunContinuousAsync(null, iterations).AnyContext();
             metrics.DisplayStats(_writer);
         }
     }

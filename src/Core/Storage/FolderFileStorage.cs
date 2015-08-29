@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
@@ -31,7 +32,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException("path");
 
             try {
-                if (!await ExistsAsync(path))
+                if (!await ExistsAsync(path).AnyContext())
                     return null;
 
                 return File.OpenRead(Path.Combine(Folder, path));

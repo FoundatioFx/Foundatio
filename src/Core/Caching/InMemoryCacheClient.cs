@@ -66,7 +66,7 @@ namespace Foundatio.Caching {
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
             Logger.Trace().Message("Scheduling delayed task: delay={0}", delay).Write();
-            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync(), _maintenanceCancellationTokenSource.Token);
+            Task.Factory.StartNewDelayed(delay, async () => await DoMaintenanceAsync().AnyContext(), _maintenanceCancellationTokenSource.Token).AnyContext();
         }
 
         private async Task DoMaintenanceAsync() {
@@ -90,7 +90,7 @@ namespace Foundatio.Caching {
 
             using (await _asyncLock.LockAsync()) {
                 foreach (var key in expiredKeys) {
-                    await this.RemoveAsync(key);
+                    await this.RemoveAsync(key).AnyContext();
                     OnItemExpired(key);
                     Logger.Trace().Message("Removing expired key: key={0}", key).Write();
                 }
@@ -205,7 +205,7 @@ namespace Foundatio.Caching {
         public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
             var valueMap = new Dictionary<string, T>();
             foreach (var key in keys) {
-                var value = await this.GetAsync<T>(key);
+                var value = await this.GetAsync<T>(key).AnyContext();
                 valueMap[key] = value;
             }
 
@@ -215,7 +215,7 @@ namespace Foundatio.Caching {
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return false;
             }
 
@@ -225,7 +225,7 @@ namespace Foundatio.Caching {
                     return false;
 
                 entry = new CacheEntry(value, expiresAt);
-                await SetInternalAsync(key, entry);
+                await SetInternalAsync(key, entry).AnyContext();
 
                 return true;
             }
@@ -237,14 +237,14 @@ namespace Foundatio.Caching {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
                 Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return false;
             }
 
             CacheEntry entry;
             if (!TryGetValueInternal(key, out entry)) {
                 entry = new CacheEntry(value, expiresAt);
-                await SetInternalAsync(key, entry);
+                await SetInternalAsync(key, entry).AnyContext();
                 return true;
             }
             
@@ -262,7 +262,7 @@ namespace Foundatio.Caching {
         private async Task SetInternalAsync(string key, CacheEntry entry) {
             Logger.Trace().Message("Set: key={0}", key).Write();
             if (entry.ExpiresAt < DateTime.UtcNow) {
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return;
             }
 
@@ -284,40 +284,40 @@ namespace Foundatio.Caching {
 
             var result = 0;
             foreach (var entry in values)
-                if (await SetAsync(entry.Key, entry.Value))
+                if (await SetAsync(entry.Key, entry.Value).AnyContext())
                     result++;
 
             return result;
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return !(await SetAsync(key, value, expiresIn));
+            return !(await SetAsync(key, value, expiresIn).AnyContext());
         }
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key);
+                await this.RemoveAsync(key).AnyContext();
                 return -1;
             }
 
             using (await _asyncLock.LockAsync()) {
                 if (!_memory.ContainsKey(key)) {
                     if (expiresIn.HasValue)
-                        await SetAsync(key, amount, expiresIn.Value);
+                        await SetAsync(key, amount, expiresIn.Value).AnyContext();
                     else
-                        await SetAsync(key, amount);
+                        await SetAsync(key, amount).AnyContext();
 
                     return amount;
                 }
 
-                var current = await this.GetAsync<long>(key);
+                var current = await this.GetAsync<long>(key).AnyContext();
                 if (amount == 0)
                     return current;
 
                 if (expiresIn.HasValue)
-                    await SetAsync(key, current += amount, expiresIn.Value);
+                    await SetAsync(key, current += amount, expiresIn.Value).AnyContext();
                 else
-                    await SetAsync(key, current += amount);
+                    await SetAsync(key, current += amount).AnyContext();
 
                 return current;
             }

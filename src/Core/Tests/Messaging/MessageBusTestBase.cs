@@ -30,11 +30,11 @@ namespace Foundatio.Tests.Messaging {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                     Logger.Trace().Message("Set event").Write();
-                });
+                }).AnyContext();
                 Thread.Sleep(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 Trace.WriteLine("Published one...");
 
                 bool success = resetEvent.WaitOne(5000);
@@ -57,13 +57,13 @@ namespace Foundatio.Tests.Messaging {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                     Logger.Trace().Message("Set event").Write();
-                });
+                }).AnyContext();
 
                 var sw = new Stopwatch();
                 sw.Start();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }, TimeSpan.FromMilliseconds(100));
+                }, TimeSpan.FromMilliseconds(100)).AnyContext();
                 Logger.Trace().Message("Published one...").Write();
 
                 bool success = resetEvent.WaitOne(2000);
@@ -87,18 +87,18 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -116,18 +116,18 @@ namespace Foundatio.Tests.Messaging {
                 var latch = new CountDownLatch(2);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     throw new ApplicationException();
-                });
+                }).AnyContext();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -145,14 +145,14 @@ namespace Foundatio.Tests.Messaging {
                 var resetEvent = new AutoResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
-                });
+                }).AnyContext();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 bool success = resetEvent.WaitOne(2000);
                 Assert.True(success, "Failed to receive message.");
@@ -171,16 +171,16 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.SubscribeAsync<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 bool success = latch.Wait(5000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -198,16 +198,16 @@ namespace Foundatio.Tests.Messaging {
                 var latch = new CountDownLatch(3);
                 await messageBus.SubscribeAsync<object>(msg => {
                     latch.Signal();
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -224,14 +224,14 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
                 Thread.Sleep(1000);
                 var resetEvent = new AutoResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                });
+                }).AnyContext();
 
                 bool success = resetEvent.WaitOne(2000);
                 Assert.False(success, "Messages are building up.");

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 
@@ -114,7 +115,7 @@ namespace Foundatio.Metrics {
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;
             if (work != null)
-                await work();
+                await work().AnyContext();
 
             if (GetCount(statName) >= expectedCount)
                 return true;
@@ -122,7 +123,7 @@ namespace Foundatio.Metrics {
             var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncAutoResetEvent(false));
             do {
                 try {
-                    await waitHandle.WaitAsync(cancellationToken);
+                    await waitHandle.WaitAsync(cancellationToken).AnyContext();
                 } catch (TaskCanceledException) {
                     return false;
                 }
@@ -133,28 +134,27 @@ namespace Foundatio.Metrics {
 
         public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Func<Task> work = null) {
             try {
-                var success = await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work);
-                return success;
+                return await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work).AnyContext();
             } catch (TaskCanceledException) {
                 return false;
             }
         }
 
-        public bool WaitForCounter(string statName, TimeSpan timeout, long count = 1, Action work = null) {
+        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Action work = null) {
             try {
-                var success = WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, () => {
+                var success = await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, () => {
                     if (work != null)
                         work();
                     return TaskHelper.Completed();
-                }).Result;
+                }).AnyContext();
                 return success;
             } catch (TaskCanceledException) {
                 return false;
             }
         }
 
-        public bool WaitForCounter(string statName, long count = 1, double timeoutInSeconds = 10, Action work = null) {
-            return WaitForCounter(statName, TimeSpan.FromSeconds(timeoutInSeconds), count, work);
+        public Task<bool> WaitForCounterAsync(string statName, long count = 1, double timeoutInSeconds = 10, Action work = null) {
+            return WaitForCounterAsync(statName, TimeSpan.FromSeconds(timeoutInSeconds), count, work);
         }
 
         public Task GaugeAsync(string statName, double value) {

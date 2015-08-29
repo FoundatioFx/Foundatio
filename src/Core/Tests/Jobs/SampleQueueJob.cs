@@ -15,21 +15,21 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry) {
-            await _metrics.CounterAsync("dequeued");
+            await _metrics.CounterAsync("dequeued").AnyContext();
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                await _metrics.CounterAsync("errors").AnyContext();
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned");
-                await queueEntry.AbandonAsync();
+                await _metrics.CounterAsync("abandoned").AnyContext();
+                await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FailedWithMessage("Abandoned");
             }
 
-            await queueEntry.CompleteAsync();
-            await _metrics.CounterAsync("completed");
+            await queueEntry.CompleteAsync().AnyContext();
+            await _metrics.CounterAsync("completed").AnyContext();
 
             return JobResult.Success;
         }
@@ -48,19 +48,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
-            await _metrics.CounterAsync("runs");
+            await _metrics.CounterAsync("runs").AnyContext();
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                await _metrics.CounterAsync("errors").AnyContext();
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("failed");
+                await _metrics.CounterAsync("failed").AnyContext();
                 return JobResult.FailedWithMessage("Failed");
             }
 
-            await _metrics.CounterAsync("completed");
+            await _metrics.CounterAsync("completed").AnyContext();
 
             return JobResult.Success;
         }
