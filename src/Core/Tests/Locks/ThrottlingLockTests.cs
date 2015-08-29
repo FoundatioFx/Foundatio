@@ -26,7 +26,7 @@ namespace Foundatio.Tests {
                 return;
 
             // sleep until start of throttling period
-            Thread.Sleep(DateTime.Now.Ceiling(_period) - DateTime.Now);
+            Thread.Sleep(DateTime.UtcNow.Ceiling(_period) - DateTime.UtcNow);
             var sw = new Stopwatch();
             sw.Start();
             for (int i = 0; i < 5; i++)

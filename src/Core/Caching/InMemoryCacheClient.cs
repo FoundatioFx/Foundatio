@@ -87,13 +87,11 @@ namespace Foundatio.Caching {
 
             if (expiredKeys.Count == 0)
                 return;
-
-            using (await _asyncLock.LockAsync()) {
-                foreach (var key in expiredKeys) {
-                    await this.RemoveAsync(key).AnyContext();
-                    OnItemExpired(key);
-                    Logger.Trace().Message("Removing expired key: key={0}", key).Write();
-                }
+            
+            foreach (var key in expiredKeys) {
+                await this.RemoveAsync(key).AnyContext();
+                OnItemExpired(key);
+                Logger.Trace().Message("Removing expired key: key={0}", key).Write();
             }
         }
 
@@ -218,17 +216,15 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return false;
             }
+            
+            CacheEntry entry;
+            if (TryGetValueInternal(key, out entry))
+                return false;
 
-            using (await _asyncLock.LockAsync()) {
-                CacheEntry entry;
-                if (TryGetValueInternal(key, out entry))
-                    return false;
+            entry = new CacheEntry(value, expiresAt);
+            await SetInternalAsync(key, entry).AnyContext();
 
-                entry = new CacheEntry(value, expiresAt);
-                await SetInternalAsync(key, entry).AnyContext();
-
-                return true;
-            }
+            return true;
         }
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -265,11 +261,9 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return;
             }
-
-            using (await _asyncLock.LockAsync()) {
-                _memory[key] = entry;
-                ScheduleNextMaintenance(entry.ExpiresAt);
-            }
+            
+            _memory[key] = entry;
+            ScheduleNextMaintenance(entry.ExpiresAt);
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
                 string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
