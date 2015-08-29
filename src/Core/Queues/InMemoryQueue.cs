@@ -93,7 +93,7 @@ namespace Foundatio.Queues {
                 return Task.FromResult(0);
 
             _workerCancellationTokenSource = new CancellationTokenSource();
-            return Task.Run(() => WorkerLoopAsync(_workerCancellationTokenSource.Token), cancellationToken);
+            return Task.Run(async () => await WorkerLoopAsync(_workerCancellationTokenSource.Token).AnyContext(), cancellationToken);
         }
 
         public override Task StopWorkingAsync() {
@@ -169,7 +169,7 @@ namespace Foundatio.Queues {
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
                     Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
-                    Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info));
+                    Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info)).AnyContext();
                 } else {
                     Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
                     Retry(info);

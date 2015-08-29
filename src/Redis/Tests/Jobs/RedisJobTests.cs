@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Jobs;
@@ -23,7 +24,7 @@ namespace Foundatio.Redis.Tests.Jobs {
                 Parallel.For(0, workItemCount, i => {
                     queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i }).AnyContext().GetAwaiter().GetResult();
                 });
-            });
+            }).AnyContext();
 
             var job = new SampleQueueJob(queue, metrics);
             await job.RunUntilEmptyAsync().AnyContext();

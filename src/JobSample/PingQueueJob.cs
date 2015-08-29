@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Queues;
 

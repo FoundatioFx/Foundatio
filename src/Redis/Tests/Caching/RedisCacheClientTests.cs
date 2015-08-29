@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;

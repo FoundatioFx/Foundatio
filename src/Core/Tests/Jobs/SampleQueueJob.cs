@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;

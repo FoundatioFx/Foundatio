@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -77,7 +78,7 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             }).AnyContext();
 
-            success = metrics.WaitForCounter("Test", TimeSpan.FromMilliseconds(500));
+            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
             metrics.DisplayStats(_writer);

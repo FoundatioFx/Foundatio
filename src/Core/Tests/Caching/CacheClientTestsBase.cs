@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Extensions;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -40,12 +41,12 @@ namespace Foundatio.Tests.Caching {
                 await scopedCache1.SetAsync("test", 2).AnyContext();
                 await nestedScopedCache1.SetAsync("test", 3).AnyContext();
 
-                Assert.Equal(1, await cache.GetAsync<int>("test")).AnyContext();
-                Assert.Equal(2, await scopedCache1.GetAsync<int>("test")).AnyContext();
-                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test")).AnyContext();
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
+                Assert.Equal(2, await scopedCache1.GetAsync<int>("test").AnyContext());
+                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test").AnyContext());
 
-                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test")).AnyContext();
-                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test")).AnyContext();
+                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test").AnyContext());
+                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test").AnyContext());
 
                 await scopedCache2.SetAsync("test", 1).AnyContext();
 

@@ -177,7 +177,7 @@ namespace Foundatio.Queues {
                 return Task.FromResult(0);
 
             _workerCancellationTokenSource = new CancellationTokenSource();
-            return Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
+            return Task.Factory.StartNew(async () => await WorkerLoopAsync(_workerCancellationTokenSource.Token).AnyContext());
         }
 
         public override async Task StopWorkingAsync() {
@@ -355,7 +355,7 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
         }
 
-        private async Task WorkerLoop(CancellationToken token) {
+        private async Task WorkerLoopAsync(CancellationToken token) {
             Logger.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
             while (!token.IsCancellationRequested && _workerAction != null) {
                 Logger.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();

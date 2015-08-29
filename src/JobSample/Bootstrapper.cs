@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
 using SimpleInjector;
@@ -28,7 +29,7 @@ namespace Foundatio.JobSample.Jobs {
                     await q1.EnqueueAsync(new PingRequest { Data = "Hi" }).AnyContext();
                     Thread.Sleep(RandomData.GetInt(100, 1000));
                 }
-            });
+            }).AnyContext();
 
             return container;
         }

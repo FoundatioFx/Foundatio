@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -98,7 +99,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
-                string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 }.AnyContext());
+                string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 }).AnyContext();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in").AnyContext());
                 Assert.Equal(2, CountAllKeys());
