@@ -1,15 +1,13 @@
-﻿using System.Reflection;
-using Foundatio.Metrics;
+﻿using Foundatio.Metrics;
 
 namespace Foundatio.Jobs {
-    public class WorkItemData : IMetricStatName {
+    public class WorkItemData : IHaveMetricName {
         public string WorkItemId { get; set; }
         public string Type { get; set; }
         public string Data { get; set; }
         public bool SendProgressReports { get; set; }
 
-
-        public string GetStatName()
+        public string GetMetricName()
         {
             if (string.IsNullOrEmpty(Type))
                 return null;

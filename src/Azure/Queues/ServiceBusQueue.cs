@@ -176,26 +176,26 @@ namespace Foundatio.Queues {
             }
         }
 
-        public async Task CompleteAsync(IQueueEntryMetadata entry) {
+        public async Task CompleteAsync(string id) {
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(entry.Id)).ConfigureAwait(false);
-            OnCompleted(entry);
+            await _queueClient.CompleteAsync(new Guid(id)).ConfigureAwait(false);
+            OnCompleted(id);
         }
 
-        public override void Complete(IQueueEntryMetadata entry)
+        public override void Complete(string id)
         {
-            CompleteAsync(entry).Wait();
+            CompleteAsync(id).Wait();
         }
 
-        public async Task AbandonAsync(IQueueEntryMetadata entry) {
+        public async Task AbandonAsync(string id) {
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(entry.Id)).ConfigureAwait(false);
-            OnAbandoned(entry);
+            await _queueClient.AbandonAsync(new Guid(id)).ConfigureAwait(false);
+            OnAbandoned(id);
         }
 
-        public override void Abandon(IQueueEntryMetadata entry)
+        public override void Abandon(string id)
         {
-            AbandonAsync(entry).Wait();
+            AbandonAsync(id).Wait();
         }
 
         public override void Dispose() {

@@ -135,42 +135,42 @@ namespace Foundatio.Queues {
             return entry;
         }
 
-        public override void Complete(IQueueEntryMetadata entry) {
-            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, entry.Id).Write();
+        public override void Complete(string id) {
+            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, id).Write();
 
             QueueInfo<T> info = null;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
 
-            OnCompleted(entry);
-            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
+            OnCompleted(id);
+            Logger.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public override void Abandon(IQueueEntryMetadata entry) {
-            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, entry.Id).Write();
+        public override void Abandon(string id) {
+            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, id).Write();
 
             QueueInfo<T> info;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _abandonedCount);
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
-                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
+                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
                     Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info));
                 } else {
-                    Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
+                    Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                     Retry(info);
                 }
             } else {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
                 _deadletterQueue.Enqueue(info);
             }
 
-            OnAbandoned(entry);
-            Logger.Trace().Message("Abondon complete: {0}", entry.Id).Write();
+            OnAbandoned(id);
+            Logger.Trace().Message("Abondon complete: {0}", id).Write();
         }
 
         private void Retry(QueueInfo<T> info) {
@@ -273,8 +273,7 @@ namespace Foundatio.Queues {
             foreach (var key in abandonedKeys)
             {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
-                var info = _dequeued[key];
-                Abandon(new QueueEntry<T>(info.Id, info.Data, this, info.TimeEnqueued, info.Attempts));
+                Abandon(key);
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
         }

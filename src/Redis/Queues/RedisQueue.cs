@@ -239,23 +239,23 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override void Complete(IQueueEntryMetadata entry) {
-            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, entry.Id).Write();
+        public override void Complete(string id) {
+            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
             var batch = _db.CreateBatch();
-            batch.ListRemoveAsync(WorkListName, entry.Id);
-            batch.KeyDeleteAsync(GetPayloadKey(entry.Id));
-            batch.KeyDeleteAsync(GetAttemptsKey(entry.Id));
-            batch.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id));
-            batch.KeyDeleteAsync(GetWaitTimeKey(entry.Id));
+            batch.ListRemoveAsync(WorkListName, id);
+            batch.KeyDeleteAsync(GetPayloadKey(id));
+            batch.KeyDeleteAsync(GetAttemptsKey(id));
+            batch.KeyDeleteAsync(GetDequeuedTimeKey(id));
+            batch.KeyDeleteAsync(GetWaitTimeKey(id));
             batch.Execute();
             Interlocked.Increment(ref _completedCount);
-            OnCompleted(entry);
-            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
+            OnCompleted(id);
+            Logger.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public override void Abandon(IQueueEntryMetadata entry) {
-            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, entry.Id).Write();
-            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(entry.Id));
+        public override void Abandon(string id) {
+            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
@@ -264,38 +264,38 @@ namespace Foundatio.Queues {
             var retryDelay = GetRetryDelay(attempts);
             Logger.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
             if (attempts > _retries) {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
-                _db.ListRemove(WorkListName, entry.Id);
-                _db.ListLeftPush(DeadListName, entry.Id);
-                _db.KeyExpire(GetPayloadKey(entry.Id), _deadLetterTtl);
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
+                _db.ListRemove(WorkListName, id);
+                _db.ListLeftPush(DeadListName, id);
+                _db.KeyExpire(GetPayloadKey(id), _deadLetterTtl);
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
             } else if (retryDelay > TimeSpan.Zero) {
-                Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
+                Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, entry.Id);
-                tx.ListLeftPushAsync(WaitListName, entry.Id);
+                tx.ListRemoveAsync(WorkListName, id);
+                tx.ListLeftPushAsync(WaitListName, id);
                 var success = tx.Execute();
                 if (!success)
                     throw new Exception("Unable to move item to wait list.");
 
-                _cache.Set(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
+                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
             } else {
-                Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
+                Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, entry.Id);
-                tx.ListLeftPushAsync(QueueListName, entry.Id);
+                tx.ListRemoveAsync(WorkListName, id);
+                tx.ListLeftPushAsync(QueueListName, id);
                 var success = tx.Execute();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                _cache.Increment(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl());
-                _subscriber.Publish(GetTopicName(), entry.Id);
+                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
+                _subscriber.Publish(GetTopicName(), id);
             }
 
             Interlocked.Increment(ref _abandonedCount);
-            OnAbandoned(entry);
-            Logger.Trace().Message("Abondon complete: {0}", entry.Id).Write();
+            OnAbandoned(id);
+            Logger.Trace().Message("Abondon complete: {0}", id).Write();
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -403,7 +403,7 @@ namespace Foundatio.Queues {
 
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
                     // TODO: Fix parameters
-                    Abandon(new QueueEntry<T>(workId, null, this, DateTime.MinValue, 1));
+                    Abandon(workId);
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {

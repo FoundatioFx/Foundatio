@@ -1,18 +1,20 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue
 {
-    public class MetricQueueBehaviorTests
+    public class MetricQueueBehaviorTests : CaptureTests
     {
+        public MetricQueueBehaviorTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+        }
+
         [Fact]
         public void SimpleWorkItemTest()
         {
@@ -28,12 +30,13 @@ namespace Foundatio.Tests.Queue
             queue.Enqueue(work);
             var item = queue.Dequeue();
             item.Complete();
-            
+
+            metricsClient.DisplayStats(_writer);
 
             Assert.True(eventRaised.WaitOne(TimeSpan.FromMinutes(1)));
 
-            Assert.Equal(3, metricsClient.Counters.Count);
-            Assert.Equal(2, metricsClient.Timings.Count);
+            Assert.Equal(6, metricsClient.Counters.Count);
+            Assert.Equal(4, metricsClient.Timings.Count);
 
             Assert.Equal(1, metricsClient.Counters["metric.simpleworkitem.testing.enqueued"]?.CurrentValue);
             Assert.Equal(1, metricsClient.Counters["metric.simpleworkitem.testing.dequeued"]?.CurrentValue);
@@ -62,8 +65,8 @@ namespace Foundatio.Tests.Queue
 
             Assert.True(eventRaised.WaitOne(TimeSpan.FromMinutes(1)));
 
-            Assert.Equal(3, metricsClient.Counters.Count);
-            Assert.Equal(2, metricsClient.Timings.Count);
+            Assert.Equal(6, metricsClient.Counters.Count);
+            Assert.Equal(4, metricsClient.Timings.Count);
 
             Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simpleworkitem.enqueued"]?.CurrentValue);
             Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simpleworkitem.dequeued"]?.CurrentValue);

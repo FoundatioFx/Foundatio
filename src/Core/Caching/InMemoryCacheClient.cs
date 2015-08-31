@@ -23,10 +23,10 @@ namespace Foundatio.Caching {
         }
 
         public bool FlushOnDispose { get; set; }
-        public int Count { get { return _memory.Count; } }
+        public int Count => _memory.Count;
         public int? MaxItems { get; set; }
-        public long Hits { get { return _hits; } }
-        public long Misses { get { return _misses; } }
+        public long Hits => _hits;
+        public long Misses => _misses;
 
         public ICollection<string> Keys {
             get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }

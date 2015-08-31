@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading.Tasks;
+using Foundatio.Metrics;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IQueueEntryMetadata, IDisposable where T: class {
+    public class QueueEntry<T> : IDisposable where T: class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
         private readonly Stopwatch _processingTimer;
@@ -32,57 +34,44 @@ namespace Foundatio.Queues {
 
             _isCompleted = true;
             _processingTimer.Stop();
-            _queue.Complete(this);
+            _queue.Complete(Id);
         }
 
         public void Abandon() {
             _processingTimer.Stop();
-            _queue.Abandon(this);
+            _queue.Abandon(Id);
         }
 
         public virtual void Dispose() {
             if (!_isCompleted)
                 Abandon();
         }
+
+        public QueueEntryMetadata ToMetadata()
+        {
+            return new QueueEntryMetadata
+            {
+                Id = Id,
+                EnqueuedTimeUtc = EnqueuedTimeUtc,
+                DequeuedTimeUtc = DequeuedTimeUtc,
+                Attempts = Attempts,
+                ProcessingTime = ProcessingTime
+            };
+        }
     }
 
-    public interface IQueueEntryMetadata
+    public class QueueEntryMetadata
     {
-        string Id { get; }
-        DateTime EnqueuedTimeUtc { get; }
-        DateTime DequeuedTimeUtc { get; }
-        int Attempts { get; }
-        TimeSpan ProcessingTime { get; }
-    }
-
-    public class QueueEntry2<T> : IDisposable where T : class {
-        private readonly IQueue2<T> _queue;
-        private bool _isCompleted;
-
-        public QueueEntry2(string id, T value, IQueue2<T> queue) {
-            Id = id;
-            Value = value;
-            _queue = queue;
+        public QueueEntryMetadata()
+        {
+            Data = new DataDictionary();
         }
 
-        public string Id { get; }
-        public T Value { get; private set; }
-
-        public async Task CompleteAsync() {
-            if (_isCompleted)
-                return;
-
-            _isCompleted = true;
-            await _queue.CompleteAsync(Id);
-        }
-
-        public async Task AbandonAsync() {
-            await _queue.AbandonAsync(Id);
-        }
-
-        public virtual void Dispose() {
-            if (!_isCompleted)
-               AbandonAsync().Wait();
-        }
+        public string Id { get; set; }
+        public DateTime EnqueuedTimeUtc { get; set; }
+        public DateTime DequeuedTimeUtc { get; set; }
+        public int Attempts { get; set; }
+        public TimeSpan ProcessingTime { get; set; }
+        public DataDictionary Data { get; set; } 
     }
 }

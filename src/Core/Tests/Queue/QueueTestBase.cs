@@ -9,7 +9,6 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
-using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
