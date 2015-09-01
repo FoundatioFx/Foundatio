@@ -265,6 +265,7 @@ namespace Foundatio.Queues {
                     minAbandonAt = abandonAt;
             }
 
+            _nextMaintenance = null;
             ScheduleNextMaintenance(minAbandonAt);
 
             if (abandonedKeys.Count == 0)

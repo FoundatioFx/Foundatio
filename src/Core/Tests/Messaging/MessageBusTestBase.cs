@@ -6,6 +6,7 @@ using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Logging;
 using Xunit.Abstractions;
+using System.Threading.Tasks;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
@@ -45,27 +46,32 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual void CanSendDelayedMessage() {
+            const int numConcurrentMessages = 100;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new CountDownLatch(numConcurrentMessages);
+
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
-                    resetEvent.Set();
+                    resetEvent.Signal();
                     Logger.Trace().Message("Set event").Write();
                 });
 
                 var sw = new Stopwatch();
                 sw.Start();
-                messageBus.Publish(new SimpleMessageA {
-                    Data = "Hello"
-                }, TimeSpan.FromMilliseconds(100));
-                Logger.Trace().Message("Published one...").Write();
 
-                bool success = resetEvent.WaitOne(2000);
+                Parallel.For(0, numConcurrentMessages, (_) => {
+                    messageBus.Publish(new SimpleMessageA {
+                        Data = "Hello"
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
+                    Logger.Trace().Message("Published one...").Write();
+                });
+
+                bool success = resetEvent.Wait(2000);
                 sw.Stop();
                 Logger.Trace().Message("Done waiting: " + success).Write();
 

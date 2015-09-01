@@ -15,7 +15,7 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            Task.Factory.StartNew(() => {
+            Task.Run(() => {
                 foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
                     try {
                         subscriber.Action(message.Copy());
