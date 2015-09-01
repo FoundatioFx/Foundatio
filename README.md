@@ -10,11 +10,14 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - Jobs
 - File Storage
 - Metrics
+- Logging
 
 Includes implementations in Redis, Azure and in memory (for development).
 
 ## Why should I use Foundatio?
 When we first started building [Exceptionless](https://github.com/exceptionless/Exceptionless) we found a lack of great solutions (that's not to say there isn't great solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
+ * Wanted to build against abstract interfaces so that we could easily change implementations.
+ * Wanted the blocks to be dependency injection friendly.
  * Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there wasn't any in memory implementations so every developer was required to set up and configure Redis.
  * Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
  * Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
