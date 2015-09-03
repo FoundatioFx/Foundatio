@@ -31,7 +31,7 @@ namespace Foundatio.Redis.Tests.Jobs {
 
             var job = new SampleQueueJob(queue, metrics);
             job.RunUntilEmpty();
-            metrics.DisplayStats();
+            metrics.DisplayStats(_writer);
 
             Assert.Equal(0, queue.GetQueueStats().Queued);
         }

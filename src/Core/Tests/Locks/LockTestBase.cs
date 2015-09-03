@@ -59,12 +59,12 @@ namespace Foundatio.Tests {
             using (locker) {
                 locker.ReleaseLock("test");
 
-                var testLock = locker.AcquireLock("test", TimeSpan.FromSeconds(1));
+                var testLock = locker.AcquireLock("test", TimeSpan.FromMilliseconds(100));
                 Assert.NotNull(testLock);
                 var lock1 = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
                 Assert.Null(lock1);
 
-                testLock = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(2));
+                testLock = locker.AcquireLock("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
                 Assert.NotNull(testLock);
             }
         }

@@ -46,7 +46,7 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual void CanSendDelayedMessage() {
-            const int numConcurrentMessages = 100;
+            const int numConcurrentMessages = 10000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -231,18 +231,16 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                Thread.Sleep(1000);
+                Thread.Sleep(100);
                 var resetEvent = new AutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                bool success = resetEvent.WaitOne(2000);
+                bool success = resetEvent.WaitOne(100);
                 Assert.False(success, "Messages are building up.");
             }
-
-            Thread.Sleep(50);
         }
     }
 }

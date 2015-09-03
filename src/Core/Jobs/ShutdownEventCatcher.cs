@@ -13,9 +13,10 @@ namespace Foundatio.Jobs {
         private static extern bool SetConsoleCtrlHandler(Kernel32ShutdownHandler handler, bool add);
 
         private delegate bool Kernel32ShutdownHandler(ShutdownReason reason);
+        private static readonly Kernel32ShutdownHandler ConsoleCtrlCheckDelegate = Kernel32_ProcessShuttingDown;
 
         static ShutdownEventCatcher() {
-            SetConsoleCtrlHandler(new Kernel32ShutdownHandler(Kernel32_ProcessShuttingDown), true);
+            SetConsoleCtrlHandler(ConsoleCtrlCheckDelegate, true);
             AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         }
