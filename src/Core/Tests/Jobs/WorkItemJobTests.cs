@@ -124,13 +124,14 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                Console.WriteLine(String.Format("{0} - {1}", status.Progress, status.Message));
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             }).AnyContext();
 
             await job.RunUntilEmptyAsync().AnyContext();
 
-            Assert.Equal(12, statusCount);
+            Assert.Equal(10, statusCount);
         }
 
         [Fact]
@@ -185,18 +186,16 @@ namespace Foundatio.Tests.Jobs {
 
         public MyDependency Dependency { get; private set; }
 
-        public Task HandleItem(WorkItemContext context) {
+        public async Task HandleItem(WorkItemContext context) {
             Assert.NotNull(Dependency);
 
             var jobData = context.GetData<MyWorkItem>();
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 0; i < 10; i++) {
-                Thread.Sleep(100);
+                await Task.Delay(100);
                 context.ReportProgress(10 * i);
             }
-
-            return TaskHelper.Completed();
         }
     }
 }
