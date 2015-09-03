@@ -176,7 +176,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHandleErrorInWorker() {
-            var queue = GetQueue(1, retryDelay: TimeSpan.Zero);
+            var queue = GetQueue(1, retryDelay: TimeSpan.FromSeconds(2));
             if (queue == null)
                 return;
 
@@ -192,14 +192,15 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 });
 
-                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Errors > 0, TimeSpan.FromSeconds(5)).AnyContext();
+                var success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Errors > 0, TimeSpan.FromSeconds(1)).AnyContext();
                 Assert.True(success);
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Abandoned);
 
-                success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Queued > 0, TimeSpan.FromSeconds(5)).AnyContext();
+                success = await TaskHelper.DelayUntil(() => queue.GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult().Enqueued > 0, TimeSpan.FromSeconds(1)).AnyContext();
                 Assert.True(success);
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Enqueued);
             }
         }
 
