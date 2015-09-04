@@ -25,21 +25,25 @@ namespace Foundatio.Caching {
 
         public bool FlushOnDispose { get; set; }
 
-        public int Count {
+        public int Count
+        {
             get { return _memory.Count; }
         }
 
         public int? MaxItems { get; set; }
 
-        public long Hits {
+        public long Hits
+        {
             get { return _hits; }
         }
 
-        public long Misses {
+        public long Misses
+        {
             get { return _misses; }
         }
 
-        public ICollection<string> Keys {
+        public ICollection<string> Keys
+        {
             get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
         }
 
@@ -87,7 +91,7 @@ namespace Foundatio.Caching {
 
             if (expiredKeys.Count == 0)
                 return;
-            
+
             foreach (var key in expiredKeys) {
                 await this.RemoveAsync(key).AnyContext();
                 OnItemExpired(key);
@@ -155,7 +159,7 @@ namespace Foundatio.Caching {
             foreach (var key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
-                
+
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
                     removed++;
@@ -216,7 +220,7 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return false;
             }
-            
+
             CacheEntry entry;
             if (TryGetValueInternal(key, out entry))
                 return false;
@@ -243,7 +247,7 @@ namespace Foundatio.Caching {
                 await SetInternalAsync(key, entry).AnyContext();
                 return true;
             }
-            
+
             entry.Value = value;
             entry.ExpiresAt = expiresAt;
             ScheduleNextMaintenance(expiresAt);
@@ -261,7 +265,7 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return;
             }
-            
+
             _memory[key] = entry;
             ScheduleNextMaintenance(entry.ExpiresAt);
 

@@ -22,6 +22,11 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanTryGet() {
+            return base.CanTryGet();
+        }
+
+        [Fact]
         public override Task CanUseScopedCaches() {
             return base.CanUseScopedCaches();
         }

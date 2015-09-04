@@ -22,6 +22,11 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanSetAndGetObject() {
             return base.CanSetAndGetObject();
         }
+        
+        [Fact]
+        public override Task CanTryGet() {
+            return base.CanTryGet();
+        }
 
         [Fact]
         public override Task CanRemoveByPrefix() {

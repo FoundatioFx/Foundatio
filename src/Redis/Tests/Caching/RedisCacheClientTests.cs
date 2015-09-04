@@ -25,10 +25,15 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanSetAndGetValue() {
             return base.CanSetAndGetValue();
         }
-
+        
         [Fact]
         public override Task CanSetAndGetObject() {
             return base.CanSetAndGetObject();
+        }
+        
+        [Fact]
+        public override Task CanTryGet() {
+            return base.CanTryGet();
         }
 
         [Fact]

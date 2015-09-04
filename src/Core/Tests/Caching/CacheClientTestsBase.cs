@@ -27,6 +27,25 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanTryGet() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync().AnyContext();
+
+                await cache.SetAsync<int>("test", 1).AnyContext();
+                var cacheValue = await cache.GetAsync<long?>("test").AnyContext();
+                Assert.True(cacheValue.HasValue);
+                Assert.Equal(1L, cacheValue.Value);
+                
+                await cache.SetAsync<MyData>("test", new MyData { Message = "test" }).AnyContext();
+                cacheValue = await cache.GetAsync<long?>("test").AnyContext();
+                Assert.False(cacheValue.HasValue);
+            }
+        }
+
         public virtual async Task CanUseScopedCaches() {
             var cache = GetCacheClient();
             if (cache == null)
@@ -63,8 +82,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
             }
         }
-
-
+        
         public virtual async Task CanRemoveByPrefix() {
             var cache = GetCacheClient();
             if (cache == null)
@@ -131,7 +149,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Null(await cache.GetExpirationAsync("test2").AnyContext());
             }
         }
-
+        
         protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,15 +27,18 @@ namespace Foundatio.Tests {
                 return;
 
             // sleep until start of throttling period
-            Thread.Sleep(DateTime.UtcNow.Ceiling(_period) - DateTime.UtcNow);
+            await Task.Delay(DateTime.UtcNow.Ceiling(_period) - DateTime.UtcNow);
             var sw = new Stopwatch();
             sw.Start();
-            for (int i = 0; i < 5; i++)
-                await locker.AcquireLockAsync("test").AnyContext();
+            for (int i = 0; i < 5; i++) {
+                _output.WriteLine("Acquiring Lock {0}: {1}", i, sw.Elapsed);
+                using (await locker.AcquireLockAsync("test").AnyContext())
+                    _output.WriteLine("Acquired Lock {0}: {1}", i, sw.Elapsed);
+            }
             sw.Stop();
 
             _output.WriteLine(sw.Elapsed.ToString());
-            Assert.True(sw.Elapsed.TotalSeconds < 1);
+            Assert.True(sw.Elapsed.TotalSeconds < 1, sw.Elapsed.ToString());
 
             sw.Reset();
             sw.Start();
