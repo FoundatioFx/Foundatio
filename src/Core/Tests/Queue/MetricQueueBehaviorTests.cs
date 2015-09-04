@@ -68,12 +68,12 @@ namespace Foundatio.Tests.Queue
             Assert.Equal(6, metricsClient.Counters.Count);
             Assert.Equal(4, metricsClient.Timings.Count);
 
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simpleworkitem.enqueued"]?.CurrentValue);
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simpleworkitem.dequeued"]?.CurrentValue);
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simpleworkitem.completed"]?.CurrentValue);
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.enqueued"]?.CurrentValue);
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.dequeued"]?.CurrentValue);
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.completed"]?.CurrentValue);
 
-            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simpleworkitem.queuetime"]?.Count);
-            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simpleworkitem.processtime"]?.Count);
+            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.queuetime"]?.Count);
+            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
         }
     }
 }
