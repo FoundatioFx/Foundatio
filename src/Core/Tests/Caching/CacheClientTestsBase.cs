@@ -39,6 +39,14 @@ namespace Foundatio.Tests.Caching {
                 var cacheValue = await cache.GetAsync<long?>("test").AnyContext();
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(1L, cacheValue.Value);
+
+                await cache.SetAsync<long>("test", Int64.MaxValue).AnyContext();
+                cacheValue = await cache.GetAsync<int?>("test").AnyContext();
+                Assert.False(cacheValue.HasValue);
+                
+                cacheValue = await cache.GetAsync<long?>("test").AnyContext();
+                Assert.True(cacheValue.HasValue);
+                Assert.Equal(Int64.MaxValue, cacheValue.Value);
                 
                 await cache.SetAsync<MyData>("test", new MyData { Message = "test" }).AnyContext();
                 cacheValue = await cache.GetAsync<long?>("test").AnyContext();

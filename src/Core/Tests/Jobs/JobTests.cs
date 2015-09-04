@@ -69,7 +69,8 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal(1, job.RunCount);
 
             tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token).AnyContext();
+
+            await Assert.ThrowsAsync<TaskCanceledException>(async () => await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, cancellationToken: tokenSource.Token).AnyContext());
         }
 
         [Fact]

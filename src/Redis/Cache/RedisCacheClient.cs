@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Serializer;
 using StackExchange.Redis;
 
@@ -59,14 +60,18 @@ namespace Foundatio.Caching {
             var redisValue = await _db.StringGetAsync(key).AnyContext();
             if (redisValue == RedisValue.Null)
                 return CacheValue<T>.Null;
-
+            
             T value;
-            if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
-                value = (T)Convert.ChangeType(redisValue, typeof(T));
-            else
-                value = _serializer.Deserialize<T>((string)redisValue);
+            if (redisValue.TryCast<T>(out value)) 
+                return new CacheValue<T>(value, true);
 
-            return new CacheValue<T>(value, true);
+            try {
+                value = _serializer.Deserialize<T>((string)redisValue);
+                return new CacheValue<T>(value, true);
+            } catch (Exception ex) {
+                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{(string)redisValue}\" to type {typeof(T).FullName}").Write();
+                return new CacheValue<T>(default(T), false);
+            }
         }
 
         public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {

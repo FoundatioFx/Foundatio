@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -25,25 +26,15 @@ namespace Foundatio.Caching {
 
         public bool FlushOnDispose { get; set; }
 
-        public int Count
-        {
-            get { return _memory.Count; }
-        }
+        public int Count => _memory.Count;
 
         public int? MaxItems { get; set; }
 
-        public long Hits
-        {
-            get { return _hits; }
-        }
+        public long Hits => _hits;
 
-        public long Misses
-        {
-            get { return _misses; }
-        }
+        public long Misses => _misses;
 
-        public ICollection<string> Keys
-        {
+        public ICollection<string> Keys {
             get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
         }
 
@@ -54,8 +45,6 @@ namespace Foundatio.Caching {
 
             _memory = new ConcurrentDictionary<string, CacheEntry>();
         }
-
-        private readonly object _lockObject = new object();
 
         private void ScheduleNextMaintenance(DateTime value) {
             Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
@@ -124,24 +113,18 @@ namespace Foundatio.Caching {
             internal long LastAccessTicks { get; private set; }
             internal long LastModifiedTicks { get; private set; }
 #if DEBUG
-            internal long UsageCount
-            {
-                get { return _usageCount; }
-            }
+            internal long UsageCount { get { return _usageCount; } }
 #endif
 
-            internal object Value
-            {
-                get
-                {
+            internal object Value {
+                get {
                     LastAccessTicks = DateTime.UtcNow.Ticks;
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
                     return _cacheValue.Copy();
                 }
-                set
-                {
+                set {
                     _cacheValue = value.Copy();
                     LastAccessTicks = DateTime.UtcNow.Ticks;
                     LastModifiedTicks = DateTime.UtcNow.Ticks;
@@ -200,8 +183,9 @@ namespace Foundatio.Caching {
 
             Interlocked.Increment(ref _hits);
 
-            var value = cacheEntry.Value != null ? (T)cacheEntry.Value : default(T);
-            return Task.FromResult(new CacheValue<T>(value, true));
+            T value;
+            var canConvert = cacheEntry.Value.TryCast(out value);
+            return Task.FromResult(new CacheValue<T>(value, canConvert));
         }
 
         public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
