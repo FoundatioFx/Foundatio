@@ -13,7 +13,7 @@ namespace Foundatio.Metrics {
         private readonly IPEndPoint _endPoint;
         private readonly string _prefix;
 
-        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 12000, string prefix = "stats") {
+        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null) {
             _endPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
 
             if (!String.IsNullOrEmpty(prefix))
