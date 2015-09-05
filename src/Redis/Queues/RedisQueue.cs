@@ -158,6 +158,8 @@ namespace Foundatio.Queues {
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
             _db.ListLeftPush(QueueListName, id);
+            _cache.Set(GetEnqueuedTimeKey(id), DateTime.UtcNow.Ticks, _payloadTtl);
+
             _subscriber.Publish(GetTopicName(), id);
             Interlocked.Increment(ref _enqueuedCount);
             OnEnqueued(data, id);
@@ -226,8 +228,9 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
-                // TODO: Fix params
-                var entry = new QueueEntry<T>(value, payload, this, DateTime.MinValue, 1);
+                var enqueuedTime = _cache.Get<DateTime?>(GetEnqueuedTimeKey(value)) ?? DateTime.MinValue;
+                var attemptsValue = _cache.Get<int?>(GetAttemptsKey(value)) ?? -1;
+                var entry = new QueueEntry<T>(value, payload, this, enqueuedTime, attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 OnDequeued(entry);
 

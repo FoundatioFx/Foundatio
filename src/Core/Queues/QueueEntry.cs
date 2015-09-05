@@ -1,14 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using Foundatio.Metrics;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public class QueueEntry<T> : IDisposable where T: class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
-        private readonly Stopwatch _processingTimer;
 
         public QueueEntry(string id, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {
             Id = id;
@@ -17,8 +13,6 @@ namespace Foundatio.Queues {
             EnqueuedTimeUtc = enqueuedTimeUtc;
             Attempts = attempts;
             DequeuedTimeUtc = DateTime.UtcNow;
-            _processingTimer = new Stopwatch();
-            _processingTimer.Start();
         }
 
         public string Id { get; }
@@ -26,19 +20,16 @@ namespace Foundatio.Queues {
         public DateTime EnqueuedTimeUtc { get; }
         public DateTime DequeuedTimeUtc { get; }
         public int Attempts { get; set; }
-        public TimeSpan ProcessingTime => _processingTimer.Elapsed;
 
         public void Complete() {
             if (_isCompleted)
                 return;
 
             _isCompleted = true;
-            _processingTimer.Stop();
             _queue.Complete(Id);
         }
 
         public void Abandon() {
-            _processingTimer.Stop();
             _queue.Abandon(Id);
         }
 
@@ -54,8 +45,7 @@ namespace Foundatio.Queues {
                 Id = Id,
                 EnqueuedTimeUtc = EnqueuedTimeUtc,
                 DequeuedTimeUtc = DequeuedTimeUtc,
-                Attempts = Attempts,
-                ProcessingTime = ProcessingTime
+                Attempts = Attempts
             };
         }
     }

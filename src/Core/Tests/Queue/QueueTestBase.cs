@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
@@ -384,6 +385,36 @@ namespace Foundatio.Tests.Queue {
                 workItem.Complete();
                 Assert.Equal(0, queue.GetQueueStats().Queued);
             }
+        }
+
+        public virtual void CanRunWorkItemWithMetrics()
+        {
+            var eventRaised = new ManualResetEvent(false);
+
+            var metricsClient = new InMemoryMetricsClient();
+            var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
+            var queue = new InMemoryQueue<WorkItemData>(behaviours: new[] { behavior });
+            queue.Completed += (sender, e) => { eventRaised.Set(); };
+
+            var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
+
+            queue.Enqueue(work);
+            var item = queue.Dequeue();
+            item.Complete();
+
+            metricsClient.DisplayStats(_writer);
+
+            Assert.True(eventRaised.WaitOne(TimeSpan.FromMinutes(1)));
+
+            Assert.Equal(6, metricsClient.Counters.Count);
+            Assert.Equal(4, metricsClient.Timings.Count);
+
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.enqueued"]?.CurrentValue);
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.dequeued"]?.CurrentValue);
+            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.completed"]?.CurrentValue);
+
+            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.queuetime"]?.Count);
+            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
         }
 
         protected void DoWork(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {

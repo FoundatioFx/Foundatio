@@ -88,6 +88,12 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override void CanRunWorkItemWithMetrics()
+        {
+            base.CanRunWorkItemWithMetrics();
+        }
+
+        [Fact]
         public void VerifyCacheKeysAreCorrect() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
             if (queue == null)
