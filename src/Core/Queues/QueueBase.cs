@@ -66,7 +66,8 @@ namespace Foundatio.Queues
         protected virtual void OnCompleted(string id)
         {
             var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
-            queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+            if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
+                queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
             Completed?.Invoke(this, new CompletedEventArgs<T> { Queue = this, Metadata = queueEntry });
             _queueEntryCache.Remove(id);
         }
@@ -75,7 +76,8 @@ namespace Foundatio.Queues
         protected virtual void OnAbandoned(string id)
         {
             var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
-            queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+            if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
+                queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
             Abandoned?.Invoke(this, new AbandonedEventArgs<T> { Queue = this, Metadata = queueEntry });
             _queueEntryCache.Remove(id);
         }
