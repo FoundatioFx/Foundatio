@@ -77,7 +77,7 @@ namespace Foundatio.Tests.Jobs {
                     Interlocked.Increment(ref errors);
                     throw new ApplicationException("Boom!");
                 }
-
+                
                 return TaskHelper.Completed();
             });
 
@@ -104,7 +104,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             await Task.WhenAll(tasks).AnyContext();
-            Thread.Sleep(10);
+            await Task.Delay(10).AnyContext();
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
             Assert.Equal(100, jobIds.Sum(kvp => kvp.Value));
@@ -179,7 +179,8 @@ namespace Foundatio.Tests.Jobs {
         public int Index { get; set; }
     }
 
-    public class MyWorkItemHandler : IWorkItemHandler {
+    public class MyWorkItemHandler : WorkItemHandlerBase
+    {
         public MyWorkItemHandler(MyDependency dependency) {
             Dependency = dependency;
         }

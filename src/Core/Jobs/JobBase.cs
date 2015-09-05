@@ -72,7 +72,7 @@ namespace Foundatio.Jobs {
                     iterations++;
                     if (interval.HasValue)
                         await Task.Delay(interval.Value, cancellationToken).AnyContext();
-                    else if (iterations % 10000 == 0) // allow for cancellation token to get set
+                    else if (iterations % 1000 == 0) // allow for cancellation token to get set
                         Thread.Sleep(1);
                 } catch (TaskCanceledException) {}
 

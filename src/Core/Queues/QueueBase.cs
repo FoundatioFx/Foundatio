@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T> : IQueue<T> where T : class {
+        private readonly InMemoryCacheClient _queueEntryCache = new InMemoryCacheClient { MaxItems = 1000 };
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
 
@@ -27,8 +29,6 @@ namespace Foundatio.Queues {
         public abstract Task<string> EnqueueAsync(T data);
 
         public abstract Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
-
-        public abstract Task StopWorkingAsync();
 
         public abstract Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
 
@@ -56,41 +56,33 @@ namespace Foundatio.Queues {
         }
 
         public virtual event EventHandler<EnqueuedEventArgs<T>> Enqueued;
-
-        protected virtual void OnEnqueued(T data, string id) {
-            Enqueued?.Invoke(this, new EnqueuedEventArgs<T> {
-                Queue = this,
-                Data = data,
-                Id = id
-            });
+        protected virtual void OnEnqueued(T data, string id)
+        {
+            Enqueued?.Invoke(this, new EnqueuedEventArgs<T> { Queue = this, Data = data, Metadata = new QueueEntryMetadata { Attempts = 0, EnqueuedTimeUtc = DateTime.UtcNow, Id = id } });
         }
 
         public virtual event EventHandler<DequeuedEventArgs<T>> Dequeued;
-
-        protected virtual void OnDequeued(QueueEntry<T> entry) {
-            Dequeued?.Invoke(this, new DequeuedEventArgs<T> {
-                Queue = this,
-                Data = entry.Value,
-                Metadata = entry
-            });
+        protected virtual void OnDequeued(QueueEntry<T> entry)
+        {
+            var info = entry.ToMetadata();
+            Dequeued?.Invoke(this, new DequeuedEventArgs<T> { Queue = this, Data = entry.Value, Metadata = info });
+            _queueEntryCache.Set(entry.Id, info);
         }
 
         public virtual event EventHandler<CompletedEventArgs<T>> Completed;
-
-        protected virtual void OnCompleted(IQueueEntryMetadata entry) {
-            Completed?.Invoke(this, new CompletedEventArgs<T> {
-                Queue = this,
-                Metadata = entry
-            });
+        protected virtual void OnCompleted(string id)
+        {
+            var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
+            Completed?.Invoke(this, new CompletedEventArgs<T> { Queue = this, Metadata = queueEntry });
+            _queueEntryCache.Remove(id);
         }
 
         public virtual event EventHandler<AbandonedEventArgs<T>> Abandoned;
-
-        protected virtual void OnAbandoned(IQueueEntryMetadata entry) {
-            Abandoned?.Invoke(this, new AbandonedEventArgs<T> {
-                Queue = this,
-                Metadata = entry
-            });
+        protected virtual void OnAbandoned(string id)
+        {
+            var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
+            Abandoned?.Invoke(this, new AbandonedEventArgs<T> { Queue = this, Metadata = queueEntry });
+            _queueEntryCache.Remove(id);
         }
 
         public string QueueId { get; protected set; }

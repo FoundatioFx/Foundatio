@@ -60,12 +60,12 @@ namespace Foundatio.Tests {
             using (locker) {
                 await locker.ReleaseLockAsync("test").AnyContext();
 
-                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromSeconds(1)).AnyContext();
+                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromMilliseconds(100)).AnyContext();
                 Assert.NotNull(testLock);
                 var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
                 Assert.Null(lock1);
 
-                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2)).AnyContext();
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
                 Assert.NotNull(testLock);
             }
         }

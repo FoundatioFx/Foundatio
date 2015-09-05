@@ -18,9 +18,6 @@ namespace Foundatio.Queues {
         Task<string> EnqueueAsync(T data);
 
         Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
-
-        Task StopWorkingAsync();
-
         Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
 
         Task CompleteAsync(IQueueEntryMetadata entry);
@@ -63,23 +60,23 @@ namespace Foundatio.Queues {
 
     public class EnqueuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public string Id { get; set; }
+        public QueueEntryMetadata Metadata { get; set; }
         public T Data { get; set; }
     }
 
     public class DequeuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public T Data { get; set; }
-        public IQueueEntryMetadata Metadata { get; set; }
+        public QueueEntryMetadata Metadata { get; set; }
     }
 
     public class CompletedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public IQueueEntryMetadata Metadata { get; set; }
+        public QueueEntryMetadata Metadata { get; set; }
     }
 
     public class AbandonedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public IQueueEntryMetadata Metadata { get; set; }
+        public QueueEntryMetadata Metadata { get; set; }
     }
 }

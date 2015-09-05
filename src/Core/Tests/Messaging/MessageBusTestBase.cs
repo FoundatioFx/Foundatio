@@ -8,6 +8,7 @@ using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Logging;
 using Xunit.Abstractions;
+using System.Threading.Tasks;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
@@ -47,27 +48,32 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual async Task CanSendDelayedMessage() {
+            const int numConcurrentMessages = 10000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new CountDownLatch(numConcurrentMessages);
+
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
-                    resetEvent.Set();
+                    resetEvent.Signal();
                     Logger.Trace().Message("Set event").Write();
                 }).AnyContext();
 
                 var sw = new Stopwatch();
                 sw.Start();
-                await messageBus.PublishAsync(new SimpleMessageA {
-                    Data = "Hello"
-                }, TimeSpan.FromMilliseconds(100)).AnyContext();
-                Logger.Trace().Message("Published one...").Write();
 
-                bool success = resetEvent.WaitOne(2000);
+                Parallel.For(0, numConcurrentMessages, (_) => {
+                    await messageBus.PublishAsync(new SimpleMessageA {
+                        Data = "Hello"
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
+                    Logger.Trace().Message("Published one...").Write();
+                });
+
+                bool success = resetEvent.Wait(2000);
                 sw.Stop();
                 Logger.Trace().Message("Done waiting: " + success).Write();
 
@@ -227,18 +233,16 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 }).AnyContext();
 
-                Thread.Sleep(1000);
+                await Task.Delay(100).AnyContext();
                 var resetEvent = new AutoResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 }).AnyContext();
 
-                bool success = resetEvent.WaitOne(2000);
+                bool success = resetEvent.WaitOne(100);
                 Assert.False(success, "Messages are building up.");
             }
-
-            Thread.Sleep(50);
         }
     }
 }

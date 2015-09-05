@@ -2,7 +2,7 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/mpak90b87dl9crl8?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/) [![NuGet Downloads](http://img.shields.io/nuget/dt/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/) [![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/exceptionless/Discuss)
 
-Pluggable foundation blocks for building distributed apps.
+Pluggable foundation blocks for building loosely coupled distributed apps.
 - Caching
 - Queues
 - Locks
@@ -10,11 +10,14 @@ Pluggable foundation blocks for building distributed apps.
 - Jobs
 - File Storage
 - Metrics
+- Logging
 
 Includes implementations in Redis, Azure and in memory (for development).
 
 ## Why should I use Foundatio?
 When we first started building [Exceptionless](https://github.com/exceptionless/Exceptionless) we found a lack of great solutions (that's not to say there isn't great solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
+ * Wanted to build against abstract interfaces so that we could easily change implementations.
+ * Wanted the blocks to be dependency injection friendly.
  * Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there wasn't any in memory implementations so every developer was required to set up and configure Redis.
  * Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
  * Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
@@ -41,6 +44,7 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 2. [HybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/HybridCacheClient.cs): This cache implementation uses the `InMemoryCacheClient` and uses the `IMessageBus` to keep the cache in sync across processes.
 3. [RedisCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
 4. [RedisHybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
+5. [ScopedCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/ScopedCacheClient.cs): This cache implementation takes an instance of `ICacheClient` and a string `scope`. The scope is prefixed onto every cache key. This makes it really easy to scope all cache keys and remove them with ease.
 
 #### Sample
 
@@ -127,32 +131,144 @@ using (messageBus) {
 
 ### [Jobs](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Jobs)
 
-All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide a few different ways of defining a job based on your use case.
 
-#### Sample
+1. **Jobs**: All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
-```csharp
-using Foundatio.Jobs;
+  #### Sample
 
-public class HelloWorldJob : JobBase {
-  public int RunCount { get; set; }
+  ```csharp
+  using Foundatio.Jobs;
 
-  protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
-    RunCount++;
+  public class HelloWorldJob : JobBase {
+    public int RunCount { get; set; }
 
-    return Task.FromResult(JobResult.Success);
+    protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+      RunCount++;
+
+       return Task.FromResult(JobResult.Success);
+    }
   }
-}
+  ```
+  
+  ```csharp
+  var job = new HelloWorldJob();
+  job.Run(); // job.RunCount = 1;
+  job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
+  job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
+  ```
 
-var job = new HelloWorldJob();
-job.Run(); // job.RunCount = 1;
-job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
-job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
-```
+  ```
+  Job.exe -t "MyLib.HelloWorldJob,MyLib"
+  ```
 
-```
-Job.exe -t "MyLib.HelloWorldJob,MyLib"
-```
+2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueProcessorJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueProcessorJobBase.cs) which also inherits from the [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+
+  #### Sample
+
+  ```csharp
+  using Foundatio.Jobs;
+
+  public class HelloWorldQueueJob : QueueProcessorJobBase<HelloWorldQueueItem> {
+    public int RunCount { get; set; }
+
+    public HelloWorldQueueJob(IQueue<HelloWorldQueueItem> queue) : base(queue) {}
+    
+    protected override Task<JobResult> ProcessQueueItem(QueueEntry<HelloWorldQueueItem> queueEntry) {
+       RunCount++;
+
+       return Task.FromResult(JobResult.Success);
+    }
+  }
+  
+  public class HelloWorldQueueItem {
+    public string Message { get; set; }
+  }
+  ```
+  
+  ```csharp
+   // Register the queue for HelloWorldQueueItem. 
+  container.RegisterSingleton<IQueue<HelloWorldQueueItem>>(() => new InMemoryQueue<HelloWorldQueueItem>());
+  
+  // To trigger the job we need to queue the HelloWorldWorkItem message. 
+  // This assumes that we injected an instance of IQueue<HelloWorldWorkItem> queue
+  
+  var job = new HelloWorldQueueJob();
+  job.Run(); // job.RunCount = 0; The RunCount wasn't incremented because we didn't enqueue any data.
+  
+  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
+  job.Run(); // job.RunCount = 1;
+  
+  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
+  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
+  job.RunUntilEmpty(); // job.RunCount = 3;
+  ```
+
+  ```
+  Job.exe -t "MyLib.HelloWorldQueueJob,MyLib"
+  ``` 
+
+3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the  [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/WorkItemJob/WorkItemHandlers.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+
+  #### Sample
+
+  ```csharp
+  using System.Threading.Tasks;
+  using Foundatio.Jobs;
+
+  public class HelloWorldWorkItemHandler : WorkItemHandlerBase {
+    public override async Task HandleItem(WorkItemContext context) {
+      var workItem = context.GetData<HelloWorldWorkItem>();
+
+      // We can report the progress over the message bus easily.
+      // To recieve these messages just inject IMessageSubscriber
+      // and Subscribe to messages of type WorkItemStatus
+      context.ReportProgress(0, "Starting Hello World Job");
+      await Task.Delay(TimeSpan.FromSeconds(2.5));
+      context.ReportProgress(50, String.Format("Reading value"));
+      await Task.Delay(TimeSpan.FromSeconds(.5));
+      context.ReportProgress(70, String.Format("Reading value."));
+      await Task.Delay(TimeSpan.FromSeconds(.5));
+      context.ReportProgress(90, String.Format("Reading value.."));
+      await Task.Delay(TimeSpan.FromSeconds(.5));
+
+      context.ReportProgress(100, workItem.Message);
+    }
+  }
+
+  public class HelloWorldWorkItem {
+    public string Message { get; set; }
+  }
+  ```
+ 
+  ```csharp
+  // Register the shared job.
+  var handlers = new WorkItemHandlers();
+  handlers.Register<HelloWorldWorkItem, HelloWorldWorkItemHandler>();
+  
+  // Register the handlers with dependency injection.
+  container.RegisterSingleton(handlers);
+  
+  // Register the queue for WorkItemData. 
+  container.RegisterSingleton<IQueue<WorkItemData>>(() => new InMemoryQueue<WorkItemData>());
+  
+  // The job runner will automatically look for and run all registered WorkItemHandlers.
+  JobRunner.RunContinuousAsync<WorkItemJob>(instanceCount: 2);
+  ```
+  
+  ```
+  Job.exe -t "Foundatio.Jobs.WorkItemJob, Foundatio"
+  ```
+
+  ```csharp
+   // To trigger the job we need to queue the HelloWorldWorkItem message. 
+   // This assumes that we injected an instance of IQueue<WorkItemData> queue
+   
+   // NOTE: You may have noticed that HelloWorldWorkItem doesn't derive from WorkItemData.
+   // Foundatio has an extension method that takes the model you post and serializes it to the 
+   // WorkItemData.Data property.
+   queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
+  ```
 
 ### [File Storage](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Storage)
 
@@ -198,9 +314,25 @@ metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
 ```
 
+### [Logging](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Logging)
+
+We provide a [fluent logging api](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Logging/Logger.cs) that can be used to log messages throughout your application. This is really great because it allows you to log to different sources like NLog and change it at a later date without updating your whole application to use the latest and greatest logging framework on the market.
+
+By default the logger will not write to anything, but you can configure what to write to by calling `Logger.RegisterWriter(Action<LogData> writer)`. 
+
+#### Sample
+
+```csharp
+Logger.Info().Message("Application starting up").Write();
+Logger.Error().Exception(ex).Message("Writing a captured exception out to the log.").Write();
+```
+
+## Sample Application
+We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
+
 ## Roadmap
 
 This is a list of high level things that we are planning to do:
 - Async Support **(In Progress: Some of our implementations are already fully Async)** 
-- vnext support
+- dnx/vnext support
 - [Let us know what you'd like us to work on!](https://github.com/exceptionless/Foundatio/issues)

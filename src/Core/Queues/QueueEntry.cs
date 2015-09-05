@@ -1,10 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Metrics;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IQueueEntryMetadata, IDisposable where T : class {
+    public class QueueEntry<T> : IDisposable where T: class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
         private readonly Stopwatch _processingTimer;
@@ -45,13 +45,15 @@ namespace Foundatio.Queues {
             if (!_isCompleted)
                 AbandonAsync().AnyContext().GetAwaiter().GetResult();
         }
-    }
 
-    public interface IQueueEntryMetadata {
-        string Id { get; }
-        DateTime EnqueuedTimeUtc { get; }
-        DateTime DequeuedTimeUtc { get; }
-        int Attempts { get; }
-        TimeSpan ProcessingTime { get; }
-    }
+        public QueueEntryMetadata ToMetadata() {
+            return new QueueEntryMetadata
+            {
+                Id = Id,
+                EnqueuedTimeUtc = EnqueuedTimeUtc,
+                DequeuedTimeUtc = DequeuedTimeUtc,
+                Attempts = Attempts,
+                ProcessingTime = ProcessingTime
+            };
+        }
 }

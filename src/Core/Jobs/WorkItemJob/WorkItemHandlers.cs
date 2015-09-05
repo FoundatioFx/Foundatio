@@ -45,8 +45,20 @@ namespace Foundatio.Jobs {
         }
     }
 
-    public interface IWorkItemHandler {
+    public interface IWorkItemHandler
+    {
+        IDisposable GetWorkItemLock(WorkItemContext context);
         Task HandleItem(WorkItemContext context);
+    }
+
+    public abstract class WorkItemHandlerBase : IWorkItemHandler
+    {
+        public virtual IDisposable GetWorkItemLock(WorkItemContext context)
+        {
+            return Disposable.Empty;
+        }
+
+        public abstract Task HandleItem(WorkItemContext context);
     }
 
     public class DelegateWorkItemHandler : IWorkItemHandler {
@@ -54,6 +66,11 @@ namespace Foundatio.Jobs {
 
         public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler) {
             _handler = handler;
+        }
+
+        public IDisposable GetWorkItemLock(WorkItemContext context)
+        {
+            return Disposable.Empty;
         }
 
         public Task HandleItem(WorkItemContext context) {

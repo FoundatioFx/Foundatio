@@ -54,7 +54,8 @@ namespace Foundatio.Caching {
         }
         
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = keys == null, Keys = keys?.ToArray() }).AnyContext();
+            bool flushAll = keys == null || !keys.Any();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = keys?.ToArray() }).AnyContext();
             await _localCache.RemoveAllAsync(keys).AnyContext();
             return await _distributedCache.RemoveAllAsync(keys).AnyContext();
         }
@@ -132,7 +133,6 @@ namespace Foundatio.Caching {
             public string CacheId { get; set; }
             public string[] Keys { get; set; }
             public bool FlushAll { get; set; }
-        }
-        
+        }   
     }
 }

@@ -58,6 +58,7 @@
     <Compile Include="Caching\ScopedCacheClient.cs" />
     <Compile Include="Extensions\ConcurrentQueueExtensions.cs" />
     <Compile Include="Extensions\EnumerableExtensions.cs" />
+    <Compile Include="Extensions\EnumExtensions.cs" />
     <Compile Include="Extensions\ExceptionExtensions.cs" />
     <Compile Include="Extensions\NumberExtensions.cs" />
     <Compile Include="Extensions\ObjectExtensions.cs" />
@@ -96,6 +97,7 @@
     <Compile Include="Messaging\InMemoryMessageBus.cs" />
     <Compile Include="Messaging\MessageBusBase.cs" />
     <Compile Include="Messaging\MessageBusData.cs" />
+    <Compile Include="Metrics\IHaveMetricName.cs" />
     <Compile Include="Metrics\MetricTimer.cs" />
     <Compile Include="Metrics\IMetricsClient.cs" />
     <Compile Include="Metrics\InMemoryMetricsClient.cs" />
@@ -118,6 +120,7 @@
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
+    <Compile Include="Utility\DataDictionary.cs" />
     <Compile Include="Utility\EmptyDisposable.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />
     <Compile Include="Utility\PathHelper.cs" />

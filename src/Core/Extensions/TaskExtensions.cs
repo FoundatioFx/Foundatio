@@ -11,6 +11,14 @@ namespace Foundatio.Extensions {
             return task;
         }
 
+        public static Task<T> IgnoreExceptions<T>(this Task<T> task)
+        {
+            task.ContinueWith(c => { var ignored = c.Exception; },
+                TaskContinuationOptions.OnlyOnFaulted |
+                TaskContinuationOptions.ExecuteSynchronously);
+            return task;
+        }
+
         public static void SetFromTask<TResult>(this TaskCompletionSource<TResult> resultSetter, Task task) {
             switch (task.Status) {
                 case TaskStatus.RanToCompletion: resultSetter.SetResult(task is Task<TResult> ? ((Task<TResult>)task).Result : default(TResult)); break;

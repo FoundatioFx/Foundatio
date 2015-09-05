@@ -52,5 +52,23 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task WillExpireRemoteItems() {
             return base.WillExpireRemoteItems();
         }
+
+        [Fact]
+        public override void MeasureThroughput()
+        {
+            base.MeasureThroughput();
+        }
+
+        [Fact]
+        public override void MeasureSerializerSimpleThroughput()
+        {
+            base.MeasureSerializerSimpleThroughput();
+        }
+
+        [Fact]
+        public override void MeasureSerializerComplexThroughput()
+        {
+            base.MeasureSerializerComplexThroughput();
+        }
     }
 }

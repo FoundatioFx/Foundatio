@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 
@@ -15,7 +16,7 @@ namespace Foundatio.Metrics {
         private readonly ConcurrentDictionary<string, CounterStats> _counters = new ConcurrentDictionary<string, CounterStats>();
         private readonly ConcurrentDictionary<string, GaugeStats> _gauges = new ConcurrentDictionary<string, GaugeStats>();
         private readonly ConcurrentDictionary<string, TimingStats> _timings = new ConcurrentDictionary<string, TimingStats>();
-        private readonly ConcurrentDictionary<string, AsyncAutoResetEvent> _counterEvents = new ConcurrentDictionary<string, AsyncAutoResetEvent>();
+        private readonly ConcurrentDictionary<string, AsyncManualResetEvent> _counterEvents = new ConcurrentDictionary<string, AsyncManualResetEvent>();
         private Timer _statsDisplayTimer;
 
         public void StartDisplayingStats(TimeSpan? interval = null, TextWriter writer = null) {
@@ -26,10 +27,7 @@ namespace Foundatio.Metrics {
         }
 
         public void StopDisplayingStats() {
-            if (_statsDisplayTimer == null)
-                return;
-            
-            _statsDisplayTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _statsDisplayTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         }
 
         public void Reset() {
@@ -92,16 +90,17 @@ namespace Foundatio.Metrics {
             };
         }
 
-        public IDictionary<string, CounterStats> Counters { get { return _counters; } }
-        public IDictionary<string, TimingStats> Timings { get { return _timings; } }
-        public IDictionary<string, GaugeStats> Gauges { get { return _gauges; } }
+        public IDictionary<string, CounterStats> Counters => _counters;
+        public IDictionary<string, TimingStats> Timings => _timings;
+        public IDictionary<string, GaugeStats> Gauges => _gauges;
 
         public Task CounterAsync(string statName, int value = 1) {
+            Logger.Trace().Message("Counter: {0} value: {1}", statName, value).Write();
             _counters.AddOrUpdate(statName, key => new CounterStats(value), (key, stats) => {
                 stats.Increment(value);
                 return stats;
             });
-            AsyncAutoResetEvent waitHandle;
+            AsyncManualResetEvent waitHandle;
             _counterEvents.TryGetValue(statName, out waitHandle);
             waitHandle?.Set();
 
@@ -116,30 +115,39 @@ namespace Foundatio.Metrics {
             }
         }
 
-        public async Task<bool> WaitForCounterAsync(string statName, long count = 1, CancellationToken cancellationToken = default(CancellationToken), Func<Task> work = null) {
+        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
             if (count == 0)
                 return true;
 
+            if (!timeout.HasValue)
+                timeout = TimeSpan.FromSeconds(10);
+
+            if (cancellationToken == CancellationToken.None)
+                cancellationToken = new CancellationTokenSource(timeout.Value).Token;
+
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;
+            Logger.Trace().Message("Wait: count={0} current={1}", count, startingCount).Write();
             if (work != null)
                 await work().AnyContext();
 
             if (GetCount(statName) >= expectedCount)
                 return true;
-
-            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncAutoResetEvent(false));
+            
+            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
-                try {
+                try
+                {
                     await waitHandle.WaitAsync(cancellationToken).AnyContext();
-                } catch (TaskCanceledException) {
-                    return false;
                 }
-            } while (GetCount(statName) < expectedCount);
+                catch (OperationCanceledException) {}
+                Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
+                waitHandle.Reset();
+            } while (cancellationToken.IsCancellationRequested == false && GetCount(statName) < expectedCount);
 
-            return true;
+            Logger.Trace().Message("Done waiting: count={0} expected={1} success={2}", GetCount(statName), expectedCount, !cancellationToken.IsCancellationRequested).Write();
+            return !cancellationToken.IsCancellationRequested;
         }
-        
         public Task GaugeAsync(string statName, double value) {
             _gauges.AddOrUpdate(statName, key => new GaugeStats(value), (key, stats) => {
                 stats.Set(value);

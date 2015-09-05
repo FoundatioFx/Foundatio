@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Utility {
 
         static CaptureFixture()
         {
-            Logger.SetMinimumLogLevel(Debugger.IsAttached ? LogLevel.Warn : LogLevel.None);
+            Logger.SetMinimumLogLevel(Debugger.IsAttached ? LogLevel.Info : LogLevel.Warn);
             Logger.RegisterWriter(l => Trace.WriteLine(l.ToString(false, false)));
         }
 
@@ -76,11 +76,13 @@ namespace Foundatio.Tests.Utility {
     public abstract class CaptureTests : IDisposable {
         private readonly CaptureFixture _fixture;
         protected readonly ITestOutputHelper _output;
+        protected readonly TestOutputWriter _writer;
 
         protected CaptureTests(CaptureFixture fixture, ITestOutputHelper output)
         {
             _fixture = fixture;
             _output = output;
+            _writer = new TestOutputWriter(_output);
 
             fixture.Capture(_output);
         }
