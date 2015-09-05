@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : CaptureTests {
         protected QueueTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
-        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
+        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
         }
 
