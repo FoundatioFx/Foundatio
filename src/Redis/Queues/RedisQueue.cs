@@ -38,7 +38,6 @@ namespace Foundatio.Queues {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
         protected readonly IMetricsClient _metrics;
-        private readonly Timer _maintenanceTimer;
         protected readonly ILockProvider _maintenanceLockProvider;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
@@ -75,7 +74,7 @@ namespace Foundatio.Queues {
                 // min is 1 second, max is 1 minute
                 TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
                 _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
-                _maintenanceTimer = new Timer(DoMaintenanceWork, null, TimeSpan.FromMilliseconds(250), interval);
+                Task.Run(() => DoMaintenanceWorkLoop(_queueDisposedCancellationTokenSource.Token));
             }
 
             Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
@@ -228,9 +227,9 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
-                var enqueuedTime = _cache.Get<DateTime?>(GetEnqueuedTimeKey(value)) ?? DateTime.MinValue;
+                var enqueuedTimeTicks = _cache.Get<long?>(GetEnqueuedTimeKey(value)) ?? 0;
                 var attemptsValue = _cache.Get<int?>(GetAttemptsKey(value)) ?? -1;
-                var entry = new QueueEntry<T>(value, payload, this, enqueuedTime, attemptsValue);
+                var entry = new QueueEntry<T>(value, payload, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 OnDequeued(entry);
 
@@ -248,6 +247,7 @@ namespace Foundatio.Queues {
             batch.ListRemoveAsync(WorkListName, id);
             batch.KeyDeleteAsync(GetPayloadKey(id));
             batch.KeyDeleteAsync(GetAttemptsKey(id));
+            batch.KeyDeleteAsync(GetEnqueuedTimeKey(id));
             batch.KeyDeleteAsync(GetDequeuedTimeKey(id));
             batch.KeyDeleteAsync(GetWaitTimeKey(id));
             batch.Execute();
@@ -332,6 +332,7 @@ namespace Foundatio.Queues {
             foreach (var id in itemIds) {
                 _db.KeyDelete(GetPayloadKey(id));
                 _db.KeyDelete(GetAttemptsKey(id));
+                _db.KeyDelete(GetEnqueuedTimeKey(id));
                 _db.KeyDelete(GetDequeuedTimeKey(id));
                 _db.KeyDelete(GetWaitTimeKey(id));
             }
@@ -343,6 +344,7 @@ namespace Foundatio.Queues {
             foreach (var id in itemIds) {
                 _db.KeyDelete(GetPayloadKey(id));
                 _db.KeyDelete(GetAttemptsKey(id));
+                _db.KeyDelete(GetEnqueuedTimeKey(id));
                 _db.KeyDelete(GetDequeuedTimeKey(id));
                 _db.KeyDelete(GetWaitTimeKey(id));
                 _db.ListRemove(QueueListName, id);
@@ -448,16 +450,21 @@ namespace Foundatio.Queues {
             }
         }
 
-        private void DoMaintenanceWork(object state) {
-            Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
-            _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.Zero);
+        private Task DoMaintenanceWorkLoop(CancellationToken token) {
+            while (!token.IsCancellationRequested)
+            {
+                Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
+                _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork,
+                    acquireTimeout: TimeSpan.FromSeconds(30));
+            }
+
+            return TaskHelper.Completed();
         }
 
         public override void Dispose() {
             Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
             StopWorking();
             _queueDisposedCancellationTokenSource?.Cancel();
-            _maintenanceTimer?.Dispose();
         }
     }
 }

@@ -42,7 +42,7 @@ namespace Foundatio.Lock {
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = _cacheClient.Increment(cacheKey, 1, now.Ceiling(_throttlingPeriod));
                         
-                        // make sure some didn't beat us to it.
+                        // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
                             allowLock = true;
                             break;

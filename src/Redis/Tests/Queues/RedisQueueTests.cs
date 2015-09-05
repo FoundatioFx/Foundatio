@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Metrics;
 using Foundatio.Queues;
@@ -20,9 +19,9 @@ namespace Foundatio.Redis.Tests.Queues {
             _output = new TestOutputWriter(output);
         }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
-            var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems);
-            Debug.WriteLine(String.Format("Queue Id: {0}", queue.QueueId));
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+            var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance);
+            Debug.WriteLine($"Queue Id: {queue.QueueId}");
             return queue;
         }
 
@@ -95,7 +94,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
         [Fact]
         public void VerifyCacheKeysAreCorrect() {
-            var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
+            var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
                 return;
 
@@ -108,17 +107,25 @@ namespace Foundatio.Redis.Tests.Queues {
                 string id = queue.Enqueue(new SimpleWorkItem { Data = "blah", Id = 1 });
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
-                Assert.Equal(2, CountAllKeys());
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
+                Assert.Equal(3, CountAllKeys());
+
+                _output.WriteLine("-----");
 
                 var workItem = queue.Dequeue();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(3, CountAllKeys());
+                Assert.Equal(4, CountAllKeys());
+
+                _output.WriteLine("-----");
 
                 workItem.Complete();
                 Assert.False(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.Equal(0, CountAllKeys());
@@ -127,7 +134,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
         [Fact]
         public void VerifyCacheKeysAreCorrectAfterAbandon() {
-            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.Zero);
+            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
@@ -144,26 +151,30 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.Equal(5, CountAllKeys());
 
                 workItem = queue.Dequeue();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.Equal(5, CountAllKeys());
 
                 // let the work item timeout
                 Thread.Sleep(1000);
-                Assert.Equal(1, queue.GetQueueStats().Timeouts);
+                queue.DoMaintenanceWork();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(2, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.Equal(1, queue.GetQueueStats().Timeouts);
+                Assert.InRange(CountAllKeys(), 5, 6);
 
                 // should go to deadletter now
                 workItem = queue.Dequeue();
@@ -173,14 +184,15 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:dead"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(3, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.InRange(CountAllKeys(), 5, 6);
             }
         }
 
         [Fact]
         public void VerifyCacheKeysAreCorrectAfterAbandonWithRetryDelay() {
-            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250)) as RedisQueue<SimpleWorkItem>;
+            var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250), runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
@@ -198,9 +210,10 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:wait"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.InRange(CountAllKeys(), 5, 6);
+                Assert.Equal(6, CountAllKeys());
                 Thread.Sleep(1000);
 
                 queue.DoMaintenanceWork();
@@ -209,23 +222,33 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:wait"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.InRange(CountAllKeys(), 5, 6);
 
                 workItem = queue.Dequeue();
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
                 Assert.Equal(1, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.True(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(1, db.StringGet("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(CountAllKeys(), 4, 5);
+                Assert.InRange(CountAllKeys(), 5, 6);
+
+                workItem.Complete();
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id));
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":enqueued"));
+                Assert.False(db.KeyExists("q:SimpleWorkItem:" + id + ":dequeued"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:in"));
+                Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
+                Assert.InRange(CountAllKeys(), 0, 1);
             }
         }
 
         [Fact]
         public void CanTrimDeadletterItems() {
-            var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3) as RedisQueue<SimpleWorkItem>;
+            var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
@@ -259,7 +282,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:work"));
                 Assert.Equal(0, db.ListLength("q:SimpleWorkItem:wait"));
                 Assert.Equal(3, db.ListLength("q:SimpleWorkItem:dead"));
-                Assert.Equal(10, CountAllKeys());
+                Assert.InRange(CountAllKeys(), 13, 14);
             }
         }
         
@@ -276,7 +299,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 queue.DeleteQueue();
 
-                const int workItemCount = 10000;
+                const int workItemCount = 1000;
                 for (int i = 0; i < workItemCount; i++) {
                     queue.Enqueue(new SimpleWorkItem {
                         Data = "Hello"
@@ -318,7 +341,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 queue.DeleteQueue();
 
-                const int workItemCount = 10000;
+                const int workItemCount = 1000;
                 for (int i = 0; i < workItemCount; i++) {
                     queue.Enqueue(new SimpleWorkItem {
                         Data = "Hello"
@@ -357,7 +380,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 queue.DeleteQueue();
 
-                const int workItemCount = 10000;
+                const int workItemCount = 1000;
                 for (int i = 0; i < workItemCount; i++) {
                     queue.Enqueue(new SimpleWorkItem {
                         Data = "Hello"
