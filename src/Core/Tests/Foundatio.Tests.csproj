@@ -82,7 +82,6 @@
     <Compile Include="Metrics\StatsDMetricsTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queue\InMemoryQueueTests.cs" />
-    <Compile Include="Queue\MetricQueueBehaviorTests.cs" />
     <Compile Include="Queue\QueueTestBase.cs" />
     <Compile Include="Queue\Samples.cs" />
     <Compile Include="Storage\FileStorageTestsBase.cs" />

@@ -79,5 +79,11 @@ namespace Foundatio.Tests.Queue {
         public override Task CanDelayRetry() {
             return base.CanDelayRetry();
         }
+
+        [Fact]
+        public override void CanRunWorkItemWithMetrics()
+        {
+            base.CanRunWorkItemWithMetrics();
+        }
     }
 }
