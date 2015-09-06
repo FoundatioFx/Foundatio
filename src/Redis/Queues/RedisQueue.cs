@@ -224,8 +224,8 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
-                var enqueuedTimeTicks = _cache.Get<long?>(GetEnqueuedTimeKey(value)) ?? 0;
-                var attemptsValue = _cache.Get<int?>(GetAttemptsKey(value)) ?? -1;
+                var enqueuedTimeTicks = await _cache.GetAsync<long?>(GetEnqueuedTimeKey(value)).AnyContext() ?? 0;
+                var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(value)).AnyContext() ?? -1;
                 var entry = new QueueEntry<T>(value, payload, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 OnDequeued(entry);
@@ -345,7 +345,7 @@ namespace Foundatio.Queues {
             foreach (var id in itemIds) {
                 await _db.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
                 await _db.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
-                await _db.KeyDelete(GetEnqueuedTimeKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
                 await _db.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
                 await _db.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
                 await _db.ListRemoveAsync(QueueListName, id).AnyContext();
@@ -453,7 +453,7 @@ namespace Foundatio.Queues {
             while (!token.IsCancellationRequested)
             {
                 Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
-                await _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.FromSeconds(30));
+                await _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
             }
         }
 

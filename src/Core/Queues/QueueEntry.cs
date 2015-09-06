@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IDisposable where T: class {
+    public class QueueEntry<T> : IDisposable where T : class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
 
@@ -38,12 +41,25 @@ namespace Foundatio.Queues {
         }
 
         public QueueEntryMetadata ToMetadata() {
-            return new QueueEntryMetadata
-            {
+            return new QueueEntryMetadata {
                 Id = Id,
                 EnqueuedTimeUtc = EnqueuedTimeUtc,
                 DequeuedTimeUtc = DequeuedTimeUtc,
                 Attempts = Attempts
             };
         }
+    }
+    
+    public class QueueEntryMetadata {
+        public QueueEntryMetadata() {
+            Data = new DataDictionary();
+        }
+
+        public string Id { get; set; }
+        public DateTime EnqueuedTimeUtc { get; set; }
+        public DateTime DequeuedTimeUtc { get; set; }
+        public int Attempts { get; set; }
+        public TimeSpan ProcessingTime { get; set; }
+        public DataDictionary Data { get; set; } 
+    }
 }

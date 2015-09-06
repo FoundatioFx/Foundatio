@@ -195,15 +195,14 @@ namespace Foundatio.Tests.Queue {
 
 
                 metrics.DisplayStats(_writer);
-                var success = metrics.WaitForCounter("simpleworkitem.hello.abandoned", () => queue.Enqueue(new SimpleWorkItem
-                {
+                var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }), TimeSpan.FromSeconds(1));
+                }).AnyContext(), TimeSpan.FromSeconds(1)).AnyContext();
                 metrics.DisplayStats(_writer);
                 Assert.True(success);
-                Assert.Equal(0, queue.GetQueueStats().Completed);
-                Assert.Equal(1, queue.GetQueueStats().Errors);
-                Assert.Equal(1, queue.GetQueueStats().Deadletter);
+                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Deadletter);
             }
         }
 
@@ -386,8 +385,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual void CanRunWorkItemWithMetrics()
-        {
+        public virtual async Task CanRunWorkItemWithMetrics() {
             var eventRaised = new ManualResetEvent(false);
 
             var metricsClient = new InMemoryMetricsClient();
@@ -397,9 +395,9 @@ namespace Foundatio.Tests.Queue {
 
             var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
 
-            queue.Enqueue(work);
-            var item = queue.Dequeue();
-            item.Complete();
+            await queue.EnqueueAsync(work).AnyContext();
+            var item = await queue.DequeueAsync().AnyContext();
+            await item.CompleteAsync().AnyContext();
 
             metricsClient.DisplayStats(_writer);
 

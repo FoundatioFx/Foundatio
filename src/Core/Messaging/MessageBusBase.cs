@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Nito.AsyncEx;
 
@@ -12,7 +14,7 @@ namespace Foundatio.Messaging {
         private readonly Timer _maintenanceTimer;
 
         public MessageBusBase() {
-            _maintenanceTimer = new Timer(s => DoMaintenance(), null, Timeout.Infinite, Timeout.Infinite);
+            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite, Timeout.Infinite);
         }
 
         public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
@@ -28,16 +30,17 @@ namespace Foundatio.Messaging {
                     MessageType = messageType,
                     SendTime = sendTime
                 });
-                ScheduleNextMaintenance(sendTime);
+
+                await ScheduleNextMaintenance(sendTime).AnyContext();
             }
         }
 
-        private void ScheduleNextMaintenance(DateTime value) {
+        private async Task ScheduleNextMaintenance(DateTime value) {
             Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
             if (value == DateTime.MaxValue)
                 return;
 
-            lock (_lock) {
+            using (await _asyncLock.LockAsync()) {
                 if (_nextMaintenance.HasValue && _nextMaintenance.Value < DateTime.UtcNow)
                     _nextMaintenance = null;
 
@@ -50,7 +53,7 @@ namespace Foundatio.Messaging {
                 _maintenanceTimer.Change(delay, Timeout.Infinite);
             }
         }
-        
+
         private async Task DoMaintenanceAsync() {
             using (await _asyncLock.LockAsync()) {
 	            Logger.Trace().Message("DoMaintenanceAsync").Write();
@@ -69,7 +72,7 @@ namespace Foundatio.Messaging {
                 }
 
                 _nextMaintenance = null;
-                ScheduleNextMaintenance(nextMessageSendTime);
+                await ScheduleNextMaintenance(nextMessageSendTime).AnyContext();
 
                 if (messagesToSend.Count == 0)
                     return;

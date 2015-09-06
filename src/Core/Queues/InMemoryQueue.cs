@@ -42,7 +42,7 @@ namespace Foundatio.Queues {
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
 
-            _maintenanceTimer = new Timer(s => DoMaintenance(), null, Timeout.Infinite, Timeout.Infinite);
+            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite, Timeout.Infinite);
             _disposeTokenSource = new CancellationTokenSource();
         }
 
@@ -89,7 +89,7 @@ namespace Foundatio.Queues {
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
 
-            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, token);
+            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken);
 
             
             return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token).AnyContext();
@@ -138,7 +138,7 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, entry.Id).Write();
 
             QueueInfo<T> info = null;
-            if (!_dequeued.TryRemove(id, out info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);

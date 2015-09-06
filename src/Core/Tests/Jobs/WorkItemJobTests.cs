@@ -179,15 +179,14 @@ namespace Foundatio.Tests.Jobs {
         public int Index { get; set; }
     }
 
-    public class MyWorkItemHandler : WorkItemHandlerBase
-    {
+    public class MyWorkItemHandler : WorkItemHandlerBase {
         public MyWorkItemHandler(MyDependency dependency) {
             Dependency = dependency;
         }
 
         public MyDependency Dependency { get; private set; }
 
-        public async Task HandleItem(WorkItemContext context) {
+        public override async Task HandleItem(WorkItemContext context) {
             Assert.NotNull(Dependency);
 
             var jobData = context.GetData<MyWorkItem>();
