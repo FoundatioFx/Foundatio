@@ -107,12 +107,8 @@ namespace Foundatio.Metrics {
             return TaskHelper.Completed();
         }
         
-        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1, Func<Task> work = null) {
-            try {
-                return await WaitForCounterAsync(statName, count, new CancellationTokenSource(timeout).Token, work).AnyContext();
-            } catch (TaskCanceledException) {
-                return false;
-            }
+        public Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1) {
+            return WaitForCounterAsync(statName, TaskHelper.Completed, timeout, count);
         }
 
         public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -137,7 +133,8 @@ namespace Foundatio.Metrics {
             var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
-                    await waitHandle.WaitAsync(cancellationToken).AnyContext();
+                    // TODO: Use the async version once it supports passing in a cancellation token.
+                    waitHandle.Wait(cancellationToken);
                 } catch (OperationCanceledException) {}
                 Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
                 waitHandle.Reset();
