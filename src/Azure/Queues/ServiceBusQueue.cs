@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -112,14 +111,14 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<string> EnqueueAsync(T data) {
-            if (!OnEnqueuing(data))
+            if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
             await _queueClient.SendAsync(message).AnyContext();
 
-            OnEnqueued(data, message.MessageId);
+            await OnEnqueuedAsync(data, message.MessageId).AnyContext();
 
             return message.MessageId;
         }
@@ -160,21 +159,21 @@ namespace Foundatio.Queues {
                 var data = msg.GetBody<T>();
                 Interlocked.Increment(ref _dequeuedCount);
                 var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
-                OnDequeued(entry);
+                await OnDequeuedAsync(entry).AnyContext();
                 return entry;
             }
         }
 
-        public override async Task CompleteAsync(IQueueEntryMetadata entry) {
+        public override async Task CompleteAsync(string id) {
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
-            OnCompleted(entry);
+            await _queueClient.CompleteAsync(new Guid(id)).AnyContext();
+            await OnCompletedAsync(id).AnyContext();
         }
         
-        public override async Task AbandonAsync(IQueueEntryMetadata entry) {
+        public override async Task AbandonAsync(string id) {
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
-            OnAbandoned(entry);
+            await _queueClient.AbandonAsync(new Guid(id)).AnyContext();
+            await OnAbandonedAsync(id).AnyContext();
         }
         
         public override void Dispose() {

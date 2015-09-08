@@ -67,9 +67,9 @@ namespace Foundatio.Tests.Messaging {
                 sw.Start();
 
                 Parallel.For(0, numConcurrentMessages, (_) => {
-                    await messageBus.PublishAsync(new SimpleMessageA {
+                    messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello"
-                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300))).AnyContext().GetAwaiter().GetResult();
                     Logger.Trace().Message("Published one...").Write();
                 });
 

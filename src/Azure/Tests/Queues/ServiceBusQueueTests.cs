@@ -81,12 +81,11 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override void CanRunWorkItemWithMetrics()
-        {
-            base.CanRunWorkItemWithMetrics();
+        public override Task CanRunWorkItemWithMetrics() {
+            return base.CanRunWorkItemWithMetrics();
         }
 
-        // not using this test because you can set specific delay times for servicebus
+        // NOTE: Not using this test because you can set specific delay times for servicebus
         public override Task CanDelayRetry() {
             return base.CanDelayRetry();
         }

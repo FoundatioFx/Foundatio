@@ -35,9 +35,9 @@ namespace Foundatio.Queues {
 
         public abstract Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
 
-        public abstract Task CompleteAsync(IQueueEntryMetadata entry);
+        public abstract Task CompleteAsync(string id);
 
-        public abstract Task AbandonAsync(IQueueEntryMetadata entry);
+        public abstract Task AbandonAsync(string id);
 
         public abstract Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
 
@@ -49,18 +49,19 @@ namespace Foundatio.Queues {
 
         public virtual event EventHandler<EnqueuingEventArgs<T>> Enqueuing;
 
-        protected virtual bool OnEnqueuing(T data) {
+        protected virtual Task<bool> OnEnqueuingAsync(T data) {
             var args = new EnqueuingEventArgs<T> {
                 Queue = this,
                 Data = data
             };
+
             Enqueuing?.Invoke(this, args);
-            return !args.Cancel;
+            return Task.FromResult(!args.Cancel);
         }
 
         public virtual event EventHandler<EnqueuedEventArgs<T>> Enqueued;
 
-        protected virtual void OnEnqueued(T data, string id) {
+        protected virtual Task OnEnqueuedAsync(T data, string id) {
             Enqueued?.Invoke(this, new EnqueuedEventArgs<T> {
                 Queue = this,
                 Data = data,
@@ -70,44 +71,51 @@ namespace Foundatio.Queues {
                     Id = id
                 }
             });
+
+            return Task.FromResult(0);
         }
 
         public virtual event EventHandler<DequeuedEventArgs<T>> Dequeued;
 
-        protected virtual void OnDequeued(QueueEntry<T> entry) {
+        protected virtual async Task OnDequeuedAsync(QueueEntry<T> entry) {
             var info = entry.ToMetadata();
             Dequeued?.Invoke(this, new DequeuedEventArgs<T> {
                 Queue = this,
                 Data = entry.Value,
                 Metadata = info
             });
-            _queueEntryCache.Set(entry.Id, info);
+
+            await _queueEntryCache.SetAsync(entry.Id, info).AnyContext();
         }
 
         public virtual event EventHandler<CompletedEventArgs<T>> Completed;
 
-        protected virtual void OnCompleted(string id) {
-            var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
+        protected virtual async Task OnCompletedAsync(string id) {
+            var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
             if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
                 queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+
             Completed?.Invoke(this, new CompletedEventArgs<T> {
                 Queue = this,
                 Metadata = queueEntry
             });
-            _queueEntryCache.Remove(id);
+
+            await _queueEntryCache.RemoveAsync(id).AnyContext();
         }
 
         public virtual event EventHandler<AbandonedEventArgs<T>> Abandoned;
 
-        protected virtual void OnAbandoned(string id) {
-            var queueEntry = _queueEntryCache.Get<QueueEntryMetadata>(id);
+        protected virtual async Task OnAbandonedAsync(string id) {
+            var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
             if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
                 queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+
             Abandoned?.Invoke(this, new AbandonedEventArgs<T> {
                 Queue = this,
                 Metadata = queueEntry
             });
-            _queueEntryCache.Remove(id);
+
+            await _queueEntryCache.RemoveAsync(id).AnyContext();
         }
 
         public string QueueId { get; protected set; }

@@ -7,6 +7,7 @@ using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : CaptureTests {
@@ -44,12 +45,14 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync<long>("test", Int64.MaxValue).AnyContext();
                 cacheValue = await cache.GetAsync<int?>("test").AnyContext();
                 Assert.False(cacheValue.HasValue);
-                
+
                 cacheValue = await cache.GetAsync<long?>("test").AnyContext();
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(Int64.MaxValue, cacheValue.Value);
-                
-                await cache.SetAsync<MyData>("test", new MyData { Message = "test" }).AnyContext();
+
+                await cache.SetAsync<MyData>("test", new MyData {
+                    Message = "test"
+                }).AnyContext();
                 cacheValue = await cache.GetAsync<long?>("test").AnyContext();
                 Assert.False(cacheValue.HasValue);
             }
@@ -91,7 +94,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
             }
         }
-        
+
         public virtual async Task CanRemoveByPrefix() {
             var cache = GetCacheClient();
             if (cache == null)
@@ -99,7 +102,7 @@ namespace Foundatio.Tests.Caching {
 
             using (cache) {
                 await cache.RemoveAllAsync().AnyContext();
-                
+
                 string prefix = "blah:";
                 await cache.SetAsync("test", 1).AnyContext();
                 await cache.SetAsync(prefix + "test", 1).AnyContext();
@@ -123,7 +126,11 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync().AnyContext();
 
                 var dt = DateTimeOffset.Now;
-                var value = new MyData {Type = "test", Date = dt, Message = "Hello World"};
+                var value = new MyData {
+                    Type = "test",
+                    Date = dt,
+                    Message = "Hello World"
+                };
                 await cache.SetAsync("test", value).AnyContext();
                 value.Type = "modified";
                 var cachedValue = await cache.GetAsync<MyData>("test").AnyContext();
@@ -158,96 +165,105 @@ namespace Foundatio.Tests.Caching {
                 Assert.Null(await cache.GetExpirationAsync("test2").AnyContext());
             }
         }
-        
-        public virtual void MeasureThroughput()
-        {
+
+        public virtual async Task MeasureThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++)
-            {
-                cacheClient.Set("test", 13422);
-                cacheClient.Set("flag", true);
-                Assert.Equal(13422, cacheClient.Get<int>("test"));
-                Assert.Null(cacheClient.Get<int?>("test2"));
-                Assert.True(cacheClient.Get<bool>("flag"));
-                metrics.Counter("work");
+            for (int i = 0; i < itemCount; i++) {
+                await cacheClient.SetAsync("test", 13422).AnyContext();
+                await cacheClient.SetAsync("flag", true).AnyContext();
+                Assert.Equal(13422, await cacheClient.GetAsync<int>("test").AnyContext());
+                Assert.Null(await cacheClient.GetAsync<int?>("test2").AnyContext());
+                Assert.True(await cacheClient.GetAsync<bool>("flag").AnyContext());
+                await metrics.CounterAsync("work").AnyContext();
             }
             metrics.DisplayStats(_writer);
         }
 
-        public virtual void MeasureSerializerSimpleThroughput()
-        {
+        public virtual async Task MeasureSerializerSimpleThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++)
-            {
-                cacheClient.Set("test", new SimpleModel
-                {
+            for (int i = 0; i < itemCount; i++) {
+                await cacheClient.SetAsync("test", new SimpleModel {
                     Data1 = "Hello",
                     Data2 = 12
-                });
-                var model = cacheClient.Get<SimpleModel>("test");
+                }).AnyContext();
+                var model = await cacheClient.GetAsync<SimpleModel>("test").AnyContext();
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                metrics.Counter("work");
+                await metrics.CounterAsync("work").AnyContext();
             }
+
             metrics.DisplayStats(_writer);
         }
 
-        public virtual void MeasureSerializerComplexThroughput()
-        {
+        public virtual async Task MeasureSerializerComplexThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
                 return;
 
-            cacheClient.FlushAll();
+            await cacheClient.RemoveAllAsync().AnyContext();
 
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++)
-            {
-                cacheClient.Set("test", new ComplexModel
-                {
+            for (int i = 0; i < itemCount; i++) {
+                await cacheClient.SetAsync("test", new ComplexModel {
                     Data1 = "Hello",
                     Data2 = 12,
                     Data3 = true,
-                    Simple = new SimpleModel { Data1 = "hi", Data2 = 13 },
-                    Simples = new List<SimpleModel> { new SimpleModel { Data1 = "hey", Data2 = 45 }, new SimpleModel { Data1 = "next", Data2 = 3423 } },
-                    DictionarySimples = new Dictionary<string, SimpleModel> { { "sdf", new SimpleModel { Data1 = "Sachin" } } }
-                });
-                var model = cacheClient.Get<ComplexModel>("test");
+                    Simple = new SimpleModel {
+                        Data1 = "hi",
+                        Data2 = 13
+                    },
+                    Simples = new List<SimpleModel> {
+                        new SimpleModel {
+                            Data1 = "hey",
+                            Data2 = 45
+                        },
+                        new SimpleModel {
+                            Data1 = "next",
+                            Data2 = 3423
+                        }
+                    },
+                    DictionarySimples = new Dictionary<string, SimpleModel> {
+                        { "sdf", new SimpleModel {
+                            Data1 = "Sachin"
+                        } }
+                    }
+                }).AnyContext();
+
+                var model = await cacheClient.GetAsync<ComplexModel>("test").AnyContext();
                 Assert.NotNull(model);
                 Assert.Equal("Hello", model.Data1);
                 Assert.Equal(12, model.Data2);
-                metrics.Counter("work");
+                await metrics.CounterAsync("work").AnyContext();
             }
+
             metrics.DisplayStats(_writer);
         }
 
         protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
     }
 
-    public class SimpleModel
-    {
+    public class SimpleModel {
         public string Data1 { get; set; }
         public int Data2 { get; set; }
     }
 
-    public class ComplexModel
-    {
+    public class ComplexModel {
         public string Data1 { get; set; }
         public int Data2 { get; set; }
         public SimpleModel Simple { get; set; }

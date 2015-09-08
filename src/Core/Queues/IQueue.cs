@@ -20,9 +20,9 @@ namespace Foundatio.Queues {
         Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
         Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
 
-        Task CompleteAsync(IQueueEntryMetadata entry);
+        Task CompleteAsync(string id);
 
-        Task AbandonAsync(IQueueEntryMetadata entry);
+        Task AbandonAsync(string id);
         
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
 

@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Jobs;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Extensions;
 
 namespace Foundatio.Redis.Tests.Jobs {
     public class RedisJobTests : CaptureTests {
@@ -20,9 +22,12 @@ namespace Foundatio.Redis.Tests.Jobs {
             queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100), _writer);
-            Task.Factory.StartNew(() => {
+            Task.Run(() => {
                 Parallel.For(0, workItemCount, i => {
-                    queue.EnqueueAsync(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i }).AnyContext().GetAwaiter().GetResult();
+                    queue.EnqueueAsync(new SampleQueueWorkItem {
+                        Created = DateTime.Now,
+                        Path = "somepath" + i
+                    }).AnyContext().GetAwaiter().GetResult();
                 });
             }).AnyContext();
 
@@ -34,34 +39,33 @@ namespace Foundatio.Redis.Tests.Jobs {
         }
 
         [Fact(Skip = "df")]
-        public void CanRunMultipleQueueJobs()
-        {
+        public void CanRunMultipleQueueJobs() {
             const int jobCount = 5;
             const int workItemCount = 1000;
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100), _writer);
 
             var queues = new List<RedisQueue<SampleQueueWorkItem>>();
-            for (int i = 0; i < jobCount; i++)
-            {
+            for (int i = 0; i < jobCount; i++) {
                 var q = new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), retries: 3, retryDelay: TimeSpan.FromSeconds(1));
                 q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
                 queues.Add(q);
             }
 
-            Task.Run(() =>
-            {
+            Task.Run(() => {
                 Parallel.For(0, workItemCount, i => {
                     var queue = queues[RandomData.GetInt(0, 4)];
-                    queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = RandomData.GetString() });
+                    queue.EnqueueAsync(new SampleQueueWorkItem {
+                        Created = DateTime.Now,
+                        Path = RandomData.GetString()
+                    }).AnyContext().GetAwaiter().GetResult();
                 });
             });
 
-            Parallel.For(0, jobCount, index =>
-            {
+            Parallel.For(0, jobCount, index => {
                 var queue = queues[index];
                 var job = new SampleQueueJob(queue, metrics);
-                job.RunUntilEmpty();
+                job.RunUntilEmptyAsync().AnyContext().GetAwaiter().GetResult();
             });
 
             metrics.DisplayStats(_writer);

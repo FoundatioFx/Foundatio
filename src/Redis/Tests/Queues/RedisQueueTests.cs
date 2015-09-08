@@ -88,9 +88,8 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public override void CanRunWorkItemWithMetrics()
-        {
-            base.CanRunWorkItemWithMetrics();
+        public override Task CanRunWorkItemWithMetrics() {
+            return base.CanRunWorkItemWithMetrics();
         }
 
         [Fact]

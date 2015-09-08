@@ -1,8 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
-using Foundatio.Metrics;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -53,18 +51,18 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override void MeasureThroughput() {
-            base.MeasureThroughput();
+        public override Task MeasureThroughput() {
+            return base.MeasureThroughput();
         }
 
         [Fact]
-        public override void MeasureSerializerSimpleThroughput() {
-            base.MeasureSerializerSimpleThroughput();
+        public override Task MeasureSerializerSimpleThroughput() {
+            return base.MeasureSerializerSimpleThroughput();
         }
 
         [Fact]
-        public override void MeasureSerializerComplexThroughput() {
-            base.MeasureSerializerComplexThroughput();
+        public override Task MeasureSerializerComplexThroughput() {
+            return base.MeasureSerializerComplexThroughput();
         }
     }
 }

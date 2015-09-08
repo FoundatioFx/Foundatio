@@ -60,10 +60,10 @@ namespace Foundatio.Queues {
             });
         }
 
-        public override Task<string> EnqueueAsync(T data) {
+        public override async Task<string> EnqueueAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
             Logger.Trace().Message("Queue {0} enqueue item: {1}", typeof(T).Name, id).Write();
-            if (!OnEnqueuing(data))
+            if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             var info = new QueueInfo<T> {
@@ -77,10 +77,10 @@ namespace Foundatio.Queues {
             _autoEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
-            OnEnqueued(data, id);
+            await OnEnqueuedAsync(data, id).AnyContext();
             Logger.Trace().Message("Enqueue done").Write();
 
-            return Task.FromResult(id);
+            return id;
         }
 
         public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -90,12 +90,10 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
 
             var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken);
-
-            
             return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token).AnyContext();
         }
 
-        public override Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Queue {0} dequeued item", typeof(T).Name).Write();
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -110,14 +108,14 @@ namespace Foundatio.Queues {
             }
 
             if (_queue.Count == 0 || cancellationToken.IsCancellationRequested)
-                return Task.FromResult<QueueEntry<T>>(null);
+                return null;
 
             _autoEvent.Reset();
 
             Logger.Trace().Message("Dequeue: Attempt").Write();
             QueueInfo<T> info;
             if (!_queue.TryDequeue(out info) || info == null)
-                return Task.FromResult<QueueEntry<T>>(null);
+                return null;
 
             info.Attempts++;
             info.TimeDequeued = DateTime.UtcNow;
@@ -128,52 +126,48 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _dequeuedCount);
             Logger.Trace().Message("Dequeue: Got Item").Write();
             var entry = new QueueEntry<T>(info.Id, info.Data.Copy(), this, info.TimeEnqueued, info.Attempts);
-            OnDequeued(entry);
+            await OnDequeuedAsync(entry).AnyContext();
             ScheduleNextMaintenance(DateTime.UtcNow.Add(_workItemTimeout));
 
-            return Task.FromResult(entry);
+            return entry;
         }
 
-        public override Task CompleteAsync(IQueueEntryMetadata entry) {
-            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, entry.Id).Write();
+        public override async Task CompleteAsync(string id) {
+            Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, id).Write();
 
             QueueInfo<T> info = null;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
 
-            OnCompleted(entry);
-            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
-
-            return Task.FromResult(0);
+            await OnCompletedAsync(id).AnyContext();
+            Logger.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public override Task AbandonAsync(IQueueEntryMetadata entry) {
-            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, entry.Id).Write();
+        public override async Task AbandonAsync(string id) {
+            Logger.Trace().Message("Queue {0} abandon item: {1}", typeof(T).Name, id).Write();
 
             QueueInfo<T> info;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _abandonedCount);
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
-                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
+                    Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
                     Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info)).AnyContext();
                 } else {
-                    Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
+                    Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                     Retry(info);
                 }
             } else {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
                 _deadletterQueue.Enqueue(info);
             }
 
-            OnAbandoned(entry);
-            Logger.Trace().Message("Abandon complete: {0}", entry.Id).Write();
-
-            return Task.FromResult(0);
+            await OnAbandonedAsync(id).AnyContext();
+            Logger.Trace().Message("Abandon complete: {0}", id).Write();
         }
 
         private void Retry(QueueInfo<T> info) {

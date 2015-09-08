@@ -28,11 +28,11 @@ namespace Foundatio.Queues {
                 return;
 
             _isCompleted = true;
-            await _queue.CompleteAsync(this).AnyContext();
+            await _queue.CompleteAsync(Id).AnyContext();
         }
 
         public async Task AbandonAsync() {
-            await _queue.AbandonAsync(this).AnyContext();
+            await _queue.AbandonAsync(Id).AnyContext();
         }
 
         public virtual void Dispose() {

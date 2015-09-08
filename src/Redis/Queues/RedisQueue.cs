@@ -148,7 +148,7 @@ namespace Foundatio.Queues {
         public override async Task<string> EnqueueAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
             Logger.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
-            if (!OnEnqueuing(data))
+            if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             bool success = await _cache.AddAsync(GetPayloadKey(id), data, _payloadTtl).AnyContext();
@@ -160,7 +160,7 @@ namespace Foundatio.Queues {
 
             await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
             Interlocked.Increment(ref _enqueuedCount);
-            OnEnqueued(data, id);
+            await OnEnqueuedAsync(data, id).AnyContext();
             Logger.Trace().Message("Enqueue done").Write();
 
             return id;
@@ -228,7 +228,7 @@ namespace Foundatio.Queues {
                 var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(value)).AnyContext() ?? -1;
                 var entry = new QueueEntry<T>(value, payload, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
-                OnDequeued(entry);
+                await OnDequeuedAsync(entry).AnyContext();
 
                 Logger.Debug().Message("Dequeued item: {0}", value).Write();
                 return entry;
@@ -238,25 +238,24 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override Task CompleteAsync(IQueueEntryMetadata entry) {
-            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, entry.Id).Write();
+        public override async Task CompleteAsync(string id) {
+            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
             var batch = _db.CreateBatch();
-            batch.ListRemoveAsync(WorkListName, entry.Id).AnyContext();
-            batch.KeyDeleteAsync(GetPayloadKey(entry.Id)).AnyContext();
-            batch.KeyDeleteAsync(GetAttemptsKey(entry.Id)).AnyContext();
-            batch.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)).AnyContext();
-            batch.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
-            batch.KeyDeleteAsync(GetWaitTimeKey(entry.Id)).AnyContext();
+            await batch.ListRemoveAsync(WorkListName, id).AnyContext();
+            await batch.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
+            await batch.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
+            await batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
+            await batch.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
+            await batch.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
             batch.Execute();
             Interlocked.Increment(ref _completedCount);
-            OnCompleted(entry);
-            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
-            return Task.FromResult(0);
+            await OnCompletedAsync(id).AnyContext();
+            Logger.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public override async Task AbandonAsync(IQueueEntryMetadata entry) {
-            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, entry.Id).Write();
-            var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(entry.Id)).AnyContext();
+        public override async Task AbandonAsync(string id) {
+            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+            var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(id)).AnyContext();
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
@@ -265,38 +264,38 @@ namespace Foundatio.Queues {
             var retryDelay = GetRetryDelay(attempts);
             Logger.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
             if (attempts > _retries) {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", entry.Id).Write();
-                await _db.ListRemoveAsync(WorkListName, entry.Id).AnyContext();
-                await _db.ListLeftPushAsync(DeadListName, entry.Id).AnyContext();
-                await _db.KeyExpireAsync(GetPayloadKey(entry.Id), _deadLetterTtl).AnyContext();
-                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
+                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
+                await _db.ListRemoveAsync(WorkListName, id).AnyContext();
+                await _db.ListLeftPushAsync(DeadListName, id).AnyContext();
+                await _db.KeyExpireAsync(GetPayloadKey(id), _deadLetterTtl).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
-                Logger.Trace().Message("Adding item to wait list for future retry: {0}", entry.Id).Write();
+                Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
-                await tx.ListRemoveAsync(WorkListName, entry.Id).AnyContext();
-                await tx.ListLeftPushAsync(WaitListName, entry.Id).AnyContext();
+                await tx.ListRemoveAsync(WorkListName, id).AnyContext();
+                await tx.ListLeftPushAsync(WaitListName, id).AnyContext();
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
                     throw new Exception("Unable to move item to wait list.");
 
-                await _cache.SetAsync(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
-                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
+                await _cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
             } else {
-                Logger.Trace().Message("Adding item back to queue for retry: {0}", entry.Id).Write();
+                Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                 var tx = _db.CreateTransaction();
-                await tx.ListRemoveAsync(WorkListName, entry.Id).AnyContext();
-                await tx.ListLeftPushAsync(QueueListName, entry.Id).AnyContext();
+                await tx.ListRemoveAsync(WorkListName, id).AnyContext();
+                await tx.ListLeftPushAsync(QueueListName, id).AnyContext();
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
-                await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
-            OnAbandoned(entry);
-            Logger.Trace().Message("Abondon complete: {0}", entry.Id).Write();
+            await OnAbandonedAsync(id).AnyContext();
+            Logger.Trace().Message("Abondon complete: {0}", id).Write();
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -406,8 +405,7 @@ namespace Foundatio.Queues {
                         continue;
 
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
-                    // TODO: Fix parameters
-                    await AbandonAsync(new QueueEntry<T>(workId, null, this, DateTime.MinValue, 1)).AnyContext();
+                    await AbandonAsync(workId).AnyContext();
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
