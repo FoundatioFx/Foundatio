@@ -37,7 +37,7 @@ namespace Foundatio.Jobs {
 
                 Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
                 try {
-                    var result = await ProcessQueueItem(queueEntry);
+                    var result = await ProcessQueueItemAsync(queueEntry).AnyContext();
 
                     if (!AutoComplete)
                         return result;

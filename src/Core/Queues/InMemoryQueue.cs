@@ -90,7 +90,7 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
 
             var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken);
-            return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token).AnyContext();
+            return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token);
         }
 
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -199,7 +199,7 @@ namespace Foundatio.Queues {
             return Task.FromResult(0);
         }
 
-        private async Task WorkerLoopAsync(CancellationToken token) {
+        private async Task WorkerLoopAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete, CancellationToken token) {
             Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
             while (!token.IsCancellationRequested) {
                 Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();

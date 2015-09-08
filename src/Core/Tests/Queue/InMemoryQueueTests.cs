@@ -81,9 +81,8 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public override void CanRunWorkItemWithMetrics()
-        {
-            base.CanRunWorkItemWithMetrics();
+        public override Task CanRunWorkItemWithMetrics() {
+            return base.CanRunWorkItemWithMetrics();
         }
     }
 }

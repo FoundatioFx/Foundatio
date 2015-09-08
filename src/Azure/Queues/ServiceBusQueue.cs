@@ -137,7 +137,7 @@ namespace Foundatio.Queues {
             return Task.FromResult(0);
         }
 
-        public override Task StopWorkingAsync() {
+        public Task StopWorkingAsync() {
             if (_isWorking) {
                 lock (_workerLock) {
                     _isWorking = false;

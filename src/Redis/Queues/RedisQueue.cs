@@ -181,7 +181,7 @@ namespace Foundatio.Queues {
             return Task.Factory.StartNew(async () => await WorkerLoopAsync(_workerCancellationTokenSource.Token).AnyContext());
         }
 
-        public override async Task StopWorkingAsync() {
+        public async Task StopWorkingAsync() {
             Logger.Trace().Message("Queue {0} stop working", _queueName).Write();
             _workerAction = null;
             await _subscriber.UnsubscribeAllAsync().AnyContext();
