@@ -15,7 +15,12 @@ namespace Foundatio.Tests.Utility {
         private TextWriter _outputWriter;
 
         static CaptureFixture() {
-            Logger.SetMinimumLogLevel(Debugger.IsAttached ? LogLevel.Info : LogLevel.Warn);
+#if DEBUG
+            Logger.SetMinimumLogLevel(LogLevel.Trace);
+#else
+            Logger.SetMinimumLogLevel(LogLevel.Warn);
+#endif
+
             Logger.RegisterWriter(l => Trace.WriteLine(l.ToString(false, false)));
         }
 
