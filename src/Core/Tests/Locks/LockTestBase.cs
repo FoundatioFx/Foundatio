@@ -1,22 +1,14 @@
 ﻿using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests {
-    public class TestBase {
-        protected TextWriter _writer;
-
-        public TestBase(ITestOutputHelper helper) {
-            _writer = new TestOutputWriter(helper);
-        }
-    }
-
     public abstract class LockTestBase : CaptureTests {
         protected virtual ILockProvider GetLockProvider() {
             return null;
@@ -58,14 +50,22 @@ namespace Foundatio.Tests {
                 return;
 
             using (locker) {
+                Logger.Info().Message("Releasing lock").Write();
                 await locker.ReleaseLockAsync("test").AnyContext();
-
+                
+                Logger.Info().Message("Acquiring lock #1").Write();
                 var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromMilliseconds(100)).AnyContext();
+                Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.NotNull(testLock);
-                var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
-                Assert.Null(lock1);
 
+                Logger.Info().Message("Acquiring lock #2").Write();
                 testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
+                Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
+                Assert.Null(testLock);
+
+                Logger.Info().Message("Acquiring lock #3").Write();
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
+                Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.NotNull(testLock);
             }
         }

@@ -8,13 +8,10 @@ using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Logging;
 using Xunit.Abstractions;
-using System.Threading.Tasks;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
-        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected virtual IMessageBus GetMessageBus() {
             return null;

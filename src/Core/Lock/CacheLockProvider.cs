@@ -37,7 +37,7 @@ namespace Foundatio.Lock {
 
             var tokenSource = new CancellationTokenSource(acquireTimeout.Value);
             var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm: ss.fff")).Write();
+            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
             bool allowLock = false;
 
             do {
@@ -50,6 +50,7 @@ namespace Foundatio.Lock {
 
                 if (gotLock) {
                     allowLock = true;
+                    Logger.Trace().Message("Acquired lock: {0}", name).Write();
                     break;
                 }
 
