@@ -54,7 +54,7 @@ namespace Foundatio.Tests {
                 await locker.ReleaseLockAsync("test").AnyContext();
                 
                 Logger.Info().Message("Acquiring lock #1").Write();
-                var testLock = await locker.AcquireLockAsync("test", TimeSpan.FromMilliseconds(100)).AnyContext();
+                var testLock = await locker.AcquireLockAsync("test", lockTimeout: TimeSpan.FromMilliseconds(150)).AnyContext();
                 Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.NotNull(testLock);
 

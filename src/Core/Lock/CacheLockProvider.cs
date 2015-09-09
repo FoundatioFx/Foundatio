@@ -12,7 +12,7 @@ namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
-        private readonly ConcurrentDictionary<string, AsyncAutoResetEvent> _autoEvents = new ConcurrentDictionary<string, AsyncAutoResetEvent>();
+        private readonly ConcurrentDictionary<string, AsyncManualResetEvent> _resetEvents = new ConcurrentDictionary<string, AsyncManualResetEvent>();
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
@@ -22,10 +22,9 @@ namespace Foundatio.Lock {
 
         private void OnLockReleased(CacheLockReleased msg) {
             Logger.Trace().Message("Got lock released message: {0}", msg.Name).Write();
-            AsyncAutoResetEvent autoEvent;
-            if (_autoEvents.TryGetValue(msg.Name, out autoEvent)) {
-                autoEvent.Set();
-            }
+            AsyncManualResetEvent resetEvent;
+            if (_resetEvents.TryGetValue(msg.Name, out resetEvent))
+                resetEvent.Set();
         }
 
         public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -41,12 +40,11 @@ namespace Foundatio.Lock {
             bool allowLock = false;
 
             do {
-                var now = DateTime.UtcNow;
-                bool gotLock = false;
+                bool gotLock;
                 if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = await _cacheClient.AddAsync(name, now).AnyContext();
+                    gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow).AnyContext();
                 else
-                    gotLock = await _cacheClient.AddAsync(name, now, lockTimeout.Value).AnyContext();
+                    gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value).AnyContext();
 
                 if (gotLock) {
                     allowLock = true;
@@ -55,16 +53,18 @@ namespace Foundatio.Lock {
                 }
 
                 Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
-                var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.FromSeconds(1));
+                var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ??  TimeSpan.FromSeconds(1));
                 if (keyExpiration < DateTime.UtcNow)
                     keyExpiration = DateTime.UtcNow;
 
-                var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(now) : keyExpiration.Subtract(now);
+                var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow);
                 Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
-                var autoEvent = _autoEvents.GetOrAdd(name, new AsyncAutoResetEvent(false));
-                
-                // wait for key expiration, release message or timeout
-                Task.WaitAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync(tokenSource.Token));
+                var autoEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
+                Task.WaitAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync());
+
+                // Ensure the state is reset for the next run.
+                autoEvent.Reset();
+
                 if (tokenSource.IsCancellationRequested) {
                     Logger.Trace().Message("Cancellation requested.").Write();
                     break;

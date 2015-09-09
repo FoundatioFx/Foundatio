@@ -27,9 +27,9 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private readonly CancellationTokenSource _disposeTokenSource;
-        private DateTime? _nextMaintenance = null;
+        private DateTime? _nextMaintenance;
         private readonly Timer _maintenanceTimer;
+        private readonly CancellationTokenSource _disposeTokenSource;
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviours = null)
             : base(serializer, behaviours)
@@ -134,7 +134,7 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(string id) {
             Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, id).Write();
-
+            
             QueueInfo<T> info = null;
             if (!_dequeued.TryRemove(id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
@@ -274,7 +274,6 @@ namespace Foundatio.Queues {
         public override void Dispose() {
             base.Dispose();
             _disposeTokenSource?.Cancel();
-
             _maintenanceTimer.Dispose();
         }
 
