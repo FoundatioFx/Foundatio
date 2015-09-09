@@ -73,7 +73,7 @@ namespace Foundatio.Jobs {
                     if (interval.HasValue)
                         await Task.Delay(interval.Value, cancellationToken).AnyContext();
                     else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                        await Task.Delay(1, cancellationToken).AnyContext();
+                        await Task.Delay(1).AnyContext();
                 } catch (TaskCanceledException) {}
 
                 if (continuationCallback == null)
@@ -92,7 +92,7 @@ namespace Foundatio.Jobs {
             if (cancellationToken.IsCancellationRequested)
                 Logger.Trace().Message("Job cancellation requested.").Write();
 
-            await Task.Delay(1, cancellationToken).AnyContext(); // allow events to process
+            await Task.Delay(1).AnyContext(); // allow events to process
         }
         
         public virtual void Dispose() {}

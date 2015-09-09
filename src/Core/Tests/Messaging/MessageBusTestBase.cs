@@ -175,10 +175,10 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var latch = new CountDownLatch(2);
-                await messageBus.SubscribeAsync<ISimpleMessage>(msg => {
+                messageBus.SubscribeAsync<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 }).AnyContext();
@@ -203,9 +203,9 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var latch = new CountDownLatch(3);
-                await messageBus.SubscribeAsync<object>(msg => {
+                messageBus.SubscribeAsync<object>(msg => {
                     latch.Signal();
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 }).AnyContext();
