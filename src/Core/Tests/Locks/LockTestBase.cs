@@ -22,7 +22,7 @@ namespace Foundatio.Tests {
             using (locker) {
                 await locker.ReleaseLockAsync("test").AnyContext();
 
-                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
+                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
                     Assert.NotNull(lock1);
                     Assert.True(await locker.IsLockedAsync("test").AnyContext());
                     var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();

@@ -108,7 +108,7 @@ namespace Foundatio.Utility {
                 restartInterval = TimeSpan.FromMilliseconds(100);
 
             if (action == null)
-                throw new ArgumentNullException("action");
+                throw new ArgumentNullException(nameof(action));
 
             return Task.Run(() => {
                 do {

@@ -9,6 +9,7 @@ namespace Foundatio.Logging {
     /// <summary>
     /// A simple logging class
     /// </summary>
+    [DebuggerStepThrough]
     public static class Logger {
         private static Action<LogData> _logWriter;
         private static LogLevel _minimumLogLevel = LogLevel.Trace;
@@ -27,8 +28,7 @@ namespace Foundatio.Logging {
             _globalProperties = new Lazy<IDictionary<string, string>>(CreateGlobal);
             _threadProperties = new ThreadLocal<IDictionary<string, string>>(CreateLocal);
         }
-
-
+        
         /// <summary>
         /// Gets the global properties dictionary.  All values are copied to each log on write.
         /// </summary>
@@ -36,10 +36,7 @@ namespace Foundatio.Logging {
         /// The global properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IDictionary<string, string> GlobalProperties
-        {
-            get { return _globalProperties.Value; }
-        }
+        public static IDictionary<string, string> GlobalProperties => _globalProperties.Value;
 
         /// <summary>
         /// Gets the thread-local properties dictionary.  All values are copied to each log on write.
@@ -48,11 +45,7 @@ namespace Foundatio.Logging {
         /// The thread-local properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IDictionary<string, string> ThreadProperties
-        {
-            get { return _threadProperties.Value; }
-        }
-
+        public static IDictionary<string, string> ThreadProperties => _threadProperties.Value;
 
         /// <summary>
         /// Start a fluent <see cref="LogBuilder" /> with the specified <see cref="LogLevel" />.
@@ -73,7 +66,7 @@ namespace Foundatio.Logging {
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
-        /// </returns>
+        /// </returns>hrough]
         public static ILogBuilder Log(Func<LogLevel> logLevelFactory, [CallerFilePath] string callerFilePath = null) {
             var logLevel = (logLevelFactory != null) ? logLevelFactory() : LogLevel.Debug;
 
@@ -151,16 +144,16 @@ namespace Foundatio.Logging {
             lock (_writerLock)
                 _logWriter = writer;
         }
-
+        
         private static Action<LogData> ResolveWriter() {
             lock (_writerLock)
                 return _logWriter;
         }
-
+        
         private static void DebugWrite(LogData logData) {
             System.Diagnostics.Debug.WriteLine(logData);
         }
-
+        
         private static ILogBuilder CreateBuilder(LogLevel logLevel, string callerFilePath) {
             if (logLevel < _minimumLogLevel || logLevel == LogLevel.None)
                 return new NullLogBuilder();
@@ -175,14 +168,14 @@ namespace Foundatio.Logging {
 
             return builder;
         }
-
+        
         private static IDictionary<string, string> CreateLocal() {
             var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             dictionary.Add("ThreadId", Thread.CurrentThread.ManagedThreadId.ToString(CultureInfo.InvariantCulture));
 
             return dictionary;
         }
-
+        
         private static IDictionary<string, string> CreateGlobal() {
             var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             dictionary.Add("MachineName", Environment.MachineName);

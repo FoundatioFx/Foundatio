@@ -83,7 +83,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task ReleaseLockAsync(string name) {
-            Logger.Trace().Message("ReleaseLock: {0}", name).Write();
+            Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
             await _cacheClient.RemoveAsync(name).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }

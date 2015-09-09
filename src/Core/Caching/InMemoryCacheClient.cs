@@ -87,9 +87,9 @@ namespace Foundatio.Caching {
 
         private class CacheEntry {
             private object _cacheValue;
-            private static long _instanceCount = 0;
+            private static long _instanceCount;
 #if DEBUG
-            private long _usageCount = 0;
+            private long _usageCount;
 #endif
 
             public CacheEntry(object value, DateTime expiresAt) {
@@ -104,7 +104,7 @@ namespace Foundatio.Caching {
             internal long LastAccessTicks { get; private set; }
             internal long LastModifiedTicks { get; private set; }
 #if DEBUG
-            internal long UsageCount { get { return _usageCount; } }
+            internal long UsageCount => _usageCount;
 #endif
 
             internal object Value {
@@ -176,9 +176,18 @@ namespace Foundatio.Caching {
 
             Interlocked.Increment(ref _hits);
 
-            T value;
-            var canConvert = cacheEntry.Value.TryCast(out value);
-            return Task.FromResult(new CacheValue<T>(value, canConvert));
+            try {
+                T value;
+                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
+                    value = (T)Convert.ChangeType(cacheEntry.Value, typeof(T));
+                else
+                    value = (T)cacheEntry.Value;
+
+                return Task.FromResult(new CacheValue<T>(value, true));
+            } catch (Exception ex) {
+                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{(string)cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
+                return Task.FromResult(new CacheValue<T>(default(T), false));
+            }
         }
 
         public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {

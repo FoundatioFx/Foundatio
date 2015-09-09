@@ -96,6 +96,7 @@ namespace Foundatio.Lock {
         }
 
         public Task ReleaseLockAsync(string name) {
+            Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
             return TaskHelper.Completed();
         }
 

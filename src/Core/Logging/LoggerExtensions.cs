@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Foundatio.Logging {
     /// <summary>
     /// Extension methods for logging
     /// </summary>
+    [DebuggerStepThrough]
     public static class LoggerExtensions {
         /// <summary>
         /// Sets the dictionary key to the specified value. 
@@ -16,9 +18,9 @@ namespace Foundatio.Logging {
         /// <returns>A dispoable action that removed the key on dispose.</returns>
         public static IDisposable Set(this IDictionary<string, string> dictionary, string key, string value) {
             if (dictionary == null)
-                throw new ArgumentNullException("dictionary");
+                throw new ArgumentNullException(nameof(dictionary));
             if (key == null)
-                throw new ArgumentNullException("key");
+                throw new ArgumentNullException(nameof(key));
 
             dictionary[key] = value;
 

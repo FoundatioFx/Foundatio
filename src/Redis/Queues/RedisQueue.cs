@@ -168,7 +168,7 @@ namespace Foundatio.Queues {
 
         public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
-                throw new ArgumentNullException("handler");
+                throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", _queueName).Write();
             _workerAction = handler;
@@ -240,14 +240,19 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(string id) {
             Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+
+            var tasks = new List<Task>();
             var batch = _db.CreateBatch();
-            await batch.ListRemoveAsync(WorkListName, id).AnyContext();
-            await batch.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
-            await batch.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
-            await batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
-            await batch.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
-            await batch.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
+            tasks.Add(batch.ListRemoveAsync(WorkListName, id));
+            tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
             batch.Execute();
+            
+            await Task.WhenAll(tasks.ToArray()).AnyContext();
+            
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(id).AnyContext();
             Logger.Trace().Message("Complete done: {0}", id).Write();

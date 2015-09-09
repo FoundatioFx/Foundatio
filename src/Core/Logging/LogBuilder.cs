@@ -1,28 +1,28 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace Foundatio.Logging {
+    [DebuggerStepThrough]
     public sealed class LogBuilder : ILogBuilder {
         private readonly LogData _data;
         private readonly Action<LogData> _writer;
 
         public LogBuilder(LogLevel logLevel, Action<LogData> writer) {
             if (writer == null)
-                throw new ArgumentNullException("writer");
+                throw new ArgumentNullException(nameof(writer));
 
             _writer = writer;
-            _data = new LogData();
-            _data.LogLevel = logLevel;
-            _data.FormatProvider = CultureInfo.InvariantCulture;
-            _data.Logger = typeof(Logger).FullName;
+            _data = new LogData {
+                LogLevel = logLevel,
+                FormatProvider = CultureInfo.InvariantCulture,
+                Logger = typeof(Logger).FullName
+            };
         }
 
-        public LogData LogData
-        {
-            get { return _data; }
-        }
+        public LogData LogData => _data;
 
         public ILogBuilder Level(LogLevel logLevel) {
             _data.LogLevel = logLevel;
@@ -92,7 +92,7 @@ namespace Foundatio.Logging {
 
         public ILogBuilder Property(string name, object value) {
             if (name == null)
-                throw new ArgumentNullException("name");
+                throw new ArgumentNullException(nameof(name));
 
             if (_data.Properties == null)
                 _data.Properties = new Dictionary<string, object>();
@@ -116,8 +116,7 @@ namespace Foundatio.Logging {
 
             _writer(_data);
         }
-
-
+        
         public void WriteIf(Func<bool> condition, [CallerMemberName] string callerMemberName = null, [CallerFilePath] string callerFilePath = null, [CallerLineNumber] int callerLineNumber = 0) {
             if (condition == null || !condition())
                 return;
@@ -131,6 +130,5 @@ namespace Foundatio.Logging {
 
             Write(callerMemberName, callerFilePath, callerLineNumber);
         }
-
     }
 }

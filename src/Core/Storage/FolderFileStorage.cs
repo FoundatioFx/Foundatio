@@ -29,7 +29,7 @@ namespace Foundatio.Storage {
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             try {
                 if (!await ExistsAsync(path).AnyContext())
@@ -60,7 +60,7 @@ namespace Foundatio.Storage {
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             string directory = Path.GetDirectoryName(Path.Combine(Folder, path));
             if (!Directory.Exists(directory))
@@ -82,9 +82,9 @@ namespace Foundatio.Storage {
 
         public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException("newpath");
+                throw new ArgumentNullException(nameof(newpath));
 
             try {
                 lock (_lockObject) {
@@ -103,9 +103,9 @@ namespace Foundatio.Storage {
 
         public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException("targetpath");
+                throw new ArgumentNullException(nameof(targetpath));
 
             try {
                 lock (_lockObject) {
@@ -124,7 +124,7 @@ namespace Foundatio.Storage {
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             try {
                 File.Delete(Path.Combine(Folder, path));
