@@ -12,6 +12,7 @@ using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
+#pragma warning disable 4014
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
@@ -397,7 +398,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     await workItem.CompleteAsync().AnyContext();
                     await metrics.CounterAsync("work").AnyContext();
                     countdown.Signal();
-                }).AnyContext();
+                });
                 countdown.Wait(60 * 1000);
                 metrics.DisplayStats(_output);
 

@@ -1,3 +1,5 @@
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
 using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -41,7 +43,7 @@ namespace Foundatio.Tests.Metrics {
                 await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
-            }).AnyContext();
+            });
 
             var success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
             Assert.True(success);
@@ -49,7 +51,7 @@ namespace Foundatio.Tests.Metrics {
             Task.Run(async () => {
                 await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
-            }).AnyContext();
+            });
 
             success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
@@ -60,7 +62,7 @@ namespace Foundatio.Tests.Metrics {
             Task.Run(async () => {
                 await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test", 2).AnyContext();
-            }).AnyContext();
+            });
 
             success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
             Assert.True(success);
@@ -71,7 +73,7 @@ namespace Foundatio.Tests.Metrics {
             Task.Run(async () => {
                 await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
-            }).AnyContext();
+            });
 
             success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
@@ -92,3 +94,5 @@ namespace Foundatio.Tests.Metrics {
         }
     }
 }
+
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Exceptionless;
@@ -29,7 +31,7 @@ namespace Foundatio.Redis.Tests.Jobs {
                         Path = "somepath" + i
                     }).AnyContext().GetAwaiter().GetResult();
                 });
-            }).AnyContext();
+            });
 
             var job = new SampleQueueJob(queue, metrics);
             await job.RunUntilEmptyAsync().AnyContext();
@@ -72,3 +74,5 @@ namespace Foundatio.Redis.Tests.Jobs {
         }
     }
 }
+
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

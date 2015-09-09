@@ -156,7 +156,9 @@ namespace Foundatio.Queues {
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
                     Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
-                    Task.Factory.StartNewDelayed(GetRetryDelay(info.Attempts), () => Retry(info)).AnyContext();
+
+                    await Task.Delay(GetRetryDelay(info.Attempts)).AnyContext();
+                    Retry(info);
                 } else {
                     Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
                     Retry(info);

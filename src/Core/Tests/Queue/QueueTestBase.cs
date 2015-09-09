@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -135,7 +137,7 @@ namespace Foundatio.Tests.Queue {
 
             using (queue) {
                 await queue.DeleteQueueAsync().AnyContext();
-
+                
                 Task.Factory.StartNewDelayed(250, async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 }).AnyContext()).AnyContext();
@@ -163,7 +165,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal("Hello", w.Value.Data);
                     await w.CompleteAsync().AnyContext();
                     resetEvent.Set();
-                }).AnyContext();
+                });
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
@@ -191,7 +193,7 @@ namespace Foundatio.Tests.Queue {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
-                }).AnyContext();
+                });
 
 
                 metrics.DisplayStats(_writer);
@@ -273,11 +275,11 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync().AnyContext();
 
                 var resetEvent = new AutoResetEvent(false);
-                await queue.StartWorkingAsync(w => {
+                queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
                     return Task.FromResult(0);
-                }, true).AnyContext();
+                }, true);
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
@@ -310,7 +312,7 @@ namespace Foundatio.Tests.Queue {
                 for (int i = 0; i < workerCount; i++) {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     Logger.Trace().Message("Queue Id: {0}, I: {1}", q.QueueId, i).Write();
-                        q.StartWorkingAsync(async w => await DoWorkAsync(w, latch, info).AnyContext()).AnyContext();
+                        q.StartWorkingAsync(async w => await DoWorkAsync(w, latch, info).AnyContext());
                     workers.Add(q);
                 }
 
@@ -464,3 +466,5 @@ namespace Foundatio.Tests.Queue {
         }
     }
 }
+
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

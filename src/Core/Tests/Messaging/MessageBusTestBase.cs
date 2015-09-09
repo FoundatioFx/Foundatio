@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,12 +26,12 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                     Logger.Trace().Message("Set event").Write();
-                }).AnyContext();
+                });
 
                 await Task.Delay(100).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
@@ -54,12 +56,12 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new CountDownLatch(numConcurrentMessages);
 
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Signal();
                     Logger.Trace().Message("Set event").Write();
-                }).AnyContext();
+                });
 
                 var sw = new Stopwatch();
                 sw.Start();
@@ -89,21 +91,21 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var latch = new CountDownLatch(3);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                });
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                });
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
-                await messageBus.PublishAsync(new SimpleMessageA {
+                });
+                messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -119,20 +121,20 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var latch = new CountDownLatch(2);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     throw new ApplicationException();
-                }).AnyContext();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                });
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                });
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     latch.Signal();
-                }).AnyContext();
-                await messageBus.PublishAsync(new SimpleMessageA {
+                });
+                messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
                 bool success = latch.Wait(2000);
                 Assert.True(success, "Failed to receive all messages.");
@@ -148,16 +150,16 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AutoResetEvent(false);
-                await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
-                }).AnyContext();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                });
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                }).AnyContext();
-                await messageBus.PublishAsync(new SimpleMessageA {
+                });
+                messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
                 bool success = resetEvent.WaitOne(2000);
                 Assert.True(success, "Failed to receive message.");
@@ -233,10 +235,10 @@ namespace Foundatio.Tests.Messaging {
 
                 await Task.Delay(100).AnyContext();
                 var resetEvent = new AutoResetEvent(false);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                }).AnyContext();
+                });
 
                 bool success = resetEvent.WaitOne(100);
                 Assert.False(success, "Messages are building up.");
@@ -244,3 +246,5 @@ namespace Foundatio.Tests.Messaging {
         }
     }
 }
+
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

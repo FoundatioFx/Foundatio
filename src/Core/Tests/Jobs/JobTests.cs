@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -92,8 +94,8 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
-            Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
+            Task.Run(async () => await job.RunAsync().AnyContext());
+            Task.Run(async () => await job.RunAsync().AnyContext());
             await Task.Delay(200).AnyContext();
             Assert.Equal(4, job.RunCount);
         }
@@ -174,3 +176,5 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 }
+
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
