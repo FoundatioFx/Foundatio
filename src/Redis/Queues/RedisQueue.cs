@@ -175,7 +175,7 @@ namespace Foundatio.Queues {
             _workerAutoComplete = autoComplete;
 
             if (_workerCancellationTokenSource != null)
-                return Task.FromResult(0);
+                return TaskHelper.Completed();
 
             _workerCancellationTokenSource = new CancellationTokenSource();
             return Task.Factory.StartNew(async () => await WorkerLoopAsync(_workerCancellationTokenSource.Token).AnyContext());

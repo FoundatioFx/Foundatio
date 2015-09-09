@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -134,7 +135,7 @@ namespace Foundatio.Queues {
                 _queueClient.OnMessageAsync(OnMessage);
             }
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public Task StopWorkingAsync() {
@@ -145,7 +146,7 @@ namespace Foundatio.Queues {
                 }
             }
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {

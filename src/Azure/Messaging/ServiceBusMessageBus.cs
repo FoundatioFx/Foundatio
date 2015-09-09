@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -76,7 +77,7 @@ namespace Foundatio.Messaging {
                 }
             }, cancellationToken);
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         private class Subscriber {

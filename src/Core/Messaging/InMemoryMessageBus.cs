@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
@@ -24,7 +25,7 @@ namespace Foundatio.Messaging {
                 }
             });
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
@@ -38,7 +39,7 @@ namespace Foundatio.Messaging {
                 }
             }, cancellationToken);
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         private class Subscriber {

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
@@ -198,7 +199,7 @@ namespace Foundatio.Queues {
             _abandonedCount = 0;
             _workerErrorCount = 0;
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         private async Task WorkerLoopAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete, CancellationToken token) {

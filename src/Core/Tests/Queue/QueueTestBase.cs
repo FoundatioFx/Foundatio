@@ -12,6 +12,7 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -278,7 +279,7 @@ namespace Foundatio.Tests.Queue {
                 queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
-                    return Task.FromResult(0);
+                    return TaskHelper.Completed();
                 }, true);
 
                 await queue.EnqueueAsync(new SimpleWorkItem {

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using Nito.AsyncEx;
 
 namespace Foundatio.Caching {
@@ -327,7 +328,7 @@ namespace Foundatio.Caching {
                 ScheduleNextMaintenance(expiresAt);
             }
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
     }
 }

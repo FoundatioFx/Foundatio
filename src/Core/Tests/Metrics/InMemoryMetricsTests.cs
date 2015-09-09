@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -90,7 +91,7 @@ namespace Foundatio.Tests.Metrics {
                 Task.Delay(50).AnyContext().GetAwaiter().GetResult();
             });
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
     }
 }

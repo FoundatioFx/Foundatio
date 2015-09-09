@@ -7,6 +7,7 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T> : IQueue<T> where T : class {
@@ -72,7 +73,7 @@ namespace Foundatio.Queues {
                 }
             });
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public virtual event EventHandler<DequeuedEventArgs<T>> Dequeued;

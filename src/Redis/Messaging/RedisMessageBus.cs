@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -66,7 +67,7 @@ namespace Foundatio.Messaging {
                 }
             }, cancellationToken);
 
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public override void Dispose() {

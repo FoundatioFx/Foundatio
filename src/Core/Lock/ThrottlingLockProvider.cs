@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -95,7 +96,7 @@ namespace Foundatio.Lock {
         }
 
         public Task ReleaseLockAsync(string name) {
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         private string GetCacheKey(string name, DateTime now) {

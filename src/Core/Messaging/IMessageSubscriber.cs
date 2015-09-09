@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public interface IMessageSubscriber {
@@ -15,7 +16,7 @@ namespace Foundatio.Messaging {
         public static Task SubscribeAsync<T>(this IMessageSubscriber subscriber, Action<T> handler, CancellationToken cancellationToken = default (CancellationToken)) where T : class {
             return subscriber.SubscribeAsync<T>((msg, token) => {
                 handler(msg);
-                return Task.FromResult(0);
+                return TaskHelper.Completed();
             }, cancellationToken);
         }
     }
