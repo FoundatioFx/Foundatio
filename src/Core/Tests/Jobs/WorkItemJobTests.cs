@@ -141,7 +141,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunBadWorkItem() {
-            var queue = new InMemoryQueue<WorkItemData>();
+            var queue = new InMemoryQueue<WorkItemData>(retries: 2, retryDelay: TimeSpan.FromMilliseconds(500));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
             var job = new WorkItemJob(queue, messageBus, handlerRegistry);
@@ -162,18 +162,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             await job.RunUntilEmptyAsync().AnyContext();
-            Assert.Equal(1, statusCount);
-
-            handlerRegistry.Register<MyWorkItem>(ctx => {
-                var jobData = ctx.GetData<MyWorkItem>();
-                Assert.Equal("Test", jobData.SomeData);
-                return TaskHelper.Completed();
-            });
-
-            jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
-
-            await job.RunUntilEmptyAsync().AnyContext();
-            Assert.Equal(2, statusCount);
+            Assert.Equal(3, statusCount);
         }
     }
 
