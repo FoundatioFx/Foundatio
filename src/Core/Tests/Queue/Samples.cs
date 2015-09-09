@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Queue {
 
         public string GetMetricName()
         {
-            return Regex.Replace(Data, "\\W+", string.Empty);
+            return Regex.Replace(Data, "\\W+", String.Empty);
         }
     }
 }

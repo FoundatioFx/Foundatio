@@ -156,7 +156,7 @@ namespace Foundatio.Tests.Jobs {
             }).AnyContext();
 
             await job.RunUntilEmptyAsync().AnyContext();
-            Thread.Sleep(1);
+            await Task.Delay(1).AnyContext();
 
             Assert.Equal(1, statusCount);
 

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,11 +16,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class JobTests : CaptureTests {
-        private readonly TextWriter _writer;
-
-        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
-            _writer = new TestOutputWriter(output);
-        }
+        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
         public void CanCancelJob()
@@ -99,7 +94,7 @@ namespace Foundatio.Tests.Jobs {
 
             Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
             Task.Run(async () => await job.RunAsync().AnyContext()).AnyContext();
-            Thread.Sleep(200);
+            await Task.Delay(200).AnyContext();
             Assert.Equal(4, job.RunCount);
         }
 

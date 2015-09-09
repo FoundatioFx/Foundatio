@@ -38,7 +38,7 @@ namespace Foundatio.Storage {
             using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext())
                 fileContents = await new StreamReader(result).ReadToEndAsync().AnyContext();
 
-            if (string.IsNullOrEmpty(fileContents))
+            if (String.IsNullOrEmpty(fileContents))
                 return default(T);
 
             return JsonConvert.DeserializeObject<T>(fileContents);

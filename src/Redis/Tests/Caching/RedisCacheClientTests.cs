@@ -8,12 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
-        private readonly TestOutputWriter _writer;
-
-        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-            _writer = new TestOutputWriter(output);
-        }
+        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override ICacheClient GetCacheClient() {
             return new RedisCacheClient(SharedConnection.GetMuxer());

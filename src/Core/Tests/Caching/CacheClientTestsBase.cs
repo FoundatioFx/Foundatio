@@ -158,7 +158,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, await cache.GetAsync<int?>("test").AnyContext());
                 Assert.True((await cache.GetExpirationAsync("test").AnyContext()).Value < TimeSpan.FromSeconds(1));
 
-                Thread.Sleep(500);
+                await Task.Delay(500).AnyContext();
                 Assert.Null(await cache.GetAsync<int?>("test").AnyContext());
                 Assert.Null(await cache.GetExpirationAsync("test").AnyContext());
                 Assert.Null(await cache.GetAsync<int?>("test2").AnyContext());

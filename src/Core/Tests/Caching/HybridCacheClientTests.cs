@@ -101,9 +101,9 @@ namespace Foundatio.Tests.Caching {
 
             var sw = new Stopwatch();
             sw.Start();
-            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0)
-                && sw.ElapsedMilliseconds < 500)
-                Thread.Sleep(25);
+            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0) && sw.ElapsedMilliseconds < 500)
+                await Task.Delay(25).AnyContext();
+
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);
             Assert.Equal(0, firstCache.LocalCache.Count);

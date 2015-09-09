@@ -165,7 +165,7 @@ namespace Foundatio.Logging {
             if (logLevel < _minimumLogLevel || logLevel == LogLevel.None)
                 return new NullLogBuilder();
 
-            string name = LoggerExtensions.GetFileNameWithoutExtension(callerFilePath ?? string.Empty);
+            string name = LoggerExtensions.GetFileNameWithoutExtension(callerFilePath ?? String.Empty);
 
             var writer = ResolveWriter();
             var builder = new LogBuilder(logLevel, writer);

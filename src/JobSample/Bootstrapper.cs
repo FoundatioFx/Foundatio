@@ -27,7 +27,7 @@ namespace Foundatio.JobSample.Jobs {
                 while (startDate.AddSeconds(30) > DateTime.Now) {
                     Console.WriteLine("Enqueueing ping.");
                     await q1.EnqueueAsync(new PingRequest { Data = "Hi" }).AnyContext();
-                    Thread.Sleep(RandomData.GetInt(100, 1000));
+                    await Task.Delay(RandomData.GetInt(100, 1000)).AnyContext();
                 }
             }).AnyContext();
 

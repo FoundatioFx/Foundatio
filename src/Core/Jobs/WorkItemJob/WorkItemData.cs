@@ -12,7 +12,7 @@ namespace Foundatio.Jobs
 
         public string GetMetricName()
         {
-            if (string.IsNullOrEmpty(Type))
+            if (String.IsNullOrEmpty(Type))
                 return null;
 
             var type = GetTypeName(Type);

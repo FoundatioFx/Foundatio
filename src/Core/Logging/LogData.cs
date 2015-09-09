@@ -101,7 +101,7 @@ namespace Foundatio.Logging {
             var message = new StringBuilder();
             message.Append("[").Append(DateTime.Now.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append(Logger).Append("] ");
 
-            if (includeFileInfo && !string.IsNullOrEmpty(FilePath) && !string.IsNullOrEmpty(MemberName)) {
+            if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName)) {
                 message.Append("[").Append(LoggerExtensions.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
             }
 

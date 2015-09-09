@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -23,7 +23,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance);
-            Debug.WriteLine($"Queue Id: {queue.QueueId}");
+            Logger.Debug().Message($"Queue Id: {queue.QueueId}").Write();
             return queue;
         }
 
@@ -214,7 +214,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts").AnyContext());
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait").AnyContext());
                 Assert.Equal(6, CountAllKeys());
-                Thread.Sleep(1000);
+                await Task.Delay(1000).AnyContext();
 
                 await queue.DoMaintenanceWorkAsync().AnyContext();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id).AnyContext());

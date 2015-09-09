@@ -11,7 +11,7 @@ namespace Foundatio.Queues {
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null) {
             _metricsClient = metrics;
 
-            if (!string.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
+            if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
                 metricsPrefix += ".";
 
             metricsPrefix += typeof(T).Name.ToLowerInvariant();
@@ -87,11 +87,11 @@ namespace Foundatio.Queues {
         }
 
         protected string GetFullMetricName(string name) {
-            return string.Concat(_metricsPrefix, ".", name);
+            return String.Concat(_metricsPrefix, ".", name);
         }
 
         protected string GetFullMetricName(string customMetricName, string name) {
-            return string.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : string.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
+            return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
         }
     }
 }

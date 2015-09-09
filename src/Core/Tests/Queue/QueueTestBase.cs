@@ -273,18 +273,19 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync().AnyContext();
 
                 var resetEvent = new AutoResetEvent(false);
-                queue.StartWorkingAsync(w => {
+                await queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
                     return Task.FromResult(0);
                 }, true).AnyContext();
+
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 }).AnyContext();
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Enqueued);
                 resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Thread.Sleep(100);
+                await Task.Delay(100).AnyContext();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
@@ -322,7 +323,7 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 Assert.True(latch.Wait(TimeSpan.FromSeconds(20)));
-                Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
+                await Task.Delay(100).AnyContext(); // needed to make sure the worker error handler has time to finish
                 Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                     info.CompletedCount,
                     info.AbandonCount,

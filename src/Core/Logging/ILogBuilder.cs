@@ -45,7 +45,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="arg0">The object to format.</param>
         /// <returns></returns>
         ILogBuilder Message(string format, object arg0);
@@ -53,7 +53,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <returns></returns>
@@ -62,7 +62,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <param name="arg2">The third object to format.</param>
@@ -72,7 +72,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <param name="arg2">The third object to format.</param>
@@ -83,7 +83,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
         ILogBuilder Message(string format, params object[] args);
@@ -92,7 +92,7 @@ namespace Foundatio.Logging {
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
         /// <param name="provider">An object that supplies culture-specific formatting information.</param>
-        /// <param name="format">A composite format string.</param>
+        /// <param name="format">A composite format String.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
         ILogBuilder Message(IFormatProvider provider, string format, params object[] args);

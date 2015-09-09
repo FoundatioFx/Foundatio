@@ -69,14 +69,14 @@ namespace Foundatio.Lock {
 
                     if (sleepUntil > now) {
                         Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - now).Write();
-                        Thread.Sleep(sleepUntil - now);
+                        await Task.Delay(sleepUntil - now, cancellationToken).AnyContext();
                     } else {
                         Logger.Trace().Message("Default sleep.").Write();
-                        Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
+                        await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
                     }
                 } catch (Exception ex) {
                     Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
-                    Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
+                    await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
                 }
             } while (DateTime.UtcNow <= timeoutTime);
 

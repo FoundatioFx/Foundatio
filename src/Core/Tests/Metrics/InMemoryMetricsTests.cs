@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
@@ -9,11 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
     public class InMemoryMetricsTests : CaptureTests {
-        private readonly TestOutputWriter _writer;
-
-        public InMemoryMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
-            _writer = new TestOutputWriter(output);
-        }
+        public InMemoryMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
         public async Task CanIncrementCounter() {
@@ -43,7 +38,7 @@ namespace Foundatio.Tests.Metrics {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(50), _writer);
             Task.Run(async () => {
-                Thread.Sleep(50);
+                await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
             }).AnyContext();
@@ -52,7 +47,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.True(success);
 
             Task.Run(async () => {
-                Thread.Sleep(50);
+                await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
             }).AnyContext();
 
@@ -63,7 +58,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.False(success);
 
             Task.Run(async () => {
-                Thread.Sleep(50);
+                await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test", 2).AnyContext();
             }).AnyContext();
 
@@ -74,7 +69,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.True(success);
 
             Task.Run(async () => {
-                Thread.Sleep(50);
+                await Task.Delay(50).AnyContext();
                 await metrics.CounterAsync("Test").AnyContext();
             }).AnyContext();
 
@@ -90,7 +85,7 @@ namespace Foundatio.Tests.Metrics {
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
             Parallel.For(0, 100, i => {
                 metrics.CounterAsync("Test").AnyContext().GetAwaiter().GetResult();
-                Thread.Sleep(50);
+                Task.Delay(50).AnyContext().GetAwaiter().GetResult();
             });
 
             return Task.FromResult(0);

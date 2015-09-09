@@ -30,7 +30,8 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                     Logger.Trace().Message("Set event").Write();
                 }).AnyContext();
-                Thread.Sleep(100);
+
+                await Task.Delay(100).AnyContext();
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 }).AnyContext();
@@ -41,7 +42,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive message.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSendDelayedMessage() {
@@ -78,7 +79,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSendMessageToMultipleSubscribers() {
@@ -108,7 +109,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive all messages.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanTolerateSubscriberFailure() {
@@ -137,7 +138,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive all messages.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WillOnlyReceiveSubscribedMessageType() {
@@ -162,7 +163,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive message.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WillReceiveDerivedMessageTypes() {
@@ -190,7 +191,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive all messages.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSubscribeToAllMessageTypes() {
@@ -217,7 +218,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.True(success, "Failed to receive all messages.");
             }
 
-            Thread.Sleep(50);
+            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WontKeepMessagesWithNoSubscribers() {
