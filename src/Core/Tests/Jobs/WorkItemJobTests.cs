@@ -1,6 +1,4 @@
-﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,9 +18,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : CaptureTests {
-        public WorkItemJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public WorkItemJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
         public async Task CanRunWorkItem() {
@@ -41,10 +37,12 @@ namespace Foundatio.Tests.Jobs {
                 }
             });
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
+            var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true).AnyContext();
 
             int statusCount = 0;
-            messageBus.SubscribeAsync<WorkItemStatus>(status => {
+            messageBus.Subscribe<WorkItemStatus>(status => {
                 Logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
@@ -73,7 +71,7 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
 
                 jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-                
+
                 for (int i = 0; i < 10; i++)
                     ctx.ReportProgress(10 * i);
 
@@ -81,16 +79,19 @@ namespace Foundatio.Tests.Jobs {
                     Interlocked.Increment(ref errors);
                     throw new ApplicationException("Boom!");
                 }
-                
+
                 return TaskHelper.Completed();
             });
 
             for (int i = 0; i < 100; i++)
-                await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test", Index = i }, true).AnyContext();
-            
+                await queue.EnqueueAsync(new MyWorkItem {
+                    SomeData = "Test",
+                    Index = i
+                }, true).AnyContext();
+
             var completedItems = new List<string>();
             object completedItemsLock = new object();
-            messageBus.SubscribeAsync<WorkItemStatus>(status => {
+            messageBus.Subscribe<WorkItemStatus>(status => {
                 Logger.Trace().Message($"Progress: {status.Progress}").Write();
                 if (status.Progress < 100)
                     return;
@@ -98,15 +99,11 @@ namespace Foundatio.Tests.Jobs {
                 lock (completedItemsLock)
                     completedItems.Add(status.WorkItemId);
             });
-            
+
             var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var token = cancellationTokenSource.Token;
             var tasks = new List<Task>();
-            tasks.AddRange(new[] {
-                Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token),
-                Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token),
-                Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token),
-            });
+            tasks.AddRange(new[] { Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token), Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token), Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token), });
 
             await Task.WhenAll(tasks).AnyContext();
             await Task.Delay(10).AnyContext();
@@ -125,10 +122,12 @@ namespace Foundatio.Tests.Jobs {
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
+            var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true).AnyContext();
 
             int statusCount = 0;
-            messageBus.SubscribeAsync<WorkItemStatus>(status => {
+            messageBus.Subscribe<WorkItemStatus>(status => {
                 Logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
@@ -152,10 +151,12 @@ namespace Foundatio.Tests.Jobs {
                 throw new ApplicationException();
             });
 
-            var jobId = await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true).AnyContext();
+            var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true).AnyContext();
 
             int statusCount = 0;
-            messageBus.SubscribeAsync<WorkItemStatus>(status => {
+            messageBus.Subscribe<WorkItemStatus>(status => {
                 Logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
@@ -191,5 +192,3 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 }
-
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

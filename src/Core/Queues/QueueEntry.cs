@@ -35,9 +35,9 @@ namespace Foundatio.Queues {
             return _queue.AbandonAsync(Id);
         }
 
-        public virtual void Dispose() {
+        public virtual async void Dispose() {
             if (!_isCompleted)
-                AbandonAsync().AnyContext().GetAwaiter().GetResult();
+                await AbandonAsync().AnyContext();
         }
 
         public QueueEntryMetadata ToMetadata() {

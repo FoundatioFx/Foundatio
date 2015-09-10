@@ -1,10 +1,36 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
+using Nito.AsyncEx;
 
 namespace Foundatio.Extensions {
     internal static class TaskExtensions {
+        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken) {
+            return Task.WhenAny(countdownEvent.WaitAsync(), cancellationToken.AsTask());
+        }
+        
+        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout) {
+            return countdownEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+        }
+
+        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken) {
+            return Task.WhenAny(resetEvent.WaitAsync(), cancellationToken.AsTask());
+        }
+        
+        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
+            return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+        }
+
+        public static Task WaitAsync(this Task task, CancellationToken cancellationToken) {
+            return Task.WhenAny(task, cancellationToken.AsTask());
+        }
+        
+        public static Task WaitAsync(this Task task, TimeSpan timeout) {
+            return task.WaitAsync(new CancellationTokenSource(timeout).Token);
+        }
+
         public static Task IgnoreExceptions(this Task task) {
             task.ContinueWith(c => { var ignored = c.Exception; },
                 TaskContinuationOptions.OnlyOnFaulted |

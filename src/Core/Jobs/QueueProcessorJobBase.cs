@@ -5,7 +5,6 @@ using Foundatio.Extensions;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Foundatio.Logging;
-using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {

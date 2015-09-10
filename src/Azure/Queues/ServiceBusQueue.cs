@@ -14,17 +14,12 @@ namespace Foundatio.Queues {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
-        private Func<QueueEntry<T>, Task> _workerAction;
-        private bool _workerAutoComplete;
-        private bool _isWorking;
-        private static object _workerLock = new object();
         private QueueDescription _queueDescription;
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
-        private long _workItmeTimeoutCount;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
@@ -84,33 +79,14 @@ namespace Foundatio.Queues {
                 Completed = _completedCount,
                 Abandoned = _abandonedCount,
                 Errors = _workerErrorCount,
-                Timeouts = _workItmeTimeoutCount
+                Timeouts = 0
             };
         }
 
         public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             throw new NotImplementedException();
         }
-
-        private async Task OnMessage(BrokeredMessage message) {
-            if (_workerAction == null)
-                return;
-
-            Interlocked.Increment(ref _dequeuedCount);
-            var data = message.GetBody<T>();
-
-            var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
-            try {
-                await _workerAction(workItem).AnyContext();
-                if (_workerAutoComplete)
-                    await workItem.CompleteAsync().AnyContext();
-            } catch (Exception ex) {
-                Interlocked.Increment(ref _workerErrorCount);
-                Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
-                await workItem.AbandonAsync().AnyContext();
-            }
-        }
-
+        
         public override async Task<string> EnqueueAsync(T data) {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
@@ -124,31 +100,29 @@ namespace Foundatio.Queues {
             return message.MessageId;
         }
         
-        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (_isWorking)
-                throw new ApplicationException("Already working.");
+        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
+            
+            // TODO: use the cancellation token.
 
-            lock (_workerLock) {
-                _isWorking = true;
-                _workerAction = handler;
-                _workerAutoComplete = autoComplete;
-                _queueClient.OnMessageAsync(OnMessage);
-            }
+            _queueClient.OnMessageAsync(async message => {
+                Interlocked.Increment(ref _dequeuedCount);
+                var data = message.GetBody<T>();
 
-            return TaskHelper.Completed();
-        }
-
-        public Task StopWorkingAsync() {
-            if (_isWorking) {
-                lock (_workerLock) {
-                    _isWorking = false;
-                    _workerAction = null;
+                var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
+                try {
+                    await handler(workItem, cancellationToken).AnyContext();
+                    if (autoComplete)
+                        await workItem.CompleteAsync().AnyContext();
+                } catch (Exception ex) {
+                    Interlocked.Increment(ref _workerErrorCount);
+                    Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
+                    await workItem.AbandonAsync().AnyContext();
                 }
-            }
-
-            return TaskHelper.Completed();
+            });
         }
-
+        
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
@@ -178,9 +152,8 @@ namespace Foundatio.Queues {
         }
         
         public override void Dispose() {
-            base.Dispose();
-            StopWorkingAsync().AnyContext().GetAwaiter().GetResult();
             _queueClient.Close();
+            base.Dispose();
         }
     }
 }

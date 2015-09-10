@@ -103,7 +103,6 @@
     <Compile Include="Utility\CaptureFixture.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
-    <Compile Include="Utility\CountDownLatch.cs" />
     <Compile Include="Utility\RandomData.cs" />
     <Compile Include="Utility\TestOutputWriter.cs" />
     <Compile Include="Utility\UdpListener.cs" />

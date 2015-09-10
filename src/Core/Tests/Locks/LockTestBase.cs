@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -32,13 +33,14 @@ namespace Foundatio.Tests {
                 Assert.False(await locker.IsLockedAsync("test").AnyContext());
 
                 int counter = 0;
-                Parallel.For(0, 25, i => {
-                    using (var lock1 = locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext().GetAwaiter().GetResult()) {
+
+                await Run.InParallel(25, async i => {
+                    using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
                         Assert.NotNull(lock1);
-                        Assert.True(locker.IsLockedAsync("test").AnyContext().GetAwaiter().GetResult());
+                        Assert.True(await locker.IsLockedAsync("test").AnyContext());
                         Interlocked.Increment(ref counter);
                     }
-                });
+                }).AnyContext();
 
                 Assert.Equal(25, counter);
             }

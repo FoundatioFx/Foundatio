@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -68,14 +69,12 @@ namespace Foundatio.Tests.Metrics {
         public async Task CanSendMultithreaded() {
             const int iterations = 100;
             await StartListeningAsync(iterations).AnyContext();
+
+            await Run.InParallel(iterations, async i =>{
+                await Task.Delay(50).AnyContext();
+                await _client.CounterAsync("counter").AnyContext();
+            }).AnyContext();
             
-            var result = Parallel.For(0, iterations, i => {
-                Task.Delay(50).AnyContext().GetAwaiter().GetResult();
-                _client.CounterAsync("counter").AnyContext().GetAwaiter().GetResult();
-            });
-
-            while (!result.IsCompleted) {}
-
             var messages = GetMessages();
             Assert.Equal(iterations, messages.Count);
         }
@@ -86,8 +85,8 @@ namespace Foundatio.Tests.Metrics {
             await StartListeningAsync(iterations).AnyContext();
 
             var metrics = new InMemoryMetricsClient();
-            var sw = new Stopwatch();
-            sw.Start();
+
+            var sw = Stopwatch.StartNew();
             for (int index = 0; index < iterations; index++) {
                 if (index % (iterations / 10) == 0)
                     StopListening();

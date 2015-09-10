@@ -10,17 +10,14 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable 4014
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
-        private readonly TestOutputWriter _output;
-
-        public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
-            _output = new TestOutputWriter(output);
-        }
+        public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance);
@@ -327,7 +324,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100)).AnyContext();
                 }
-                metrics.DisplayStats(_output);
+                metrics.DisplayStats(_writer);
 
                 var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.True(stats.Dequeued >= workItemCount);
@@ -366,7 +363,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 }
-                metrics.DisplayStats(_output);
+                metrics.DisplayStats(_writer);
 
                 var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -388,7 +385,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 await queue.DeleteQueueAsync().AnyContext();
 
-                const int workItemCount = 1000;
+                const int workItemCount = 1;
                 for (int i = 0; i < workItemCount; i++) {
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
@@ -396,16 +393,17 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
 
-                var countdown = new CountDownLatch(workItemCount);
+                var countdown = new AsyncCountdownEvent(workItemCount);
                 var metrics = new InMemoryMetricsClient();
-                queue.StartWorkingAsync(async workItem => {
+                queue.StartWorking(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync().AnyContext();
                     await metrics.CounterAsync("work").AnyContext();
                     countdown.Signal();
                 });
-                countdown.Wait(60 * 1000);
-                metrics.DisplayStats(_output);
+
+                await countdown.WaitAsync(TimeSpan.FromMinutes(1)).AnyContext();
+                metrics.DisplayStats(_writer);
 
                 var stats = await queue.GetQueueStatsAsync().AnyContext();
                 Assert.Equal(workItemCount, stats.Dequeued);

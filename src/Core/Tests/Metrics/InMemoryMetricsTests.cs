@@ -1,5 +1,3 @@
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-
 using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -36,6 +34,7 @@ namespace Foundatio.Tests.Metrics {
             metrics.DisplayStats(_writer);
         }
 
+#pragma warning disable 4014
         [Fact]
         public async Task CanWaitForCounter() {
             var metrics = new InMemoryMetricsClient();
@@ -81,19 +80,17 @@ namespace Foundatio.Tests.Metrics {
 
             metrics.DisplayStats(_writer);
         }
+#pragma warning restore 4014
 
         [Fact]
-        public Task CanDisplayStatsMultithreaded() {
+        public async Task CanDisplayStatsMultithreaded() {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
-            Parallel.For(0, 100, i => {
-                metrics.CounterAsync("Test").AnyContext().GetAwaiter().GetResult();
-                Task.Delay(50).AnyContext().GetAwaiter().GetResult();
-            });
 
-            return TaskHelper.Completed();
+            await Run.InParallel(100, async i => {
+                await metrics.CounterAsync("Test").AnyContext();
+                await Task.Delay(50).AnyContext();
+            }).AnyContext();
         }
     }
 }
-
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

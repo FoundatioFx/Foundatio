@@ -1,6 +1,4 @@
-﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,6 +11,7 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -21,16 +20,14 @@ namespace Foundatio.Tests.Jobs {
         public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
-        public void CanCancelJob()
-        {
+        public async Task CanCancelJob() {
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            var result = JobRunner.RunAsync(new JobRunOptions
-            {
+            var result = await JobRunner.RunAsync(new JobRunOptions {
                 JobTypeName = typeof(HelloWorldJob).AssemblyQualifiedName,
                 InstanceCount = 1,
                 Interval = null,
                 RunContinuous = true
-            }, cts.Token).Result;
+            }, cts.Token).AnyContext();
 
             Assert.Equal(0, result);
         }
@@ -45,8 +42,7 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            var sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
             await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token).AnyContext();
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
@@ -94,9 +90,7 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            Task.Run(async () => await job.RunAsync().AnyContext());
-            Task.Run(async () => await job.RunAsync().AnyContext());
-            await Task.Delay(200).AnyContext();
+            await Run.InParallel(2, async i => await job.RunAsync().AnyContext()).AnyContext();
             Assert.Equal(4, job.RunCount);
         }
 
@@ -176,5 +170,3 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 }
-
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed

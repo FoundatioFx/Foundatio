@@ -84,14 +84,41 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
 
-            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken);
-            return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token);
+            var token = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken).Token;
+
+            Task.Run(async () => {
+                Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
+                while (!token.IsCancellationRequested) {
+                    Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
+
+                    QueueEntry<T> queueEntry = null;
+                    try {
+                        queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
+                    } catch (Exception ex) {
+                        Logger.Error().Message("Error on Dequeue: " + ex.Message).Exception(ex).Write();
+                    }
+
+                    if (queueEntry == null)
+                        return;
+
+                    try {
+                        await handler(queueEntry, token).AnyContext();
+                        if (autoComplete)
+                            await queueEntry.CompleteAsync().AnyContext();
+                    } catch (Exception ex) {
+                        Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        await queueEntry.AbandonAsync().AnyContext();
+                        Interlocked.Increment(ref _workerErrorCount);
+                    }
+                }
+                Logger.Trace().Message("WorkLoop End").Write();
+            }, token);
         }
 
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -199,37 +226,6 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
 
             return TaskHelper.Completed();
-        }
-
-        private async Task WorkerLoopAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete, CancellationToken token) {
-            Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
-            while (!token.IsCancellationRequested) {
-                Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
-
-                QueueEntry<T> queueEntry = null;
-                try {
-                    queueEntry = await DequeueAsync(cancellationToken: token).AnyContext();
-                } catch (Exception ex) {
-                    Logger.Error()
-                        .Message("Error on Dequeue: " + ex.Message)
-                        .Exception(ex)
-                        .Write();
-                }
-              
-                if (queueEntry == null)
-                    return;
-
-                try {
-                    await handler(queueEntry).AnyContext();
-                    if (autoComplete)
-                        await queueEntry.CompleteAsync().AnyContext();
-                } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
-                    await queueEntry.AbandonAsync().AnyContext();
-                    Interlocked.Increment(ref _workerErrorCount);
-                }
-            }
-            Logger.Trace().Message("WorkLoop End").Write();
         }
 
         private void ScheduleNextMaintenance(DateTime value) {

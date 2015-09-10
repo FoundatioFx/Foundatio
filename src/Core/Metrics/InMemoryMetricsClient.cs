@@ -133,7 +133,7 @@ namespace Foundatio.Metrics {
             var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
-                    await Task.WhenAny(waitHandle.WaitAsync(), cancellationToken.AsTask()).AnyContext();
+                    await waitHandle.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) {}
                 Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
                 waitHandle.Reset();

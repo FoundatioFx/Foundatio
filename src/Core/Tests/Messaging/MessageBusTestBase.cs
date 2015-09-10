@@ -1,14 +1,12 @@
-﻿#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-
-using System;
+﻿using System;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit.Abstractions;
 
@@ -27,7 +25,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
@@ -40,10 +38,8 @@ namespace Foundatio.Tests.Messaging {
                 }).AnyContext();
                 Trace.WriteLine("Published one...");
 
-                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(5000).Token.AsTask()).AnyContext();
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSendDelayedMessage() {
@@ -53,34 +49,29 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var resetEvent = new CountDownLatch(numConcurrentMessages);
+                var countdown = new AsyncCountdownEvent(numConcurrentMessages);
 
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
-                    resetEvent.Signal();
+                    countdown.Signal();
                     Logger.Trace().Message("Set event").Write();
                 });
 
-                var sw = new Stopwatch();
-                sw.Start();
+                var sw = Stopwatch.StartNew();
 
-                Parallel.For(0, numConcurrentMessages, (_) => {
-                    messageBus.PublishAsync(new SimpleMessageA {
+                await Run.InParallel(numConcurrentMessages, async i => {
+                    await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello"
-                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300))).AnyContext().GetAwaiter().GetResult();
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300))).AnyContext();
                     Logger.Trace().Message("Published one...").Write();
-                });
+                }).AnyContext();
 
-                bool success = resetEvent.Wait(2000);
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
                 sw.Stop();
-                Logger.Trace().Message("Done waiting: " + success).Write();
-
-                Assert.True(success, "Failed to receive message.");
+                
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSendMessageToMultipleSubscribers() {
@@ -89,28 +80,25 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(3);
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                var countdown = new AsyncCountdownEvent(3);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanTolerateSubscriberFailure() {
@@ -119,27 +107,24 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(2);
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                var countdown = new AsyncCountdownEvent(2);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     throw new ApplicationException();
                 });
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WillOnlyReceiveSubscribedMessageType() {
@@ -149,21 +134,19 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.SubscribeAsync<SimpleMessageB>(msg => {
+                messageBus.Subscribe<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
                 });
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
-                messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(2000).Token.AsTask()).AnyContext();
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WillReceiveDerivedMessageTypes() {
@@ -172,10 +155,10 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(2);
-                messageBus.SubscribeAsync<ISimpleMessage>(msg => {
+                var countdown = new AsyncCountdownEvent(2);
+                messageBus.Subscribe<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
@@ -187,11 +170,8 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 }).AnyContext();
 
-                bool success = latch.Wait(5000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task CanSubscribeToAllMessageTypes() {
@@ -200,9 +180,9 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(3);
-                messageBus.SubscribeAsync<object>(msg => {
-                    latch.Signal();
+                var countdown = new AsyncCountdownEvent(3);
+                messageBus.Subscribe<object>(msg => {
+                    countdown.Signal();
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
@@ -214,11 +194,8 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            await Task.Delay(50).AnyContext();
         }
 
         public virtual async Task WontKeepMessagesWithNoSubscribers() {
@@ -233,15 +210,13 @@ namespace Foundatio.Tests.Messaging {
 
                 await Task.Delay(100).AnyContext();
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(100).Token.AsTask()).AnyContext();
+                await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext();
             }
         }
     }
 }
-
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
