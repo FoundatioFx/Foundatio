@@ -65,12 +65,14 @@ namespace Foundatio.Caching {
                 T value;
                 if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
                     value = (T)Convert.ChangeType(redisValue, typeof(T));
+                else if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
+                    value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(typeof(T)));
                 else
-                    value = _serializer.Deserialize<T>((string)redisValue);
+                    value = _serializer.Deserialize<T>(redisValue.ToString());
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{(string)redisValue}\" to type {typeof(T).FullName}").Write();
+                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{redisValue}\" to type {typeof(T).FullName}").Write();
                 return new CacheValue<T>(default(T), false);
             }
         }

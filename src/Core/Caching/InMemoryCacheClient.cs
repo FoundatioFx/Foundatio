@@ -180,12 +180,14 @@ namespace Foundatio.Caching {
                 T value;
                 if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
                     value = (T)Convert.ChangeType(cacheEntry.Value, typeof(T));
+                else if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
+                    value = cacheEntry.Value == null ? default(T) : (T)Convert.ChangeType(cacheEntry.Value, Nullable.GetUnderlyingType(typeof(T)));
                 else
                     value = (T)cacheEntry.Value;
 
                 return Task.FromResult(new CacheValue<T>(value, true));
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{(string)cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
+                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
                 return Task.FromResult(new CacheValue<T>(default(T), false));
             }
         }
