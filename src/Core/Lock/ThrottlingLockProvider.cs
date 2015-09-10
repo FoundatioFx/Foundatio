@@ -59,6 +59,7 @@ namespace Foundatio.Lock {
                     if (sleepUntil > timeoutTime) {
                         // next period is too far away
                         Logger.Trace().Message("Next period is too far away.").Write();
+                        await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
                         break;
                     }
 
@@ -75,6 +76,8 @@ namespace Foundatio.Lock {
                         Logger.Trace().Message("Default sleep.").Write();
                         await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
                     }
+                } catch (TaskCanceledException) {
+                    return null;
                 } catch (Exception ex) {
                     Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
                     await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
