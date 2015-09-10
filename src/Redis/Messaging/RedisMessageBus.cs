@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Logging;
-using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
