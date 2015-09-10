@@ -23,16 +23,16 @@ namespace Foundatio.Queues {
         public DateTime DequeuedTimeUtc { get; }
         public int Attempts { get; set; }
 
-        public async Task CompleteAsync() {
+        public Task CompleteAsync() {
             if (_isCompleted)
-                return;
+                return TaskHelper.Completed();
 
             _isCompleted = true;
-            await _queue.CompleteAsync(Id).AnyContext();
+            return _queue.CompleteAsync(Id);
         }
 
-        public async Task AbandonAsync() {
-            await _queue.AbandonAsync(Id).AnyContext();
+        public Task AbandonAsync() {
+            return _queue.AbandonAsync(Id);
         }
 
         public virtual void Dispose() {

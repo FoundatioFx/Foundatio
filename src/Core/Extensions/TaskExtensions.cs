@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Foundatio.Extensions {
-    internal static class TaskCompletionSourceExtensions {
+    internal static class TaskExtensions {
         public static Task IgnoreExceptions(this Task task) {
             task.ContinueWith(c => { var ignored = c.Exception; },
                 TaskContinuationOptions.OnlyOnFaulted |

@@ -13,6 +13,7 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -81,7 +82,7 @@ namespace Foundatio.Tests.Queue {
                 metrics.DisplayStats(_writer);
 
                 Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
-                Assert.InRange(metrics.Timings["simpleworkitem.queuetime"].Max, 0, 25);
+                Assert.InRange(metrics.Timings["simpleworkitem.queuetime"].Average, 0, 25);
             }
         }
 
@@ -198,7 +199,7 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 await queue.DeleteQueueAsync().AnyContext();
 
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 queue.StartWorkingAsync(async w => {
                     Assert.Equal("Hello", w.Value.Data);
                     await w.CompleteAsync().AnyContext();
@@ -209,10 +210,11 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 }).AnyContext();
 
-                resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
-                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
-                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
+                await resetEvent.WaitAsync().AnyContext();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
             }
         }
 
@@ -232,8 +234,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
                 });
-
-
+                
                 metrics.DisplayStats(_writer);
                 var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
@@ -312,7 +313,7 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 await queue.DeleteQueueAsync().AnyContext();
 
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
@@ -324,8 +325,8 @@ namespace Foundatio.Tests.Queue {
                 }).AnyContext();
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Enqueued);
-                resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                await Task.Delay(100).AnyContext();
+                await resetEvent.WaitAsync().AnyContext();
+
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
                 Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Errors);

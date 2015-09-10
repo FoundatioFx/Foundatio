@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueInfo<T>> _queue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
-        private readonly AsyncManualResetEvent _autoEvent = new AsyncManualResetEvent(false);
+        private readonly AsyncManualResetEvent _resetEvent = new AsyncManualResetEvent(false);
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
 
             _queue.Enqueue(info);
             Logger.Trace().Message("Enqueue: Set Event").Write();
-            _autoEvent.Set();
+            _resetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(data, id).AnyContext();
@@ -101,9 +101,8 @@ namespace Foundatio.Queues {
 
             Logger.Trace().Message("Queue count: {0}", _queue.Count).Write();
             if (_queue.Count == 0) {
-                var sw = new Stopwatch();
-                sw.Start();
-                Task.WaitAny(Task.Delay(timeout.Value, cancellationToken), _autoEvent.WaitAsync());
+                var sw = Stopwatch.StartNew();
+                await Task.WhenAny(Task.Delay(timeout.Value, cancellationToken), _resetEvent.WaitAsync()).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Waited for dequeue: timeout={0} actual={1}", timeout.Value.ToString(), sw.Elapsed.ToString()).Write();
             }
@@ -111,7 +110,7 @@ namespace Foundatio.Queues {
             if (_queue.Count == 0 || cancellationToken.IsCancellationRequested)
                 return null;
 
-            _autoEvent.Reset();
+            _resetEvent.Reset();
 
             Logger.Trace().Message("Dequeue: Attempt").Write();
             QueueInfo<T> info;
@@ -175,7 +174,7 @@ namespace Foundatio.Queues {
 
         private void Retry(QueueInfo<T> info) {
             _queue.Enqueue(info);
-            _autoEvent.Set();
+            _resetEvent.Set();
         }
 
         private int GetRetryDelay(int attempts) {

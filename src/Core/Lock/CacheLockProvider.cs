@@ -60,7 +60,7 @@ namespace Foundatio.Lock {
                 var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow);
                 Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
                 var autoEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
-                Task.WaitAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync());
+                await Task.WhenAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync()).AnyContext();
 
                 // Ensure the state is reset for the next run.
                 autoEvent.Reset();

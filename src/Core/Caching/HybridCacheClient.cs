@@ -27,9 +27,9 @@ namespace Foundatio.Caching {
             };
         }
 
-        public InMemoryCacheClient LocalCache { get { return _localCache; } }
-        public long LocalCacheHits { get { return _localCacheHits; } }
-        public long InvalidateCacheCalls { get { return _invalidateCacheCalls; } }
+        public InMemoryCacheClient LocalCache => _localCache;
+        public long LocalCacheHits => _localCacheHits;
+        public long InvalidateCacheCalls => _invalidateCacheCalls;
 
         public int LocalCacheSize {
             get { return _localCache.MaxItems ?? -1; }

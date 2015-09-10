@@ -9,6 +9,7 @@ using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Logging;
+using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
@@ -25,7 +26,7 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
@@ -39,9 +40,7 @@ namespace Foundatio.Tests.Messaging {
                 }).AnyContext();
                 Trace.WriteLine("Published one...");
 
-                bool success = resetEvent.WaitOne(5000);
-                Trace.WriteLine("Done waiting: " + success);
-                Assert.True(success, "Failed to receive message.");
+                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(5000).Token.AsTask()).AnyContext();
             }
 
             await Task.Delay(50).AnyContext();
@@ -149,7 +148,7 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.SubscribeAsync<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
                 });
@@ -161,8 +160,7 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                bool success = resetEvent.WaitOne(2000);
-                Assert.True(success, "Failed to receive message.");
+                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(2000).Token.AsTask()).AnyContext();
             }
 
             await Task.Delay(50).AnyContext();
@@ -234,14 +232,13 @@ namespace Foundatio.Tests.Messaging {
                 }).AnyContext();
 
                 await Task.Delay(100).AnyContext();
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                bool success = resetEvent.WaitOne(100);
-                Assert.False(success, "Messages are building up.");
+                await Task.WhenAny(resetEvent.WaitAsync(), new CancellationTokenSource(100).Token.AsTask()).AnyContext();
             }
         }
     }
