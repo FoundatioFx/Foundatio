@@ -56,6 +56,7 @@ namespace Foundatio.Lock {
                     var sleepUntil = now.Ceiling(_throttlingPeriod);
                     if (sleepUntil > timeoutTime) {
                         // next period is too far away
+                        Thread.Sleep(DateTime.UtcNow - timeoutTime);
                         Logger.Trace().Message("Next period is too far away.").Write();
                         break;
                     }
