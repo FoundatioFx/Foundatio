@@ -44,7 +44,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             const int jobCount = 5;
             const int workItemCount = 1000;
             var metrics = new InMemoryMetricsClient();
-            metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(100), _writer);
+            metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
 
             var queues = new List<RedisQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
@@ -62,7 +62,7 @@ namespace Foundatio.Redis.Tests.Jobs {
             });
 
             await Run.InParallel(jobCount, async index => {
-                var queue = queues[index];
+                var queue = queues[index - 1];
                 var job = new SampleQueueJob(queue, metrics);
                 await job.RunUntilEmptyAsync().AnyContext();
             }).AnyContext();

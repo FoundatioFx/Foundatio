@@ -9,7 +9,7 @@ using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : CaptureTests {
         protected virtual ILockProvider GetLockProvider() {
             return null;

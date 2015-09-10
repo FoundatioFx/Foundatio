@@ -8,7 +8,7 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Locks {
     public class ThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(1);
 

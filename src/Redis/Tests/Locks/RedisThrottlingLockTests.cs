@@ -4,12 +4,12 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Tests;
+using Foundatio.Tests.Locks;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Redis.Tests {
+namespace Foundatio.Redis.Tests.Locks {
     public class RedisThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(3);
 
