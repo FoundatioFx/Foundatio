@@ -37,7 +37,6 @@ namespace Foundatio.Queues {
         private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
-        protected readonly IMetricsClient _metrics;
         protected readonly ILockProvider _maintenanceLockProvider;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
@@ -69,8 +68,9 @@ namespace Foundatio.Queues {
             _subscriber = connection.GetSubscriber();
             _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
 
+            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
+
             if (runMaintenanceTasks) {
-                _queueDisposedCancellationTokenSource = new CancellationTokenSource();
                 // min is 1 second, max is 1 minute
                 TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
                 _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);

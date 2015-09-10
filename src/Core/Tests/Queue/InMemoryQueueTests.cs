@@ -26,6 +26,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public override Task CanDequeueEfficiently() {
+            return base.CanDequeueEfficiently();
+        }
+
+        [Fact]
         public override Task CanQueueAndDequeueMultipleWorkItems() {
             return base.CanQueueAndDequeueMultipleWorkItems();
         }

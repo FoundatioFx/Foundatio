@@ -48,6 +48,43 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
+        public virtual async Task CanDequeueEfficiently() {
+            const int iterations = 10;
+
+            var queue = GetQueue(runQueueMaintenance: false);
+            if (queue == null)
+                return;
+            
+            var metrics = new InMemoryMetricsClient();
+            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
+
+            using (queue) {
+                await queue.DeleteQueueAsync().AnyContext();
+
+                Task.Run(async () => {
+                    for (int index = 0; index < iterations; index++) {
+                        await Task.Delay(RandomData.GetInt(100, 300)).AnyContext();
+                        await queue.EnqueueAsync(new SimpleWorkItem {
+                            Data = "Hello"
+                        }).AnyContext();
+                    }
+                });
+
+                var sw = Stopwatch.StartNew();
+                for (int index = 0; index < iterations; index++) {
+                    var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
+                    Assert.NotNull(item);
+                    await item.CompleteAsync().AnyContext();
+                }
+                sw.Stop();
+
+                metrics.DisplayStats(_writer);
+
+                Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
+                Assert.InRange(metrics.Timings["simpleworkitem.queuetime"].Max, 0, 25);
+            }
+        }
+
         public virtual async Task CanQueueAndDequeueMultipleWorkItems() {
             var queue = GetQueue();
             if (queue == null)
