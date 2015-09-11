@@ -54,18 +54,17 @@ namespace Foundatio.Lock {
                     } else {
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
-
-                    var sleepUntil = now.Ceiling(_throttlingPeriod);
-                    if (sleepUntil > timeoutTime) {
-                        // next period is too far away
-                        Logger.Trace().Message("Next period is too far away.").Write();
-                        await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
-                        break;
-                    }
-
+                    
                     if (now > timeoutTime) {
                         // timeout exceeded
                         Logger.Trace().Message("Timeout exceeded.").Write();
+                        break;
+                    }
+
+                    var sleepUntil = now.Ceiling(_throttlingPeriod);
+                    if (sleepUntil > timeoutTime) {
+                        Logger.Trace().Message("Next period is too far away.").Write();
+                        await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
                         break;
                     }
 
