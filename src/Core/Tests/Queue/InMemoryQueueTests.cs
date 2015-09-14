@@ -9,9 +9,7 @@ namespace Foundatio.Tests.Queue {
     public class InMemoryQueueTests : QueueTestBase {
         private IQueue<SimpleWorkItem> _queue;
 
-        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)

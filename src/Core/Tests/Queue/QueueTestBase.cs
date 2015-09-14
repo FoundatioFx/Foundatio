@@ -43,8 +43,9 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
 
                 await workItem.CompleteAsync().AnyContext();
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
-                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Queued);
             }
         }
 
@@ -112,9 +113,10 @@ namespace Foundatio.Tests.Queue {
                 Trace.WriteLine(sw.Elapsed);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
 
-                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
-                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
-                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(workItemCount, stats.Dequeued);
+                Assert.Equal(workItemCount, stats.Completed);
+                Assert.Equal(0, stats.Queued);
             }
         }
 
@@ -237,9 +239,11 @@ namespace Foundatio.Tests.Queue {
                 }).AnyContext(), TimeSpan.FromSeconds(1)).AnyContext();
                 metrics.DisplayStats(_writer);
                 Assert.True(success);
-                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Completed);
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Errors);
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Deadletter);
+
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(1, stats.Errors);
+                Assert.Equal(1, stats.Deadletter);
             }
         }
 
@@ -295,9 +299,11 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(2, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
 
                 await workItem.AbandonAsync().AnyContext();
+
                 // work item should be moved to deadletter _queue after retries.
-                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Deadletter);
-                Assert.Equal(2, (await queue.GetQueueStatsAsync().AnyContext()).Abandoned);
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Deadletter);
+                Assert.Equal(2, stats.Abandoned);
             }
         }
 
@@ -374,10 +380,9 @@ namespace Foundatio.Tests.Queue {
 
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
-                var stats = await queue.GetQueueStatsAsync().AnyContext();
-                
                 // In memory queue doesn't share state.
                 if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
+                    var stats = await queue.GetQueueStatsAsync().AnyContext();
                     Assert.Equal(info.CompletedCount, stats.Completed);
                     Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
                     Assert.Equal(info.ErrorCount, stats.Errors);
