@@ -1,5 +1,6 @@
 using System;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 
 namespace Foundatio.Lock {
     internal class DisposableLock : IDisposable {
@@ -12,7 +13,9 @@ namespace Foundatio.Lock {
         }
 
         public async void Dispose() {
+            Logger.Trace().Message($"Disposing lock: {_name}").Write();
             await _lockProvider.ReleaseLockAsync(_name).AnyContext();
+            Logger.Trace().Message($"Disposed lock: {_name}").Write();
         }
     }
 }

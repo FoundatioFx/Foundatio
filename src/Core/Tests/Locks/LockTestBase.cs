@@ -39,12 +39,14 @@ namespace Foundatio.Tests.Locks {
                     var sw = Stopwatch.StartNew();
                     using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
                         sw.Stop();
-                        string message = lock1 != null ? "Acquired" : "Failed to acquire";
+                        Logger.Trace().Message($"Lock {i}: start").Write();
+                        string message = lock1 != null ? "Acquired" : "Unable to acquire";
                         Logger.Trace().Message($"Lock {i}: {message} in {sw.ElapsedMilliseconds}ms").Write();
 
                         Assert.NotNull(lock1);
-                        Assert.True(await locker.IsLockedAsync("test").AnyContext());
+                        Assert.True(await locker.IsLockedAsync("test").AnyContext(), $"Lock {i}: was acquired but is not locked");
                         Interlocked.Increment(ref counter);
+                        Logger.Trace().Message($"Lock {i}: end").Write();
                     }
                 }).AnyContext();
 

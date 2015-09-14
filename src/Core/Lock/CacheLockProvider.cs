@@ -19,9 +19,9 @@ namespace Foundatio.Lock {
             _messageBus = messageBus;
             _messageBus.Subscribe<CacheLockReleased>(message => OnLockReleased(message));
         }
-
+        
         private void OnLockReleased(CacheLockReleased msg) {
-            Logger.Trace().Message("Got lock released message: {0}", msg.Name).Write();
+            Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
             AsyncManualResetEvent resetEvent;
             if (_resetEvents.TryGetValue(msg.Name, out resetEvent))
                 resetEvent.Set();
@@ -34,9 +34,11 @@ namespace Foundatio.Lock {
             if (!acquireTimeout.HasValue)
                 acquireTimeout = TimeSpan.FromMinutes(1);
 
-            var tokenSource = new CancellationTokenSource(acquireTimeout.Value);
+            var acquireTimeoutCancellationToken = new CancellationTokenSource(acquireTimeout.Value);
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(acquireTimeoutCancellationToken.Token, cancellationToken).Token;
+
             var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
+            Logger.Trace().Message($"Timeout time: {timeoutTime.ToString("mm:ss.fff")}").Write();
             bool allowLock = false;
 
             do {
@@ -53,23 +55,34 @@ namespace Foundatio.Lock {
                 }
 
                 Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
+                
+                if (acquireTimeout.Value == TimeSpan.Zero || timeoutTime < DateTime.UtcNow) {
+                    Logger.Trace().Message("Acquire time out of zero or timeout exceeded").Write();
+                    break;
+                }
+
                 var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ??  TimeSpan.FromSeconds(1));
-                if (keyExpiration < DateTime.UtcNow)
-                    keyExpiration = DateTime.UtcNow;
+                if (keyExpiration < DateTime.UtcNow) {
+                    Logger.Trace().Message($"Retry {name}: key may have just expired.").Write();
+                    continue;
+                }
+                
+                // acquire timeout may have been exceeded while getting the expiration time.
+                if (timeoutTime < DateTime.UtcNow) {
+                    Logger.Trace().Message("Timeout exceeded").Write();
+                    break;
+                }
 
                 var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow);
                 Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
                 var autoEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
-                await Task.WhenAny(Task.Delay(delayAmount, tokenSource.Token), autoEvent.WaitAsync()).AnyContext();
-
-                // Ensure the state is reset for the next run.
-                autoEvent.Reset();
-
-                if (tokenSource.IsCancellationRequested) {
+                await Task.WhenAny(Task.Delay(delayAmount, linkedCancellationToken), autoEvent.WaitAsync()).AnyContext();
+                
+                if (linkedCancellationToken.IsCancellationRequested) {
                     Logger.Trace().Message("Cancellation requested.").Write();
                     break;
                 }
-            } while (!tokenSource.IsCancellationRequested && DateTime.UtcNow <= timeoutTime);
+            } while (!linkedCancellationToken.IsCancellationRequested && DateTime.UtcNow <= timeoutTime);
 
             if (!allowLock)
                 return null;
