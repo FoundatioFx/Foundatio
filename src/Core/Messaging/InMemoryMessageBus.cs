@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,14 +10,17 @@ using Nito.AsyncEx;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
-        private readonly AsyncCollection<Subscriber> _subscribers = new AsyncCollection<Subscriber>();
+        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 
             Task.Run(() => {
-                foreach (var subscriber in _subscribers.GetConsumingEnumerable().Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
+                var messageTypeSubscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
+                Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, messageType.FullName).Write();
+
+                foreach (var subscriber in messageTypeSubscribers) {
                     try {
                         subscriber.Action(message.Copy());
                     } catch (Exception ex) {

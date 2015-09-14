@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,7 +8,6 @@ using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
-using Nito.AsyncEx;
 
 namespace Foundatio.Messaging {
     public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
@@ -17,7 +17,7 @@ namespace Foundatio.Messaging {
         private readonly NamespaceManager _namespaceManager;
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
-        private readonly AsyncCollection<Subscriber> _subscribers = new AsyncCollection<Subscriber>();
+        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
 
         public ServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
             _topicName = topicName;
@@ -46,7 +46,10 @@ namespace Foundatio.Messaging {
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
-            foreach (var subscriber in _subscribers.GetConsumingEnumerable().Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
+            
+            var messageTypeSubscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
+            Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, messageType?.FullName).Write();
+            foreach (var subscriber in messageTypeSubscribers) {
                 try {
                     subscriber.Action(body);
                 } catch (Exception ex) {

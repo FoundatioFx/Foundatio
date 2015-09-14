@@ -131,7 +131,7 @@ namespace Foundatio.Tests.Storage {
 
             using (storage) {
                 const string queueFolder = "q";
-                var queueItems = new AsyncCollection<int>();
+                var queueItems = new BlockingCollection<int>();
 
                 var info = await storage.GetFileInfoAsync("nope").AnyContext();
                 Assert.Null(info);
@@ -149,13 +149,13 @@ namespace Foundatio.Tests.Storage {
                     };
 
                     await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).AnyContext();
-                    await queueItems.AddAsync(i).AnyContext();
+                    queueItems.Add(i);
                 }).AnyContext();
                 
                 Assert.Equal(10, (await storage.GetFileListAsync().AnyContext()).Count());
 
                 await Run.InParallel(10, async i => {
-                    string path = Path.Combine(queueFolder, queueItems.GetConsumingEnumerable().Random() + ".json");
+                    string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                     var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).AnyContext();
                     if (eventPost == null)
                         return;
