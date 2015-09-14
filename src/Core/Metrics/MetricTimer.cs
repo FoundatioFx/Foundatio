@@ -11,18 +11,17 @@ namespace Foundatio.Metrics {
 
         public MetricTimer(string name, IMetricsClient client) {
             _name = name;
-            _stopWatch = new Stopwatch();
             _client = client;
-            _stopWatch.Start();
+            _stopWatch = Stopwatch.StartNew();
         }
 
-        public void Dispose() {
+        public async void Dispose() {
             if (_disposed)
                 return;
 
             _disposed = true;
             _stopWatch.Stop();
-            _client.TimerAsync(_name, _stopWatch.ElapsedMilliseconds).AnyContext().GetAwaiter().GetResult();
+            await _client.TimerAsync(_name, _stopWatch.ElapsedMilliseconds).AnyContext();
         }
     }
 }

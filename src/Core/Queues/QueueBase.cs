@@ -31,9 +31,7 @@ namespace Foundatio.Queues {
         }
 
         public abstract Task<string> EnqueueAsync(T data);
-
-        public abstract Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
-
+        
         public abstract Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
 
         public abstract Task CompleteAsync(string id);
@@ -45,6 +43,8 @@ namespace Foundatio.Queues {
         public abstract Task<QueueStats> GetQueueStatsAsync();
 
         public abstract Task DeleteQueueAsync();
+        
+        public abstract void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
 
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 

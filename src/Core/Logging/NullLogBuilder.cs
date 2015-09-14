@@ -5,10 +5,7 @@ namespace Foundatio.Logging {
     public sealed class NullLogBuilder : ILogBuilder {
         private LogData _data = new LogData();
 
-        public LogData LogData
-        {
-            get { return _data; }
-        }
+        public LogData LogData => _data;
 
         public ILogBuilder Level(LogLevel logLevel) {
             return this;

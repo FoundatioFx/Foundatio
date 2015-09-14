@@ -1,11 +1,11 @@
 ﻿using System.Threading.Tasks;
 using Foundatio.Lock;
 using Foundatio.Caching;
-using Foundatio.Tests;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Messaging;
+using Foundatio.Tests.Locks;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase {

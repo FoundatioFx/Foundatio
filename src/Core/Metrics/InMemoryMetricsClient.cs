@@ -112,7 +112,7 @@ namespace Foundatio.Metrics {
         }
 
         public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (count == 0)
+            if (count <= 0)
                 return true;
 
             if (!timeout.HasValue)
@@ -133,8 +133,7 @@ namespace Foundatio.Metrics {
             var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
-                    // TODO: Use the async version once it supports passing in a cancellation token.
-                    waitHandle.Wait(cancellationToken);
+                    await waitHandle.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) {}
                 Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
                 waitHandle.Reset();
@@ -188,10 +187,10 @@ namespace Foundatio.Metrics {
         private readonly Stopwatch _stopwatch = new Stopwatch();
         private readonly Stopwatch _currentStopwatch = new Stopwatch();
 
-        public long Value { get { return _value; } }
-        public long CurrentValue { get { return _currentValue; } }
-        public double Rate { get { return ((double)Value / _stopwatch.Elapsed.TotalSeconds); } }
-        public double CurrentRate { get { return ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds); } }
+        public long Value => _value;
+        public long CurrentValue => _currentValue;
+        public double Rate => ((double)Value / _stopwatch.Elapsed.TotalSeconds);
+        public double CurrentRate => ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds);
 
         private static readonly object _lock = new object();
         public void Increment(long value) {
@@ -226,12 +225,12 @@ namespace Foundatio.Metrics {
         private long _total = 0;
         private double _average = 0d;
 
-        public int Count { get { return _count; } }
-        public long Total { get { return _total; } }
-        public long Current { get { return _current; } }
-        public long Min { get { return _min; } }
-        public long Max { get { return _max; } }
-        public double Average { get { return _average; } }
+        public int Count => _count;
+        public long Total => _total;
+        public long Current => _current;
+        public long Min => _min;
+        public long Max => _max;
+        public double Average => _average;
 
         private static readonly object _lock = new object();
         public void Set(long value) {
@@ -261,11 +260,11 @@ namespace Foundatio.Metrics {
         private double _total = 0d;
         private double _average = 0d;
 
-        public int Count { get { return _count; } }
-        public double Total { get { return _total; } }
-        public double Current { get { return _current; } }
-        public double Max { get { return _max; } }
-        public double Average { get { return _average; } }
+        public int Count => _count;
+        public double Total => _total;
+        public double Current => _current;
+        public double Max => _max;
+        public double Average => _average;
 
         private static readonly object _lock = new object();
         public void Set(double value) {

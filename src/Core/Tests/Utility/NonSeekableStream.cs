@@ -9,11 +9,11 @@ namespace Foundatio.Tests.Utility {
             _stream = stream;
         }
 
-        public override bool CanRead { get { return _stream.CanRead; } }
+        public override bool CanRead => _stream.CanRead;
 
-        public override bool CanSeek { get { return false; } }
+        public override bool CanSeek => false;
 
-        public override bool CanWrite { get { return _stream.CanWrite; } }
+        public override bool CanWrite => _stream.CanWrite;
 
         public override void Flush() {
             _stream.Flush();

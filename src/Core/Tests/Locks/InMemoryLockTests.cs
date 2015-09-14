@@ -6,7 +6,7 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase {
         public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 

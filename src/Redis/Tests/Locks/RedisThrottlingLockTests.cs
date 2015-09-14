@@ -1,16 +1,15 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Tests;
+using Foundatio.Tests.Locks;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Redis.Tests {
+namespace Foundatio.Redis.Tests.Locks {
     public class RedisThrottlingLockTests : LockTestBase {
         private readonly TimeSpan _period = TimeSpan.FromSeconds(3);
 
@@ -28,8 +27,8 @@ namespace Foundatio.Redis.Tests {
 
             // sleep until start of throttling period
             await Task.Delay(DateTime.Now.Ceiling(_period) - DateTime.Now).AnyContext();
-            var sw = new Stopwatch();
-            sw.Start();
+
+            var sw = Stopwatch.StartNew();
             for (int i = 0; i < 5; i++)
                 await locker.AcquireLockAsync("test").AnyContext();
             sw.Stop();

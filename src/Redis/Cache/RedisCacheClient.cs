@@ -137,7 +137,7 @@ namespace Foundatio.Caching {
             }
             
             var result = amount >= 0 ? await _db.StringIncrementAsync(key, amount).AnyContext() : await _db.StringDecrementAsync(key, -amount).AnyContext();
-            _db.KeyExpire(key, expiresIn);
+            await _db.KeyExpireAsync(key, expiresIn).AnyContext();
             return result;
         }
 
@@ -154,8 +154,6 @@ namespace Foundatio.Caching {
 
         public void Dispose() {}
         
-        ISerializer IHaveSerializer.Serializer {
-            get { return _serializer; }
-        }
+        ISerializer IHaveSerializer.Serializer => _serializer;
     }
 }

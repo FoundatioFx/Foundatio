@@ -12,9 +12,7 @@ namespace Foundatio.Tests.Utility {
             _output = output;
         }
 
-        public override Encoding Encoding {
-            get { return Encoding.UTF8; }
-        }
+        public override Encoding Encoding => Encoding.UTF8;
 
         public override void WriteLine(string value) {
             try

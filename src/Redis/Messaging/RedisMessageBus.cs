@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Logging;
-using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -55,7 +54,7 @@ namespace Foundatio.Messaging {
             return _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget);
         }
 
-        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
@@ -66,8 +65,6 @@ namespace Foundatio.Messaging {
                     handler((T)m, cancellationToken);
                 }
             }, cancellationToken);
-
-            return TaskHelper.Completed();
         }
 
         public override void Dispose() {

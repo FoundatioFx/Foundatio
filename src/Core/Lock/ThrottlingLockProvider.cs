@@ -54,18 +54,17 @@ namespace Foundatio.Lock {
                     } else {
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
-
-                    var sleepUntil = now.Ceiling(_throttlingPeriod);
-                    if (sleepUntil > timeoutTime) {
-                        // next period is too far away
-                        Thread.Sleep(DateTime.UtcNow - timeoutTime);
-                        Logger.Trace().Message("Next period is too far away.").Write();
-                        break;
-                    }
-
+                    
                     if (now > timeoutTime) {
                         // timeout exceeded
                         Logger.Trace().Message("Timeout exceeded.").Write();
+                        break;
+                    }
+
+                    var sleepUntil = now.Ceiling(_throttlingPeriod);
+                    if (sleepUntil > timeoutTime) {
+                        Logger.Trace().Message("Next period is too far away.").Write();
+                        await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
                         break;
                     }
 
@@ -76,6 +75,8 @@ namespace Foundatio.Lock {
                         Logger.Trace().Message("Default sleep.").Write();
                         await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
                     }
+                } catch (TaskCanceledException) {
+                    return null;
                 } catch (Exception ex) {
                     Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
                     await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();

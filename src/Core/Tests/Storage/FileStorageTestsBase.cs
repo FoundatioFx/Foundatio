@@ -10,6 +10,7 @@ using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
@@ -134,7 +135,7 @@ namespace Foundatio.Tests.Storage {
                 var info = await storage.GetFileInfoAsync("nope").AnyContext();
                 Assert.Null(info);
 
-                Parallel.For(0, 10, i => {
+                await Run.InParallel(10, async i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,
                         CharSet = "utf8",
@@ -145,23 +146,24 @@ namespace Foundatio.Tests.Storage {
                         ProjectId = i.ToString(),
                         UserAgent = "test"
                     };
-                    storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).AnyContext().GetAwaiter().GetResult();
-                    queueItems.Add(i);
-                });
 
+                    await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev).AnyContext();
+                    queueItems.Add(i);
+                }).AnyContext();
+                
                 Assert.Equal(10, (await storage.GetFileListAsync().AnyContext()).Count());
 
-                Parallel.For(0, 10, i => {
+                await Run.InParallel(10, async i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
-                    var eventPost = storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).AnyContext().GetAwaiter().GetResult();
+                    var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json")).AnyContext();
                     if (eventPost == null)
                         return;
 
                     if (RandomData.GetBool()) {
-                        storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true).AnyContext().GetAwaiter().GetResult();
+                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true).AnyContext();
                     } else
-                        storage.SetNotActiveAsync(path).AnyContext().GetAwaiter().GetResult();
-                });
+                        await storage.SetNotActiveAsync(path).AnyContext();
+                }).AnyContext();
             }
         }
     }

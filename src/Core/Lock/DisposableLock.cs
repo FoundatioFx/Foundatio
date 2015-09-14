@@ -11,8 +11,8 @@ namespace Foundatio.Lock {
             _lockProvider = lockProvider;
         }
 
-        public void Dispose() {
-            _lockProvider.ReleaseLockAsync(_name).AnyContext().GetAwaiter().GetResult();
+        public async void Dispose() {
+            await _lockProvider.ReleaseLockAsync(_name).AnyContext();
         }
     }
 }

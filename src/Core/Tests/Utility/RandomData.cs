@@ -12,7 +12,7 @@ namespace Foundatio.Tests.Utility {
             _random = new Random(Environment.TickCount);
         }
 
-        public static Random Instance { get { return _random; } }
+        public static Random Instance => _random;
 
         public static int GetInt(int min, int max) {
             if (min == max)

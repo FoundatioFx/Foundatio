@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueInfo<T>> _queue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
-        private readonly AsyncManualResetEvent _autoEvent = new AsyncManualResetEvent(false);
+        private readonly AsyncManualResetEvent _resetEvent = new AsyncManualResetEvent(false);
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
 
             _queue.Enqueue(info);
             Logger.Trace().Message("Enqueue: Set Event").Write();
-            _autoEvent.Set();
+            _resetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(data, id).AnyContext();
@@ -84,14 +84,41 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override Task StartWorkingAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             Logger.Trace().Message("Queue {0} start working", typeof(T).Name).Write();
 
-            var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken);
-            return Task.Run(async () => await WorkerLoopAsync(handler, autoComplete, tokenSource.Token).AnyContext(), tokenSource.Token);
+            var token = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken).Token;
+
+            Task.Run(async () => {
+                Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
+                while (!token.IsCancellationRequested) {
+                    Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
+
+                    QueueEntry<T> queueEntry = null;
+                    try {
+                        queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
+                    } catch (Exception ex) {
+                        Logger.Error().Message("Error on Dequeue: " + ex.Message).Exception(ex).Write();
+                    }
+
+                    if (queueEntry == null)
+                        return;
+
+                    try {
+                        await handler(queueEntry, token).AnyContext();
+                        if (autoComplete)
+                            await queueEntry.CompleteAsync().AnyContext();
+                    } catch (Exception ex) {
+                        Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        await queueEntry.AbandonAsync().AnyContext();
+                        Interlocked.Increment(ref _workerErrorCount);
+                    }
+                }
+                Logger.Trace().Message("WorkLoop End").Write();
+            }, token);
         }
 
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -101,9 +128,8 @@ namespace Foundatio.Queues {
 
             Logger.Trace().Message("Queue count: {0}", _queue.Count).Write();
             if (_queue.Count == 0) {
-                var sw = new Stopwatch();
-                sw.Start();
-                Task.WaitAny(Task.Delay(timeout.Value, cancellationToken), _autoEvent.WaitAsync());
+                var sw = Stopwatch.StartNew();
+                await Task.WhenAny(Task.Delay(timeout.Value, cancellationToken), _resetEvent.WaitAsync()).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Waited for dequeue: timeout={0} actual={1}", timeout.Value.ToString(), sw.Elapsed.ToString()).Write();
             }
@@ -111,7 +137,7 @@ namespace Foundatio.Queues {
             if (_queue.Count == 0 || cancellationToken.IsCancellationRequested)
                 return null;
 
-            _autoEvent.Reset();
+            _resetEvent.Reset();
 
             Logger.Trace().Message("Dequeue: Attempt").Write();
             QueueInfo<T> info;
@@ -175,7 +201,7 @@ namespace Foundatio.Queues {
 
         private void Retry(QueueInfo<T> info) {
             _queue.Enqueue(info);
-            _autoEvent.Set();
+            _resetEvent.Set();
         }
 
         private int GetRetryDelay(int attempts) {
@@ -200,37 +226,6 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
 
             return TaskHelper.Completed();
-        }
-
-        private async Task WorkerLoopAsync(Func<QueueEntry<T>, Task> handler, bool autoComplete, CancellationToken token) {
-            Logger.Trace().Message("WorkerLoop Start {0}", typeof(T).Name).Write();
-            while (!token.IsCancellationRequested) {
-                Logger.Trace().Message("WorkerLoop Signaled {0}", typeof(T).Name).Write();
-
-                QueueEntry<T> queueEntry = null;
-                try {
-                    queueEntry = await DequeueAsync(cancellationToken: token).AnyContext();
-                } catch (Exception ex) {
-                    Logger.Error()
-                        .Message("Error on Dequeue: " + ex.Message)
-                        .Exception(ex)
-                        .Write();
-                }
-              
-                if (queueEntry == null)
-                    return;
-
-                try {
-                    await handler(queueEntry).AnyContext();
-                    if (autoComplete)
-                        await queueEntry.CompleteAsync().AnyContext();
-                } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
-                    await queueEntry.AbandonAsync().AnyContext();
-                    Interlocked.Increment(ref _workerErrorCount);
-                }
-            }
-            Logger.Trace().Message("WorkLoop End").Write();
         }
 
         private void ScheduleNextMaintenance(DateTime value) {

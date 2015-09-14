@@ -66,7 +66,7 @@ namespace Foundatio.Messaging {
             return _topicClient.SendAsync(brokeredMessage);
         }
 
-        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
+        public void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
                 Action = async m => {
@@ -76,8 +76,6 @@ namespace Foundatio.Messaging {
                     await handler((T)m, cancellationToken).AnyContext();
                 }
             }, cancellationToken);
-
-            return TaskHelper.Completed();
         }
 
         private class Subscriber {

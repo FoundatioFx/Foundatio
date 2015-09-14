@@ -20,16 +20,16 @@ namespace Foundatio.Caching {
             _distributedCache = distributedCacheClient;
             _localCache.MaxItems = 100;
             _messageBus = messageBus;
-            _messageBus.SubscribeAsync<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext()).AnyContext().GetAwaiter().GetResult();
+            _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
             _localCache.ItemExpired += async (sender, key) => {
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
                 Logger.Trace().Message("Item expired event: key={0}", key).Write();
             };
         }
 
-        public InMemoryCacheClient LocalCache { get { return _localCache; } }
-        public long LocalCacheHits { get { return _localCacheHits; } }
-        public long InvalidateCacheCalls { get { return _invalidateCacheCalls; } }
+        public InMemoryCacheClient LocalCache => _localCache;
+        public long LocalCacheHits => _localCacheHits;
+        public long InvalidateCacheCalls => _invalidateCacheCalls;
 
         public int LocalCacheSize {
             get { return _localCache.MaxItems ?? -1; }
