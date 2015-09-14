@@ -19,6 +19,11 @@ namespace Foundatio.Tests.Caching {
         public override Task CanSetAndGetValue() {
             return base.CanSetAndGetValue();
         }
+        
+        [Fact]
+        public override Task CanAddAndRemoveConncurrently() {
+            return base.CanAddAndRemoveConncurrently();
+        }
 
         [Fact]
         public override Task CanTryGet() {

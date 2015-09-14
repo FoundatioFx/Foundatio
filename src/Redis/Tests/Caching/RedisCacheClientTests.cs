@@ -20,6 +20,11 @@ namespace Foundatio.Redis.Tests.Caching {
         }
         
         [Fact]
+        public override Task CanAddAndRemoveConncurrently() {
+            return base.CanAddAndRemoveConncurrently();
+        }
+
+        [Fact]
         public override Task CanSetAndGetObject() {
             return base.CanSetAndGetObject();
         }

@@ -7,6 +7,8 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Extensions;
+using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : CaptureTests {
@@ -36,6 +38,28 @@ namespace Foundatio.Tests.Caching {
                 
                 Assert.True(await cache.AddAsync("test", 2));
                 Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
+            }
+        }
+
+        public virtual async Task CanAddAndRemoveConncurrently() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            const int iterations = 10;
+            using (cache) {
+                await cache.RemoveAllAsync().AnyContext();
+
+                await Run.InParallel(iterations, async i => {
+                    Logger.Trace().Message($"Adding: {i}").Write();
+                    Assert.True(await cache.AddAsync(i.ToString(), i).AnyContext());
+                    Logger.Trace().Message($"Removing: {i}").Write();
+                    Assert.True(await cache.RemoveAsync(i.ToString()).AnyContext());
+                }).AnyContext();
+
+                for (int i = 0; i < iterations; i++) {
+                    Assert.Null(await cache.GetAsync<int?>(i.ToString()));
+                }
             }
         }
 
