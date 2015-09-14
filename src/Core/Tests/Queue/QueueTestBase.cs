@@ -369,7 +369,7 @@ namespace Foundatio.Tests.Queue {
 
                 for (int i = 0; i < workers.Count; i++) {
                     var workerStats = await workers[i].GetQueueStatsAsync().AnyContext();
-                    Trace.WriteLine($"Worker#{i} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
+                    Trace.WriteLine($"Worker#{i} Working: {workerStats.Working} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
                 }
 
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -35,7 +36,12 @@ namespace Foundatio.Tests.Locks {
                 int counter = 0;
 
                 await Run.InParallel(25, async i => {
+                    var sw = Stopwatch.StartNew();
                     using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
+                        sw.Stop();
+                        string message = lock1 != null ? "Acquired" : "Failed to acquire";
+                        Logger.Trace().Message($"Lock {i}: {message} in {sw.ElapsedMilliseconds}ms").Write();
+
                         Assert.NotNull(lock1);
                         Assert.True(await locker.IsLockedAsync("test").AnyContext());
                         Interlocked.Increment(ref counter);
