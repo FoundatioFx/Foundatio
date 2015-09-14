@@ -23,8 +23,19 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync().AnyContext();
 
                 await cache.SetAsync("test", 1).AnyContext();
-                var value = await cache.GetAsync<int>("test").AnyContext();
-                Assert.Equal(1, value);
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
+
+                Assert.False(await cache.AddAsync("test", 2));
+                Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
+
+                Assert.True(await cache.ReplaceAsync("test", 2));
+                Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
+
+                Assert.True(await cache.RemoveAsync("test"));
+                Assert.Null(await cache.GetAsync<int?>("test").AnyContext());
+                
+                Assert.True(await cache.AddAsync("test", 2));
+                Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
             }
         }
 

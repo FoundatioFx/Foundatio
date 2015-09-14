@@ -283,7 +283,10 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return !(await SetAsync(key, value, expiresIn).AnyContext());
+            if (!_memory.ContainsKey(key))
+                return false;
+            
+            return await SetAsync(key, value, expiresIn).AnyContext();
         }
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
