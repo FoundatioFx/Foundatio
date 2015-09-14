@@ -1,16 +1,16 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Logging;
+using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
     public class RedisMessageBus : MessageBusBase, IMessageBus {
         private readonly ISubscriber _subscriber;
-        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
+        private readonly AsyncCollection<Subscriber> _subscribers = new AsyncCollection<Subscriber>();
         private readonly string _topic;
         private readonly ISerializer _serializer;
 
@@ -34,8 +34,8 @@ namespace Foundatio.Messaging {
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
-            var messageTypeSubscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
-            Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, message.Type).Write();
+            var messageTypeSubscribers = _subscribers.GetConsumingEnumerable().Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
+            Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.GetConsumingEnumerable().Count(), message.Type).Write();
             foreach (var subscriber in messageTypeSubscribers) {
                 try {
                     subscriber.Action(body);

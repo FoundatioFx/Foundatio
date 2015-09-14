@@ -1,14 +1,13 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
+using Nito.AsyncEx;
 
 namespace Foundatio.Messaging {
     public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
@@ -18,7 +17,7 @@ namespace Foundatio.Messaging {
         private readonly NamespaceManager _namespaceManager;
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
-        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
+        private readonly AsyncCollection<Subscriber> _subscribers = new AsyncCollection<Subscriber>();
 
         public ServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
             _topicName = topicName;
@@ -47,7 +46,7 @@ namespace Foundatio.Messaging {
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
-            foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
+            foreach (var subscriber in _subscribers.GetConsumingEnumerable().Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
                 try {
                     subscriber.Action(body);
                 } catch (Exception ex) {
@@ -67,6 +66,7 @@ namespace Foundatio.Messaging {
         }
 
         public void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
+            Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
                 Action = async m => {
