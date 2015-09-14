@@ -99,14 +99,14 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
-            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0) && sw.ElapsedMilliseconds < 500)
+            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0) && sw.ElapsedMilliseconds < 150)
                 await Task.Delay(25).AnyContext();
 
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);
             Assert.Equal(0, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
-            Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 250);
+            Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 200);
         }
     }
 }

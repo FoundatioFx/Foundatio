@@ -76,7 +76,10 @@ namespace Foundatio.Caching {
 
             cacheValue = await _distributedCache.TryGetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
-                await _localCache.SetAsync(key, cacheValue.Value).AnyContext();
+                var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
+
+                Logger.Trace().Message($"Setting Local cache key: {key} with expiration: {expiration}").Write();
+                await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
             }
 
@@ -103,8 +106,8 @@ namespace Foundatio.Caching {
                 return 0;
 
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
-            await _localCache.SetAllAsync<T>(values).AnyContext();
-            return await _distributedCache.SetAllAsync<T>(values).AnyContext();
+            await _localCache.SetAllAsync(values, expiresIn).AnyContext();
+            return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -113,8 +116,10 @@ namespace Foundatio.Caching {
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 
-        public Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
-            return _distributedCache.IncrementAsync(key, amount);
+        public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+            return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
@@ -123,7 +128,7 @@ namespace Foundatio.Caching {
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.RemoveAsync(key).AnyContext();
+            await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
             await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         }
 
