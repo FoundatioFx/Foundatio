@@ -33,16 +33,15 @@ namespace Foundatio.Lock {
             bool allowLock = false;
 
             do {
-                var now = DateTime.UtcNow;
-                string cacheKey = GetCacheKey(name, now);
+                string cacheKey = GetCacheKey(name, DateTime.UtcNow);
 
                 try {
-                    Logger.Trace().Message("Current time: {0} throttle: {1}", now.ToString("mm:ss.fff"), now.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
+                    Logger.Trace().Message("Current time: {0} throttle: {1}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey).AnyContext() ?? 0;
                     Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
 
                     if (hitCount <= _maxHitsPerPeriod - 1) {
-                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, now.Ceiling(_throttlingPeriod)).AnyContext();
+                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, DateTime.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
                         
                         // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
@@ -55,22 +54,21 @@ namespace Foundatio.Lock {
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
                     
-                    if (now > timeoutTime) {
-                        // timeout exceeded
+                    if (DateTime.UtcNow > timeoutTime) {
                         Logger.Trace().Message("Timeout exceeded.").Write();
                         break;
                     }
 
-                    var sleepUntil = now.Ceiling(_throttlingPeriod);
+                    var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod);
                     if (sleepUntil > timeoutTime) {
                         Logger.Trace().Message("Next period is too far away.").Write();
                         await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
                         break;
                     }
-
-                    if (sleepUntil > now) {
-                        Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - now).Write();
-                        await Task.Delay(sleepUntil - now, cancellationToken).AnyContext();
+                    
+                    if (sleepUntil > DateTime.UtcNow) {
+                        Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
+                        await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
                     } else {
                         Logger.Trace().Message("Default sleep.").Write();
                         await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();

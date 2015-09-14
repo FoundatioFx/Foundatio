@@ -104,9 +104,11 @@ namespace Foundatio.Tests.Jobs {
             });
 
             var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var sw = Stopwatch.StartNew();
             await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token).AnyContext())).AnyContext();
-
+            sw.Stop();
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
+            Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
         }
 
         [Fact]
