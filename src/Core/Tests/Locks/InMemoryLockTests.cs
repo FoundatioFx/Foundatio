@@ -1,9 +1,11 @@
+using System;
 using System.Diagnostics;
-using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Tests.Utility;
 using Nito.AsyncEx;
@@ -29,32 +31,36 @@ namespace Foundatio.Tests.Locks {
         }
 
         [Fact]
-        public async Task WillPassthrowResetEvent() {
-            var resetEvent = new AsyncManualResetEvent(false);
+        public async Task WillWaitForMonitor() {
+            var monitor = new AsyncMonitor();
+
+            // 1. Fall through with the delay.
             var sw = Stopwatch.StartNew();
-            await Task.WhenAny(Task.Delay(100), resetEvent.WaitAsync()).AnyContext();
+            using (await monitor.EnterAsync()) {
+                try {
+                    await monitor.WaitAsync(new CancellationTokenSource(100).Token).AnyContext();
+                } catch (TaskCanceledException) {}
+                //    await Task.WhenAny(Task.Delay(100), monitor.WaitAsync()).AnyContext();
+            }
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 100, 110);
+            Assert.InRange(sw.ElapsedMilliseconds, 100, 125);
 
+            // 2. Wait for the pulse to be set.
             sw.Restart();
-            resetEvent.Reset();
-            sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 0, 5);
+            using (await monitor.EnterAsync()) {
+                Task.Run(async () => {
+                    await Task.Delay(50).AnyContext();
+                    Logger.Trace().Message("Pulse").Write();
+                    monitor.Pulse();
+                    Logger.Trace().Message("Pulsed").Write();
+                });
 
-            sw.Reset();
-            await Task.WhenAny(Task.Delay(100), resetEvent.WaitAsync()).AnyContext();
-            sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 100, 110);
-            
-            sw.Reset();
-            await Task.WhenAny(Task.Delay(100), Task.Factory.StartNewDelayed(10, () => resetEvent.Set()), resetEvent.WaitAsync()).AnyContext();
-            sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 10, 50);
+                Logger.Trace().Message("Waiting").Write();
+                await monitor.WaitAsync().AnyContext();
+            }
 
-            sw.Restart();
-            resetEvent.Reset();
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 0, 5);
+            Assert.InRange(sw.ElapsedMilliseconds, 50, 100);
         }
     }
 }

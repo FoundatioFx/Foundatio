@@ -25,7 +25,7 @@ namespace Foundatio.Tests.Locks {
                 return;
 
             // sleep until start of throttling period
-            await Task.Delay(DateTime.UtcNow.Ceiling(_period) - DateTime.UtcNow);
+            await Task.Delay(DateTime.UtcNow.Ceiling(_period) - DateTime.UtcNow).AnyContext();
 
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < 5; i++) {
@@ -37,23 +37,20 @@ namespace Foundatio.Tests.Locks {
 
             _output.WriteLine(sw.Elapsed.ToString());
             Assert.True(sw.Elapsed.TotalSeconds < 1, sw.Elapsed.ToString());
-
-            sw.Reset();
-            sw.Start();
+            
+            sw.Restart();
             var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.Zero).AnyContext();
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
-            sw.Reset();
-            sw.Start();
+            sw.Restart();
             result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
 
-            sw.Reset();
-            sw.Start();
+            sw.Restart();
             result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(2)).AnyContext();
             sw.Stop();
             Assert.NotNull(result);

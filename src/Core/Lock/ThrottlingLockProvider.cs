@@ -23,14 +23,11 @@ namespace Foundatio.Lock {
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            Logger.Trace().Message("AcquireLock: {0}", name).Write();
-            if (!acquireTimeout.HasValue)
-                acquireTimeout = TimeSpan.FromMinutes(1);
-
-            var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
+        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
+            
             bool allowLock = false;
+            byte errors = 0;
 
             do {
                 string cacheKey = GetCacheKey(name, DateTime.UtcNow);
@@ -54,32 +51,33 @@ namespace Foundatio.Lock {
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
                     
-                    if (DateTime.UtcNow > timeoutTime) {
-                        Logger.Trace().Message("Timeout exceeded.").Write();
+                    if (cancellationToken.IsCancellationRequested) {
+                        Logger.Trace().Message("Cancellation Requested.").Write();
                         break;
                     }
 
                     var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod);
-                    if (sleepUntil > timeoutTime) {
-                        Logger.Trace().Message("Next period is too far away.").Write();
-                        await Task.Delay(timeoutTime - DateTime.UtcNow, cancellationToken).AnyContext();
-                        break;
-                    }
-                    
                     if (sleepUntil > DateTime.UtcNow) {
                         Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
                         await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
                     } else {
                         Logger.Trace().Message("Default sleep.").Write();
-                        await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
+                        await Task.Delay(50, cancellationToken).AnyContext();
                     }
                 } catch (TaskCanceledException) {
                     return null;
                 } catch (Exception ex) {
                     Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
-                    await Task.Delay((int)(acquireTimeout.Value.TotalMilliseconds / 10), cancellationToken).AnyContext();
+                    errors++;
+                    if (errors >= 3)
+                        break;
+
+                    await Task.Delay(50, cancellationToken).AnyContext();
                 }
-            } while (DateTime.UtcNow <= timeoutTime);
+            } while (!cancellationToken.IsCancellationRequested);
+
+            if (cancellationToken.IsCancellationRequested)
+                Logger.Trace().Message("Cancellation requested.").Write();
 
             if (!allowLock)
                 return null;

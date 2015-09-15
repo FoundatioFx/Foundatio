@@ -6,13 +6,14 @@ using Nito.AsyncEx;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Foundatio.Extensions;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
-        private readonly ConcurrentDictionary<string, AsyncManualResetEvent> _resetEvents = new ConcurrentDictionary<string, AsyncManualResetEvent>();
+        private readonly ConcurrentDictionary<string, AsyncMonitor> _monitors = new ConcurrentDictionary<string, AsyncMonitor>();
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
@@ -22,23 +23,16 @@ namespace Foundatio.Lock {
         
         private void OnLockReleased(CacheLockReleased msg) {
             Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
-            AsyncManualResetEvent resetEvent;
-            if (_resetEvents.TryGetValue(msg.Name, out resetEvent))
-                resetEvent.Set();
+            AsyncMonitor monitor;
+            if (_monitors.TryGetValue(msg.Name, out monitor))
+                monitor.Pulse();
         }
 
-        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            Logger.Trace().Message("AcquireLock: {0}", name).Write();
+        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
-            if (!acquireTimeout.HasValue)
-                acquireTimeout = TimeSpan.FromMinutes(1);
-
-            var acquireTimeoutCancellationToken = new CancellationTokenSource(acquireTimeout.Value);
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(acquireTimeoutCancellationToken.Token, cancellationToken).Token;
-
-            var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Logger.Trace().Message($"Timeout time: {timeoutTime.ToString("mm:ss.fff")}").Write();
+            
             bool allowLock = false;
 
             do {
@@ -50,29 +44,41 @@ namespace Foundatio.Lock {
 
                 if (gotLock) {
                     allowLock = true;
-                    Logger.Trace().Message("Acquired lock: {0}", name).Write();
+                    Logger.Trace().Message($"Acquired lock: {name}").Write();
                     break;
                 }
 
-                Logger.Trace().Message("Failed to acquire lock: {0}", name).Write();
-                
-                if (acquireTimeout.Value == TimeSpan.Zero || timeoutTime < DateTime.UtcNow) {
-                    Logger.Trace().Message("Acquire time out of zero or timeout exceeded").Write();
+                Logger.Trace().Message($"Failed to acquire lock: {name}").Write();
+                if (cancellationToken.IsCancellationRequested) {
+                    Logger.Trace().Message("Cancellation Requested").Write();
                     break;
                 }
 
                 var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ??  TimeSpan.FromSeconds(1));
-                var delayAmount = (timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow)).Max(TimeSpan.FromSeconds(1));
-                Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
-                var resetEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
-                await Task.WhenAny(Task.Delay(delayAmount, linkedCancellationToken), resetEvent.WaitAsync()).AnyContext();
-                resetEvent.Reset();
+                var delayAmount = keyExpiration.Subtract(DateTime.UtcNow).Max(TimeSpan.FromMilliseconds(50));
+                Logger.Trace().Message("Delay amount: {0} Delay until: {1}", delayAmount, DateTime.UtcNow.Add(delayAmount).ToString("mm:ss.fff")).Write();
 
-                if (linkedCancellationToken.IsCancellationRequested) {
-                    Logger.Trace().Message("Cancellation requested.").Write();
-                    break;
+                var delayCancellationTokenSource = new CancellationTokenSource(delayAmount);
+                var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token).Token;
+
+                var monitor = _monitors.GetOrAdd(name, new AsyncMonitor());
+                var sw = Stopwatch.StartNew();
+                try {
+                    using (await monitor.EnterAsync(linkedCancellationToken))
+                        await monitor.WaitAsync(linkedCancellationToken).AnyContext();
+                } catch (TaskCanceledException) {
+                    if (delayCancellationTokenSource.IsCancellationRequested) {
+                        Logger.Trace().Message("Retrying: Delay exceeded").Write();
+                        continue;
+                    }
+                } finally {
+                    sw.Stop();
+                    Logger.Trace().Message($"Lock {name} waited {sw.ElapsedMilliseconds}ms").Write();
                 }
-            } while (!linkedCancellationToken.IsCancellationRequested && DateTime.UtcNow <= timeoutTime);
+            } while (!cancellationToken.IsCancellationRequested);
+
+            if (cancellationToken.IsCancellationRequested)
+                Logger.Trace().Message("Cancellation requested.").Write();
 
             if (!allowLock)
                 return null;
