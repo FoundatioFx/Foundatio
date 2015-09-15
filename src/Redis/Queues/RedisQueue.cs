@@ -117,8 +117,7 @@ namespace Foundatio.Queues {
             return _payloadTtl;
         }
 
-        private string GetEnqueuedTimeKey(string id)
-        {
+        private string GetEnqueuedTimeKey(string id) {
             return String.Concat("q:", _queueName, ":", id, ":enqueued");
         }
 
@@ -171,22 +170,22 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
             
-            var token = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             Task.Run(async () => {
                 Logger.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
-                while (!token.IsCancellationRequested) {
+                while (!linkedCancellationToken.IsCancellationRequested) {
                     Logger.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
                     QueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
                     } catch (TimeoutException) {}
 
-                    if (token.IsCancellationRequested || queueEntry == null)
+                    if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try {
-                        await handler(queueEntry, token).AnyContext();
+                        await handler(queueEntry, linkedCancellationToken).AnyContext();
                         if (autoComplete)
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
@@ -196,8 +195,8 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, token.IsCancellationRequested).Write();
-            }, token);
+                Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested).Write();
+            }, linkedCancellationToken);
         }
         
         public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -205,7 +204,7 @@ namespace Foundatio.Queues {
             if (!timeout.HasValue)
                 timeout = TimeSpan.FromSeconds(30);
 
-            var token = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
             Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
@@ -216,11 +215,11 @@ namespace Foundatio.Queues {
 
                 var sw = Stopwatch.StartNew();
                 // Wait for timeout or signal or dispose
-                await Task.WhenAny(Task.Delay(timeout.Value, token), _resetEvent.WaitAsync()).AnyContext();
+                await Task.WhenAny(Task.Delay(timeout.Value, linkedCancellationToken), _resetEvent.WaitAsync()).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message($"Waited for dequeue: timeout={timeout.Value} actual={sw.Elapsed}", sw.Elapsed.ToString()).Write();
 
-                if (token.IsCancellationRequested)
+                if (linkedCancellationToken.IsCancellationRequested)
                     return null;
                 
                 _resetEvent.Reset();

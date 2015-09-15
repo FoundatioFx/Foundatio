@@ -130,13 +130,13 @@ namespace Foundatio.Metrics {
             if (GetCount(statName) >= expectedCount)
                 return true;
             
-            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
+            var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
-                    await waitHandle.WaitAsync(cancellationToken).AnyContext();
+                    await resetEvent.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) {}
                 Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
-                waitHandle.Reset();
+                resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && GetCount(statName) < expectedCount);
 
             Logger.Trace().Message("Done waiting: count={0} expected={1} success={2}", GetCount(statName), expectedCount, !cancellationToken.IsCancellationRequested).Write();

@@ -55,11 +55,11 @@ namespace Foundatio.Jobs {
                 return -1;
 
             WatchForShutdown();
-            var linkedToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             if (options.RunContinuous)
-                await RunContinuousAsync(options.JobType, options.Interval, options.IterationLimit, options.InstanceCount, linkedToken).AnyContext();
+                await RunContinuousAsync(options.JobType, options.Interval, options.IterationLimit, options.InstanceCount, linkedCancellationToken).AnyContext();
             else
-                return (await RunAsync(options.JobType, linkedToken).AnyContext()).IsSuccess ? 0 : -1;
+                return (await RunAsync(options.JobType, linkedCancellationToken).AnyContext()).IsSuccess ? 0 : -1;
 
             return 0;
         }

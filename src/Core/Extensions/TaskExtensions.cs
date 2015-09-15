@@ -22,6 +22,10 @@ namespace Foundatio.Extensions {
         public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
             return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
         }
+        
+        public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {
+            return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+        }
 
         public static Task WaitAsync(this Task task, CancellationToken cancellationToken) {
             return Task.WhenAny(task, cancellationToken.AsTask());

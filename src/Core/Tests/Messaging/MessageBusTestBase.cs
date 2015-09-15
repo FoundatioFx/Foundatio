@@ -209,13 +209,13 @@ namespace Foundatio.Tests.Messaging {
                 }).AnyContext();
 
                 await Task.Delay(100).AnyContext();
-                var resetEvent = new AsyncManualResetEvent(false);
+                var resetEvent = new AsyncAutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext();
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext()).AnyContext();
             }
         }
     }
