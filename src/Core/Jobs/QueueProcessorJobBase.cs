@@ -17,19 +17,19 @@ namespace Foundatio.Jobs {
         protected bool AutoComplete { get; set; }
 
         protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
-            QueueEntry<T> queueEntry = null;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(token, new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+
+            QueueEntry<T> queueEntry;
             try {
-                queueEntry = await _queue.DequeueAsync(null, token).AnyContext();
+                queueEntry = await _queue.DequeueAsync(linkedCancellationToken.Token).AnyContext();
             } catch (Exception ex) {
-                if (!(ex is TimeoutException)) {
-                    Logger.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
-                    return JobResult.FromException(ex);
-                }
+                Logger.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
+                return JobResult.FromException(ex);
             }
 
             if (queueEntry == null)
                 return JobResult.Success;
-
+            
             using (var lockValue = GetQueueItemLock(queueEntry)) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");

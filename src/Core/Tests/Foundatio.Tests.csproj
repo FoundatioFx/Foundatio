@@ -76,6 +76,8 @@
     <Compile Include="Caching\CacheClientTestsBase.cs" />
     <Compile Include="Caching\HybridCacheClientTests.cs" />
     <Compile Include="Caching\InMemoryCacheClientTests.cs" />
+    <Compile Include="Jobs\InMemoryJobQueueTests.cs" />
+    <Compile Include="Jobs\JobTests.cs" />
     <Compile Include="Jobs\ThrottledJob.cs" />
     <Compile Include="Jobs\WithLockingJob.cs" />
     <Compile Include="Jobs\WorkItemJobTests.cs" />
@@ -83,7 +85,7 @@
     <Compile Include="Jobs\SampleQueueJob.cs" />
     <Compile Include="Jobs\WithDependencyJob.cs" />
     <Compile Include="Jobs\HelloWorldJob.cs" />
-    <Compile Include="Jobs\JobTests.cs" />
+    <Compile Include="Jobs\JobQueueTestsBase.cs" />
     <Compile Include="Locks\ThrottlingLockTests.cs" />
     <Compile Include="Locks\InMemoryLockTests.cs" />
     <Compile Include="Locks\LockTestBase.cs" />

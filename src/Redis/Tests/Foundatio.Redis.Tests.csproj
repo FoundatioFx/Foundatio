@@ -84,7 +84,7 @@
     </Compile>
     <Compile Include="Caching\RedisHybridCacheClientTests.cs" />
     <Compile Include="Caching\RedisCacheClientTests.cs" />
-    <Compile Include="Jobs\RedisJobTests.cs" />
+    <Compile Include="Jobs\RedisJobQueueTests.cs" />
     <Compile Include="Locks\RedisLockTests.cs" />
     <Compile Include="Locks\RedisThrottlingLockTests.cs" />
     <Compile Include="Messaging\RedisMessageBusTests.cs" />

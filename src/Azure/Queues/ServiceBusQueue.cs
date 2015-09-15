@@ -122,11 +122,9 @@ namespace Foundatio.Queues {
             });
         }
         
-        public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(30);
-
-            using (var msg = await _queueClient.ReceiveAsync(timeout.Value).AnyContext()) {
+        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            // TODO: use the cancellation token.
+            using (var msg = await _queueClient.ReceiveAsync().AnyContext()) {
                 if (msg == null)
                     return null;
                 

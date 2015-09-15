@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueInfo<T>> _queue = new ConcurrentQueue<QueueInfo<T>>();
         private readonly ConcurrentDictionary<string, QueueInfo<T>> _dequeued = new ConcurrentDictionary<string, QueueInfo<T>>();
         private readonly ConcurrentQueue<QueueInfo<T>> _deadletterQueue = new ConcurrentQueue<QueueInfo<T>>();
-        private readonly AsyncManualResetEvent _resetEvent = new AsyncManualResetEvent(false);
+        private readonly AsyncMonitor _monitor = new AsyncMonitor();
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
 
             _queue.Enqueue(info);
             Logger.Trace().Message("Enqueue: Set Event").Write();
-            _resetEvent.Set();
+            _monitor.Pulse();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(data, id).AnyContext();
@@ -121,24 +121,25 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            Logger.Trace().Message("Queue {0} dequeued item", typeof(T).Name).Write();
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(30);
+        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"Queue {typeof(T).Name} dequeuing item...").Write();
 
             Logger.Trace().Message("Queue count: {0}", _queue.Count).Write();
-            if (_queue.Count == 0) {
+            if (_queue.Count == 0 && !cancellationToken.IsCancellationRequested) {
+                Logger.Trace().Message("Waiting to dequeue item...").Write();
+
                 var sw = Stopwatch.StartNew();
-                await Task.WhenAny(Task.Delay(timeout.Value, cancellationToken), _resetEvent.WaitAsync()).AnyContext();
+                try {
+                    using (await _monitor.EnterAsync(cancellationToken))
+                        await _monitor.WaitAsync(cancellationToken).AnyContext();
+                } catch (TaskCanceledException) {}
                 sw.Stop();
-                Logger.Trace().Message("Waited for dequeue: timeout={0} actual={1}", timeout.Value.ToString(), sw.Elapsed.ToString()).Write();
+                Logger.Trace().Message("Waited for dequeue: {0}", sw.Elapsed.ToString()).Write();
             }
 
-            if (_queue.Count == 0 || cancellationToken.IsCancellationRequested)
+            if (_queue.Count == 0)
                 return null;
-
-            _resetEvent.Reset();
-
+            
             Logger.Trace().Message("Dequeue: Attempt").Write();
             QueueInfo<T> info;
             if (!_queue.TryDequeue(out info) || info == null)
@@ -201,7 +202,7 @@ namespace Foundatio.Queues {
 
         private void Retry(QueueInfo<T> info) {
             _queue.Enqueue(info);
-            _resetEvent.Set();
+            _monitor.Pulse();
         }
 
         private int GetRetryDelay(int attempts) {

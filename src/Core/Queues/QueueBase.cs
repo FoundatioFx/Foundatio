@@ -32,7 +32,7 @@ namespace Foundatio.Queues {
 
         public abstract Task<string> EnqueueAsync(T data);
         
-        public abstract Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken));
+        public abstract Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
 
         public abstract Task CompleteAsync(string id);
 

@@ -10,7 +10,7 @@ namespace Foundatio.Extensions {
         public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken) {
             return Task.WhenAny(countdownEvent.WaitAsync(), cancellationToken.AsTask());
         }
-        
+
         public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout) {
             return countdownEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
         }
@@ -18,23 +18,15 @@ namespace Foundatio.Extensions {
         public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken) {
             return Task.WhenAny(resetEvent.WaitAsync(), cancellationToken.AsTask());
         }
-        
+
         public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
             return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
         }
-        
+
         public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {
             return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
         }
-
-        public static Task WaitAsync(this Task task, CancellationToken cancellationToken) {
-            return Task.WhenAny(task, cancellationToken.AsTask());
-        }
         
-        public static Task WaitAsync(this Task task, TimeSpan timeout) {
-            return task.WaitAsync(new CancellationTokenSource(timeout).Token);
-        }
-
         public static Task IgnoreExceptions(this Task task) {
             task.ContinueWith(c => { var ignored = c.Exception; },
                 TaskContinuationOptions.OnlyOnFaulted |

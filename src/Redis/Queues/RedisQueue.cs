@@ -33,7 +33,7 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _deadLetterTtl = TimeSpan.FromDays(1);
         private readonly int _deadLetterMaxItems;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly AsyncManualResetEvent _resetEvent = new AsyncManualResetEvent(false);
+        private readonly AsyncMonitor _monitor = new AsyncMonitor();
         protected readonly ILockProvider _maintenanceLockProvider;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
@@ -199,35 +199,31 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
         
-        public override async Task<QueueEntry<T>> DequeueAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            Logger.Trace().Message($"Queue {_queueName} dequeuing item (timeout: {timeout?.ToString() ?? "(none)"})...").Write();
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(30);
-
+        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
-
+            
             RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+            if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
+                return null;
+
             Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
-
-            DateTime started = DateTime.UtcNow;
-            while (value.IsNullOrEmpty && timeout > TimeSpan.Zero && DateTime.UtcNow.Subtract(started) < timeout) {
+            
+            while (value.IsNullOrEmpty && !linkedCancellationToken.IsCancellationRequested) {
                 Logger.Trace().Message("Waiting to dequeue item...").Write();
-
-                var sw = Stopwatch.StartNew();
-                // Wait for timeout or signal or dispose
-                await Task.WhenAny(Task.Delay(timeout.Value, linkedCancellationToken), _resetEvent.WaitAsync()).AnyContext();
-                sw.Stop();
-                Logger.Trace().Message($"Waited for dequeue: timeout={timeout.Value} actual={sw.Elapsed}", sw.Elapsed.ToString()).Write();
-
-                if (linkedCancellationToken.IsCancellationRequested)
-                    return null;
                 
-                _resetEvent.Reset();
-
+                var sw = Stopwatch.StartNew();
+                try {
+                    using (await _monitor.EnterAsync(cancellationToken))
+                        await _monitor.WaitAsync(cancellationToken).AnyContext();
+                } catch (TaskCanceledException) { }
+                sw.Stop();
+                Logger.Trace().Message("Waited for dequeue: {0}", sw.Elapsed.ToString()).Write();
+                
                 value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
                 Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
             }
-
+            
             if (value.IsNullOrEmpty)
                 return null;
 
@@ -378,7 +374,7 @@ namespace Foundatio.Queues {
 
         private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             Logger.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
-            _resetEvent.Set();
+            _monitor.Pulse();
         }
 
         internal async Task DoMaintenanceWorkAsync() {
