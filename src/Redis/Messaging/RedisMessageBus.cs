@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Logging;
 using StackExchange.Redis;
@@ -22,7 +23,7 @@ namespace Foundatio.Messaging {
             _subscriber.Subscribe(_topic, OnMessage);
         }
 
-        private void OnMessage(RedisChannel channel, RedisValue value) {
+        private async void OnMessage(RedisChannel channel, RedisValue value) {
             Logger.Trace().Message("OnMessage: {0}", channel).Write();
             var message = _serializer.Deserialize<MessageBusData>((string)value);
 
@@ -39,7 +40,7 @@ namespace Foundatio.Messaging {
             Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, messageType?.FullName).Write();
             foreach (var subscriber in messageTypeSubscribers) {
                 try {
-                    subscriber.Action(body);
+                    await subscriber.Action(body, CancellationToken.None);
                 } catch (Exception ex) {
                     Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                 }
@@ -59,11 +60,11 @@ namespace Foundatio.Messaging {
             Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
-                Action = m => {
-                    if (!(m is T))
+                Action = async (message, token) => {
+                    if (!(message is T))
                         return;
 
-                    handler((T)m, cancellationToken);
+                    await handler((T)message, cancellationToken).AnyContext();
                 }
             }, cancellationToken);
         }
@@ -75,7 +76,7 @@ namespace Foundatio.Messaging {
 
         private class Subscriber {
             public Type Type { get; set; }
-            public Action<object> Action { get; set; }
+            public Func<object, CancellationToken, Task> Action { get; set; }
         }
     }
 }

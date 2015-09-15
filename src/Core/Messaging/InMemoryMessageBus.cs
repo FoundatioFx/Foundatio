@@ -16,13 +16,13 @@ namespace Foundatio.Messaging {
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 
-            Task.Run(() => {
+            Task.Run(async () => {
                 var messageTypeSubscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
                 Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, messageType.FullName).Write();
 
                 foreach (var subscriber in messageTypeSubscribers) {
                     try {
-                        subscriber.Action(message.Copy());
+                        await subscriber.Action(message.Copy(), CancellationToken.None);
                     } catch (Exception ex) {
                         Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                     }
@@ -36,18 +36,18 @@ namespace Foundatio.Messaging {
             Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             _subscribers.Add(new Subscriber {
                 Type = typeof(T),
-                Action = async m => {
-                    if (!(m is T))
+                Action = async (message, token) => {
+                    if (!(message is T))
                         return;
 
-                    await handler((T)m, cancellationToken).AnyContext();
+                    await handler((T)message, cancellationToken).AnyContext();
                 }
             }, cancellationToken);
         }
 
         private class Subscriber {
             public Type Type { get; set; }
-            public Action<object> Action { get; set; }
+            public Func<object, CancellationToken, Task> Action { get; set; }
         }
     }
 }

@@ -124,6 +124,7 @@ namespace Foundatio.Tests.Messaging {
                 }).AnyContext();
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(2, countdown.CurrentCount);
             }
         }
 
