@@ -202,63 +202,33 @@ namespace Foundatio.Caching {
             return valueMap;
         }
 
-        public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < DateTime.UtcNow) {
-                await this.RemoveAsync(key).AnyContext();
-                Logger.Trace().Message($"Removing expired key: {key}").Write();
-                return false;
-            }
-
-            CacheEntry entry;
-            if (TryGetValueInternal(key, out entry) && entry.ExpiresAt > DateTime.UtcNow) {
-                Logger.Trace().Message($"Unable to add key \"{key}\" that already exists").Write();
-                return false;
-            }
-
-            entry = new CacheEntry(value, expiresAt);
-            await SetInternalAsync(key, entry).AnyContext();
-
-            return true;
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt), true);
         }
 
-        public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            Logger.Trace().Message("Setting cache: key={0}", key).Write();
-
+        public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < DateTime.UtcNow) {
-                Logger.Warn().Message("Expires at is less than now: key={0}", key).Write();
-                await this.RemoveAsync(key).AnyContext();
-                return false;
-            }
-
-            CacheEntry entry;
-            if (!TryGetValueInternal(key, out entry)) {
-                entry = new CacheEntry(value, expiresAt);
-                await SetInternalAsync(key, entry).AnyContext();
-                return true;
-            }
-
-            entry.Value = value;
-            entry.ExpiresAt = expiresAt;
-            ScheduleNextMaintenance(expiresAt);
-
-            return true;
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt));
         }
 
-        private bool TryGetValueInternal(string key, out CacheEntry entry) {
-            return _memory.TryGetValue(key, out entry);
-        }
-
-        private async Task SetInternalAsync(string key, CacheEntry entry) {
-            Logger.Trace().Message("Set: key={0}", key).Write();
+        private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (entry.ExpiresAt < DateTime.UtcNow) {
                 Logger.Trace().Message($"SetInternalAsync: Removing expired key {key}").Write();
                 await this.RemoveAsync(key).AnyContext();
-                return;
+                return false;
             }
 
-            _memory[key] = entry;
+            if (addOnly) {
+                if (!_memory.TryAdd(key, entry))
+                    return false;
+
+                Logger.Trace().Message("Added cache key: {0}", key).Write();
+            } else {
+                _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
+                Logger.Trace().Message("Set cache key: {0}", key).Write();
+            }
+
             ScheduleNextMaintenance(entry.ExpiresAt);
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
@@ -268,6 +238,8 @@ namespace Foundatio.Caching {
                 CacheEntry cacheEntry;
                 _memory.TryRemove(oldest, out cacheEntry);
             }
+
+            return true;
         }
 
         public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
@@ -320,9 +292,9 @@ namespace Foundatio.Caching {
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
             CacheEntry value;
-            if (!_memory.TryGetValue(key, out value))
+            if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
                 return Task.FromResult<TimeSpan?>(null);
-
+            
             if (value.ExpiresAt >= DateTime.UtcNow)
                 return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(DateTime.UtcNow));
             

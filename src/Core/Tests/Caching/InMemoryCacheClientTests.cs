@@ -21,8 +21,8 @@ namespace Foundatio.Tests.Caching {
         }
         
         [Fact]
-        public override Task CanAddAndRemoveConncurrently() {
-            return base.CanAddAndRemoveConncurrently();
+        public override Task CanAddConncurrently() {
+            return base.CanAddConncurrently();
         }
 
         [Fact]

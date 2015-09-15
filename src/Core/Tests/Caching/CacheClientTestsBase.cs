@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Metrics;
@@ -40,26 +41,22 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
             }
         }
-
-        public virtual async Task CanAddAndRemoveConncurrently() {
+        
+        public virtual async Task CanAddConncurrently() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
-
-            const int iterations = 10;
+            
             using (cache) {
                 await cache.RemoveAllAsync().AnyContext();
 
-                await Run.InParallel(iterations, async i => {
-                    Logger.Trace().Message($"Adding: {i}").Write();
-                    Assert.True(await cache.AddAsync(i.ToString(), i).AnyContext());
-                    Logger.Trace().Message($"Removing: {i}").Write();
-                    Assert.True(await cache.RemoveAsync(i.ToString()).AnyContext());
-                }).AnyContext();
+                long adds = 0;
+                await Run.InParallel(5, async i => {
+                    if (await cache.AddAsync("test", i).AnyContext())
+                        Interlocked.Increment(ref adds);
+                });
 
-                for (int i = 0; i < iterations; i++) {
-                    Assert.Null(await cache.GetAsync<int?>(i.ToString()));
-                }
+                Assert.Equal(1, adds);
             }
         }
 
