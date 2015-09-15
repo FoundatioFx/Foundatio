@@ -43,7 +43,6 @@ namespace Foundatio.Caching {
         }
 
         private void ScheduleNextMaintenance(DateTime value) {
-            Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value.ToString("MM-dd-yyyy mm:ss.fff")).Write();
             if (value == DateTime.MaxValue)
                 return;
 
@@ -121,6 +120,17 @@ namespace Foundatio.Caching {
                     LastModifiedTicks = DateTime.UtcNow.Ticks;
                 }
             }
+
+            public T GetValue<T>() {
+                var val = Value;
+                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
+                    return (T)Convert.ChangeType(val, typeof(T));
+
+                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
+                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
+
+                return (T)val;
+            }
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -177,14 +187,7 @@ namespace Foundatio.Caching {
             Interlocked.Increment(ref _hits);
 
             try {
-                T value;
-                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
-                    value = (T)Convert.ChangeType(cacheEntry.Value, typeof(T));
-                else if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
-                    value = cacheEntry.Value == null ? default(T) : (T)Convert.ChangeType(cacheEntry.Value, Nullable.GetUnderlyingType(typeof(T)));
-                else
-                    value = (T)cacheEntry.Value;
-
+                T value = cacheEntry.GetValue<T>();
                 return Task.FromResult(new CacheValue<T>(value, true));
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
@@ -267,27 +270,26 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
-            using (await _asyncLock.LockAsync()) {
-                if (!_memory.ContainsKey(key)) {
-                    if (expiresIn.HasValue)
-                        await SetAsync(key, amount, expiresIn.Value).AnyContext();
-                    else
-                        await SetAsync(key, amount).AnyContext();
-
-                    return amount;
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt), (k, entry) => {
+                long? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<long?>();
+                } catch (Exception ex) {
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
                 }
 
-                var current = await this.GetAsync<long>(key).AnyContext();
-                if (amount == 0)
-                    return current;
-
-                if (expiresIn.HasValue)
-                    await SetAsync(key, current += amount, expiresIn.Value).AnyContext();
+                if (currentValue.HasValue)
+                    entry.Value = currentValue.Value + amount;
                 else
-                    await SetAsync(key, current += amount).AnyContext();
+                    entry.Value = amount;
 
-                return current;
-            }
+                entry.ExpiresAt = expiresAt;
+                return entry;
+            });
+
+            ScheduleNextMaintenance(expiresAt);
+            return result.GetValue<long>();
         }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
