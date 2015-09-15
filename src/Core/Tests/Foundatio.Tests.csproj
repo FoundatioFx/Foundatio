@@ -86,7 +86,6 @@
     <Compile Include="Jobs\WithDependencyJob.cs" />
     <Compile Include="Jobs\HelloWorldJob.cs" />
     <Compile Include="Jobs\JobQueueTestsBase.cs" />
-    <Compile Include="Locks\ThrottlingLockTests.cs" />
     <Compile Include="Locks\InMemoryLockTests.cs" />
     <Compile Include="Locks\LockTestBase.cs" />
     <Compile Include="Messaging\InMemoryMessageBusTests.cs" />

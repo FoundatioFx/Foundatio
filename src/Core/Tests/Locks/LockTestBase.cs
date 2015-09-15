@@ -12,6 +12,12 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : CaptureTests {
+        protected LockTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+
+        protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
+            return null;
+        }
+
         protected virtual ILockProvider GetLockProvider() {
             return null;
         }
@@ -79,7 +85,37 @@ namespace Foundatio.Tests.Locks {
                 Assert.NotNull(testLock);
             }
         }
+        
+        public virtual async Task WillThrottleCalls() {
+            var period = TimeSpan.FromSeconds(1);
+            var locker = GetThrottlingLockProvider(5, period);
+            if (locker == null)
+                return;
 
-        protected LockTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+            await locker.ReleaseLockAsync("test").AnyContext();
+
+            // sleep until start of throttling period
+            await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now).AnyContext();
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < 5; i++)
+                await locker.AcquireLockAsync("test").AnyContext();
+            sw.Stop();
+
+            _output.WriteLine(sw.Elapsed.ToString());
+            Assert.True(sw.Elapsed.TotalSeconds < 1);
+            
+            sw.Restart();
+            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
+            sw.Stop();
+            Assert.Null(result);
+            _output.WriteLine(sw.Elapsed.ToString());
+            
+            sw.Restart();
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1.5)).AnyContext();
+            sw.Stop();
+            Assert.NotNull(result);
+            _output.WriteLine(sw.Elapsed.ToString());
+        }
     }
 }

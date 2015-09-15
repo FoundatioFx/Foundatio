@@ -206,8 +206,7 @@ namespace Foundatio.Metrics {
 
                 if (_currentStopwatch.Elapsed > TimeSpan.FromMinutes(1)) {
                     _currentValue = 0;
-                    _currentStopwatch.Reset();
-                    _currentStopwatch.Start();
+                    _currentStopwatch.Restart();
                 }
             }
         }

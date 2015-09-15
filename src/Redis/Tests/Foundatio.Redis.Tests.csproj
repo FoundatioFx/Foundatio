@@ -86,7 +86,6 @@
     <Compile Include="Caching\RedisCacheClientTests.cs" />
     <Compile Include="Jobs\RedisJobQueueTests.cs" />
     <Compile Include="Locks\RedisLockTests.cs" />
-    <Compile Include="Locks\RedisThrottlingLockTests.cs" />
     <Compile Include="Messaging\RedisMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\RedisQueueTests.cs" />

@@ -33,7 +33,7 @@ namespace Foundatio.Lock {
                 string cacheKey = GetCacheKey(name, DateTime.UtcNow);
 
                 try {
-                    Logger.Trace().Message("Current time: {0} throttle: {1}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
+                    Logger.Trace().Message("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey).Write();
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey).AnyContext() ?? 0;
                     Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
 
@@ -56,7 +56,7 @@ namespace Foundatio.Lock {
                         break;
                     }
 
-                    var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod);
+                    var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                     if (sleepUntil > DateTime.UtcNow) {
                         Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
                         await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();

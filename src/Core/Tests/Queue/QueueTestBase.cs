@@ -158,8 +158,7 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 }).AnyContext()).AnyContext();
 
-                sw.Reset();
-                sw.Start();
+                sw.Restart();
                 workItem = await queue.DequeueAsync(timeToWait).AnyContext();
                 await workItem.CompleteAsync().AnyContext();
                 sw.Stop();

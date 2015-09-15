@@ -50,17 +50,17 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanUseScopedCaches();
         }
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughput() {
             return base.MeasureThroughput();
         }
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public override Task MeasureSerializerSimpleThroughput() {
             return base.MeasureSerializerSimpleThroughput();
         }
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public override Task MeasureSerializerComplexThroughput() {
             return base.MeasureSerializerComplexThroughput();
         }
