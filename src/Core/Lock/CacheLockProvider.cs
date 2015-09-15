@@ -62,22 +62,12 @@ namespace Foundatio.Lock {
                 }
 
                 var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ??  TimeSpan.FromSeconds(1));
-                if (keyExpiration < DateTime.UtcNow) {
-                    Logger.Trace().Message($"Retry {name}: key may have just expired.").Write();
-                    continue;
-                }
-                
-                // acquire timeout may have been exceeded while getting the expiration time.
-                if (timeoutTime < DateTime.UtcNow) {
-                    Logger.Trace().Message("Timeout exceeded").Write();
-                    break;
-                }
-
-                var delayAmount = timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow);
+                var delayAmount = (timeoutTime < keyExpiration ? timeoutTime.Subtract(DateTime.UtcNow) : keyExpiration.Subtract(DateTime.UtcNow)).Max(TimeSpan.FromSeconds(1));
                 Logger.Trace().Message("Delay time: {0}", delayAmount).Write();
-                var autoEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
-                await Task.WhenAny(Task.Delay(delayAmount, linkedCancellationToken), autoEvent.WaitAsync()).AnyContext();
-                
+                var resetEvent = _resetEvents.GetOrAdd(name, new AsyncManualResetEvent());
+                await Task.WhenAny(Task.Delay(delayAmount, linkedCancellationToken), resetEvent.WaitAsync()).AnyContext();
+                resetEvent.Reset();
+
                 if (linkedCancellationToken.IsCancellationRequested) {
                     Logger.Trace().Message("Cancellation requested.").Write();
                     break;
