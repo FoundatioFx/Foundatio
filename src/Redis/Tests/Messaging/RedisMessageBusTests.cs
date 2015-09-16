@@ -49,6 +49,11 @@ namespace Foundatio.Redis.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanCancelSubscription() {
+            return base.CanCancelSubscription();
+        }
+
+        [Fact]
         public override Task WontKeepMessagesWithNoSubscribers() {
             return base.WontKeepMessagesWithNoSubscribers();
         }

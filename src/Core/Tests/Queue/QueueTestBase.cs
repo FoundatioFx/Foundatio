@@ -479,7 +479,6 @@ namespace Foundatio.Tests.Queue {
                     throw new ApplicationException();
                 }
             } finally {
-               
                 Trace.WriteLine($"Signal {countdown.CurrentCount}");
                 countdown.Signal();
             }

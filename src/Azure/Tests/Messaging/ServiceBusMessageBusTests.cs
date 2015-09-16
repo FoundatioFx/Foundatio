@@ -58,6 +58,11 @@ namespace Foundatio.Azure.Tests.Messaging {
         public override Task CanSubscribeToAllMessageTypes() {
             return base.CanSubscribeToAllMessageTypes();
         }
+        
+        [Fact]
+        public override Task CanCancelSubscription() {
+            return base.CanCancelSubscription();
+        }
 
         [Fact]
         public override Task WontKeepMessagesWithNoSubscribers() {

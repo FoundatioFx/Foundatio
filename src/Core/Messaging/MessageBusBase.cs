@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -9,7 +10,9 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase : IMessagePublisher, IDisposable {
-		private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
+        protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
+
+        private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
         private DateTime? _nextMaintenance = null;
         private readonly Timer _maintenanceTimer;
 
@@ -19,6 +22,45 @@ namespace Foundatio.Messaging {
 
         public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
 
+        protected async Task SendMessageToSubscribersAsync(Type messageType, object message) {
+            var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.IsAssignableFrom(messageType));
+            foreach (var subscriber in messageTypeSubscribers) {
+                if (subscriber.CancellationToken.IsCancellationRequested)
+                    continue;
+
+                try {
+                    await subscriber.Action(message, subscriber.CancellationToken);
+                } catch (Exception ex) {
+                    Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
+                }
+
+                if (subscriber.CancellationToken.IsCancellationRequested) {
+                    Subscriber sub;
+                    if (_subscribers.TryRemove(subscriber.Id, out sub))
+                        Logger.Trace().Message($"Removed cancelled subscriber: {subscriber.Id}").Write();
+                    else
+                        Logger.Trace().Message($"Unable to remove cancelled subscriber: {subscriber.Id}").Write();
+                }
+            }
+        }
+
+        public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
+            Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
+            var subscriber = new Subscriber {
+                CancellationToken = cancellationToken,
+                Type = typeof(T),
+                Action = async (message, token) => {
+                    if (!(message is T))
+                        return;
+
+                    await handler((T)message, cancellationToken).AnyContext();
+                }
+            };
+
+            if (!_subscribers.TryAdd(subscriber.Id, subscriber))
+                Logger.Error().Message($"Unable to add subscriber {subscriber.Id}").Write();
+        }
+        
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
@@ -88,6 +130,13 @@ namespace Foundatio.Messaging {
             public DateTime SendTime { get; set; }
             public Type MessageType { get; set; }
             public object Message { get; set; }
+        }
+        
+        protected class Subscriber {
+            public string Id { get; private set; } = Guid.NewGuid().ToString();
+            public CancellationToken CancellationToken { get; set; }
+            public Type Type { get; set; }
+            public Func<object, CancellationToken, Task> Action { get; set; }
         }
 
         public virtual void Dispose() {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Tests.Utility;
@@ -217,6 +218,44 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext()).AnyContext();
+            }
+        }
+        
+        public virtual async Task CanCancelSubscription() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            using (messageBus) {
+                var countdown = new AsyncCountdownEvent(2);
+
+                long messageCount = 0;
+                var cancellationTokenSource = new CancellationTokenSource();
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Logger.Trace().Message("SimpleAMessage received").Write();
+                    Interlocked.Increment(ref messageCount);
+                    cancellationTokenSource.Cancel();
+                    countdown.Signal();
+                }, cancellationTokenSource.Token);
+                
+                messageBus.Subscribe<object>(msg => countdown.Signal());
+
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                }).AnyContext();
+                
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(1, messageCount);
+
+                countdown = new AsyncCountdownEvent(1);
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                }).AnyContext();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(1, messageCount);
             }
         }
     }

@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Logging;
 using StackExchange.Redis;
@@ -11,7 +8,6 @@ using StackExchange.Redis;
 namespace Foundatio.Messaging {
     public class RedisMessageBus : MessageBusBase, IMessageBus {
         private readonly ISubscriber _subscriber;
-        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
         private readonly string _topic;
         private readonly ISerializer _serializer;
 
@@ -24,27 +20,19 @@ namespace Foundatio.Messaging {
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
-            Logger.Trace().Message("OnMessage: {0}", channel).Write();
+            Logger.Trace().Message($"OnMessage: {channel}").Write();
             var message = _serializer.Deserialize<MessageBusData>((string)value);
 
-            Type messageType = null;
+            Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                return;
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
-            
-            var messageTypeSubscribers = _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList();
-            Logger.Trace().Message("Found {0} of {1} subscribers for type: {2}", messageTypeSubscribers.Count, _subscribers.Count, messageType?.FullName).Write();
-            foreach (var subscriber in messageTypeSubscribers) {
-                try {
-                    await subscriber.Action(body, CancellationToken.None);
-                } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
-                }
-            }
+            await SendMessageToSubscribersAsync(messageType, body);
         }
 
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -55,28 +43,10 @@ namespace Foundatio.Messaging {
             var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             return _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget);
         }
-
-        public void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
-            _subscribers.Add(new Subscriber {
-                Type = typeof(T),
-                Action = async (message, token) => {
-                    if (!(message is T))
-                        return;
-
-                    await handler((T)message, cancellationToken).AnyContext();
-                }
-            }, cancellationToken);
-        }
-
+        
         public override void Dispose() {
             _subscriber.Unsubscribe(_topic);
             base.Dispose();
-        }
-
-        private class Subscriber {
-            public Type Type { get; set; }
-            public Func<object, CancellationToken, Task> Action { get; set; }
         }
     }
 }
