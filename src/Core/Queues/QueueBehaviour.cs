@@ -6,9 +6,9 @@ namespace Foundatio.Queues {
     }
 
     public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable where T : class {
-        private IQueue<T> _queue;
+        protected IQueue<T> _queue;
 
-        public void Attach(IQueue<T> queue) {
+        public virtual void Attach(IQueue<T> queue) {
             _queue = queue;
 
             _queue.Enqueuing += OnEnqueuing;

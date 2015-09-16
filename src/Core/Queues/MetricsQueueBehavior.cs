@@ -1,12 +1,17 @@
 using System;
+using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Metrics;
+using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
         private readonly string _metricsPrefix;
         private readonly IMetricsClient _metricsClient;
         private const string CustomMetricNameKey = "CustomMetricName";
+        private DateTime _nextQueueCountTime = DateTime.MinValue;
+        private readonly AsyncLock _countLock = new AsyncLock();
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null) {
             _metricsClient = metrics;
@@ -18,8 +23,24 @@ namespace Foundatio.Queues {
             _metricsPrefix = metricsPrefix;
         }
 
+        private async Task ReportQueueCountAsync() {
+            if (_nextQueueCountTime > DateTime.UtcNow)
+                return;
+
+            using (await _countLock.LockAsync()) {
+                if (_nextQueueCountTime > DateTime.UtcNow)
+                    return;
+
+                _nextQueueCountTime = DateTime.UtcNow.AddSeconds(10);
+                var stats = await _queue.GetQueueStatsAsync().AnyContext();
+                Logger.Trace().Message("Reporting queue count").Write();
+                await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
+            }
+        }
+
         protected override async void OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
             base.OnEnqueued(sender, enqueuedEventArgs);
+            await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(enqueuedEventArgs.Data);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -29,6 +50,7 @@ namespace Foundatio.Queues {
 
         protected override async void OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
             base.OnDequeued(sender, dequeuedEventArgs);
+            await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Data);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -53,6 +75,7 @@ namespace Foundatio.Queues {
 
         protected override async void OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
             base.OnCompleted(sender, completedEventArgs);
+            await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(completedEventArgs.Metadata);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -67,6 +90,7 @@ namespace Foundatio.Queues {
 
         protected override async void OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
             base.OnAbandoned(sender, abandonedEventArgs);
+            await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(abandonedEventArgs.Metadata);
             string counter = GetFullMetricName(customMetricName, "abandoned");
