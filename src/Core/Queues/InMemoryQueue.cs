@@ -20,7 +20,7 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
-        private readonly int _retries = 2;
+        private readonly int _retries;
 
         private int _enqueuedCount;
         private int _dequeuedCount;
@@ -75,7 +75,8 @@ namespace Foundatio.Queues {
 
             _queue.Enqueue(info);
             Logger.Trace().Message("Enqueue: Set Event").Write();
-            _monitor.Pulse();
+            using (await _monitor.EnterAsync())
+                _monitor.Pulse();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(data, id).AnyContext();
@@ -186,10 +187,10 @@ namespace Foundatio.Queues {
                     Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
 
                     await Task.Delay(GetRetryDelay(info.Attempts)).AnyContext();
-                    Retry(info);
+                    await RetryAsync(info).AnyContext();
                 } else {
                     Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
-                    Retry(info);
+                    await RetryAsync(info).AnyContext();
                 }
             } else {
                 Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
@@ -200,9 +201,10 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Abandon complete: {0}", id).Write();
         }
 
-        private void Retry(QueueInfo<T> info) {
+        private async Task RetryAsync(QueueInfo<T> info) {
             _queue.Enqueue(info);
-            _monitor.Pulse();
+            using (await _monitor.EnterAsync())
+                _monitor.Pulse();
         }
 
         private int GetRetryDelay(int attempts) {

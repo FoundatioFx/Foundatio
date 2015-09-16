@@ -69,8 +69,10 @@ namespace Foundatio.Tests.Queue {
                             Data = "Hello"
                         }).AnyContext();
                     }
+                    Logger.Trace().Message("Done enqueuing.").Write();
                 });
 
+                Logger.Trace().Message("Starting dequeue loop.").Write();
                 var sw = Stopwatch.StartNew();
                 for (int index = 0; index < iterations; index++) {
                     var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();

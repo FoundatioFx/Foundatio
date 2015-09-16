@@ -67,12 +67,12 @@ namespace Foundatio.Metrics {
 
                 foreach (var key in _gauges.Keys.ToList()) {
                     var gauge = _gauges[key];
-                    writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"));
+                    writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3} Count: {4}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"), gauge.Count);
                 }
 
                 foreach (var key in _timings.Keys.ToList()) {
                     var timing = _timings[key];
-                    writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"));
+                    writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3} Count: {4}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"), timing.Count);
                 }
 
                 if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)

@@ -3,22 +3,17 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Tests.Utility;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase {
         public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
-
-        protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(new InMemoryCacheClient(), maxHits, period);
-        }
 
         protected override ILockProvider GetLockProvider() {
             return new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
@@ -35,41 +30,27 @@ namespace Foundatio.Tests.Locks {
         }
 
         [Fact]
-        public override Task WillThrottleCalls() {
-            return base.WillThrottleCalls();
-        }
-
-        [Fact]
-        public async Task WillWaitForMonitor() {
+        public async Task WillPassthrowResetEvent() {
             var monitor = new AsyncMonitor();
-
-            // 1. Fall through with the delay.
             var sw = Stopwatch.StartNew();
-            var cancellationTokenSource = new CancellationTokenSource(100);
-            try {
-                using (await monitor.EnterAsync(cancellationTokenSource.Token))
-                    await monitor.WaitAsync(cancellationTokenSource.Token).AnyContext();
-            } catch (TaskCanceledException) { }
+            using (await monitor.EnterAsync())
+                await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+                    await monitor.WaitAsync(new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token).AnyContext()).AnyContext();
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 100, 125);
-            Assert.True(cancellationTokenSource.IsCancellationRequested);
-            
-            // 2. Wait for the pulse to be set.
-            sw.Restart();
-            using (await monitor.EnterAsync()) {
-                Task.Run(async () => {
-                    await Task.Delay(50).AnyContext();
-                    Logger.Trace().Message("Pulse").Write();
+
+            var t = Task.Run(async () => {
+                await Task.Delay(25);
+                using (await monitor.EnterAsync())
                     monitor.Pulse();
-                    Logger.Trace().Message("Pulsed").Write();
-                });
 
-                Logger.Trace().Message("Waiting").Write();
-                await monitor.WaitAsync().AnyContext();
-            }
+            });
 
+            sw = Stopwatch.StartNew();
+            using (await monitor.EnterAsync())
+                await monitor.WaitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token).AnyContext();
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 50, 100);
+            Assert.InRange(sw.ElapsedMilliseconds, 25, 100);
         }
     }
 }

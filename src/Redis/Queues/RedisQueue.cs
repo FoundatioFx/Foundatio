@@ -14,10 +14,10 @@ using StackExchange.Redis;
 #pragma warning disable 4014
 
 namespace Foundatio.Queues {
-    public class RedisQueue<T> : QueueBase<T> where T: class {
+    public class RedisQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         protected readonly IDatabase _db;
-        protected readonly ISubscriber _subscriber;
+        protected ISubscriber _subscriber;
         protected readonly RedisCacheClient _cache;
         private long _enqueuedCount;
         private long _dequeuedCount;
@@ -35,11 +35,14 @@ namespace Foundatio.Queues {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly AsyncMonitor _monitor = new AsyncMonitor();
         protected readonly ILockProvider _maintenanceLockProvider;
+        protected readonly bool _runMaintenanceTasks;
+        protected Task _maintenanceTask;
+        protected static readonly object _lockObject = new object();
+        private bool _isSubscribed;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null)
-            : base(serializer, behaviors)
-        {
+            : base(serializer, behaviors) {
             _db = connection.GetDatabase();
             _cache = new RedisCacheClient(connection, _serializer);
             _queueName = queueName ?? typeof(T).Name;
@@ -62,19 +65,41 @@ namespace Foundatio.Queues {
 
             _payloadTtl = GetPayloadTtl();
 
-            _subscriber = connection.GetSubscriber();
-            _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
-
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
+            _subscriber = connection.GetSubscriber();
 
-            if (runMaintenanceTasks) {
-                // min is 1 second, max is 1 minute
-                TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
-                _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
-                Task.Run(() => DoMaintenanceWorkLoop(_queueDisposedCancellationTokenSource.Token)).AnyContext();
-            }
+            _runMaintenanceTasks = runMaintenanceTasks;
+            // min is 1 second, max is 1 minute
+            TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
+            _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
 
             Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
+        }
+
+        private void EnsureMaintenanceRunning() {
+            if (!_runMaintenanceTasks || _maintenanceTask != null)
+                return;
+
+            lock (_lockObject) {
+                if (_maintenanceTask != null)
+                    return;
+
+                Logger.Trace().Message($"Starting maintenance for {_queueName}.").Write();
+                _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoop(_queueDisposedCancellationTokenSource.Token));
+            }
+        }
+
+        private void EnsureTopicSubscription() {
+            if (_isSubscribed)
+                return;
+
+            lock (_lockObject) {
+                if (_isSubscribed)
+                    return;
+
+                Logger.Trace().Message($"Subscribing to enqueue messages for {_queueName}.").Write();
+                _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
+            }
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
@@ -169,7 +194,7 @@ namespace Foundatio.Queues {
         public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-            
+
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             Task.Run(async () => {
@@ -179,7 +204,7 @@ namespace Foundatio.Queues {
                     QueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
-                    } catch (TimeoutException) {}
+                    } catch (TimeoutException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
@@ -198,20 +223,22 @@ namespace Foundatio.Queues {
                 Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested).Write();
             }, linkedCancellationToken);
         }
-        
+
         public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
+            EnsureMaintenanceRunning();
+            EnsureTopicSubscription();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
-            
+
             RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
             if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
                 return null;
 
             Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
-            
+
             while (value.IsNullOrEmpty && !linkedCancellationToken.IsCancellationRequested) {
                 Logger.Trace().Message("Waiting to dequeue item...").Write();
-                
+
                 var sw = Stopwatch.StartNew();
                 try {
                     using (await _monitor.EnterAsync(cancellationToken))
@@ -219,11 +246,11 @@ namespace Foundatio.Queues {
                 } catch (TaskCanceledException) { }
                 sw.Stop();
                 Logger.Trace().Message("Waited for dequeue: {0}", sw.Elapsed.ToString()).Write();
-                
+
                 value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
                 Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
             }
-            
+
             if (value.IsNullOrEmpty)
                 return null;
 
@@ -263,9 +290,9 @@ namespace Foundatio.Queues {
             tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
             tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
             batch.Execute();
-            
+
             await Task.WhenAll(tasks.ToArray()).AnyContext();
-            
+
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(id).AnyContext();
             Logger.Trace().Message("Complete done: {0}", id).Write();
@@ -372,9 +399,10 @@ namespace Foundatio.Queues {
             }
         }
 
-        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+        private async void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             Logger.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
-            _monitor.Pulse();
+            using (await _monitor.EnterAsync())
+                _monitor.Pulse();
         }
 
         internal async Task DoMaintenanceWorkAsync() {
@@ -432,7 +460,7 @@ namespace Foundatio.Queues {
             }
 
             try {
-               await TrimDeadletterItemsAsync(_deadLetterMaxItems).AnyContext();
+                await TrimDeadletterItemsAsync(_deadLetterMaxItems).AnyContext();
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error trimming deadletter items: {0}", ex.Message).Write();
             }
@@ -450,7 +478,7 @@ namespace Foundatio.Queues {
 
             await _subscriber.UnsubscribeAllAsync().AnyContext();
             _queueDisposedCancellationTokenSource?.Cancel();
-            
+
             base.Dispose();
         }
     }

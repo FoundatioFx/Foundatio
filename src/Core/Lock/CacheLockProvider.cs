@@ -14,22 +14,41 @@ namespace Foundatio.Lock {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
         private readonly ConcurrentDictionary<string, AsyncMonitor> _monitors = new ConcurrentDictionary<string, AsyncMonitor>();
+        private static readonly object _lockObject = new object();
+        private bool _isSubscribed;
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
-            _messageBus.Subscribe<CacheLockReleased>(message => OnLockReleased(message));
         }
-        
-        private void OnLockReleased(CacheLockReleased msg) {
+
+        private void EnsureTopicSubscription() {
+            if (_isSubscribed)
+                return;
+
+            lock (_lockObject) {
+                if (_isSubscribed)
+                    return;
+
+                Logger.Trace().Message("Subscribing to cache lock released.").Write();
+                _messageBus.Subscribe<CacheLockReleased>(message => OnLockReleased(message));
+                _isSubscribed = true;
+            }
+        }
+
+        private async void OnLockReleased(CacheLockReleased msg) {
             Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
             AsyncMonitor monitor;
-            if (_monitors.TryGetValue(msg.Name, out monitor))
+            if (!_monitors.TryGetValue(msg.Name, out monitor))
+                return;
+
+            using (await monitor.EnterAsync())
                 monitor.Pulse();
         }
 
         public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
+            EnsureTopicSubscription();
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
             
