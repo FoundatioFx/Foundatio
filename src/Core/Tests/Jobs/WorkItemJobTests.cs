@@ -103,7 +103,11 @@ namespace Foundatio.Tests.Jobs {
             var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var token = cancellationTokenSource.Token;
             var tasks = new List<Task>();
-            tasks.AddRange(new[] { Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token), Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token), Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token), });
+            tasks.AddRange(new[] {
+                Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token),
+                Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token),
+                Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token),
+            });
 
             await Task.WhenAll(tasks).AnyContext();
             await Task.Delay(10).AnyContext();
