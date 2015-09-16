@@ -45,15 +45,15 @@ namespace Foundatio.Tests.Locks {
 
             // 1. Fall through with the delay.
             var sw = Stopwatch.StartNew();
-            using (await monitor.EnterAsync()) {
-                try {
-                    await monitor.WaitAsync(new CancellationTokenSource(100).Token).AnyContext();
-                } catch (TaskCanceledException) {}
-                //    await Task.WhenAny(Task.Delay(100), monitor.WaitAsync()).AnyContext();
-            }
+            var cancellationTokenSource = new CancellationTokenSource(100);
+            try {
+                using (await monitor.EnterAsync(cancellationTokenSource.Token))
+                    await monitor.WaitAsync(cancellationTokenSource.Token).AnyContext();
+            } catch (TaskCanceledException) { }
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 100, 125);
-
+            Assert.True(cancellationTokenSource.IsCancellationRequested);
+            
             // 2. Wait for the pulse to be set.
             sw.Restart();
             using (await monitor.EnterAsync()) {
