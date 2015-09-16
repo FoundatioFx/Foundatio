@@ -223,9 +223,13 @@ namespace Foundatio.Caching {
             }
 
             if (addOnly) {
-                if (!_memory.TryAdd(key, entry))
-                    return false;
+                if (!_memory.TryAdd(key, entry)) {
+                    CacheEntry existingEntry;
+                    if (!_memory.TryGetValue(key, out existingEntry) || existingEntry.ExpiresAt >= DateTime.UtcNow)
+                        return false;
 
+                    _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
+                }
                 Logger.Trace().Message("Added cache key: {0}", key).Write();
             } else {
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
