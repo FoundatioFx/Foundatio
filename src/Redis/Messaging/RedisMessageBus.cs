@@ -27,9 +27,9 @@ namespace Foundatio.Messaging {
                 if (_isSubscribed)
                     return;
 
+                _isSubscribed = true;
                 Logger.Trace().Message("Subscribing to topic: {0}", _topic).Write();
                 _subscriber.Subscribe(_topic, OnMessage);
-                _isSubscribed = true;
             }
         }
 

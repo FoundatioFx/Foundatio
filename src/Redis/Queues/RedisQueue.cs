@@ -97,6 +97,7 @@ namespace Foundatio.Queues {
                 if (_isSubscribed)
                     return;
 
+                _isSubscribed = true;
                 Logger.Trace().Message($"Subscribing to enqueue messages for {_queueName}.").Write();
                 _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
             }
