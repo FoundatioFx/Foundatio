@@ -11,10 +11,15 @@ namespace Foundatio.Queues {
         public virtual void Attach(IQueue<T> queue) {
             _queue = queue;
 
+            _queue.Enqueuing -= OnEnqueuing;
             _queue.Enqueuing += OnEnqueuing;
+            _queue.Enqueued -= OnEnqueued;
             _queue.Enqueued += OnEnqueued;
+            _queue.Dequeued -= OnDequeued;
             _queue.Dequeued += OnDequeued;
+            _queue.Completed -= OnCompleted;
             _queue.Completed += OnCompleted;
+            _queue.Abandoned -= OnAbandoned;
             _queue.Abandoned += OnAbandoned;
         }
 
