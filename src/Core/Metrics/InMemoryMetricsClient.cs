@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Data.SqlTypes;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -68,12 +67,12 @@ namespace Foundatio.Metrics {
 
                 foreach (var key in _gauges.Keys.ToList()) {
                     var gauge = _gauges[key];
-                    writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"));
+                    writer.WriteLine("  Gauge: {0} Value: {1}  Avg: {2} Max: {3} Count: {4}", key.PadRight(maxNameLength), gauge.Current.ToString("#,##0.##").PadRight(12), gauge.Average.ToString("#,##0.##").PadRight(12), gauge.Max.ToString("#,##0.##"), gauge.Count);
                 }
 
                 foreach (var key in _timings.Keys.ToList()) {
                     var timing = _timings[key];
-                    writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"));
+                    writer.WriteLine(" Timing: {0}   Min: {1}  Avg: {2} Max: {3} Count: {4}", key.PadRight(maxNameLength), timing.Min.ToString("#,##0.##'ms'").PadRight(12), timing.Average.ToString("#,##0.##'ms'").PadRight(12), timing.Max.ToString("#,##0.##'ms'"), timing.Count);
                 }
 
                 if (_counters.Count > 0 || _gauges.Count > 0 || _timings.Count > 0)
@@ -107,17 +106,15 @@ namespace Foundatio.Metrics {
 
             return TaskHelper.Completed();
         }
-
-        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (count == 0)
+        
+        public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
+            return WaitForCounterAsync(statName, TaskHelper.Completed, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
+        }
+        
+        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (count <= 0)
                 return true;
-
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(10);
-
-            if (cancellationToken == CancellationToken.None)
-                cancellationToken = new CancellationTokenSource(timeout.Value).Token;
-
+            
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;
             Logger.Trace().Message("Wait: count={0} current={1}", count, startingCount).Write();
@@ -127,40 +124,18 @@ namespace Foundatio.Metrics {
             if (GetCount(statName) >= expectedCount)
                 return true;
             
-            var waitHandle = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
+            var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
-                try
-                {
-                    waitHandle.Wait(cancellationToken);
-                }
-                catch (OperationCanceledException) {}
+                try {
+                    await resetEvent.WaitAsync(cancellationToken).AnyContext();
+                } catch (OperationCanceledException) {}
                 Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
-                waitHandle.Reset();
+                resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && GetCount(statName) < expectedCount);
 
             Logger.Trace().Message("Done waiting: count={0} expected={1} success={2}", GetCount(statName), expectedCount, !cancellationToken.IsCancellationRequested).Write();
             return !cancellationToken.IsCancellationRequested;
         }
-
-        public async Task<bool> WaitForCounterAsync(string statName, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return await WaitForCounterAsync(statName, TaskHelper.Completed, timeout, count, cancellationToken).ConfigureAwait(false);
-        }
-
-        public bool WaitForCounter(string statName, Action work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return WaitForCounterAsync(statName, () =>
-            {
-                work?.Invoke();
-                return TaskHelper.Completed();
-            }, timeout, count, cancellationToken).Result;
-        }
-
-        public bool WaitForCounter(string statName, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return WaitForCounterAsync(statName, () => TaskHelper.Completed(), timeout, count, cancellationToken).AnyContext().GetAwaiter().GetResult();
-        }
-
         public Task GaugeAsync(string statName, double value) {
             _gauges.AddOrUpdate(statName, key => new GaugeStats(value), (key, stats) => {
                 stats.Set(value);
@@ -206,10 +181,10 @@ namespace Foundatio.Metrics {
         private readonly Stopwatch _stopwatch = new Stopwatch();
         private readonly Stopwatch _currentStopwatch = new Stopwatch();
 
-        public long Value { get { return _value; } }
-        public long CurrentValue { get { return _currentValue; } }
-        public double Rate { get { return ((double)Value / _stopwatch.Elapsed.TotalSeconds); } }
-        public double CurrentRate { get { return ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds); } }
+        public long Value => _value;
+        public long CurrentValue => _currentValue;
+        public double Rate => ((double)Value / _stopwatch.Elapsed.TotalSeconds);
+        public double CurrentRate => ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds);
 
         private static readonly object _lock = new object();
         public void Increment(long value) {
@@ -225,8 +200,7 @@ namespace Foundatio.Metrics {
 
                 if (_currentStopwatch.Elapsed > TimeSpan.FromMinutes(1)) {
                     _currentValue = 0;
-                    _currentStopwatch.Reset();
-                    _currentStopwatch.Start();
+                    _currentStopwatch.Restart();
                 }
             }
         }
@@ -244,12 +218,12 @@ namespace Foundatio.Metrics {
         private long _total = 0;
         private double _average = 0d;
 
-        public int Count { get { return _count; } }
-        public long Total { get { return _total; } }
-        public long Current { get { return _current; } }
-        public long Min { get { return _min; } }
-        public long Max { get { return _max; } }
-        public double Average { get { return _average; } }
+        public int Count => _count;
+        public long Total => _total;
+        public long Current => _current;
+        public long Min => _min;
+        public long Max => _max;
+        public double Average => _average;
 
         private static readonly object _lock = new object();
         public void Set(long value) {
@@ -279,11 +253,11 @@ namespace Foundatio.Metrics {
         private double _total = 0d;
         private double _average = 0d;
 
-        public int Count { get { return _count; } }
-        public double Total { get { return _total; } }
-        public double Current { get { return _current; } }
-        public double Max { get { return _max; } }
-        public double Average { get { return _average; } }
+        public int Count => _count;
+        public double Total => _total;
+        public double Current => _current;
+        public double Max => _max;
+        public double Average => _average;
 
         private static readonly object _lock = new object();
         public void Set(double value) {

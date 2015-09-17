@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
@@ -12,17 +13,17 @@ namespace Foundatio.Tests.Jobs {
         private readonly ILockProvider _locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
         public int RunCount { get; set; }
 
-        protected override IDisposable GetJobLock() {
-            return _locker.AcquireLock("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.Zero);
+        protected override Task<IDisposable> GetJobLockAsync(){
+            return _locker.AcquireLockAsync("WithLockingJob", TimeSpan.FromSeconds(1), TimeSpan.Zero);
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
             RunCount++;
 
-            Thread.Sleep(150);
-            Assert.True(_locker.IsLocked("WithLockingJob"));
+            await Task.Delay(150, token).AnyContext();
+            Assert.True(await _locker.IsLockedAsync("WithLockingJob").AnyContext());
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 }

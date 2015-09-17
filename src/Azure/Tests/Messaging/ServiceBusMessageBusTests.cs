@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
@@ -9,9 +10,7 @@ namespace Foundatio.Azure.Tests.Messaging {
     public class ServiceBusMessageBusTests : MessageBusTestBase {
         private static IMessageBus _messageBus;
 
-        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IMessageBus GetMessageBus() {
             if (_messageBus != null)
@@ -26,43 +25,48 @@ namespace Foundatio.Azure.Tests.Messaging {
         }
 
         [Fact]
-        public override void CanSendMessage() {
-            base.CanSendMessage();
+        public override Task CanSendMessage() {
+            return base.CanSendMessage();
         }
 
         [Fact]
-        public override void CanSendDelayedMessage() {
-            base.CanSendDelayedMessage();
+        public override Task CanSendDelayedMessage() {
+            return base.CanSendDelayedMessage();
         }
 
         [Fact]
-        public override void CanSendMessageToMultipleSubscribers() {
-            base.CanSendMessageToMultipleSubscribers();
+        public override Task CanSendMessageToMultipleSubscribers() {
+            return base.CanSendMessageToMultipleSubscribers();
         }
 
         [Fact]
-        public override void CanTolerateSubscriberFailure() {
-            base.CanTolerateSubscriberFailure();
+        public override Task CanTolerateSubscriberFailure() {
+            return base.CanTolerateSubscriberFailure();
         }
 
         [Fact]
-        public override void WillOnlyReceiveSubscribedMessageType() {
-            base.WillOnlyReceiveSubscribedMessageType();
+        public override Task WillOnlyReceiveSubscribedMessageType() {
+            return base.WillOnlyReceiveSubscribedMessageType();
         }
 
         [Fact]
-        public override void WillReceiveDerivedMessageTypes() {
-            base.WillReceiveDerivedMessageTypes();
+        public override Task WillReceiveDerivedMessageTypes() {
+            return base.WillReceiveDerivedMessageTypes();
         }
 
         [Fact]
-        public override void CanSubscribeToAllMessageTypes() {
-            base.CanSubscribeToAllMessageTypes();
+        public override Task CanSubscribeToAllMessageTypes() {
+            return base.CanSubscribeToAllMessageTypes();
+        }
+        
+        [Fact]
+        public override Task CanCancelSubscription() {
+            return base.CanCancelSubscription();
         }
 
         [Fact]
-        public override void WontKeepMessagesWithNoSubscribers() {
-            base.WontKeepMessagesWithNoSubscribers();
+        public override Task WontKeepMessagesWithNoSubscribers() {
+            return base.WontKeepMessagesWithNoSubscribers();
         }
     }
 }

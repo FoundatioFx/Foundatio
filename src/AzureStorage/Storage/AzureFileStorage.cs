@@ -33,9 +33,9 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<FileSpec> GetFileInfoAsync(string path) {
+        public Task<FileSpec> GetFileInfoAsync(string path) {
             var blob = _container.GetBlockBlobReference(path);
-            return blob.ToFileInfo();
+            return Task.FromResult(blob.ToFileInfo());
         }
 
         public async Task<bool> ExistsAsync(string path) {

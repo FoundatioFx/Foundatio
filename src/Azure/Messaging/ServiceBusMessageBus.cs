@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
@@ -14,8 +14,7 @@ namespace Foundatio.Messaging {
         private readonly NamespaceManager _namespaceManager;
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
-        private readonly BlockingCollection<Subscriber> _subscribers = new BlockingCollection<Subscriber>();
-
+        
         public ServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
             _topicName = topicName;
             _serializer = serializer ?? new JsonNetSerializer();
@@ -32,51 +31,30 @@ namespace Foundatio.Messaging {
             _subscriptionClient.OnMessage(OnMessage, new OnMessageOptions { AutoComplete = true });
         }
 
-        private void OnMessage(BrokeredMessage brokeredMessage) {
+        private async void OnMessage(BrokeredMessage brokeredMessage) {
+            Logger.Trace().Message($"OnMessage: {brokeredMessage.MessageId}").Write();
             var message = brokeredMessage.GetBody<MessageBusData>();
 
-            Type messageType = null;
+            Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                return;
             }
 
             object body = _serializer.Deserialize(message.Data, messageType);
-            foreach (var subscriber in _subscribers.Where(s => s.Type.IsAssignableFrom(messageType)).ToList()) {
-                try {
-                    subscriber.Action(body);
-                } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
-                }
-            }
+            await SendMessageToSubscribersAsync(messageType, body);
         }
 
-        public override void Publish(Type messageType, object message, TimeSpan? delay = null) {
+        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             var brokeredMessage = new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
             
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
             }
 
-            _topicClient.Send(brokeredMessage);
-        }
-
-        public void Subscribe<T>(Action<T> handler) where T : class {
-            _subscribers.Add(new Subscriber {
-                Type = typeof(T),
-                Action = m => {
-                    if (!(m is T))
-                        return;
-
-                    handler((T)m);
-                }
-            });
-        }
-
-        private class Subscriber {
-            public Type Type { get; set; }
-            public Action<object> Action { get; set; }
+            return _topicClient.SendAsync(brokeredMessage);
         }
     }
 }

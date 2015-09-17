@@ -11,8 +11,8 @@ namespace Foundatio.Extensions {
 
         public static Task StartNewDelayed(this TaskFactory factory, int millisecondsDelay, CancellationToken cancellationToken) {
             // Validate arguments
-            if (factory == null) throw new ArgumentNullException("factory");
-            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException("millisecondsDelay");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
 
             // Create the timed task
             var tcs = new TaskCompletionSource<object>(factory.CreationOptions);
@@ -45,7 +45,7 @@ namespace Foundatio.Extensions {
         public static Task StartNewDelayed(
             this TaskFactory factory,
             int millisecondsDelay, Action action) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, factory.CancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -53,7 +53,7 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action action,
             TaskCreationOptions creationOptions) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, factory.CancellationToken, creationOptions, factory.GetTargetScheduler());
         }
 
@@ -61,7 +61,7 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action action,
             CancellationToken cancellationToken) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -69,10 +69,10 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action action,
             CancellationToken cancellationToken, TaskCreationOptions creationOptions, TaskScheduler scheduler) {
-            if (factory == null) throw new ArgumentNullException("factory");
-            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException("millisecondsDelay");
-            if (action == null) throw new ArgumentNullException("action");
-            if (scheduler == null) throw new ArgumentNullException("scheduler");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+            if (action == null) throw new ArgumentNullException(nameof(action));
+            if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
 
             return factory
                 .StartNewDelayed(millisecondsDelay, cancellationToken)
@@ -82,7 +82,7 @@ namespace Foundatio.Extensions {
         public static Task StartNewDelayed(
             this TaskFactory factory,
             int millisecondsDelay, Action<object> action, object state) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, state, factory.CancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -90,7 +90,7 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action<object> action, object state,
             TaskCreationOptions creationOptions) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, state, factory.CancellationToken, creationOptions, factory.GetTargetScheduler());
         }
 
@@ -98,7 +98,7 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action<object> action, object state,
             CancellationToken cancellationToken) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, state, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -106,10 +106,10 @@ namespace Foundatio.Extensions {
             this TaskFactory factory,
             int millisecondsDelay, Action<object> action, object state,
             CancellationToken cancellationToken, TaskCreationOptions creationOptions, TaskScheduler scheduler) {
-            if (factory == null) throw new ArgumentNullException("factory");
-            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException("millisecondsDelay");
-            if (action == null) throw new ArgumentNullException("action");
-            if (scheduler == null) throw new ArgumentNullException("scheduler");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+            if (action == null) throw new ArgumentNullException(nameof(action));
+            if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
 
             // Create the task that will be returned; workaround for no ContinueWith(..., state) overload.
             var result = new TaskCompletionSource<object>(state);
@@ -134,7 +134,7 @@ namespace Foundatio.Extensions {
         public static Task<TResult> StartNewDelayed<TResult>(
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<TResult> function) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, factory.CancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -142,7 +142,7 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<TResult> function,
             TaskCreationOptions creationOptions) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, factory.CancellationToken, creationOptions, factory.GetTargetScheduler());
         }
 
@@ -150,7 +150,7 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<TResult> function,
             CancellationToken cancellationToken) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -158,10 +158,10 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<TResult> function,
             CancellationToken cancellationToken, TaskCreationOptions creationOptions, TaskScheduler scheduler) {
-            if (factory == null) throw new ArgumentNullException("factory");
-            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException("millisecondsDelay");
-            if (function == null) throw new ArgumentNullException("function");
-            if (scheduler == null) throw new ArgumentNullException("scheduler");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+            if (function == null) throw new ArgumentNullException(nameof(function));
+            if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
 
             // Create the trigger and the timer to start it
             var tcs = new TaskCompletionSource<object>();
@@ -178,7 +178,7 @@ namespace Foundatio.Extensions {
         public static Task<TResult> StartNewDelayed<TResult>(
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<object, TResult> function, object state) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, state, factory.CancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -186,7 +186,7 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<object, TResult> function, object state,
             CancellationToken cancellationToken) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, state, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
 
@@ -201,7 +201,7 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<object, TResult> function, object state,
             TaskCreationOptions creationOptions) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, state, factory.CancellationToken, creationOptions, factory.GetTargetScheduler());
         }
 
@@ -218,10 +218,10 @@ namespace Foundatio.Extensions {
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<object, TResult> function, object state,
             CancellationToken cancellationToken, TaskCreationOptions creationOptions, TaskScheduler scheduler) {
-            if (factory == null) throw new ArgumentNullException("factory");
-            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException("millisecondsDelay");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
             if (function == null) throw new ArgumentNullException("action");
-            if (scheduler == null) throw new ArgumentNullException("scheduler");
+            if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
 
             // Create the task that will be returned
             var result = new TaskCompletionSource<TResult>(state);
@@ -245,13 +245,13 @@ namespace Foundatio.Extensions {
 
         /// <summary>Gets the TaskScheduler instance that should be used to schedule tasks.</summary>
         public static TaskScheduler GetTargetScheduler(this TaskFactory factory) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return factory.Scheduler ?? TaskScheduler.Current;
         }
 
         /// <summary>Gets the TaskScheduler instance that should be used to schedule tasks.</summary>
         public static TaskScheduler GetTargetScheduler<TResult>(this TaskFactory<TResult> factory) {
-            if (factory == null) throw new ArgumentNullException("factory");
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             return factory.Scheduler ?? TaskScheduler.Current;
         }
 

@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
@@ -22,17 +23,17 @@ namespace Foundatio.Metrics {
 
         public Task CounterAsync(string statName, int value = 1) {
             Send(BuildMetric("c", statName, value.ToString(CultureInfo.InvariantCulture)));
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public Task GaugeAsync(string statName, double value) {
             Send(BuildMetric("g", statName, value.ToString(CultureInfo.InvariantCulture)));
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         public Task TimerAsync(string statName, long milliseconds) {
             Send(BuildMetric("ms", statName, milliseconds.ToString(CultureInfo.InvariantCulture)));
-            return Task.FromResult(0);
+            return TaskHelper.Completed();
         }
 
         private string BuildMetric(string type, string statName, string value) {

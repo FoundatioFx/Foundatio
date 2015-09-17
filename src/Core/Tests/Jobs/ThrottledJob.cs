@@ -14,8 +14,8 @@ namespace Foundatio.Tests.Jobs {
         private readonly ILockProvider _locker;
         public int RunCount { get; set; }
 
-        protected override IDisposable GetJobLock() {
-            return _locker.AcquireLock("WithLockingJob", acquireTimeout: TimeSpan.Zero);
+        protected override Task<IDisposable> GetJobLockAsync() {
+            return _locker.AcquireLockAsync("WithLockingJob", acquireTimeout: TimeSpan.Zero);
         }
 
         protected override Task<JobResult> RunInternalAsync(CancellationToken token) {

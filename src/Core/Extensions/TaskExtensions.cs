@@ -1,9 +1,32 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
+using Nito.AsyncEx;
 
 namespace Foundatio.Extensions {
-    internal static class TaskCompletionSourceExtensions {
+    internal static class TaskExtensions {
+        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken) {
+            return Task.WhenAny(countdownEvent.WaitAsync(), cancellationToken.AsTask());
+        }
+
+        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout) {
+            return countdownEvent.WaitAsync(timeout.ToCancellationToken());
+        }
+
+        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken) {
+            return Task.WhenAny(resetEvent.WaitAsync(), cancellationToken.AsTask());
+        }
+
+        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
+            return resetEvent.WaitAsync(timeout.ToCancellationToken());
+        }
+
+        public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {
+            return resetEvent.WaitAsync(timeout.ToCancellationToken());
+        }
+        
         public static Task IgnoreExceptions(this Task task) {
             task.ContinueWith(c => { var ignored = c.Exception; },
                 TaskContinuationOptions.OnlyOnFaulted |
@@ -45,10 +68,12 @@ namespace Foundatio.Extensions {
             return TrySetFromTask(resultSetter, (Task)task);
         }
 
+        [DebuggerStepThrough]
         public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task) {
             return task.ConfigureAwait(continueOnCapturedContext: false);
         }
 
+        [DebuggerStepThrough]
         public static ConfiguredTaskAwaitable AnyContext(this Task task) {
             return task.ConfigureAwait(continueOnCapturedContext: false);
         }

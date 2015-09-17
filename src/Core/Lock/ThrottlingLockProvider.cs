@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -15,32 +17,28 @@ namespace Foundatio.Lock {
             _maxHitsPerPeriod = maxHitsPerPeriod;
 
             if (maxHitsPerPeriod <= 0)
-                throw new ArgumentException("Must be a positive number.", "maxHitsPerPeriod");
+                throw new ArgumentException("Must be a positive number.", nameof(maxHitsPerPeriod));
             
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
-            Logger.Trace().Message("AcquireLock: {0}", name).Write();
-            if (!acquireTimeout.HasValue)
-                acquireTimeout = TimeSpan.FromMinutes(1);
-
-            var timeoutTime = DateTime.UtcNow.Add(acquireTimeout.Value);
-            Logger.Trace().Message("Timeout time: {0}", timeoutTime.ToString("mm:ss.fff")).Write();
+        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
+            
             bool allowLock = false;
+            byte errors = 0;
 
             do {
-                var now = DateTime.UtcNow;
-                string cacheKey = GetCacheKey(name, now);
+                string cacheKey = GetCacheKey(name, DateTime.UtcNow);
 
                 try {
-                    Logger.Trace().Message("Current time: {0} throttle: {1}", now.ToString("mm:ss.fff"), now.Floor(_throttlingPeriod).ToString("mm:ss.fff")).Write();
-                    var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
+                    Logger.Trace().Message("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey).Write();
+                    var hitCount = await _cacheClient.GetAsync<long?>(cacheKey).AnyContext() ?? 0;
                     Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
 
                     if (hitCount <= _maxHitsPerPeriod - 1) {
-                        hitCount = _cacheClient.Increment(cacheKey, 1, now.Ceiling(_throttlingPeriod));
+                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, DateTime.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
                         
                         // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
@@ -52,33 +50,34 @@ namespace Foundatio.Lock {
                     } else {
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
                     }
-
-                    var sleepUntil = now.Ceiling(_throttlingPeriod);
-                    if (sleepUntil > timeoutTime) {
-                        // next period is too far away
-                        Thread.Sleep(DateTime.UtcNow - timeoutTime);
-                        Logger.Trace().Message("Next period is too far away.").Write();
+                    
+                    if (cancellationToken.IsCancellationRequested) {
+                        Logger.Trace().Message("Cancellation Requested.").Write();
                         break;
                     }
 
-                    if (now > timeoutTime) {
-                        // timeout exceeded
-                        Logger.Trace().Message("Timeout exceeded.").Write();
-                        break;
-                    }
-
-                    if (sleepUntil > now) {
-                        Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - now).Write();
-                        Thread.Sleep(sleepUntil - now);
+                    var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
+                    if (sleepUntil > DateTime.UtcNow) {
+                        Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
+                        await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
                     } else {
                         Logger.Trace().Message("Default sleep.").Write();
-                        Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
+                        await Task.Delay(50, cancellationToken).AnyContext();
                     }
+                } catch (TaskCanceledException) {
+                    return null;
                 } catch (Exception ex) {
                     Logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
-                    Thread.Sleep((int)(acquireTimeout.Value.TotalMilliseconds / 10));
+                    errors++;
+                    if (errors >= 3)
+                        break;
+
+                    await Task.Delay(50, cancellationToken).AnyContext();
                 }
-            } while (DateTime.UtcNow <= timeoutTime);
+            } while (!cancellationToken.IsCancellationRequested);
+
+            if (cancellationToken.IsCancellationRequested)
+                Logger.Trace().Message("Cancellation requested.").Write();
 
             if (!allowLock)
                 return null;
@@ -87,14 +86,17 @@ namespace Foundatio.Lock {
             return new DisposableLock(name, this);
         }
 
-        public bool IsLocked(string name) {
+        public async Task<bool> IsLockedAsync(string name) {
             string cacheKey = GetCacheKey(name, DateTime.UtcNow);
-            var hitCount = _cacheClient.Get<long?>(cacheKey) ?? 0;
+            var hitCount = await _cacheClient.GetAsync<long?>(cacheKey).AnyContext() ?? 0;
 
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public void ReleaseLock(string name) {}
+        public Task ReleaseLockAsync(string name) {
+            Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
+            return TaskHelper.Completed();
+        }
 
         private string GetCacheKey(string name, DateTime now) {
             return String.Concat("throttling-lock:", name, ":", now.Floor(_throttlingPeriod).Ticks);

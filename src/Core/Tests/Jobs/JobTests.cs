@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,120 +11,100 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
+using TaskExtensions = Foundatio.Extensions.TaskExtensions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests : CaptureTests
-    {
-        private TextWriter _writer;
-
-        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-            _writer = new TestOutputWriter(output);
-        }
+    public class JobTests : CaptureTests {
+        public JobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
-        public void CanCancelJob()
-        {
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            var result = JobRunner.RunAsync(new JobRunOptions
-            {
+        public async Task CanCancelJob() {
+            var token = TimeSpan.FromSeconds(1).ToCancellationToken();
+            var result = await JobRunner.RunAsync(new JobRunOptions {
                 JobTypeName = typeof(HelloWorldJob).AssemblyQualifiedName,
                 InstanceCount = 1,
                 Interval = null,
                 RunContinuous = true
-            }, cts.Token).Result;
+            }, token).AnyContext();
 
             Assert.Equal(0, result);
         }
 
         [Fact]
-        public void CanRunJobs() {
+        public async Task CanRunJobs() {
             var job = new HelloWorldJob();
             Assert.Equal(0, job.RunCount);
-            job.Run();
+            await job.RunAsync().AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            job.RunContinuous(iterationLimit: 2);
+            await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            var sw = new Stopwatch();
-            sw.Start();
-            job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token);
+            var sw = Stopwatch.StartNew();
+            await job.RunContinuousAsync(cancellationToken: TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext();
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
             var jobInstance = JobRunner.CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
             Assert.NotNull(jobInstance);
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
-            Assert.Equal(JobResult.Success, jobInstance.Run());
+            Assert.Equal(JobResult.Success, await jobInstance.RunAsync().AnyContext());
             Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
         }
 
         [Fact]
-        public async void CanRunMultipleInstances()
-        {
+        public async void CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token);
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
-
-            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, tokenSource.Token);
+            
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken()).AnyContext();
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
         [Fact]
-        public async void CanCancelContinuousJobs()
-        {
+        public async void CanCancelContinuousJobs() {
             var job = new HelloWorldJob();
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-            job.RunContinuous(TimeSpan.FromSeconds(1), 5, tokenSource.Token);
+            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: tokenSource.Token, interval: TimeSpan.FromMilliseconds(1));
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken(), interval: TimeSpan.FromMilliseconds(1)).AnyContext();
         }
 
         [Fact]
-        public void CanRunJobsWithLocks() {
+        public async Task CanRunJobsWithLocks() {
             var job = new WithLockingJob();
             Assert.Equal(0, job.RunCount);
-            job.Run();
+            await job.RunAsync().AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            job.RunContinuous(iterationLimit: 2);
+            await job.RunContinuousAsync(iterationLimit: 2).AnyContext();
             Assert.Equal(3, job.RunCount);
 
-            Task.Run(() => job.Run());
-            Task.Run(() => job.Run());
-            Thread.Sleep(200);
+            await Run.InParallel(2, async i => await job.RunAsync().AnyContext()).AnyContext();
             Assert.Equal(4, job.RunCount);
         }
 
         [Fact]
         public async void CanRunThrottledJobs() {
             var client = new InMemoryCacheClient();
-            var jobs = new List<ThrottledJob>(new[] {
-                new ThrottledJob(client),
-                new ThrottledJob(client),
-                new ThrottledJob(client)
-            });
-
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await Task.WhenAll(jobs.Select(
-                async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token))
-            );
-
+            var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
+            
+            var sw = Stopwatch.StartNew();
+            await Task.WhenAll(jobs.Select(async job => await TaskExtensions.AnyContext(job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken())))).AnyContext();
+            sw.Stop();
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
+            Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
         }
 
         [Fact]
-        public void CanBootstrapJobs() {
+        public async Task CanBootstrapJobs() {
             ServiceProvider.SetServiceProvider(typeof(JobTests));
             Assert.NotNull(ServiceProvider.Current);
             Assert.Equal(ServiceProvider.Current.GetType(), typeof(MyBootstrappedServiceProvider));
@@ -150,35 +129,18 @@ namespace Foundatio.Tests.Jobs {
             Assert.NotNull(job.Dependency);
             Assert.Equal(5, job.Dependency.MyProperty);
 
-            var result = jobInstance.Run();
+            var result = await jobInstance.RunAsync().AnyContext();
             Assert.Equal(true, result.IsSuccess);
             Assert.True(jobInstance is HelloWorldJob);
         }
 
         [Fact]
-        public void CanRunQueueJob() {
-            const int workItemCount = 10000;
-            var queue = new InMemoryQueue<SampleQueueWorkItem>(0, TimeSpan.Zero);
-
-            for (int i = 0; i < workItemCount; i++)
-                queue.Enqueue(new SampleQueueWorkItem { Created = DateTime.Now, Path = "somepath" + i });
-
-            var metrics = new InMemoryMetricsClient();
-            var job = new SampleQueueJob(queue, metrics);
-            job.RunUntilEmpty(new CancellationTokenSource(30000).Token);
-            metrics.DisplayStats(_writer);
-
-            Assert.Equal(0, queue.GetQueueStats().Queued);
-        }
-
-        [Fact]
-        public void JobLoopPerf()
-        {
+        public async Task JobLoopPerf() {
             const int iterations = 10000;
 
             var metrics = new InMemoryMetricsClient();
             var job = new SampleJob(metrics);
-            job.RunContinuous(null, iterations);
+            await job.RunContinuousAsync(null, iterations).AnyContext();
             metrics.DisplayStats(_writer);
         }
     }

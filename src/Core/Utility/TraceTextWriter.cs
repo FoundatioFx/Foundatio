@@ -14,9 +14,7 @@ namespace Foundatio.Utility {
             _category = category;
         }
 
-        public override Encoding Encoding {
-            get { return _encoding ?? (_encoding = new UnicodeEncoding(false, false)); }
-        }
+        public override Encoding Encoding => _encoding ?? (_encoding = new UnicodeEncoding(false, false));
 
         public override void Write(char value) {
             if (String.IsNullOrEmpty(_category))

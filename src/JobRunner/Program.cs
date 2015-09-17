@@ -39,7 +39,7 @@ namespace Foundatio.JobRunner {
                     InstanceCount = ca.InstanceCount,
                     Interval = TimeSpan.FromMilliseconds(ca.Delay),
                     RunContinuous = ca.RunContinuously
-                }).Result;
+                }).AnyContext().GetAwaiter().GetResult();
 
                 PauseIfDebug();
             } catch (FileNotFoundException e) {

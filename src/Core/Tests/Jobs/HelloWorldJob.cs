@@ -5,11 +5,10 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
-    public class HelloWorldJob : JobBase
-    {
+    public class HelloWorldJob : JobBase {
         private string _id;
-        public HelloWorldJob()
-        {
+
+        public HelloWorldJob() {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 

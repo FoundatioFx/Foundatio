@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Metrics;
 using Foundatio.Tests.Caching;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -8,56 +8,61 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
-        private readonly TestOutputWriter _writer;
-
-        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-            _writer = new TestOutputWriter(output);
-        }
+        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override ICacheClient GetCacheClient() {
             return new RedisCacheClient(SharedConnection.GetMuxer());
         }
 
         [Fact]
-        public override void CanSetAndGetValue() {
-            base.CanSetAndGetValue();
+        public override Task CanSetAndGetValue() {
+            return base.CanSetAndGetValue();
+        }
+        
+        [Fact]
+        public override Task CanAddConncurrently() {
+            return base.CanAddConncurrently();
         }
 
         [Fact]
-        public override void CanSetAndGetObject() {
-            base.CanSetAndGetObject();
+        public override Task CanSetAndGetObject() {
+            return base.CanSetAndGetObject();
+        }
+        
+        [Fact]
+        public override Task CanTryGet() {
+            return base.CanTryGet();
         }
 
         [Fact]
-        public override void CanSetExpiration() {
-            base.CanSetExpiration();
+        public override Task CanSetExpiration() {
+            return base.CanSetExpiration();
         }
 
 
         [Fact]
-        public override void CanRemoveByPrefix() {
-            base.CanRemoveByPrefix();
+        public override Task CanRemoveByPrefix() {
+            return base.CanRemoveByPrefix();
         }
 
         [Fact]
-        public override void CanUseScopedCaches() {
-            base.CanUseScopedCaches();
+        public override Task CanUseScopedCaches() {
+            return base.CanUseScopedCaches();
         }
 
-        [Fact]
-        public override void MeasureThroughput() {
-            base.MeasureThroughput();
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureThroughput() {
+            return base.MeasureThroughput();
         }
 
-        [Fact]
-        public override void MeasureSerializerSimpleThroughput() {
-            base.MeasureSerializerSimpleThroughput();
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureSerializerSimpleThroughput() {
+            return base.MeasureSerializerSimpleThroughput();
         }
 
-        [Fact]
-        public override void MeasureSerializerComplexThroughput() {
-            base.MeasureSerializerComplexThroughput();
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureSerializerComplexThroughput() {
+            return base.MeasureSerializerComplexThroughput();
         }
     }
 }

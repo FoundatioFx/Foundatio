@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IDisposable where T: class {
+    public class QueueEntry<T> : IDisposable where T : class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
 
@@ -21,27 +23,25 @@ namespace Foundatio.Queues {
         public DateTime DequeuedTimeUtc { get; }
         public int Attempts { get; set; }
 
-        public void Complete() {
+        public Task CompleteAsync() {
             if (_isCompleted)
-                return;
+                return TaskHelper.Completed();
 
             _isCompleted = true;
-            _queue.Complete(Id);
+            return _queue.CompleteAsync(Id);
         }
 
-        public void Abandon() {
-            _queue.Abandon(Id);
+        public Task AbandonAsync() {
+            return _queue.AbandonAsync(Id);
         }
 
-        public virtual void Dispose() {
+        public virtual async void Dispose() {
             if (!_isCompleted)
-                Abandon();
+                await AbandonAsync().AnyContext();
         }
 
-        public QueueEntryMetadata ToMetadata()
-        {
-            return new QueueEntryMetadata
-            {
+        public QueueEntryMetadata ToMetadata() {
+            return new QueueEntryMetadata {
                 Id = Id,
                 EnqueuedTimeUtc = EnqueuedTimeUtc,
                 DequeuedTimeUtc = DequeuedTimeUtc,
@@ -49,11 +49,9 @@ namespace Foundatio.Queues {
             };
         }
     }
-
-    public class QueueEntryMetadata
-    {
-        public QueueEntryMetadata()
-        {
+    
+    public class QueueEntryMetadata {
+        public QueueEntryMetadata() {
             Data = new DataDictionary();
         }
 

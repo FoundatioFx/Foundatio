@@ -52,8 +52,8 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 using Foundatio.Caching;
 
 ICacheClient cache = new InMemoryCacheClient();
-cache.Set("test", 1);
-var value = cache.Get<int>("test");
+await cache.SetAsync("test", 1);
+var value = await cache.GetAsync<int>("test");
 ```
 
 ### [Queues](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Queues)
@@ -95,9 +95,9 @@ using Foundatio.Lock;
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
 
 using (locker) {
-  locker.ReleaseLock("test");
+  await locker.ReleaseLockAsync("test");
 
-  using (locker.AcquireLock("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
+  using (await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
     // ...
   }
 }
@@ -119,11 +119,11 @@ using Foundatio.Messaging;
 IMessageBus messageBus = new InMemoryMessageBus();
 
 using (messageBus) {
-  messageBus.Subscribe<SimpleMessageA>(msg => {
+  await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
     // Got message
   });
   
-  messageBus.Publish(new SimpleMessageA {
+  await messageBus.PublishAsync(new SimpleMessageA {
       Data = "Hello"
   });
 }
@@ -286,8 +286,8 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 using Foundatio.Storage;
 
 IFileStorage storage = new InMemoryFileStorage();
-storage.SaveFile("test.txt", "test");
-string content = storage.GetFileContents("test.txt")
+await storage.SaveFileAsync("test.txt", "test");
+string content = await storage.GetFileContentsAsync("test.txt")
 ```
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Metrics)
@@ -309,7 +309,7 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 #### Sample
 
 ```csharp
-metrics.Counter("c1");
+await metrics.CounterAsync("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
 ```

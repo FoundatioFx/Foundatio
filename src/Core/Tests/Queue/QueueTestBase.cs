@@ -10,90 +10,128 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
+#pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : CaptureTests {
-        protected QueueTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        protected QueueTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
         }
 
-        public virtual void CanQueueAndDequeueWorkItem() {
+        public virtual async Task CanQueueAndDequeueWorkItem() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                queue.Enqueue(new SimpleWorkItem {
+                await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                });
-                Assert.Equal(1, queue.GetQueueStats().Enqueued);
+                }).AnyContext();
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Enqueued);
 
-                var workItem = queue.Dequeue(TimeSpan.Zero);
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(1, queue.GetQueueStats().Dequeued);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
 
-                workItem.Complete();
-                Assert.Equal(1, queue.GetQueueStats().Completed);
-                Assert.Equal(0, queue.GetQueueStats().Queued);
+                await workItem.CompleteAsync().AnyContext();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Queued);
             }
         }
 
-        public virtual void CanQueueAndDequeueMultipleWorkItems() {
+        public virtual async Task CanDequeueEfficiently() {
+            const int iterations = 10;
+
+            var queue = GetQueue(runQueueMaintenance: false);
+            if (queue == null)
+                return;
+            
+            var metrics = new InMemoryMetricsClient();
+            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
+
+            using (queue) {
+                await queue.DeleteQueueAsync().AnyContext();
+
+                Task.Run(async () => {
+                    for (int index = 0; index < iterations; index++) {
+                        await Task.Delay(RandomData.GetInt(100, 300)).AnyContext();
+                        await queue.EnqueueAsync(new SimpleWorkItem {
+                            Data = "Hello"
+                        }).AnyContext();
+                    }
+                    Logger.Trace().Message("Done enqueuing.").Write();
+                });
+
+                Logger.Trace().Message("Starting dequeue loop.").Write();
+                var sw = Stopwatch.StartNew();
+                for (int index = 0; index < iterations; index++) {
+                    var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
+                    Assert.NotNull(item);
+                    await item.CompleteAsync().AnyContext();
+                }
+                sw.Stop();
+
+                metrics.DisplayStats(_writer);
+
+                Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
+                Assert.InRange(metrics.Timings["simpleworkitem.queuetime"].Average, 0, 25);
+            }
+        }
+
+        public virtual async Task CanQueueAndDequeueMultipleWorkItems() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
                 const int workItemCount = 25;
                 for (int i = 0; i < workItemCount; i++) {
-                    queue.Enqueue(new SimpleWorkItem {
+                    await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
-                    });
+                    }).AnyContext();
                 }
-                Assert.Equal(workItemCount, queue.GetQueueStats().Queued);
+                Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
 
-                var sw = new Stopwatch();
-                sw.Start();
+                var sw = Stopwatch.StartNew();
                 for (int i = 0; i < workItemCount; i++) {
-                    var workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+                    var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
                     Assert.NotNull(workItem);
                     Assert.Equal("Hello", workItem.Value.Data);
-                    workItem.Complete();
+                    await workItem.CompleteAsync().AnyContext();
                 }
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
 
-                Assert.Equal(workItemCount, queue.GetQueueStats().Dequeued);
-                Assert.Equal(workItemCount, queue.GetQueueStats().Completed);
-                Assert.Equal(0, queue.GetQueueStats().Queued);
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(workItemCount, stats.Dequeued);
+                Assert.Equal(workItemCount, stats.Completed);
+                Assert.Equal(0, stats.Queued);
             }
         }
 
-        public virtual void WillNotWaitForItem()
-        {
+        public virtual async Task WillNotWaitForItem() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
-            using (queue)
-            {
-                queue.DeleteQueue();
+            using (queue) {
+                await queue.DeleteQueueAsync().AnyContext();
 
-                var sw = new Stopwatch();
-                sw.Start();
-                var workItem = queue.Dequeue(TimeSpan.Zero);
+                var sw = Stopwatch.StartNew();
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.Null(workItem);
@@ -101,52 +139,50 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual void WillWaitForItem() {
+        public virtual async Task WillWaitForItem() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
                 TimeSpan timeToWait = TimeSpan.FromSeconds(1);
-                var sw = new Stopwatch();
-                sw.Start();
-                var workItem = queue.Dequeue(timeToWait);
+
+                var sw = Stopwatch.StartNew();
+                var workItem = await queue.DequeueAsync(timeToWait).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
-                Task.Factory.StartNewDelayed(100, () => queue.Enqueue(new SimpleWorkItem {
+                Task.Factory.StartNewDelayed(100, async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }));
+                }).AnyContext()).AnyContext();
 
-                sw.Reset();
-                sw.Start();
-                workItem = queue.Dequeue(timeToWait);
-                workItem.Complete();
+                sw.Restart();
+                workItem = await queue.DequeueAsync(timeToWait).AnyContext();
+                await workItem.CompleteAsync().AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.NotNull(workItem);
             }
         }
 
-        public virtual void DequeueWaitWillGetSignaled() {
+        public virtual async Task DequeueWaitWillGetSignaled() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
-
-                Task.Factory.StartNewDelayed(250, () => queue.Enqueue(new SimpleWorkItem {
+                await queue.DeleteQueueAsync().AnyContext();
+                
+                Task.Factory.StartNewDelayed(250, async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }));
+                }).AnyContext()).AnyContext();
 
-                var sw = new Stopwatch();
-                sw.Start();
-                var workItem = queue.Dequeue(TimeSpan.FromSeconds(2));
+                var sw = Stopwatch.StartNew();
+                var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2)).AnyContext();
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.NotNull(workItem);
@@ -154,32 +190,34 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual void CanUseQueueWorker() {
+        public virtual async Task CanUseQueueWorker() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                var resetEvent = new AutoResetEvent(false);
-                queue.StartWorking(w => {
+                var resetEvent = new AsyncManualResetEvent(false);
+                queue.StartWorking(async w => {
                     Assert.Equal("Hello", w.Value.Data);
-                    w.Complete();
+                    await w.CompleteAsync().AnyContext();
                     resetEvent.Set();
                 });
-                queue.Enqueue(new SimpleWorkItem {
-                    Data = "Hello"
-                });
 
-                resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Assert.Equal(1, queue.GetQueueStats().Completed);
-                Assert.Equal(0, queue.GetQueueStats().Queued);
-                Assert.Equal(0, queue.GetQueueStats().Errors);
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                }).AnyContext();
+
+                await resetEvent.WaitAsync().AnyContext();
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
             }
         }
 
-        public virtual void CanHandleErrorInWorker() {
+        public virtual async Task CanHandleErrorInWorker() {
             var queue = GetQueue(retries: 0);
             if (queue == null)
                 return;
@@ -188,207 +226,221 @@ namespace Foundatio.Tests.Queue {
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
 
             using (queue) {
-                queue.DeleteQueue();
-
+                await queue.DeleteQueueAsync().AnyContext();
+				
                 queue.StartWorking(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
                 });
-
+                
                 metrics.DisplayStats(_writer);
-                var success = metrics.WaitForCounter("simpleworkitem.hello.abandoned", () => queue.Enqueue(new SimpleWorkItem
-                {
+                var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }), TimeSpan.FromSeconds(1));
+                }).AnyContext(), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
+                await Task.Delay(10).AnyContext();
                 metrics.DisplayStats(_writer);
                 Assert.True(success);
-                Assert.Equal(0, queue.GetQueueStats().Completed);
-                Assert.Equal(1, queue.GetQueueStats().Errors);
-                Assert.Equal(1, queue.GetQueueStats().Deadletter);
+
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(1, stats.Errors);
+                Assert.Equal(1, stats.Deadletter);
             }
         }
 
-        public virtual void WorkItemsWillTimeout() {
+        public virtual async Task WorkItemsWillTimeout() {
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                queue.Enqueue(new SimpleWorkItem {
+                await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                });
-                var workItem = queue.Dequeue(TimeSpan.Zero);
+                }).AnyContext();
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
                 // wait for the task to be auto abandoned
-                var sw = new Stopwatch();
-                sw.Start();
-                workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+
+                var sw = Stopwatch.StartNew();
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
                 Assert.NotNull(workItem);
-                workItem.Complete();
-                Assert.Equal(0, queue.GetQueueStats().Queued);
+                await workItem.CompleteAsync().AnyContext();
+                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
             }
         }
 
-        public virtual void WorkItemsWillGetMovedToDeadletter() {
+        public virtual async Task WorkItemsWillGetMovedToDeadletter() {
             var queue = GetQueue(retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                queue.Enqueue(new SimpleWorkItem {
+                await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                });
-                var workItem = queue.Dequeue(TimeSpan.Zero);
+                }).AnyContext();
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(1, queue.GetQueueStats().Dequeued);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
 
-                workItem.Abandon();
-                Assert.Equal(1, queue.GetQueueStats().Abandoned);
+                await workItem.AbandonAsync().AnyContext();
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Abandoned);
 
                 // work item should be retried 1 time.
-                workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal(2, queue.GetQueueStats().Dequeued);
+                Assert.Equal(2, (await queue.GetQueueStatsAsync().AnyContext()).Dequeued);
 
-                workItem.Abandon();
+                await workItem.AbandonAsync().AnyContext();
+
                 // work item should be moved to deadletter _queue after retries.
-                Assert.Equal(1, queue.GetQueueStats().Deadletter);
-                Assert.Equal(2, queue.GetQueueStats().Abandoned);
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(1, stats.Deadletter);
+                Assert.Equal(2, stats.Abandoned);
             }
         }
 
-        public virtual void CanAutoCompleteWorker() {
+        public virtual async Task CanAutoCompleteWorker() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 queue.StartWorking(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
+                    return TaskHelper.Completed();
                 }, true);
-                queue.Enqueue(new SimpleWorkItem {
-                    Data = "Hello"
-                });
 
-                Assert.Equal(1, queue.GetQueueStats().Enqueued);
-                resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-                Thread.Sleep(100);
-                Assert.Equal(0, queue.GetQueueStats().Queued);
-                Assert.Equal(1, queue.GetQueueStats().Completed);
-                Assert.Equal(0, queue.GetQueueStats().Errors);
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                }).AnyContext();
+
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Enqueued);
+                await resetEvent.WaitAsync().AnyContext();
+                await Task.Delay(10).AnyContext();
+
+                var stats = await queue.GetQueueStatsAsync().AnyContext();
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Errors);
             }
         }
 
-        public virtual void CanHaveMultipleQueueInstances() {
+        public virtual async Task CanHaveMultipleQueueInstances() {
             var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
 
             using (queue) {
                 Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
-                queue.DeleteQueue();
+                    await queue.DeleteQueueAsync().AnyContext();
 
-                const int workItemCount = 10;
+                const int workItemCount = 50;
                 const int workerCount = 3;
-                var latch = new CountdownEvent(workItemCount);
+                var countdown = new AsyncCountdownEvent(workItemCount);
                 var info = new WorkInfo();
                 var workers = new List<IQueue<SimpleWorkItem>> {queue};
 
                 for (int i = 0; i < workerCount; i++) {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     Logger.Trace().Message("Queue Id: {0}, I: {1}", q.QueueId, i).Write();
-                    q.StartWorking(w => DoWork(w, latch, info));
+                    q.StartWorking(async w => await DoWorkAsync(w, countdown, info).AnyContext());
                     workers.Add(q);
                 }
 
-                Parallel.For(0, workItemCount, i => {
-                    var id = queue.Enqueue(new SimpleWorkItem {
+                await Run.InParallel(workItemCount, async i => {
+                        var id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello",
                         Id = i
-                    });
+                        }).AnyContext();
                     Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
-                });
+                }).AnyContext();
 
-                Assert.True(latch.Wait(TimeSpan.FromSeconds(20)));
-                Thread.Sleep(100); // needed to make sure the worker error handler has time to finish
+                await countdown.WaitAsync().AnyContext();
+                await Task.Delay(50).AnyContext();
                 Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                     info.CompletedCount,
                     info.AbandonCount,
                     info.ErrorCount).Write();
 
-                for (int i = 0; i < workers.Count; i++)
-                {
-                    var workerStats = workers[i].GetQueueStats();
-                    Trace.WriteLine($"Worker#{i} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
-                }
 
+                Logger.Info().Message($"Work Info Stats: Completed: {info.CompletedCount} Abandoned: {info.AbandonCount} Error: {info.ErrorCount}").Write();
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
-
-                var stats = queue.GetQueueStats();
+                
                 // In memory queue doesn't share state.
                 if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
+                    var stats = await queue.GetQueueStatsAsync().AnyContext();
+                    Assert.Equal(0, stats.Working);
+                    Assert.Equal(0, stats.Timeouts);
+                    Assert.Equal(workItemCount, stats.Enqueued);
+                    Assert.Equal(workItemCount, stats.Dequeued);
                     Assert.Equal(info.CompletedCount, stats.Completed);
-                    Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
                     Assert.Equal(info.ErrorCount, stats.Errors);
+                    Assert.Equal(info.AbandonCount, stats.Abandoned - info.ErrorCount);
+                    Assert.Equal(info.AbandonCount + stats.Errors, stats.Deadletter);
                 } else {
-                    Assert.Equal(info.CompletedCount, workers.Sum(q => q.GetQueueStats().Completed));
-                    Assert.Equal(info.AbandonCount, workers.Sum(q => q.GetQueueStats().Abandoned) - workers.Sum(q => q.GetQueueStats().Errors));
-                    Assert.Equal(info.ErrorCount, workers.Sum(q => q.GetQueueStats().Errors));
+                    var workerStats = new List<QueueStats>();
+                    for (int i = 0; i < workers.Count; i++) {
+                        var stats = await workers[i].GetQueueStatsAsync().AnyContext();
+                        Logger.Info().Message($"Worker#{i} Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                        workerStats.Add(stats);
+                    }
+
+                    Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
+                    Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
+                    Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
+                    Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.LastOrDefault()?.Deadletter ?? 0));
                 }
 
                 workers.ForEach(w => w.Dispose());
             }
         }
 
-        public virtual void CanDelayRetry() {
-            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(50), retryDelay: TimeSpan.FromSeconds(1));
+        public virtual async Task CanDelayRetry() {
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(150), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
 
             using (queue) {
-                queue.DeleteQueue();
+                await queue.DeleteQueueAsync().AnyContext();
 
-                queue.Enqueue(new SimpleWorkItem {
+                await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                var workItem = queue.Dequeue(TimeSpan.Zero);
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero).AnyContext();
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
                 // wait for the task to be auto abandoned
-                var sw = new Stopwatch();
-                sw.Start();
+                var sw = Stopwatch.StartNew();
+                await workItem.AbandonAsync().AnyContext();
+                Assert.Equal(1, (await queue.GetQueueStatsAsync().AnyContext()).Abandoned);
 
-                workItem.Abandon();
-                Assert.Equal(1, queue.GetQueueStats().Abandoned);
-
-                workItem = queue.Dequeue(TimeSpan.FromSeconds(5));
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5)).AnyContext();
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(sw.Elapsed > TimeSpan.FromSeconds(.95));
-                workItem.Complete();
-                Assert.Equal(0, queue.GetQueueStats().Queued);
+                await workItem.CompleteAsync().AnyContext();
+                Assert.Equal(0, (await queue.GetQueueStatsAsync().AnyContext()).Queued);
             }
         }
 
-        public virtual void CanRunWorkItemWithMetrics()
-        {
+        public virtual async Task CanRunWorkItemWithMetrics() {
             var eventRaised = new ManualResetEvent(false);
 
             var metricsClient = new InMemoryMetricsClient();
@@ -398,9 +450,9 @@ namespace Foundatio.Tests.Queue {
 
             var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
 
-            queue.Enqueue(work);
-            var item = queue.Dequeue();
-            item.Complete();
+            await queue.EnqueueAsync(work).AnyContext();
+            var item = await queue.DequeueAsync().AnyContext();
+            await item.CompleteAsync().AnyContext();
 
             metricsClient.DisplayStats(_writer);
 
@@ -417,7 +469,7 @@ namespace Foundatio.Tests.Queue {
             Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
         }
 
-        protected void DoWork(QueueEntry<SimpleWorkItem> w, CountdownEvent latch, WorkInfo info) {
+        protected async Task DoWorkAsync(QueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
             Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 
@@ -425,11 +477,11 @@ namespace Foundatio.Tests.Queue {
                 // randomly complete, abandon or blowup.
                 if (RandomData.GetBool()) {
                     Trace.WriteLine($"Completing: {w.Value.Id}");
-                    w.Complete();
+                    await w.CompleteAsync().AnyContext();
                     info.IncrementCompletedCount();
                 } else if (RandomData.GetBool()) {
                     Trace.WriteLine($"Abandoning: {w.Value.Id}");
-                    w.Abandon();
+                    await w.AbandonAsync().AnyContext();
                     info.IncrementAbandonCount();
                 } else {
                     Trace.WriteLine($"Erroring: {w.Value.Id}");
@@ -437,9 +489,8 @@ namespace Foundatio.Tests.Queue {
                     throw new ApplicationException();
                 }
             } finally {
-               
-                Trace.WriteLine($"Signal {latch.CurrentCount}");
-                latch.Signal();
+                Trace.WriteLine($"Signal {countdown.CurrentCount}");
+                countdown.Signal();
             }
         }
     }

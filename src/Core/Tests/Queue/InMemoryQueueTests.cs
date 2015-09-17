@@ -9,9 +9,7 @@ namespace Foundatio.Tests.Queue {
     public class InMemoryQueueTests : QueueTestBase {
         private IQueue<SimpleWorkItem> _queue;
 
-        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
@@ -21,70 +19,73 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public override void CanQueueAndDequeueWorkItem() {
-            base.CanQueueAndDequeueWorkItem();
+        public override Task CanQueueAndDequeueWorkItem() {
+            return base.CanQueueAndDequeueWorkItem();
         }
 
         [Fact]
-        public override void CanQueueAndDequeueMultipleWorkItems() {
-            base.CanQueueAndDequeueMultipleWorkItems();
+        public override Task CanDequeueEfficiently() {
+            return base.CanDequeueEfficiently();
         }
 
         [Fact]
-        public override void WillNotWaitForItem()
-        {
-            base.WillNotWaitForItem();
+        public override Task CanQueueAndDequeueMultipleWorkItems() {
+            return base.CanQueueAndDequeueMultipleWorkItems();
         }
 
         [Fact]
-        public override void WillWaitForItem() {
-            base.WillWaitForItem();
+        public override Task WillNotWaitForItem() {
+            return base.WillNotWaitForItem();
         }
 
         [Fact]
-        public override void DequeueWaitWillGetSignaled() {
-            base.DequeueWaitWillGetSignaled();
+        public override Task WillWaitForItem() {
+            return base.WillWaitForItem();
         }
 
         [Fact]
-        public override void CanUseQueueWorker() {
-            base.CanUseQueueWorker();
+        public override Task DequeueWaitWillGetSignaled() {
+            return base.DequeueWaitWillGetSignaled();
         }
 
         [Fact]
-        public override void CanHandleErrorInWorker() {
-            base.CanHandleErrorInWorker();
+        public override Task CanUseQueueWorker() {
+            return base.CanUseQueueWorker();
         }
 
         [Fact]
-        public override void WorkItemsWillTimeout() {
-            base.WorkItemsWillTimeout();
+        public override Task CanHandleErrorInWorker() {
+            return base.CanHandleErrorInWorker();
         }
 
         [Fact]
-        public override void WorkItemsWillGetMovedToDeadletter() {
-            base.WorkItemsWillGetMovedToDeadletter();
+        public override Task WorkItemsWillTimeout() {
+            return base.WorkItemsWillTimeout();
         }
 
         [Fact]
-        public override void CanAutoCompleteWorker() {
-            base.CanAutoCompleteWorker();
+        public override Task WorkItemsWillGetMovedToDeadletter() {
+            return base.WorkItemsWillGetMovedToDeadletter();
         }
 
         [Fact]
-        public override void CanHaveMultipleQueueInstances() {
-            base.CanHaveMultipleQueueInstances();
+        public override Task CanAutoCompleteWorker() {
+            return base.CanAutoCompleteWorker();
         }
 
         [Fact]
-        public override void CanDelayRetry() {
-            base.CanDelayRetry();
+        public override Task CanHaveMultipleQueueInstances() {
+            return base.CanHaveMultipleQueueInstances();
         }
 
         [Fact]
-        public override void CanRunWorkItemWithMetrics()
-        {
-            base.CanRunWorkItemWithMetrics();
+        public override Task CanDelayRetry() {
+            return base.CanDelayRetry();
+        }
+
+        [Fact]
+        public override Task CanRunWorkItemWithMetrics() {
+            return base.CanRunWorkItemWithMetrics();
         }
     }
 }

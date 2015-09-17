@@ -8,22 +8,20 @@ namespace Foundatio.Tests.Storage {
     public class FolderFileStorageTests : FileStorageTestsBase {
         private const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
 
-        public FolderFileStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public FolderFileStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IFileStorage GetStorage() {
             return new FolderFileStorage("temp");
         }
 
         [Fact]
-        public override void CanGetEmptyFileListOnMissingDirectory() {
-            base.CanGetEmptyFileListOnMissingDirectory();
+        public override Task CanGetEmptyFileListOnMissingDirectory() {
+            return base.CanGetEmptyFileListOnMissingDirectory();
         }
 
         [Fact]
-        public override void CanGetFileListForSingleFolder() {
-            base.CanGetFileListForSingleFolder();
+        public override Task CanGetFileListForSingleFolder() {
+            return base.CanGetFileListForSingleFolder();
         }
 
         [Fact]
@@ -32,13 +30,13 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
-        public override void CanManageFiles() {
-            base.CanManageFiles();
+        public override Task CanManageFiles() {
+            return base.CanManageFiles();
         }
 
         [Fact]
-        public override void CanConcurrentlyManageFiles() {
-            base.CanConcurrentlyManageFiles();
+        public override Task CanConcurrentlyManageFiles() {
+            return base.CanConcurrentlyManageFiles();
         }
 
         [Fact]
