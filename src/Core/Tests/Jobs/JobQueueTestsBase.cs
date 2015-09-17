@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Jobs {
         public virtual async Task CanRunQueueJob() {
             const int workItemCount = 100;
             var metrics = new InMemoryMetricsClient();
-            var queue = GetSampleWorkItemQueue(0, TimeSpan.Zero);
+            var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
             await queue.DeleteQueueAsync().AnyContext();
             queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
@@ -34,6 +34,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             var job = new SampleQueueJob(queue, metrics);
+            await Task.Delay(10).AnyContext();
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask).AnyContext();
 
             metrics.DisplayStats(_writer);
