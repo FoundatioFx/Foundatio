@@ -22,6 +22,7 @@ namespace Foundatio.Tests.Jobs {
             const int workItemCount = 100;
             var metrics = new InMemoryMetricsClient();
             var queue = GetSampleWorkItemQueue(0, TimeSpan.Zero);
+            await queue.DeleteQueueAsync().AnyContext();
             queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
@@ -52,6 +53,7 @@ namespace Foundatio.Tests.Jobs {
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
                 var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
+                await q.DeleteQueueAsync().AnyContext();
                 q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
                 queues.Add(q);
             }
