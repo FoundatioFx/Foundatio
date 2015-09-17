@@ -374,7 +374,8 @@ namespace Foundatio.Tests.Queue {
                     info.AbandonCount,
                     info.ErrorCount).Write();
 
-                
+
+                Logger.Info().Message($"Work Info Stats: Completed: {info.CompletedCount} Abandoned: {info.AbandonCount} Error: {info.ErrorCount}").Write();
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
                 
                 // In memory queue doesn't share state.
@@ -399,7 +400,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
                     Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
                     Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
-                    Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.FirstOrDefault()?.Deadletter ?? 0));
+                    Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.LastOrDefault()?.Deadletter ?? 0));
                 }
 
                 workers.ForEach(w => w.Dispose());
@@ -407,7 +408,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDelayRetry() {
-            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(50), retryDelay: TimeSpan.FromSeconds(1));
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(150), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
 

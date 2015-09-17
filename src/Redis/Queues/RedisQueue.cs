@@ -181,7 +181,7 @@ namespace Foundatio.Queues {
             await _db.ListLeftPushAsync(QueueListName, id).AnyContext();
             await _cache.SetAsync(GetEnqueuedTimeKey(id), DateTime.UtcNow.Ticks, _payloadTtl).AnyContext();
 
-            // This should call the reset event.
+            // This should pulse the monitor.
             await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
 
             Interlocked.Increment(ref _enqueuedCount);
@@ -299,48 +299,55 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(string id) {
-            Logger.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
+            Logger.Debug().Message($"Queue {_queueName}:{QueueId} abandon item: {id}").Write();
             var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(id)).AnyContext();
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
-            Logger.Trace().Message("Item attempts: {0}", attempts).Write();
-
+            
             var retryDelay = GetRetryDelay(attempts);
-            Logger.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
+            Logger.Trace().Message($"Item: {id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}").Write();
             if (attempts > _retries) {
-                Logger.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
-                await _db.ListRemoveAsync(WorkListName, id).AnyContext();
-                await _db.ListLeftPushAsync(DeadListName, id).AnyContext();
-                await _db.KeyExpireAsync(GetPayloadKey(id), _deadLetterTtl).AnyContext();
+                Logger.Trace().Message($"Exceeded retry limit moving to deadletter: {id}").Write();
+
+                var tx = _db.CreateTransaction();
+                tx.ListRemoveAsync(WorkListName, id);
+                tx.ListLeftPushAsync(DeadListName, id);
+                tx.KeyExpireAsync(GetPayloadKey(id), _deadLetterTtl);
+                var success = await tx.ExecuteAsync().AnyContext();
+                if (!success)
+                    throw new Exception($"Unable to move item to wait list: {id}");
+
                 await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
-                Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
+                Logger.Trace().Message($"Adding item to wait list for future retry: {id}").Write();
+                await _cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+
                 var tx = _db.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, id);
                 tx.ListLeftPushAsync(WaitListName, id);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception("Unable to move item to wait list.");
-
-                await _cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
-                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                    throw new Exception($"Unable to move item to wait list: {id}");
             } else {
-                Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
+                Logger.Trace().Message($"Adding item back to queue for retry: {id}").Write();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+
                 var tx = _db.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, id);
                 tx.ListLeftPushAsync(QueueListName, id);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception("Unable to move item to queue list.");
-
-                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                    throw new Exception($"Unable to move item to queue list: {id}");
+                
+                // This should pulse the monitor.
                 await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
             await OnAbandonedAsync(id).AnyContext();
-            Logger.Trace().Message("Abondon complete: {0}", id).Write();
+            Logger.Trace().Message($"Abandon complete: {id}").Write();
         }
 
         private TimeSpan GetRetryDelay(int attempts) {

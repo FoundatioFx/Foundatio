@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
@@ -43,7 +45,7 @@ namespace Foundatio.Tests.Jobs {
         
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
-            const int workItemCount = 100;
+            const int workItemCount = 15;
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
 
@@ -55,7 +57,7 @@ namespace Foundatio.Tests.Jobs {
             }
 
             var enqueueTask = Run.InParallel(workItemCount, async index => {
-                var queue = queues[RandomData.GetInt(0, 4)];
+                var queue = queues[RandomData.GetInt(0, jobCount - 1)];
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,
                     Path = RandomData.GetString()
@@ -71,7 +73,17 @@ namespace Foundatio.Tests.Jobs {
             }).AnyContext();
 
             await enqueueTask.AnyContext();
+
+            var queueStats = new List<QueueStats>();
+            for (int i = 0; i < queues.Count; i++) {
+                var stats = await queues[i].GetQueueStatsAsync().AnyContext();
+                Logger.Info().Message($"Queue#{i} Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                queueStats.Add(stats);
+            }
+
             metrics.DisplayStats(_writer);
+            Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
+            //Assert.Equal(workItemCount, queueStats.Sum(s => s.Completed) + queueStats.LastOrDefault()?.Deadletter);
         }
     }
 }
