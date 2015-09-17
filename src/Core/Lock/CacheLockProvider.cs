@@ -30,9 +30,9 @@ namespace Foundatio.Lock {
                 if (_isSubscribed)
                     return;
 
+                _isSubscribed = true;
                 Logger.Trace().Message("Subscribing to cache lock released.").Write();
                 _messageBus.Subscribe<CacheLockReleased>(message => OnLockReleased(message));
-                _isSubscribed = true;
             }
         }
 
