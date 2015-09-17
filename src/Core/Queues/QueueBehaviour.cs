@@ -1,4 +1,5 @@
 ﻿using System;
+using Foundatio.Logging;
 
 namespace Foundatio.Queues {
     public interface IQueueBehavior<T> where T : class {
@@ -23,15 +24,25 @@ namespace Foundatio.Queues {
             _queue.Abandoned += OnAbandoned;
         }
 
-        protected virtual void OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {}
+        protected virtual void OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {
+            Logger.Trace().Message($"OnEnqueuing: Queue: {enqueuingEventArgs.Queue.QueueId}").Write();
+        }
 
-        protected virtual void OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {}
+        protected virtual void OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
+            Logger.Trace().Message($"OnEnqueued: Queue: {enqueuedEventArgs.Queue.QueueId} Id: {enqueuedEventArgs.Metadata.Id}").Write();
+        }
 
-        protected virtual void OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {}
+        protected virtual void OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+            Logger.Trace().Message($"OnDequeued: Queue: {dequeuedEventArgs.Queue.QueueId} Id: {dequeuedEventArgs.Metadata.Id}").Write();
+        }
 
-        protected virtual void OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {}
+        protected virtual void OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
+            Logger.Trace().Message($"OnCompleted: Queue: {completedEventArgs.Queue.QueueId} Id: {completedEventArgs.Metadata.Id}").Write();
+        }
 
-        protected virtual void OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {}
+        protected virtual void OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
+            Logger.Trace().Message($"OnAbandoned: Queue: {abandonedEventArgs.Queue.QueueId} Id: {abandonedEventArgs.Metadata.Id}").Write();
+        }
 
         public void Dispose() {
             _queue.Enqueuing -= OnEnqueuing;

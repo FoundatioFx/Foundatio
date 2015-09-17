@@ -77,11 +77,12 @@ namespace Foundatio.Tests.Jobs {
             var queueStats = new List<QueueStats>();
             for (int i = 0; i < queues.Count; i++) {
                 var stats = await queues[i].GetQueueStatsAsync().AnyContext();
-                Logger.Info().Message($"Queue#{i} Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                Logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
                 queueStats.Add(stats);
             }
 
             metrics.DisplayStats(_writer);
+            Assert.Equal(metrics.GetCount("completed"), queueStats.Sum(s => s.Completed));
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
             //Assert.Equal(workItemCount, queueStats.Sum(s => s.Completed) + queueStats.LastOrDefault()?.Deadletter);
         }

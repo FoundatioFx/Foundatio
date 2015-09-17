@@ -24,8 +24,8 @@ namespace Foundatio.Tests.Jobs {
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned").AnyContext();
                 await queueEntry.AbandonAsync().AnyContext();
+                await _metrics.CounterAsync("abandoned").AnyContext();
                 return JobResult.FailedWithMessage("Abandoned");
             }
 
@@ -62,7 +62,6 @@ namespace Foundatio.Tests.Jobs {
             }
 
             await _metrics.CounterAsync("completed").AnyContext();
-
             return JobResult.Success;
         }
     }
