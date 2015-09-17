@@ -64,13 +64,15 @@ namespace Foundatio.Tests.Jobs {
             var j2 = new WorkItemJob(queue, messageBus, handlerRegistry);
             var j3 = new WorkItemJob(queue, messageBus, handlerRegistry);
             int errors = 0;
+
             var jobIds = new ConcurrentDictionary<string, int>();
 
             handlerRegistry.Register<MyWorkItem>(ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
 
-                jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
+                var workItemCount = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
+                Logger.Trace().Message($"Job {ctx.JobId} processing work item #: {workItemCount}").Write();
 
                 for (int i = 0; i < 10; i++)
                     ctx.ReportProgress(10 * i);
@@ -110,7 +112,8 @@ namespace Foundatio.Tests.Jobs {
             });
 
             await Task.WhenAll(tasks).AnyContext();
-            await Task.Delay(10).AnyContext();
+            metrics.DisplayStats(_writer);
+
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
             Assert.Equal(100, jobIds.Sum(kvp => kvp.Value));

@@ -292,7 +292,7 @@ namespace Foundatio.Redis.Tests.Queues {
         
         // TODO: Need to write tests that verify the cache data is correct after each operation.
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public async Task MeasureThroughputWithRandomFailures() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
             if (queue == null)
@@ -335,7 +335,7 @@ namespace Foundatio.Redis.Tests.Queues {
             }
         }
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public async Task MeasureThroughput() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
@@ -374,7 +374,7 @@ namespace Foundatio.Redis.Tests.Queues {
             }
         }
 
-        [Fact]
+        [Fact(Skip = "Performance Test")]
         public async Task MeasureWorkerThroughput() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)

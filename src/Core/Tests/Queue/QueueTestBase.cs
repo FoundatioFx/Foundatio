@@ -347,7 +347,7 @@ namespace Foundatio.Tests.Queue {
                 Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
                     await queue.DeleteQueueAsync().AnyContext();
 
-                const int workItemCount = 10;
+                const int workItemCount = 50;
                 const int workerCount = 3;
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var info = new WorkInfo();
@@ -367,34 +367,39 @@ namespace Foundatio.Tests.Queue {
                         }).AnyContext();
                     Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
                 }).AnyContext();
-                
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+
+                await countdown.WaitAsync().AnyContext();
                 Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                     info.CompletedCount,
                     info.AbandonCount,
                     info.ErrorCount).Write();
 
-                for (int i = 0; i < workers.Count; i++) {
-                    var workerStats = await workers[i].GetQueueStatsAsync().AnyContext();
-                    Trace.WriteLine($"Worker#{i} Working: {workerStats.Working} Completed: {workerStats.Completed} Abandoned: {workerStats.Abandoned} Error: {workerStats.Errors}");
-                }
-
+                
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
-
+                
                 // In memory queue doesn't share state.
                 if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
                     var stats = await queue.GetQueueStatsAsync().AnyContext();
+                    Assert.Equal(0, stats.Working);
+                    Assert.Equal(0, stats.Timeouts);
+                    Assert.Equal(workItemCount, stats.Enqueued);
+                    Assert.Equal(workItemCount, stats.Dequeued);
                     Assert.Equal(info.CompletedCount, stats.Completed);
-                    Assert.Equal(info.AbandonCount, stats.Abandoned - stats.Errors);
                     Assert.Equal(info.ErrorCount, stats.Errors);
+                    Assert.Equal(info.AbandonCount, stats.Abandoned - info.ErrorCount);
+                    Assert.Equal(info.AbandonCount + stats.Errors, stats.Deadletter);
                 } else {
                     var workerStats = new List<QueueStats>();
-                    foreach (var worker in workers)
-                        workerStats.Add(await worker.GetQueueStatsAsync().AnyContext());
+                    for (int i = 0; i < workers.Count; i++) {
+                        var stats = await workers[i].GetQueueStatsAsync().AnyContext();
+                        Logger.Info().Message($"Worker#{i} Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                        workerStats.Add(stats);
+                    }
 
                     Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
-                    Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - workerStats.Sum(s => s.Errors));
                     Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
+                    Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
+                    Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.FirstOrDefault()?.Deadletter ?? 0));
                 }
 
                 workers.ForEach(w => w.Dispose());
