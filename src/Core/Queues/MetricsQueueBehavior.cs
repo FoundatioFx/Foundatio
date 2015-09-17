@@ -97,12 +97,12 @@ namespace Foundatio.Queues {
             await _metricsClient.CounterAsync(counter).AnyContext();
 
             string timer = GetFullMetricName(customMetricName, "abandontime");
-            var time = (long)abandonedEventArgs.Metadata?.ProcessingTime.TotalMilliseconds;
+            var time = (long)(abandonedEventArgs.Metadata?.ProcessingTime.TotalMilliseconds ?? 0D);
             await _metricsClient.TimerAsync(timer, time).AnyContext();
         }
 
         protected string GetCustomMetricName(QueueEntryMetadata metadata) {
-            return metadata.Data.GetValueOrDefault<string>(CustomMetricNameKey);
+            return metadata?.Data?.GetValueOrDefault<string>(CustomMetricNameKey);
         }
 
         protected string GetCustomMetricName(T data) {
