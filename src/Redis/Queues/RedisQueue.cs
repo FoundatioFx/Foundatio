@@ -425,7 +425,6 @@ namespace Foundatio.Queues {
                         continue;
 
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
-                    // TODO: Fix parameters
                     await AbandonAsync(workId).AnyContext();
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
