@@ -120,8 +120,11 @@ namespace Foundatio.Tests.Jobs {
                 }, cancellationTokenSource.Token)
             };
 
-            await Task.WhenAll(tasks).AnyContext();
-            await Task.Delay(100).AnyContext();
+            try {
+                await Task.WhenAll(tasks).AnyContext();
+                await Task.Delay(100).AnyContext();
+            } catch (TaskCanceledException) {}
+
             Logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
             metrics.DisplayStats(_writer);
             
