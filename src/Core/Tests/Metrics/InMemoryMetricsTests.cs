@@ -45,7 +45,7 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             });
 
-            var success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
+            var success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
             Task.Run(async () => {
@@ -53,10 +53,10 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             });
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(100)).AnyContext();
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100)).AnyContext();
             Assert.False(success);
 
             Task.Run(async () => {
@@ -64,10 +64,10 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test", 2).AnyContext();
             });
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2).AnyContext();
+            success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test").AnyContext(), TimeSpan.FromMilliseconds(500)).AnyContext();
+            success = await metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test").AnyContext(), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken()).AnyContext();
             Assert.True(success);
 
             Task.Run(async () => {
@@ -75,7 +75,7 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             });
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500)).AnyContext();
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
             metrics.DisplayStats(_writer);

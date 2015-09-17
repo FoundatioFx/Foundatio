@@ -12,7 +12,7 @@ namespace Foundatio.Extensions {
         }
 
         public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout) {
-            return countdownEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+            return countdownEvent.WaitAsync(timeout.ToCancellationToken());
         }
 
         public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken) {
@@ -20,11 +20,11 @@ namespace Foundatio.Extensions {
         }
 
         public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
-            return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+            return resetEvent.WaitAsync(timeout.ToCancellationToken());
         }
 
         public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {
-            return resetEvent.WaitAsync(new CancellationTokenSource(timeout).Token);
+            return resetEvent.WaitAsync(timeout.ToCancellationToken());
         }
         
         public static Task IgnoreExceptions(this Task task) {

@@ -237,7 +237,7 @@ namespace Foundatio.Tests.Queue {
                 metrics.DisplayStats(_writer);
                 var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }).AnyContext(), TimeSpan.FromSeconds(1)).AnyContext();
+                }).AnyContext(), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
                 metrics.DisplayStats(_writer);
                 Assert.True(success);
 

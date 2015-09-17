@@ -35,7 +35,7 @@ namespace Foundatio.Tests.Locks {
             var sw = Stopwatch.StartNew();
             using (await monitor.EnterAsync())
                 await Assert.ThrowsAsync<TaskCanceledException>(async () =>
-                    await monitor.WaitAsync(new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token).AnyContext()).AnyContext();
+                    await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext()).AnyContext();
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 100, 125);
 
@@ -48,7 +48,7 @@ namespace Foundatio.Tests.Locks {
 
             sw = Stopwatch.StartNew();
             using (await monitor.EnterAsync())
-                await monitor.WaitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token).AnyContext();
+                await monitor.WaitAsync(TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 25, 100);
         }

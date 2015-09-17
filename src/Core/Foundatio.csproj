@@ -69,6 +69,7 @@
     <Compile Include="Extensions\TaskExtensions.cs" />
     <Compile Include="Extensions\TaskFactoryExtensions.cs" />
     <Compile Include="Extensions\DateTimeExtensions.cs" />
+    <Compile Include="Extensions\TimespanExtensions.cs" />
     <Compile Include="Extensions\TypeExtensions.cs" />
     <Compile Include="Jobs\JobBase.cs" />
     <Compile Include="Jobs\JobResult.cs" />

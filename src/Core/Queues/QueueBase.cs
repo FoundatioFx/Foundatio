@@ -55,7 +55,7 @@ namespace Foundatio.Queues {
                 Queue = this,
                 Data = data
             };
-
+            
             Enqueuing?.Invoke(this, args);
             return Task.FromResult(!args.Cancel);
         }
@@ -110,7 +110,7 @@ namespace Foundatio.Queues {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
             if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
                 queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
-
+            
             Abandoned?.Invoke(this, new AbandonedEventArgs<T> {
                 Queue = this,
                 Metadata = queueEntry

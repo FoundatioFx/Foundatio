@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
 
 namespace Foundatio.Queues {
@@ -40,17 +41,7 @@ namespace Foundatio.Queues {
         }
 
         public static Task<QueueEntry<T>> DequeueAsync<T>(this IQueue<T> queue, TimeSpan? timeout = null) where T : class {
-            var cancellationToken = default(CancellationToken);
-            if (timeout.HasValue) {
-                if (timeout.Value == TimeSpan.Zero)
-                    cancellationToken = new CancellationToken(true);
-                else if (timeout.Value.Ticks > 0)
-                    cancellationToken = new CancellationTokenSource(timeout.Value).Token;
-            } else {
-                cancellationToken = new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token;
-            }
-
-            return queue.DequeueAsync(cancellationToken);
+            return queue.DequeueAsync(timeout.ToCancellationToken(TimeSpan.FromSeconds(30)));
         }
     }
 

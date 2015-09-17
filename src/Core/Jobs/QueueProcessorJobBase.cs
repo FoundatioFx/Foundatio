@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
         protected bool AutoComplete { get; set; }
 
         protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(token, new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(token, TimeSpan.FromSeconds(30).ToCancellationToken());
 
             QueueEntry<T> queueEntry;
             try {

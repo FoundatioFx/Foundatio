@@ -107,19 +107,16 @@ namespace Foundatio.Metrics {
             return TaskHelper.Completed();
         }
         
-        public Task<bool> WaitForCounterAsync(string statName, TimeSpan timeout, long count = 1) {
-            return WaitForCounterAsync(statName, TaskHelper.Completed, timeout, count);
+        public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
+            return WaitForCounterAsync(statName, TaskHelper.Completed, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
         }
-
-        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, TimeSpan? timeout = null, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+        
+        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
             if (count <= 0)
                 return true;
-
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(10);
-
+            
             if (cancellationToken == CancellationToken.None)
-                cancellationToken = new CancellationTokenSource(timeout.Value).Token;
+                cancellationToken = TimeSpan.FromSeconds(10).ToCancellationToken();
 
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;

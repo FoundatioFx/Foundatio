@@ -22,13 +22,13 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelJob() {
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var token = TimeSpan.FromSeconds(1).ToCancellationToken();
             var result = await JobRunner.RunAsync(new JobRunOptions {
                 JobTypeName = typeof(HelloWorldJob).AssemblyQualifiedName,
                 InstanceCount = 1,
                 Interval = null,
                 RunContinuous = true
-            }, cts.Token).AnyContext();
+            }, token).AnyContext();
 
             Assert.Equal(0, result);
         }
@@ -44,7 +44,7 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal(3, job.RunCount);
 
             var sw = Stopwatch.StartNew();
-            await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token).AnyContext();
+            await job.RunContinuousAsync(cancellationToken: TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext();
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
@@ -58,27 +58,23 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async void CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
-
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, tokenSource.Token).AnyContext();
+            
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
-
-            tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, tokenSource.Token).AnyContext();
+            
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken()).AnyContext();
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
         [Fact]
         public async void CanCancelContinuousJobs() {
             var job = new HelloWorldJob();
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, tokenSource.Token).AnyContext();
+            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext();
             Assert.Equal(1, job.RunCount);
 
-            tokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: tokenSource.Token, interval: TimeSpan.FromMilliseconds(1)).AnyContext();
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken(), interval: TimeSpan.FromMilliseconds(1)).AnyContext();
         }
 
         [Fact]
@@ -99,10 +95,9 @@ namespace Foundatio.Tests.Jobs {
         public async void CanRunThrottledJobs() {
             var client = new InMemoryCacheClient();
             var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
-
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            
             var sw = Stopwatch.StartNew();
-            await Task.WhenAll(jobs.Select(async job => await TaskExtensions.AnyContext(job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: tokenSource.Token)))).AnyContext();
+            await Task.WhenAll(jobs.Select(async job => await TaskExtensions.AnyContext(job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken())))).AnyContext();
             sw.Stop();
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
             Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
