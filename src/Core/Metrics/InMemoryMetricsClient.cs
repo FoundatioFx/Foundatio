@@ -115,9 +115,6 @@ namespace Foundatio.Metrics {
             if (count <= 0)
                 return true;
             
-            if (cancellationToken == CancellationToken.None)
-                cancellationToken = TimeSpan.FromSeconds(10).ToCancellationToken();
-
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;
             Logger.Trace().Message("Wait: count={0} current={1}", count, startingCount).Write();
