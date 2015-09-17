@@ -30,7 +30,7 @@ To summarize, if you want pain free development and testing while allowing your 
 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
-1. You will need to have [Visual Studio 2013](http://www.visualstudio.com/products/visual-studio-community-vs) installed.
+1. You will need to have [Visual Studio 2015](http://www.visualstudio.com/products/visual-studio-community-vs) installed.
 2. Open the `Foundatio.sln` Visual Studio solution file.
 
 ## Using Foundatio
@@ -71,11 +71,11 @@ using Foundatio.Queues;
 
 IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
 
-queue.Enqueue(new SimpleWorkItem {
+await queue.EnqueueAsync(new SimpleWorkItem {
     Data = "Hello"
 });
 
-var workItem = queue.Dequeue(TimeSpan.Zero);
+var workItem = await queue.DequeueAsync();
 ```
 
 ### [Locks](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Lock)
@@ -93,13 +93,8 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 using Foundatio.Lock;
 
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
-
-using (locker) {
-  await locker.ReleaseLockAsync("test");
-
-  using (await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
-    // ...
-  }
+using (await locker.AcquireLockAsync("test")) {
+  // ...
 }
 ```
 
@@ -117,23 +112,18 @@ Allows you to publish and subscribe to messages flowing through your application
 using Foundatio.Messaging;
 
 IMessageBus messageBus = new InMemoryMessageBus();
+await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+  // Got message
+});
 
-using (messageBus) {
-  await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-    // Got message
-  });
-  
-  await messageBus.PublishAsync(new SimpleMessageA {
-      Data = "Hello"
-  });
-}
+await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
 ```
 
 ### [Jobs](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Jobs)
 
 Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide a few different ways of defining a job based on your use case.
 
-1. **Jobs**: All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+1. **Jobs**: All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -153,16 +143,16 @@ Allows you to run a long running process (in process or out of process) with out
   
   ```csharp
   var job = new HelloWorldJob();
-  job.Run(); // job.RunCount = 1;
-  job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
-  job.RunContinuous(token: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
+  await job.RunAsync(); // job.RunCount = 1;
+  await job.RunContinuousAsync(iterationLimit: 2); // job.RunCount = 3;
+  await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
   ```
 
   ```
   Job.exe -t "MyLib.HelloWorldJob,MyLib"
   ```
 
-2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueProcessorJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueProcessorJobBase.cs) which also inherits from the [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `Run()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueProcessorJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueProcessorJobBase.cs) which also inherits from the [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -174,7 +164,7 @@ Allows you to run a long running process (in process or out of process) with out
 
     public HelloWorldQueueJob(IQueue<HelloWorldQueueItem> queue) : base(queue) {}
     
-    protected override Task<JobResult> ProcessQueueItem(QueueEntry<HelloWorldQueueItem> queueEntry) {
+    protected override Task<JobResult> ProcessQueueItemAsync(QueueEntry<HelloWorldQueueItem> queueEntry) {
        RunCount++;
 
        return Task.FromResult(JobResult.Success);
@@ -194,14 +184,14 @@ Allows you to run a long running process (in process or out of process) with out
   // This assumes that we injected an instance of IQueue<HelloWorldWorkItem> queue
   
   var job = new HelloWorldQueueJob();
-  job.Run(); // job.RunCount = 0; The RunCount wasn't incremented because we didn't enqueue any data.
+  await job.RunAsync(); // job.RunCount = 0; The RunCount wasn't incremented because we didn't enqueue any data.
   
-  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
-  job.Run(); // job.RunCount = 1;
+  await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
+  await job.RunAsync(); // job.RunCount = 1;
   
-  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
-  queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
-  job.RunUntilEmpty(); // job.RunCount = 3;
+  await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
+  await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
+  await job.RunUntilEmptyAsync(); // job.RunCount = 3;
   ```
 
   ```
@@ -217,22 +207,22 @@ Allows you to run a long running process (in process or out of process) with out
   using Foundatio.Jobs;
 
   public class HelloWorldWorkItemHandler : WorkItemHandlerBase {
-    public override async Task HandleItem(WorkItemContext context) {
-      var workItem = context.GetData<HelloWorldWorkItem>();
+    public override async Task HandleItemAsync(WorkItemContext ctx) {
+      var workItem = ctx.GetData<HelloWorldWorkItem>();
 
       // We can report the progress over the message bus easily.
       // To recieve these messages just inject IMessageSubscriber
       // and Subscribe to messages of type WorkItemStatus
-      context.ReportProgress(0, "Starting Hello World Job");
+      await ctx.ReportProgressAsync(0, "Starting Hello World Job");
       await Task.Delay(TimeSpan.FromSeconds(2.5));
-      context.ReportProgress(50, String.Format("Reading value"));
+      await ctx.ReportProgressAsync(50, String.Format("Reading value"));
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      context.ReportProgress(70, String.Format("Reading value."));
+      await ctx.ReportProgressAsync(70, String.Format("Reading value."));
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      context.ReportProgress(90, String.Format("Reading value.."));
+      await ctx.ReportProgressAsync(90, String.Format("Reading value.."));
       await Task.Delay(TimeSpan.FromSeconds(.5));
 
-      context.ReportProgress(100, workItem.Message);
+      await ctx.ReportProgressAsync(100, workItem.Message);
     }
   }
 
@@ -253,7 +243,7 @@ Allows you to run a long running process (in process or out of process) with out
   container.RegisterSingleton<IQueue<WorkItemData>>(() => new InMemoryQueue<WorkItemData>());
   
   // The job runner will automatically look for and run all registered WorkItemHandlers.
-  JobRunner.RunContinuousAsync<WorkItemJob>(instanceCount: 2);
+  await JobRunner.RunContinuousAsync<WorkItemJob>(instanceCount: 2);
   ```
   
   ```
@@ -267,7 +257,7 @@ Allows you to run a long running process (in process or out of process) with out
    // NOTE: You may have noticed that HelloWorldWorkItem doesn't derive from WorkItemData.
    // Foundatio has an extension method that takes the model you post and serializes it to the 
    // WorkItemData.Data property.
-   queue.Enqueue(new HelloWorldWorkItem { Message = "Hello World" });
+   await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
   ```
 
 ### [File Storage](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Storage)
@@ -310,8 +300,8 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 
 ```csharp
 await metrics.CounterAsync("c1");
-metrics.Gauge("g1", 2.534);
-metrics.Timer("t1", 50788);
+await metrics.GaugeAsync("g1", 2.534);
+await metrics.TimerAsync("t1", 50788);
 ```
 
 ### [Logging](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Logging)
