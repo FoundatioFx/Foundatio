@@ -12,13 +12,9 @@ namespace Foundatio.Jobs {
             _handlers = new ConcurrentDictionary<Type, Lazy<IWorkItemHandler>>();
         }
 
-        public void Register<TWorkItem, THandler>()
-            where TWorkItem : class
-            where THandler : IWorkItemHandler {
+        public void Register<TWorkItem, THandler>() where TWorkItem : class where THandler : IWorkItemHandler {
 
-            _handlers.TryAdd(typeof (TWorkItem),
-                new Lazy<IWorkItemHandler>(
-                    () => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
+            _handlers.TryAdd(typeof(TWorkItem), new Lazy<IWorkItemHandler>(() => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
         }
 
         public void Register<T>(IWorkItemHandler handler) {
@@ -45,20 +41,18 @@ namespace Foundatio.Jobs {
         }
     }
 
-    public interface IWorkItemHandler
-    {
-        IDisposable GetWorkItemLock(WorkItemContext context);
-        Task HandleItem(WorkItemContext context);
+    public interface IWorkItemHandler {
+        Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context);
+
+        Task HandleItemAsync(WorkItemContext context);
     }
 
-    public abstract class WorkItemHandlerBase : IWorkItemHandler
-    {
-        public virtual IDisposable GetWorkItemLock(WorkItemContext context)
-        {
-            return Disposable.Empty;
+    public abstract class WorkItemHandlerBase : IWorkItemHandler {
+        public virtual Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context) {
+            return Task.FromResult(Disposable.Empty);
         }
 
-        public abstract Task HandleItem(WorkItemContext context);
+        public abstract Task HandleItemAsync(WorkItemContext context);
     }
 
     public class DelegateWorkItemHandler : IWorkItemHandler {
@@ -68,12 +62,11 @@ namespace Foundatio.Jobs {
             _handler = handler;
         }
 
-        public IDisposable GetWorkItemLock(WorkItemContext context)
-        {
-            return Disposable.Empty;
+        public Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context) {
+            return Task.FromResult(Disposable.Empty);
         }
 
-        public Task HandleItem(WorkItemContext context) {
+        public Task HandleItemAsync(WorkItemContext context) {
             if (_handler == null)
                 return TaskHelper.Completed();
 

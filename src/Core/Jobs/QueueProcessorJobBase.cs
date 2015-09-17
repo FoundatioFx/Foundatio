@@ -30,7 +30,7 @@ namespace Foundatio.Jobs {
             if (queueEntry == null)
                 return JobResult.Success;
             
-            using (var lockValue = GetQueueItemLock(queueEntry)) {
+            using (var lockValue = await GetQueueItemLockAsync(queueEntry).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 
@@ -54,8 +54,8 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected virtual IDisposable GetQueueItemLock(QueueEntry<T> queueEntry) {
-            return Disposable.Empty;
+        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry) {
+            return Task.FromResult(Disposable.Empty);
         }
         
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {

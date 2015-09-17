@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Jobs {
 
                 for (int i = 0; i < 10; i++) {
                     await Task.Delay(100).AnyContext();
-                    ctx.ReportProgress(10 * i);
+                    await ctx.ReportProgressAsync(10 * i).AnyContext();
                 }
             });
 
@@ -69,7 +69,7 @@ namespace Foundatio.Tests.Jobs {
 
             var jobIds = new ConcurrentDictionary<string, int>();
 
-            handlerRegistry.Register<MyWorkItem>(ctx => {
+            handlerRegistry.Register<MyWorkItem>(async ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
 
@@ -77,14 +77,12 @@ namespace Foundatio.Tests.Jobs {
                 Logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
 
                 for (int i = 0; i < 10; i++)
-                    ctx.ReportProgress(10 * i);
+                    await ctx.ReportProgressAsync(10 * i).AnyContext();
 
                 if (RandomData.GetBool(1)) {
                     Interlocked.Increment(ref errors);
                     throw new ApplicationException("Boom!");
                 }
-
-                return TaskHelper.Completed();
             });
 
             for (int i = 0; i < workItemCount; i++)
@@ -200,15 +198,15 @@ namespace Foundatio.Tests.Jobs {
 
         public MyDependency Dependency { get; private set; }
 
-        public override async Task HandleItem(WorkItemContext context) {
+        public override async Task HandleItemAsync(WorkItemContext context) {
             Assert.NotNull(Dependency);
 
             var jobData = context.GetData<MyWorkItem>();
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 1; i < 10; i++) {
-                await Task.Delay(100);
-                context.ReportProgress(10 * i);
+                await Task.Delay(100).AnyContext();
+                await context.ReportProgressAsync(10 * i).AnyContext();
             }
         }
     }

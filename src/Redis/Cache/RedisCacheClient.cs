@@ -68,7 +68,7 @@ namespace Foundatio.Caching {
                 else if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
                     value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(typeof(T)));
                 else
-                    value = _serializer.Deserialize<T>(redisValue.ToString());
+                    value = await _serializer.DeserializeAsync<T>(redisValue.ToString()).AnyContext();
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
@@ -83,7 +83,7 @@ namespace Foundatio.Caching {
 
             var result = new Dictionary<string, T>();
             for (int i = 0; i < keyArray.Length; i++) {
-                T value = _serializer.Deserialize<T>((string)values[i]);
+                T value = await _serializer.DeserializeAsync<T>((string)values[i]).AnyContext();
                 result.Add(keyArray[i], value);
             }
 
@@ -104,25 +104,29 @@ namespace Foundatio.Caching {
             return InternalSetAsync(key, value, expiresIn);
         }
 
-        protected Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
+        protected async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
             if (typeof(T) == typeof(Int16))
-                return _db.StringSetAsync(key, Convert.ToInt16(value), expiresIn, when, flags);
+                return await _db.StringSetAsync(key, Convert.ToInt16(value), expiresIn, when, flags).AnyContext();
             if (typeof(T) == typeof(Int32))
-                return _db.StringSetAsync(key, Convert.ToInt32(value), expiresIn, when, flags);
+                return await _db.StringSetAsync(key, Convert.ToInt32(value), expiresIn, when, flags).AnyContext();
             if (typeof(T) == typeof(Int64))
-                return _db.StringSetAsync(key, Convert.ToInt64(value), expiresIn, when, flags);
+                return await _db.StringSetAsync(key, Convert.ToInt64(value), expiresIn, when, flags).AnyContext();
             if (typeof(T) == typeof(bool))
-                return _db.StringSetAsync(key, Convert.ToBoolean(value), expiresIn, when, flags);
+                return await _db.StringSetAsync(key, Convert.ToBoolean(value), expiresIn, when, flags).AnyContext();
 
-            var data = _serializer.Serialize(value);
-            return _db.StringSetAsync(key, data, expiresIn, when, flags);
+            var data = await _serializer.SerializeAsync(value).AnyContext();
+            return await _db.StringSetAsync(key, data, expiresIn, when, flags).AnyContext();
         }
 
         public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             if (values == null)
                 return 0;
 
-            await _db.StringSetAsync(values.ToDictionary(v => (RedisKey)v.Key, v => (RedisValue)_serializer.Serialize(v.Value)).ToArray()).AnyContext();
+            var dictionary = new Dictionary<RedisKey, RedisValue>();
+            foreach (var value in values)
+                dictionary.Add(value.Key, await _serializer.SerializeAsync(value.Value).AnyContext());
+            
+            await _db.StringSetAsync(dictionary.ToArray()).AnyContext();
             return values.Count;
         }
 

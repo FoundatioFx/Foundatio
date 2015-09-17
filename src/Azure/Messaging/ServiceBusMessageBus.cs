@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
@@ -43,18 +44,20 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            object body = _serializer.Deserialize(message.Data, messageType);
+            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
             await SendMessageToSubscribersAsync(messageType, body);
         }
 
-        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            var brokeredMessage = new BrokeredMessage(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
+        public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            var brokeredMessage = new BrokeredMessage(new MessageBusData {
+                Type = messageType.AssemblyQualifiedName, Data = await _serializer.SerializeToStringAsync(message).AnyContext() 
+            });
             
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
             }
 
-            return _topicClient.SendAsync(brokeredMessage);
+            await _topicClient.SendAsync(brokeredMessage).AnyContext();
         }
     }
 }

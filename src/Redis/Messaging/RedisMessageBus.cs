@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Logging;
 using StackExchange.Redis;
@@ -35,7 +36,7 @@ namespace Foundatio.Messaging {
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
             Logger.Trace().Message($"OnMessage: {channel}").Write();
-            var message = _serializer.Deserialize<MessageBusData>((string)value);
+            var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
 
             Type messageType;
             try {
@@ -45,17 +46,23 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            object body = _serializer.Deserialize(message.Data, messageType);
+            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
             await SendMessageToSubscribersAsync(messageType, body);
         }
 
-        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
-                return AddDelayedMessageAsync(messageType, message, delay.Value);
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
+                return;
+            }
 
-            var data = _serializer.Serialize(new MessageBusData { Type = messageType.AssemblyQualifiedName, Data = _serializer.SerializeToString(message) });
-            return _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget);
+            var data = await _serializer.SerializeAsync(new MessageBusData {
+                Type = messageType.AssemblyQualifiedName,
+                Data = await _serializer.SerializeToStringAsync(message).AnyContext()
+            }).AnyContext();
+
+            await _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget).AnyContext();
         }
 
         public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) {

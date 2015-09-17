@@ -22,7 +22,7 @@ namespace Foundatio.Jobs {
 
             object workItemData;
             try {
-                workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
+                workItemData = await _queue.Serializer.DeserializeAsync(queueEntry.Value.Data, workItemDataType).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex, "Failed to parse work item data.");
             }
@@ -31,7 +31,7 @@ namespace Foundatio.Jobs {
             if (handler == null)
                 return JobResult.FailedWithMessage("Handler for type {0} not registered.", workItemDataType.Name);
 
-            var progressCallback = new Action<int, string>(async (progress, message) => await _messageBus.PublishAsync(new WorkItemStatus {
+            var progressCallback = new Func<int, string, Task>(async (progress, message) => await _messageBus.PublishAsync(new WorkItemStatus {
                 WorkItemId = queueEntry.Value.WorkItemId,
                 Progress = progress,
                 Message = message,
@@ -46,12 +46,12 @@ namespace Foundatio.Jobs {
                 }).AnyContext();
 
             var ctx = new WorkItemContext(workItemData, JobId, progressCallback);
-            using (var lockValue = handler.GetWorkItemLock(ctx)) {
+            using (var lockValue = await handler.GetWorkItemLockAsync(ctx).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
                 
 				try {
-                    await handler.HandleItem(ctx).AnyContext();
+                    await handler.HandleItemAsync(ctx).AnyContext();
                 } catch (Exception ex) {
                     await queueEntry.AbandonAsync().AnyContext();
                     return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
