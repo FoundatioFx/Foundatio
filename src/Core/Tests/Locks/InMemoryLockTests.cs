@@ -30,20 +30,20 @@ namespace Foundatio.Tests.Locks {
         }
 
         [Fact]
-        public async Task WillPassthrowResetEvent() {
+        public async Task WillPulseMonitor() {
             var monitor = new AsyncMonitor();
             var sw = Stopwatch.StartNew();
+            // Monitor will not be pulsed and should be cancelled after 100ms.
             using (await monitor.EnterAsync())
                 await Assert.ThrowsAsync<TaskCanceledException>(async () =>
                     await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext()).AnyContext();
             sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 100, 125);
+            Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
 
             var t = Task.Run(async () => {
                 await Task.Delay(25);
                 using (await monitor.EnterAsync())
                     monitor.Pulse();
-
             });
 
             sw = Stopwatch.StartNew();

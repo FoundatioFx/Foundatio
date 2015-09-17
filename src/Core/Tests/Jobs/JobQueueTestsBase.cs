@@ -86,7 +86,6 @@ namespace Foundatio.Tests.Jobs {
             metrics.DisplayStats(_writer);
             Assert.Equal(metrics.GetCount("completed"), queueStats.Sum(s => s.Completed));
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
-            //Assert.Equal(workItemCount, queueStats.Sum(s => s.Completed) + queueStats.LastOrDefault()?.Deadletter);
-        }
+         }
     }
 }

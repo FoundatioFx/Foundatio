@@ -10,8 +10,7 @@ namespace Foundatio.Jobs {
         protected readonly IMessageBus _messageBus;
         protected readonly WorkItemHandlers _handlers;
 
-        public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers)
-            : base(queue) {
+        public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers) : base(queue) {
             _messageBus = messageBus;
             _handlers = handlers;
         }

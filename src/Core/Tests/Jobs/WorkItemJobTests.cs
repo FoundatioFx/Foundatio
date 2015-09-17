@@ -56,7 +56,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanHandleMultipleWorkItemInstances() {
             var metrics = new InMemoryMetricsClient();
-            var queue = new InMemoryQueue<WorkItemData>(retryDelay: TimeSpan.Zero, retries: 0);
+            var queue = new InMemoryQueue<WorkItemData>(retries: 0, retryDelay: TimeSpan.Zero);
             queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
@@ -102,16 +102,25 @@ namespace Foundatio.Tests.Jobs {
                     completedItems.Add(status.WorkItemId);
             });
             
-            var token = TimeSpan.FromSeconds(10).ToCancellationToken();
+            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var tasks = new List<Task> {
-                Task.Run(async () => await j1.RunUntilEmptyAsync(token).AnyContext(), token),
-                Task.Run(async () => await j2.RunUntilEmptyAsync(token).AnyContext(), token),
-                Task.Run(async () => await j3.RunUntilEmptyAsync(token).AnyContext(), token),
+                Task.Run(async () => {
+                    await j1.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    cancellationTokenSource.Cancel();
+                }, cancellationTokenSource.Token),
+                Task.Run(async () => {
+                    await j2.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    cancellationTokenSource.Cancel();
+                }, cancellationTokenSource.Token),
+                Task.Run(async () => {
+                    await j3.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    cancellationTokenSource.Cancel();
+                }, cancellationTokenSource.Token)
             };
 
             await Task.WhenAll(tasks).AnyContext();
             metrics.DisplayStats(_writer);
-
+            
             Assert.Equal(100, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
             Assert.Equal(100, jobIds.Sum(kvp => kvp.Value));

@@ -369,6 +369,7 @@ namespace Foundatio.Tests.Queue {
                 }).AnyContext();
 
                 await countdown.WaitAsync().AnyContext();
+                await Task.Delay(50).AnyContext();
                 Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
                     info.CompletedCount,
                     info.AbandonCount,
