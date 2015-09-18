@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Newtonsoft.Json;
 
 namespace Foundatio.Storage {
@@ -27,78 +28,48 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static bool SaveObject<T>(this IFileStorage storage, string path, T data) {
-            return storage.SaveObjectAsync(path, data).Result;
-        }
-
-        public static async Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
             string json = JsonConvert.SerializeObject(data);
-            return await storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
         }
-
-        public static T GetObject<T>(this IFileStorage storage, string path) {
-            return storage.GetObjectAsync<T>(path).Result;
-        }
-
+        
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
             string fileContents;
-            using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken))
-                fileContents = await new StreamReader(result).ReadToEndAsync();
+            using (Stream result = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext())
+                fileContents = await new StreamReader(result).ReadToEndAsync().AnyContext();
 
-            if (string.IsNullOrEmpty(fileContents))
+            if (String.IsNullOrEmpty(fileContents))
                 return default(T);
 
             return JsonConvert.DeserializeObject<T>(fileContents);
         }
 
-        public static void DeleteFiles(this IFileStorage storage, IEnumerable<FileSpec> files) {
+        public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files) {
             foreach (var file in files)
-                storage.DeleteFile(file.Path);
+                await storage.DeleteFileAsync(file.Path).AnyContext();
         }
 
-        public static string GetFileContents(this IFileStorage storage, string path) {
-            using (var stream = storage.GetFileStreamAsync(path).Result)
-                return new StreamReader(stream).ReadToEnd();
+        public static async Task<string> GetFileContentsAsync(this IFileStorage storage, string path) {
+            using (var stream = await storage.GetFileStreamAsync(path).AnyContext())
+                return await new StreamReader(stream).ReadToEndAsync().AnyContext();
         }
 
-        public static byte[] GetFileContentsRaw(this IFileStorage storage, string path) {
-            var stream = storage.GetFileStreamAsync(path).Result;
-            return ReadFully(stream);
-        }
+        public static async Task<byte[]> GetFileContentsRawAsync(this IFileStorage storage, string path) {
+            using (var stream = await storage.GetFileStreamAsync(path).AnyContext()) {
+                byte[] buffer = new byte[16 * 1024];
+                using (var ms = new MemoryStream()) {
+                    int read;
+                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
+                        ms.Write(buffer, 0, read);
+                    }
 
-        private static byte[] ReadFully(Stream input) {
-            byte[] buffer = new byte[16 * 1024];
-            using (var ms = new MemoryStream()) {
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0) {
-                    ms.Write(buffer, 0, read);
+                    return ms.ToArray();
                 }
-                return ms.ToArray();
             }
         }
 
-        public static FileSpec GetFileInfo(this IFileStorage storage, string path) {
-            return storage.GetFileInfoAsync(path).Result;
-        }
-
-        public static bool Exists(this IFileStorage storage, string path) {
-            return storage.ExistsAsync(path).Result;
-        }
-
-        public static bool SaveFile(this IFileStorage storage, string path, string contents) {
-            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents))).Result;
-        }
-
-        public static bool RenameFile(this IFileStorage storage, string oldpath, string newpath) {
-            return storage.RenameFileAsync(oldpath, newpath).Result;
-        }
-
-        public static bool DeleteFile(this IFileStorage storage, string path) {
-            return storage.DeleteFileAsync(path).Result;
-        }
-
-        public static IEnumerable<FileSpec> GetFileList(this IFileStorage storage, string searchPattern = null, int? limit = null) {
-            return storage.GetFileListAsync(searchPattern, limit).Result;
+        public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents)));
         }
     }
 }

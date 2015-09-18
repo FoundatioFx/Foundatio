@@ -2,91 +2,99 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Utility;
-using NLog.Fluent;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
-        protected virtual IDisposable GetJobLock() {
-            return Disposable.Empty;
+        public JobBase() {
+            JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
-        private bool _jobNameSet = false;
-        private void EnsureJobNameSet() {
-            if (_jobNameSet)
-                return;
+        protected virtual Task<IDisposable> GetJobLockAsync() {
+            return Task.FromResult(Disposable.Empty);
+        }
 
-            NLog.GlobalDiagnosticsContext.Set("job", GetType().FullName);
-            _jobNameSet = true;
+        public string JobId { get; private set; }
+
+        private string _jobName;
+
+        private void EnsureJobNameSet() {
+            if (_jobName == null)
+                _jobName = GetType().Name;
+            Logger.ThreadProperties.Set("job", _jobName);
         }
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             EnsureJobNameSet();
+            Logger.Trace().Message("Job run \"{0}\" starting...", _jobName).Write();
 
-            Log.Trace().Message("Job \"{0}\" starting...", GetType().Name).Write();
-
-            try {
-                var lockValue = GetJobLock();
+            using (var lockValue = await GetJobLockAsync().AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
-                using (lockValue) {
-                    var result = await TryRunAsync(cancellationToken);
-                    if (result != null) {
-                        if (!result.IsSuccess)
-                            Log.Error().Message("Job \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
-                        else if (!String.IsNullOrEmpty(result.Message))
-                            Log.Info().Message("Job \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
-                        else
-                            Log.Trace().Message("Job \"{0}\" succeeded", GetType().Name).Write();
-                    } else {
-                        Log.Error().Message("Null job result for \"{0}\".", GetType().Name).Write();
-                    }
-
-                    return result;
+                var result = await TryRunAsync(cancellationToken).AnyContext();
+                if (result != null) {
+                    if (!result.IsSuccess)
+                        Logger.Error().Message("Job run \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
+                    else if (!String.IsNullOrEmpty(result.Message))
+                        Logger.Info().Message("Job run \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
+                    else
+                        Logger.Trace().Message("Job run \"{0}\" succeeded.", GetType().Name).Write();
+                } else {
+                    Logger.Error().Message("Null job run result for \"{0}\".", GetType().Name).Write();
                 }
-            } catch (TimeoutException) {
-                return JobResult.SuccessWithMessage("Timeout attempting to acquire lock.");
+
+                return result;
             }
         }
 
         private async Task<JobResult> TryRunAsync(CancellationToken token) {
             try {
-                return await RunInternalAsync(token);
+                return await RunInternalAsync(token).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex);
             }
         }
 
-        protected abstract Task<JobResult> RunInternalAsync(CancellationToken token);
-
-        public JobResult Run(CancellationToken token = default(CancellationToken)) {
-            return RunAsync(token).Result;
-        }
-
-        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected abstract Task<JobResult> RunInternalAsync(CancellationToken cancellationToken);
+        
+        public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
 
-            while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
-                await RunAsync(cancellationToken);
+            EnsureJobNameSet();
+            Logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
 
-                iterations++;
-                if (!interval.HasValue || interval.Value <= TimeSpan.Zero)
+            while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
+                try {
+                    await RunAsync(cancellationToken).AnyContext();
+
+                    iterations++;
+                    if (interval.HasValue)
+                        await Task.Delay(interval.Value, cancellationToken).AnyContext();
+                    else if (iterations % 1000 == 0) // allow for cancellation token to get set
+                        await Task.Delay(1).AnyContext();
+                } catch (TaskCanceledException) {}
+
+                if (continuationCallback == null)
                     continue;
 
                 try {
-                    await Task.Delay(interval.Value, cancellationToken);
-                } catch (TaskCanceledException) {}
+                    if (!await continuationCallback().AnyContext())
+                        break;
+                } catch (Exception ex) {
+                    Logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
+                }
             }
 
+            Logger.Info().Message("Stopping continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
+
             if (cancellationToken.IsCancellationRequested)
-                Log.Trace().Message("Job cancellation requested.").Write();
-        }
+                Logger.Trace().Message("Job cancellation requested.").Write();
 
-        public void RunContinuous(TimeSpan? delay = null, int iterationLimit = -1, CancellationToken token = default(CancellationToken)) {
-            RunContinuousAsync(delay, iterationLimit, token).Wait(token);
+            await Task.Delay(1).AnyContext(); // allow events to process
         }
-
+        
         public virtual void Dispose() {}
     }
 }

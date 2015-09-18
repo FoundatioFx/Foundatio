@@ -5,12 +5,17 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
 using Microsoft.ServiceBus;
+using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100) {
+        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
+        {
+        }
+
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
                 return null;
 
@@ -26,28 +31,28 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override void CanQueueAndDequeueWorkItem() {
-            base.CanQueueAndDequeueWorkItem();
+        public override Task CanQueueAndDequeueWorkItem() {
+            return base.CanQueueAndDequeueWorkItem();
         }
 
         [Fact]
-        public override void CanQueueAndDequeueMultipleWorkItems() {
-            base.CanQueueAndDequeueMultipleWorkItems();
+        public override Task CanQueueAndDequeueMultipleWorkItems() {
+            return base.CanQueueAndDequeueMultipleWorkItems();
         }
 
         [Fact]
-        public override void WillWaitForItem() {
-            base.WillWaitForItem();
+        public override Task WillWaitForItem() {
+            return base.WillWaitForItem();
         }
 
         [Fact]
-        public override void DequeueWaitWillGetSignaled() {
-            base.DequeueWaitWillGetSignaled();
+        public override Task DequeueWaitWillGetSignaled() {
+            return base.DequeueWaitWillGetSignaled();
         }
 
         [Fact]
-        public override void CanUseQueueWorker() {
-            base.CanUseQueueWorker();
+        public override Task CanUseQueueWorker() {
+            return base.CanUseQueueWorker();
         }
 
         [Fact]
@@ -56,28 +61,33 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override void WorkItemsWillTimeout() {
-            base.WorkItemsWillTimeout();
+        public override Task WorkItemsWillTimeout() {
+            return base.WorkItemsWillTimeout();
         }
 
         [Fact]
-        public override void WorkItemsWillGetMovedToDeadletter() {
-            base.WorkItemsWillGetMovedToDeadletter();
+        public override Task WorkItemsWillGetMovedToDeadletter() {
+            return base.WorkItemsWillGetMovedToDeadletter();
         }
 
         [Fact]
-        public override void CanAutoCompleteWorker() {
-            base.CanAutoCompleteWorker();
+        public override Task CanAutoCompleteWorker() {
+            return base.CanAutoCompleteWorker();
         }
 
         [Fact]
-        public override void CanHaveMultipleQueueInstances() {
-            base.CanHaveMultipleQueueInstances();
+        public override Task CanHaveMultipleQueueInstances() {
+            return base.CanHaveMultipleQueueInstances();
         }
 
-        // not using this test because you can set specific delay times for servicebus
-        public override void CanDelayRetry() {
-            base.CanDelayRetry();
+        [Fact]
+        public override Task CanRunWorkItemWithMetrics() {
+            return base.CanRunWorkItemWithMetrics();
+        }
+
+        // NOTE: Not using this test because you can set specific delay times for servicebus
+        public override Task CanDelayRetry() {
+            return base.CanDelayRetry();
         }
     }
 }

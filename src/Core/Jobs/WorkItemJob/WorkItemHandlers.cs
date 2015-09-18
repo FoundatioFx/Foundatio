@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
@@ -12,28 +13,17 @@ namespace Foundatio.Jobs {
             _handlers = new ConcurrentDictionary<Type, Lazy<IWorkItemHandler>>();
         }
 
-        public void Register<TWorkItem, THandler>()
-            where TWorkItem : class
-            where THandler : IWorkItemHandler {
+        public void Register<TWorkItem, THandler>() where TWorkItem : class where THandler : IWorkItemHandler {
 
-            _handlers.TryAdd(typeof (TWorkItem),
-                new Lazy<IWorkItemHandler>(
-                    () => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
+            _handlers.TryAdd(typeof(TWorkItem), new Lazy<IWorkItemHandler>(() => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
         }
 
         public void Register<T>(IWorkItemHandler handler) {
             _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => handler));
         }
 
-        public void Register<T>(Func<WorkItemContext, Task> handler) where T : class {
-            _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => new DelegateWorkItemHandler(handler)));
-        }
-
-        public void Register<T>(Func<WorkItemContext> handler) where T : class {
-            Register<T>(ctx => {
-                handler();
-                return TaskHelper.Completed();
-            });
+        public void Register<T>(Func<WorkItemContext, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+            _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => new DelegateWorkItemHandler(handler, cancellationToken)));
         }
 
         public IWorkItemHandler GetHandler(Type jobDataType) {
@@ -46,21 +36,35 @@ namespace Foundatio.Jobs {
     }
 
     public interface IWorkItemHandler {
-        Task HandleItem(WorkItemContext context);
+        Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context, CancellationToken cancellationToken);
+
+        Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken);
+    }
+
+    public abstract class WorkItemHandlerBase : IWorkItemHandler {
+        public virtual Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context, CancellationToken cancellationToken) {
+            return Task.FromResult(Disposable.Empty);
+        }
+
+        public abstract Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken);
     }
 
     public class DelegateWorkItemHandler : IWorkItemHandler {
-        private readonly Func<WorkItemContext, Task> _handler;
+        private readonly Func<WorkItemContext, CancellationToken, Task> _handler;
 
-        public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler) {
-            _handler = handler;
+        public DelegateWorkItemHandler(Func<WorkItemContext, CancellationToken, Task> handler, CancellationToken cancellationToken) {
+            _handler = (context, token) => handler(context, cancellationToken);
         }
 
-        public Task HandleItem(WorkItemContext context) {
+        public Task<IDisposable> GetWorkItemLockAsync(WorkItemContext context, CancellationToken cancellationToken) {
+            return Task.FromResult(Disposable.Empty);
+        }
+
+        public Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken) {
             if (_handler == null)
                 return TaskHelper.Completed();
 
-            return _handler(context);
+            return _handler(context, cancellationToken);
         }
     }
 }

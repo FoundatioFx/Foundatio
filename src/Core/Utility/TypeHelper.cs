@@ -1,5 +1,5 @@
 ﻿using System;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Utility {
     public static class TypeHelper {
@@ -9,12 +9,12 @@ namespace Foundatio.Utility {
             
             var type = Type.GetType(fullTypeName);
             if (type == null) {
-                Log.Error().Message("Unable to resolve type: \"{0}\".", fullTypeName).Write();
+                Logger.Error().Message("Unable to resolve type: \"{0}\".", fullTypeName).Write();
                 return null;
             }
 
             if (expectedBase != null && !expectedBase.IsAssignableFrom(type)) {
-                Log.Error().Message("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName).Write();
+                Logger.Error().Message("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName).Write();
                 return null;
             }
 

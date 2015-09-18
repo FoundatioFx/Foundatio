@@ -1,17 +1,18 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Lock {
     public interface ILockProvider : IDisposable {
-        IDisposable AcquireLock(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null);
-        bool IsLocked(string name);
-        void ReleaseLock(string name);
+        Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<bool> IsLockedAsync(string name);
+        Task ReleaseLockAsync(string name);
     }
 
-    public interface ILockProvider2 {
-        Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null, CancellationToken cancellationToken = default(CancellationToken));
-        bool IsLocked(string name);
-        void ReleaseLock(string name);
+    public static class LockProviderExtensions {
+        public static Task<IDisposable> AcquireLockAsync(this ILockProvider provider, string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
+            return provider.AcquireLockAsync(name, lockTimeout, acquireTimeout.ToCancellationToken(TimeSpan.FromMinutes(1)));
+        }
     }
 }

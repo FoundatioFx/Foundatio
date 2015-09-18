@@ -1,93 +1,96 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class InMemoryMetricsTests {
-        private readonly TestOutputWriter _writer;
-
-        public InMemoryMetricsTests(ITestOutputHelper output) {
-            _writer = new TestOutputWriter(output);
-        }
+    public class InMemoryMetricsTests : CaptureTests {
+        public InMemoryMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         [Fact]
-        public void CanIncrementCounter() {
+        public async Task CanIncrementCounter() {
             var metrics = new InMemoryMetricsClient();
 
-            metrics.Counter("c1");
+            await metrics.CounterAsync("c1").AnyContext();
             Assert.Equal(1, metrics.GetCount("c1"));
 
-            metrics.Counter("c1", 5);
+            await metrics.CounterAsync("c1", 5).AnyContext();
             Assert.Equal(6, metrics.GetCount("c1"));
 
             var counter = metrics.Counters["c1"];
             Assert.True(counter.Rate > 400);
 
-            metrics.Gauge("g1", 2.534);
+            await metrics.GaugeAsync("g1", 2.534).AnyContext();
             Assert.Equal(2.534, metrics.GetGaugeValue("g1"));
 
-            metrics.Timer("t1", 50788);
+            await metrics.TimerAsync("t1", 50788).AnyContext();
             var stats = metrics.GetMetricStats();
             Assert.Equal(1, stats.Timings.Count);
 
             metrics.DisplayStats(_writer);
         }
 
+#pragma warning disable 4014
         [Fact]
-        public async void CanWaitForCounter() {
+        public async Task CanWaitForCounter() {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(50), _writer);
-            Task.Run(() => {
-                Thread.Sleep(50);
-                metrics.Counter("Test");
-                metrics.Counter("Test");
+            Task.Run(async () => {
+                await Task.Delay(50).AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
             });
-            var success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2);
+
+            var success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            Task.Run(() => {
-                Thread.Sleep(50);
-                metrics.Counter("Test");
+            Task.Run(async () => {
+                await Task.Delay(50).AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
             });
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500));
+
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(100));
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100)).AnyContext();
             Assert.False(success);
 
-            Task.Run(() => {
-                Thread.Sleep(50);
-                metrics.Counter("Test", 2);
+            Task.Run(async () => {
+                await Task.Delay(50).AnyContext();
+                await metrics.CounterAsync("Test", 2).AnyContext();
             });
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 2);
+
+            success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
-            success = await metrics.WaitForCounterAsync("Test", TimeSpan.FromMilliseconds(500), 1,
-                async () => await metrics.CounterAsync("Test"));
+            success = await metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test").AnyContext(), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken()).AnyContext();
             Assert.True(success);
 
-            Task.Run(() => {
-                Thread.Sleep(50);
-                metrics.Counter("Test");
+            Task.Run(async () => {
+                await Task.Delay(50).AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
             });
-            success = metrics.WaitForCounter("Test", TimeSpan.FromMilliseconds(500));
+
+            success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500)).AnyContext();
             Assert.True(success);
 
             metrics.DisplayStats(_writer);
         }
+#pragma warning restore 4014
 
         [Fact]
-        public void CanDisplayStatsMultithreaded() {
+        public async Task CanDisplayStatsMultithreaded() {
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
-            Parallel.For(0, 100, i => {
-                metrics.Counter("Test");
-                Thread.Sleep(50);
-            });
+
+            await Run.InParallel(100, async i => {
+                await metrics.CounterAsync("Test").AnyContext();
+                await Task.Delay(50).AnyContext();
+            }).AnyContext();
         }
     }
 }

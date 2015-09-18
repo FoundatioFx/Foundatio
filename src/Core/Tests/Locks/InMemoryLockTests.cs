@@ -1,26 +1,56 @@
+using System;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Tests.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Extensions;
 
-namespace Foundatio.Tests {
+namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase {
+        public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+
         protected override ILockProvider GetLockProvider() {
             return new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
         }
 
         [Fact]
-        public override void CanAcquireAndReleaseLock() {
-            base.CanAcquireAndReleaseLock();
+        public override Task CanAcquireAndReleaseLock() {
+            return base.CanAcquireAndReleaseLock();
         }
 
         [Fact]
-        public override void LockWillTimeout() {
-            base.LockWillTimeout();
+        public override Task LockWillTimeout() {
+            return base.LockWillTimeout();
         }
 
-        public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        [Fact]
+        public async Task WillPulseMonitor() {
+            var monitor = new AsyncMonitor();
+            var sw = Stopwatch.StartNew();
+            // Monitor will not be pulsed and should be cancelled after 100ms.
+            using (await monitor.EnterAsync())
+                await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+                    await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext()).AnyContext();
+            sw.Stop();
+            Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
+
+            var t = Task.Run(async () => {
+                await Task.Delay(25);
+                using (await monitor.EnterAsync())
+                    monitor.Pulse();
+            });
+
+            sw = Stopwatch.StartNew();
+            using (await monitor.EnterAsync())
+                await monitor.WaitAsync(TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
+            sw.Stop();
+            Assert.InRange(sw.ElapsedMilliseconds, 25, 100);
+        }
     }
 }

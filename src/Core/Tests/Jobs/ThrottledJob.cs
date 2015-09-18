@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 
@@ -15,11 +14,11 @@ namespace Foundatio.Tests.Jobs {
         private readonly ILockProvider _locker;
         public int RunCount { get; set; }
 
-        protected override IDisposable GetJobLock() {
-            return _locker.TryAcquireLock("WithLockingJob", acquireTimeout: TimeSpan.Zero);
+        protected override Task<IDisposable> GetJobLockAsync() {
+            return _locker.AcquireLockAsync("WithLockingJob", acquireTimeout: TimeSpan.Zero);
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+        protected override Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
             RunCount++;
 
             return Task.FromResult(JobResult.Success);

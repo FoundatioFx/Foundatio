@@ -1,69 +1,65 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IDisposable where T: class {
+    public class QueueEntry<T> : IDisposable where T : class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
 
-        public QueueEntry(string id, T value, IQueue<T> queue) {
+        public QueueEntry(string id, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {
             Id = id;
             Value = value;
             _queue = queue;
+            EnqueuedTimeUtc = enqueuedTimeUtc;
+            Attempts = attempts;
+            DequeuedTimeUtc = DateTime.UtcNow;
         }
 
-        public string Id { get; private set; }
-
+        public string Id { get; }
         public T Value { get; private set; }
+        public DateTime EnqueuedTimeUtc { get; }
+        public DateTime DequeuedTimeUtc { get; }
+        public int Attempts { get; set; }
 
-        public void Complete() {
+        public Task CompleteAsync() {
             if (_isCompleted)
-                return;
+                return TaskHelper.Completed();
 
             _isCompleted = true;
-            _queue.Complete(Id);
+            return _queue.CompleteAsync(Id);
         }
 
-        public void Abandon() {
-            _queue.Abandon(Id);
+        public Task AbandonAsync() {
+            return _queue.AbandonAsync(Id);
         }
 
-        public virtual void Dispose() {
+        public virtual async void Dispose() {
             if (!_isCompleted)
-                Abandon();
+                await AbandonAsync().AnyContext();
+        }
+
+        public QueueEntryMetadata ToMetadata() {
+            return new QueueEntryMetadata {
+                Id = Id,
+                EnqueuedTimeUtc = EnqueuedTimeUtc,
+                DequeuedTimeUtc = DequeuedTimeUtc,
+                Attempts = Attempts
+            };
         }
     }
-
-    public class QueueEntry2<T> : IDisposable where T : class {
-        private readonly IQueue2<T> _queue;
-        private bool _isCompleted;
-
-        public QueueEntry2(string id, T value, IQueue2<T> queue) {
-            Id = id;
-            Value = value;
-            _queue = queue;
+    
+    public class QueueEntryMetadata {
+        public QueueEntryMetadata() {
+            Data = new DataDictionary();
         }
 
-        public string Id { get; private set; }
-
-        public T Value { get; private set; }
-
-        public async Task CompleteAsync() {
-            if (_isCompleted)
-                return;
-
-            _isCompleted = true;
-            await _queue.CompleteAsync(Id);
-        }
-
-        public async Task AbandonAsync() {
-            await _queue.AbandonAsync(Id);
-        }
-
-        public virtual void Dispose() {
-            if (!_isCompleted)
-               AbandonAsync().Wait();
-        }
+        public string Id { get; set; }
+        public DateTime EnqueuedTimeUtc { get; set; }
+        public DateTime DequeuedTimeUtc { get; set; }
+        public int Attempts { get; set; }
+        public TimeSpan ProcessingTime { get; set; }
+        public DataDictionary Data { get; set; } 
     }
 }

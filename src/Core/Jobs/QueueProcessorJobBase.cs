@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Queues;
 using Foundatio.Utility;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
@@ -11,63 +12,71 @@ namespace Foundatio.Jobs {
 
         public QueueProcessorJobBase(IQueue<T> queue) {
             _queue = queue;
+            AutoComplete = true;
         }
 
         protected bool AutoComplete { get; set; }
 
-        protected async override Task<JobResult> RunInternalAsync(CancellationToken token) {
-            QueueEntry<T> queueEntry = null;
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
+
+            QueueEntry<T> queueEntry;
             try {
-                queueEntry = _queue.Dequeue();
+                queueEntry = await _queue.DequeueAsync(linkedCancellationToken.Token).AnyContext();
             } catch (Exception ex) {
-                if (!(ex is TimeoutException)) {
-                    Log.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
-                    return JobResult.FromException(ex);
-                }
+                Logger.Error().Exception(ex).Message($"Error trying to dequeue message: {ex.Message}").Write();
+                return JobResult.FromException(ex);
             }
 
             if (queueEntry == null)
                 return JobResult.Success;
 
-            var lockValue = GetQueueItemLock(queueEntry);
-            if (lockValue == null) {
-                Log.Warn().Message("Unable to acquire lock for queue entry '{0}'.", queueEntry.Id).Write();
-                return JobResult.FailedWithMessage("Unable to acquire lock for queue entry.");
+            if (cancellationToken.IsCancellationRequested) {
+                Logger.Info().Message($"Job was cancelled. Abandoning queue item: {queueEntry.Id}").Write();
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.Cancelled;
             }
-            Log.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
 
-            using (lockValue) {
-                var result = await ProcessQueueItem(queueEntry);
+            using (var lockValue = await GetQueueItemLockAsync(queueEntry, cancellationToken).AnyContext()) {
+                if (lockValue == null)
+                    return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 
-                if (!AutoComplete)
+                Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
+                try {
+                    var result = await ProcessQueueItemAsync(queueEntry, cancellationToken).AnyContext();
+
+                    if (!AutoComplete)
+                        return result;
+
+                    if (result.IsSuccess)
+                        await queueEntry.CompleteAsync().AnyContext();
+                    else
+                        await queueEntry.AbandonAsync().AnyContext();
+
                     return result;
-
-                if (result.IsSuccess)
-                    queueEntry.Complete();
-                else
-                    queueEntry.Abandon();
-
-                return result;
+                } catch {
+                    await queueEntry.AbandonAsync().AnyContext();
+                    throw;
+                }
             }
         }
 
-        protected virtual IDisposable GetQueueItemLock(QueueEntry<T> queueEntry) {
-            return Disposable.Empty;
+        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken) {
+            return Task.FromResult(Disposable.Empty);
+        }
+        
+        public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            await RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () => {
+                var stats = await _queue.GetQueueStatsAsync().AnyContext();
+                Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", stats.Queued, stats.Working).Write();
+                return stats.Queued + stats.Working > 0;
+            }).AnyContext();
         }
 
-        public void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken)) {
-            do {
-                while (_queue.GetQueueCount() > 0)
-                    Run();
-
-                Thread.Sleep(100);
-            } while (_queue.GetQueueCount() != 0);
-        }
-
-        protected abstract Task<JobResult> ProcessQueueItem(QueueEntry<T> queueEntry);
+        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken);
     }
 
     public interface IQueueProcessorJob : IDisposable {
-        void RunUntilEmpty(CancellationToken cancellationToken = default(CancellationToken));
+        Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken));
     }
 }

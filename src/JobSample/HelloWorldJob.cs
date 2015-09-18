@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 
 namespace Foundatio.JobSample.Jobs {
@@ -13,13 +14,13 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
             RunCount++;
 
             Console.WriteLine("Hello World!");
-            Thread.Sleep(100);
+            await Task.Delay(100, cancellationToken).AnyContext();
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 

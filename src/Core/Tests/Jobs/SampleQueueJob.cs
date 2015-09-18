@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
@@ -13,29 +15,51 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override Task<JobResult> ProcessQueueItem(QueueEntry<SampleQueueWorkItem> queueEntry) {
-            _metrics.Counter("dequeued");
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken) {
+            await _metrics.CounterAsync("dequeued").AnyContext();
 
             if (RandomData.GetBool(10)) {
-                _metrics.Counter("errors");
+                await _metrics.CounterAsync("errors").AnyContext();
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                _metrics.Counter("abandoned");
-                queueEntry.Abandon();
-                return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
+                await _metrics.CounterAsync("abandoned").AnyContext();
+                return JobResult.FailedWithMessage("Abandoned");
             }
-
-            queueEntry.Complete();
-            _metrics.Counter("completed");
-
-            return Task.FromResult(JobResult.Success);
+            
+            await _metrics.CounterAsync("completed").AnyContext();
+            return JobResult.Success;
         }
     }
 
     public class SampleQueueWorkItem {
         public string Path { get; set; }
         public DateTime Created { get; set; }
+    }
+
+    public class SampleJob : JobBase {
+        private readonly IMetricsClient _metrics;
+
+        public SampleJob(IMetricsClient metrics) {
+            _metrics = metrics;
+        }
+
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+            await _metrics.CounterAsync("runs").AnyContext();
+
+            if (RandomData.GetBool(10)) {
+                await _metrics.CounterAsync("errors").AnyContext();
+                throw new ApplicationException("Boom!");
+            }
+
+            if (RandomData.GetBool(10)) {
+                await _metrics.CounterAsync("failed").AnyContext();
+                return JobResult.FailedWithMessage("Failed");
+            }
+
+            await _metrics.CounterAsync("completed").AnyContext();
+            return JobResult.Success;
+        }
     }
 }

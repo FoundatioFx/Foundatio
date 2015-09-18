@@ -10,6 +10,9 @@ namespace Foundatio.JobRunner {
         [Option('s', "serviceprovider", Required = false, HelpText = "The type to be used to create job instances and resolve service dependencies.")]
         public string ServiceProviderType { get; set; }
 
+        [Option('n', "noserviceprovider", Required = false, HelpText = "Don't use a service provider.")]
+        public bool? NoServiceProvider { get; set; }
+
         [Option('c', "continuous", Required = false, DefaultValue = false, HelpText = "Run the job in a continuous loop.")]
         public bool RunContinuously { get; set; }
 

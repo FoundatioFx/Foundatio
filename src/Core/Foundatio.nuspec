@@ -13,10 +13,8 @@
   </metadata>
   <files>
     <file src="..\JobRunner\bin\Release\Job.*" target="tools" />
-    <file src="..\JobRunner\bin\Release\NLog.config" target="tools" />
     <file src="..\JobRunner\bin\Release\CommandLine.*" target="tools\bin" />
     <file src="..\JobRunner\bin\Release\Foundatio.*" target="tools\bin" />
-    <file src="..\JobRunner\bin\Release\NLog.dll" target="tools\bin" />
     <file src="..\JobRunner\bin\Release\Newtonsoft.Json.*" target="tools\bin" />
   </files>
 </package>

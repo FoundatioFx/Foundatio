@@ -1,28 +1,30 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Queues;
 
 namespace Foundatio.JobSample.Jobs {
     public class PingQueueJob : QueueProcessorJobBase<PingRequest> {
-        public PingQueueJob(IQueue<PingRequest> queue)
-            : base(queue) {
+        public PingQueueJob(IQueue<PingRequest> queue) : base(queue) {
+            AutoComplete = false;
         }
 
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> ProcessQueueItem(QueueEntry<PingRequest> queueEntry) {
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<PingRequest> queueEntry, CancellationToken cancellationToken) {
             RunCount++;
 
             Console.WriteLine("Pong!");
 
             if (RandomData.GetBool(80))
-                queueEntry.Complete();
+                await queueEntry.CompleteAsync().AnyContext();
             else if (RandomData.GetBool(80))
-                queueEntry.Abandon();
+                await queueEntry.AbandonAsync().AnyContext();
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 

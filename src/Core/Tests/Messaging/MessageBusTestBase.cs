@@ -1,142 +1,141 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
-using NLog.Fluent;
+using Foundatio.Logging;
+using Foundatio.Utility;
+using Nito.AsyncEx;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
-    public abstract class MessageBusTestBase {
+    public abstract class MessageBusTestBase : CaptureTests {
+        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+
         protected virtual IMessageBus GetMessageBus() {
             return null;
         }
 
-        public virtual void CanSendMessage() {
+        public virtual async Task CanSendMessage() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Log.Trace().Message("Got message").Write();
+                    Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    Log.Trace().Message("Set event").Write();
+                    Logger.Trace().Message("Set event").Write();
                 });
-                Thread.Sleep(100);
-                messageBus.Publish(new SimpleMessageA {
+
+                await Task.Delay(100).AnyContext();
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
                 Trace.WriteLine("Published one...");
 
-                bool success = resetEvent.WaitOne(5000);
-                Trace.WriteLine("Done waiting: " + success);
-                Assert.True(success, "Failed to receive message.");
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void CanSendDelayedMessage() {
+        public virtual async Task CanSendDelayedMessage() {
+            const int numConcurrentMessages = 10000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var countdown = new AsyncCountdownEvent(numConcurrentMessages);
+
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Log.Trace().Message("Got message").Write();
+                    Logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
-                    resetEvent.Set();
-                    Log.Trace().Message("Set event").Write();
+                    countdown.Signal();
+                    Logger.Trace().Message("Set event").Write();
                 });
 
-                var sw = new Stopwatch();
-                sw.Start();
-                messageBus.Publish(new SimpleMessageA {
-                    Data = "Hello"
-                }, TimeSpan.FromMilliseconds(100));
-                Trace.WriteLine("Published one...");
+                var sw = Stopwatch.StartNew();
 
-                bool success = resetEvent.WaitOne(2000);
+                await Run.InParallel(numConcurrentMessages, async i => {
+                    await messageBus.PublishAsync(new SimpleMessageA {
+                        Data = "Hello"
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300))).AnyContext();
+                    Logger.Trace().Message("Published one...").Write();
+                }).AnyContext();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
                 sw.Stop();
-                Trace.WriteLine("Done waiting: " + success);
-
-                Assert.True(success, "Failed to receive message.");
+                
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void CanSendMessageToMultipleSubscribers() {
+        public virtual async Task CanSendMessageToMultipleSubscribers() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(3);
+                var countdown = new AsyncCountdownEvent(3);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void CanTolerateSubscriberFailure() {
+        public virtual async Task CanTolerateSubscriberFailure() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(2);
+                var countdown = new AsyncCountdownEvent(2);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     throw new ApplicationException();
                 });
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(0, countdown.CurrentCount);
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void WillOnlyReceiveSubscribedMessageType() {
+        public virtual async Task WillOnlyReceiveSubscribedMessageType() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var resetEvent = new AutoResetEvent(false);
+                var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
                 });
@@ -144,94 +143,120 @@ namespace Foundatio.Tests.Messaging {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = resetEvent.WaitOne(2000);
-                Assert.True(success, "Failed to receive message.");
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void WillReceiveDerivedMessageTypes() {
+        public virtual async Task WillReceiveDerivedMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(2);
+                var countdown = new AsyncCountdownEvent(2);
                 messageBus.Subscribe<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
-                messageBus.Publish(new SimpleMessageB {
+                }).AnyContext();
+                await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                });
-                messageBus.Publish(new SimpleMessageC {
+                }).AnyContext();
+                await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(5000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void CanSubscribeToAllMessageTypes() {
+        public virtual async Task CanSubscribeToAllMessageTypes() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                var latch = new CountDownLatch(3);
+                var countdown = new AsyncCountdownEvent(3);
                 messageBus.Subscribe<object>(msg => {
-                    latch.Signal();
+                    countdown.Signal();
                 });
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
-                messageBus.Publish(new SimpleMessageB {
+                }).AnyContext();
+                await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                });
-                messageBus.Publish(new SimpleMessageC {
+                }).AnyContext();
+                await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                bool success = latch.Wait(2000);
-                Assert.True(success, "Failed to receive all messages.");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
             }
-
-            Thread.Sleep(50);
         }
 
-        public virtual void WontKeepMessagesWithNoSubscribers() {
+        public virtual async Task WontKeepMessagesWithNoSubscribers() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using (messageBus) {
-                messageBus.Publish(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                });
+                }).AnyContext();
 
-                Thread.Sleep(1000);
-                var resetEvent = new AutoResetEvent(false);
+                await Task.Delay(100).AnyContext();
+                var resetEvent = new AsyncAutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                bool success = resetEvent.WaitOne(2000);
-                Assert.False(success, "Messages are building up.");
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext()).AnyContext();
             }
+        }
+        
+        public virtual async Task CanCancelSubscription() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
 
-            Thread.Sleep(50);
+            using (messageBus) {
+                var countdown = new AsyncCountdownEvent(2);
+
+                long messageCount = 0;
+                var cancellationTokenSource = new CancellationTokenSource();
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Logger.Trace().Message("SimpleAMessage received").Write();
+                    Interlocked.Increment(ref messageCount);
+                    cancellationTokenSource.Cancel();
+                    countdown.Signal();
+                }, cancellationTokenSource.Token);
+                
+                messageBus.Subscribe<object>(msg => countdown.Signal());
+
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                }).AnyContext();
+                
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(1, messageCount);
+
+                countdown = new AsyncCountdownEvent(1);
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                }).AnyContext();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(1, messageCount);
+            }
         }
     }
 }

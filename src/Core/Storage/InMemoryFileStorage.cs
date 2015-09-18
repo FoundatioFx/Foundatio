@@ -24,7 +24,7 @@ namespace Foundatio.Storage {
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
@@ -35,7 +35,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
-            return await ExistsAsync(path) ? _storage[path].Item1 : null;
+            return await ExistsAsync(path).AnyContext() ? _storage[path].Item1 : null;
         }
 
         public Task<bool> ExistsAsync(string path) {
@@ -51,7 +51,7 @@ namespace Foundatio.Storage {
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             byte[] contents = ReadBytes(stream);
             if (contents.Length > MaxFileSize)
@@ -74,9 +74,9 @@ namespace Foundatio.Storage {
 
         public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException("newpath");
+                throw new ArgumentNullException(nameof(newpath));
 
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
@@ -93,9 +93,9 @@ namespace Foundatio.Storage {
 
         public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException("targetpath");
+                throw new ArgumentNullException(nameof(targetpath));
 
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
@@ -111,7 +111,7 @@ namespace Foundatio.Storage {
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))
-                throw new ArgumentNullException("path");
+                throw new ArgumentNullException(nameof(path));
 
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
@@ -123,21 +123,20 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
             if (limit.HasValue && limit.Value <= 0)
-                return new List<FileSpec>();
+                return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 
             if (searchPattern == null)
                 searchPattern = "*";
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock)
-                return _storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList();
+                return Task.FromResult<IEnumerable<FileSpec>>(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList());
         }
 
         public void Dispose() {
-            if (_storage != null)
-                _storage.Clear();
+            _storage?.Clear();
         }
     }
 }

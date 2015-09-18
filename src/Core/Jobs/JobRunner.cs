@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
-using NLog.Fluent;
+using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public class JobRunOptions {
@@ -17,8 +18,6 @@ namespace Foundatio.Jobs {
 
         public string JobTypeName { get; set; }
         public Type JobType { get; set; }
-        public string ServiceProviderTypeName { get; set; }
-        public Type ServiceProviderType { get; set; }
         public bool RunContinuous { get; set; }
         public TimeSpan? Interval { get; set; }
         public int IterationLimit { get; set; }
@@ -26,66 +25,48 @@ namespace Foundatio.Jobs {
     }
 
     public class JobRunner {
-        public static JobResult Run<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: JobBase {
-            return CreateJobInstance(typeof(T)).Run(cancellationToken);
-        }
-        
-        public static Task<JobResult> RunAsync(Type jobType, Type serviceProviderType = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static Task<JobResult> RunAsync(Type jobType, CancellationToken cancellationToken = default(CancellationToken)) {
             return CreateJobInstance(jobType).RunAsync(cancellationToken);
         }
 
-        public static void RunUntilEmpty<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: IQueueProcessorJob {
+        public static Task RunUntilEmptyAsync<T>(CancellationToken cancellationToken = default(CancellationToken)) where T: IQueueProcessorJob {
             var jobInstance = CreateJobInstance(typeof(T)) as IQueueProcessorJob;
             if (jobInstance == null)
                 throw new ArgumentException("Type T must derive from IQueueProcessorJob.");
 
-            jobInstance.RunUntilEmpty(cancellationToken);
+            return jobInstance.RunUntilEmptyAsync(cancellationToken);
         }
 
-        public static Task RunContinuousAsync(Type jobType, Type serviceProviderType = null, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (instanceCount > 1) {
-                var tasks = new List<Task>();
-                for (int i = 0; i < instanceCount; i++) {
-                    tasks.Add(Task.Factory.StartNew(() => {
-                        CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken);
-                    }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default));
-                }
+        public static async Task RunContinuousAsync(Type jobType, TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+            var tasks = new List<Task>();
+            for (int i = 0; i < instanceCount; i++)
+                tasks.Add(Task.Run(async () => await CreateJobInstance(jobType).RunContinuousAsync(interval, iterationLimit, cancellationToken).AnyContext(), cancellationToken));
 
-                return Task.WhenAll(tasks);
-            }
-
-            return Task.Factory.StartNew(() => CreateJobInstance(jobType).RunContinuous(interval, iterationLimit, cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            await Task.WhenAll(tasks).AnyContext();
         }
 
         public static Task RunContinuousAsync<T>(TimeSpan? interval = null, int iterationLimit = -1, int instanceCount = 1, CancellationToken cancellationToken = default(CancellationToken)) {
-            return RunContinuousAsync(typeof(T), null, interval, iterationLimit, instanceCount, cancellationToken);
+            return RunContinuousAsync(typeof(T), interval, iterationLimit, instanceCount, cancellationToken);
         }
 
         public static async Task<int> RunAsync(JobRunOptions options, CancellationToken cancellationToken = default(CancellationToken)) {
-            ResolveJobTypes(options);
+            ResolveJobType(options);
             if (options.JobType == null)
                 return -1;
 
-            Log.Info().Message("Starting {0}job type \"{1}\" on machine \"{2}\"...", options.RunContinuous ? "continuous " : String.Empty, options.JobType.Name, Environment.MachineName).Write();
-
             WatchForShutdown();
-            var linkedToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             if (options.RunContinuous)
-                await RunContinuousAsync(options.JobType, options.ServiceProviderType, options.Interval,
-                    options.IterationLimit, options.InstanceCount, linkedToken);
+                await RunContinuousAsync(options.JobType, options.Interval, options.IterationLimit, options.InstanceCount, linkedCancellationToken).AnyContext();
             else
-                return (await RunAsync(options.JobType, options.ServiceProviderType, linkedToken)).IsSuccess ? 0 : -1;
+                return (await RunAsync(options.JobType, linkedCancellationToken).AnyContext()).IsSuccess ? 0 : -1;
 
             return 0;
         }
 
-        public static void ResolveJobTypes(JobRunOptions options) {
+        public static void ResolveJobType(JobRunOptions options) {
             if (options.JobType == null)
                 options.JobType = TypeHelper.ResolveType(options.JobTypeName, typeof(JobBase));
-
-            if (options.ServiceProviderType == null
-                && !String.IsNullOrEmpty(options.ServiceProviderTypeName))
-                options.ServiceProviderType = TypeHelper.ResolveType(options.ServiceProviderTypeName, typeof(IServiceProvider));
         }
 
         public static JobBase CreateJobInstance(string jobTypeName) {
@@ -98,13 +79,13 @@ namespace Foundatio.Jobs {
 
         public static JobBase CreateJobInstance(Type jobType) {
             if (!typeof(JobBase).IsAssignableFrom(jobType)) {
-                Log.Error().Message("Job Type must derive from Job.").Write();
+                Logger.Error().Message("Job Type must derive from Job.").Write();
                 return null;
             }
 
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
-                Log.Error().Message("Unable to create job instance.").Write();
+                Logger.Error().Message("Unable to create job instance.").Write();
                 return null;
             }
 
@@ -117,7 +98,7 @@ namespace Foundatio.Jobs {
         private static void WatchForShutdown() {
             ShutdownEventCatcher.Shutdown += args => {
                 _cancellationTokenSource.Cancel();
-                Log.Info().Message("Job shutdown event signaled: {0}", args.Reason).Write();
+                Logger.Info().Message("Job shutdown event signaled: {0}", args.Reason).Write();
             };
 
             _webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
@@ -135,7 +116,7 @@ namespace Foundatio.Jobs {
         private static void OnFileChanged(object sender, FileSystemEventArgs e) {
             if (e.FullPath.IndexOf(Path.GetFileName(_webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) >= 0) {
                 _cancellationTokenSource.Cancel();
-                Log.Info().Message("Job shutdown signaled.").Write();
+                Logger.Info().Message("Job shutdown signaled.").Write();
             }
         }
     }

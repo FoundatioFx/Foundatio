@@ -1,26 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Metrics;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Nito.AsyncEx;
-using NLog.Fluent;
+using Foundatio.Logging;
 using StackExchange.Redis;
+#pragma warning disable 4014
 
 namespace Foundatio.Queues {
-    public class RedisQueue<T> : IQueue<T> where T: class {
+    public class RedisQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         protected readonly IDatabase _db;
-        protected readonly ISubscriber _subscriber;
+        protected ISubscriber _subscriber;
         protected readonly RedisCacheClient _cache;
-        private Action<QueueEntry<T>> _workerAction;
-        private bool _workerAutoComplete;
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
@@ -34,25 +32,21 @@ namespace Foundatio.Queues {
         private readonly int _retries = 2;
         private readonly TimeSpan _deadLetterTtl = TimeSpan.FromDays(1);
         private readonly int _deadLetterMaxItems;
-        private CancellationTokenSource _workerCancellationTokenSource;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly AsyncAutoResetEvent _autoEvent = new AsyncAutoResetEvent(false);
-        protected readonly IMetricsClient _metrics;
-        private readonly Timer _maintenanceTimer;
-        protected readonly ISerializer _serializer;
+        private readonly AsyncMonitor _monitor = new AsyncMonitor();
         protected readonly ILockProvider _maintenanceLockProvider;
-        private IQueueEventHandler<T> _eventHandler = NullQueueEventHandler<T>.Instance; 
+        protected readonly bool _runMaintenanceTasks;
+        protected Task _maintenanceTask;
+        protected static readonly object _lockObject = new object();
+        private bool _isSubscribed;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IMetricsClient metrics = null, string statName = null, IQueueEventHandler<T> eventHandler = null) {
-            QueueId = Guid.NewGuid().ToString("N");
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null)
+            : base(serializer, behaviors) {
             _db = connection.GetDatabase();
-            _serializer = serializer ?? new JsonNetSerializer();
             _cache = new RedisCacheClient(connection, _serializer);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
-            _metrics = metrics;
-            QueueSizeStatName = statName;
             QueueListName = "q:" + _queueName + ":in";
             WorkListName = "q:" + _queueName + ":work";
             WaitListName = "q:" + _queueName + ":wait";
@@ -70,57 +64,63 @@ namespace Foundatio.Queues {
             _deadLetterMaxItems = deadLetterMaxItems;
 
             _payloadTtl = GetPayloadTtl();
-            if (eventHandler != null)
-                _eventHandler = eventHandler;
 
+            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
             _subscriber = connection.GetSubscriber();
-            _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
 
-            if (runMaintenanceTasks) {
-                _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-                // min is 1 second, max is 1 minute
-                TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
-                _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
-                _maintenanceTimer = new Timer(DoMaintenanceWork, null, TimeSpan.FromMilliseconds(250), interval);
+            _runMaintenanceTasks = runMaintenanceTasks;
+            // min is 1 second, max is 1 minute
+            TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
+            _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
+
+            Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
+        }
+
+        private void EnsureMaintenanceRunning() {
+            if (!_runMaintenanceTasks || _maintenanceTask != null)
+                return;
+
+            lock (_lockObject) {
+                if (_maintenanceTask != null)
+                    return;
+
+                Logger.Trace().Message($"Starting maintenance for {_queueName}.").Write();
+                _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoop(_queueDisposedCancellationTokenSource.Token));
             }
-
-            Log.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
         }
 
-        public long GetQueueCount() {
-            return _db.ListLength(QueueListName);
+        private void EnsureTopicSubscription() {
+            if (_isSubscribed)
+                return;
+
+            lock (_lockObject) {
+                if (_isSubscribed)
+                    return;
+
+                _isSubscribed = true;
+                Logger.Trace().Message($"Subscribing to enqueue messages for {_queueName}.").Write();
+                _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
+            }
         }
 
-        public long GetWorkingCount() {
-            return _db.ListLength(WorkListName);
+        public override async Task<QueueStats> GetQueueStatsAsync() {
+            return new QueueStats {
+                Queued = await _db.ListLengthAsync(QueueListName).AnyContext(),
+                Working = await _db.ListLengthAsync(WorkListName).AnyContext(),
+                Deadletter = await _db.ListLengthAsync(DeadListName).AnyContext(),
+                Enqueued = _enqueuedCount,
+                Dequeued = _dequeuedCount,
+                Completed = _completedCount,
+                Abandoned = _abandonedCount,
+                Errors = _workerErrorCount,
+                Timeouts = _workItemTimeoutCount
+            };
         }
-
-        public long GetDeadletterCount() {
-            return _db.ListLength(DeadListName);
-        }
-
-        public long EnqueuedCount { get { return _enqueuedCount; } }
-        public long DequeuedCount { get { return _dequeuedCount; } }
-        public long CompletedCount { get { return _completedCount; } }
-        public long AbandonedCount { get { return _abandonedCount; } }
-        public long WorkerErrorCount { get { return _workerErrorCount; } }
-        public long WorkItemTimeoutCount { get { return _workItemTimeoutCount; } }
-        public string QueueId { get; private set; }
 
         private string QueueListName { get; set; }
         private string WorkListName { get; set; }
         private string WaitListName { get; set; }
         private string DeadListName { get; set; }
-        protected string QueueSizeStatName { get; set; }
-
-        ISerializer IHaveSerializer.Serializer {
-            get { return _serializer; }
-        }
-
-        public IQueueEventHandler<T> EventHandler {
-            get { return _eventHandler; }
-            set { _eventHandler = value ?? NullQueueEventHandler<T>.Instance; }
-        }
 
         private string GetPayloadKey(string id) {
             return String.Concat("q:", _queueName, ":", id);
@@ -143,6 +143,10 @@ namespace Foundatio.Queues {
             return _payloadTtl;
         }
 
+        private string GetEnqueuedTimeKey(string id) {
+            return String.Concat("q:", _queueName, ":", id, ":enqueued");
+        }
+
         private string GetDequeuedTimeKey(string id) {
             return String.Concat("q:", _queueName, ":", id, ":dequeued");
         }
@@ -163,157 +167,188 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _queueName, ":in");
         }
 
-        public virtual string Enqueue(T data) {
+        public override async Task<string> EnqueueAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
-            Log.Debug().Message("Queue {0} enqueue item: {1}", _queueName, id).Write();
-            if (!EventHandler.BeforeEnqueue(this, data))
+            Logger.Debug().Message($"Queue {_queueName} enqueue item: {id}").Write();
+            if (!await OnEnqueuingAsync(data).AnyContext()) {
+                Logger.Trace().Message($"Aborting enqueue item: {id}").Write();
                 return null;
+            }
 
-            bool success = _cache.Add(GetPayloadKey(id), data, _payloadTtl);
+            bool success = await _cache.AddAsync(GetPayloadKey(id), data, _payloadTtl).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
-            _db.ListLeftPush(QueueListName, id);
-            _subscriber.Publish(GetTopicName(), id);
-            UpdateStats();
+
+            await _db.ListLeftPushAsync(QueueListName, id).AnyContext();
+            await _cache.SetAsync(GetEnqueuedTimeKey(id), DateTime.UtcNow.Ticks, _payloadTtl).AnyContext();
+
+            // This should pulse the monitor.
+            await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
+
             Interlocked.Increment(ref _enqueuedCount);
-            EventHandler.AfterEnqueue(this, id, data);
-            Log.Trace().Message("Enqueue done").Write();
+            await OnEnqueuedAsync(data, id).AnyContext();
+            Logger.Trace().Message($"Enqueue done").Write();
 
             return id;
         }
 
-        public virtual void StartWorking(Action<QueueEntry<T>> handler, bool autoComplete = false) {
+        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
-                throw new ArgumentNullException("handler");
+                throw new ArgumentNullException(nameof(handler));
 
-            Log.Trace().Message("Queue {0} start working", _queueName).Write();
-            _workerAction = handler;
-            _workerAutoComplete = autoComplete;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            if (_workerCancellationTokenSource != null)
-                return;
+            Task.Run(async () => {
+                Logger.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
+                while (!linkedCancellationToken.IsCancellationRequested) {
+                    Logger.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
+                    QueueEntry<T> queueEntry = null;
+                    try {
+                        queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
+                    } catch (TimeoutException) { }
 
-            _workerCancellationTokenSource = new CancellationTokenSource();
-            Task.Factory.StartNew(() => WorkerLoop(_workerCancellationTokenSource.Token));
+                    if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
+                        continue;
+
+                    try {
+                        await handler(queueEntry, linkedCancellationToken).AnyContext();
+                        if (autoComplete)
+                            await queueEntry.CompleteAsync().AnyContext();
+                    } catch (Exception ex) {
+                        Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        await queueEntry.AbandonAsync().AnyContext();
+                        Interlocked.Increment(ref _workerErrorCount);
+                    }
+                }
+
+                Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested).Write();
+            }, linkedCancellationToken);
         }
 
-        public virtual void StopWorking() {
-            Log.Trace().Message("Queue {0} stop working", _queueName).Write();
-            _workerAction = null;
-            _subscriber.UnsubscribeAll();
+        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
+            EnsureMaintenanceRunning();
+            EnsureTopicSubscription();
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            if (_workerCancellationTokenSource != null)
-                _workerCancellationTokenSource.Cancel();
+            RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+            if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
+                return null;
 
-            _autoEvent.Set();
-        }
+            Logger.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 
-        public virtual QueueEntry<T> Dequeue(TimeSpan? timeout = null) {
-            Log.Trace().Message("Queue {0} dequeuing item (timeout: {1})...", _queueName, timeout != null ? timeout.ToString() : "(none)").Write();
-            if (!timeout.HasValue)
-                timeout = TimeSpan.FromSeconds(30);
+            while (value.IsNullOrEmpty && !linkedCancellationToken.IsCancellationRequested) {
+                Logger.Trace().Message("Waiting to dequeue item...").Write();
 
-            RedisValue value = _db.ListRightPopLeftPush(QueueListName, WorkListName);
-            Log.Trace().Message("Initial list value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+                var sw = Stopwatch.StartNew();
+                try {
+                    using (await _monitor.EnterAsync(cancellationToken))
+                        await _monitor.WaitAsync(cancellationToken).AnyContext();
+                } catch (TaskCanceledException) { }
+                sw.Stop();
+                Logger.Trace().Message("Waited for dequeue: {0}", sw.Elapsed.ToString()).Write();
 
-            DateTime started = DateTime.UtcNow;
-            while (value.IsNullOrEmpty && timeout > TimeSpan.Zero && DateTime.UtcNow.Subtract(started) < timeout) {
-                Log.Trace().Message("Waiting to dequeue item...").Write();
-
-                // Wait for timeout or signal or dispose
-                Task.WaitAny(Task.Delay(timeout.Value), _autoEvent.WaitAsync(_queueDisposedCancellationTokenSource.Token));
-                if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
-                    return null;
-
-                value = _db.ListRightPopLeftPush(QueueListName, WorkListName);
-                Log.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
+                value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+                Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
             }
 
             if (value.IsNullOrEmpty)
                 return null;
 
-            _cache.Set(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
+            await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
 
             try {
-                var payload = _cache.Get<T>(GetPayloadKey(value));
+                var payload = await _cache.GetAsync<T>(GetPayloadKey(value)).AnyContext();
                 if (payload == null) {
-                    Log.Error().Message("Error getting queue payload: {0}", value).Write();
-                    _db.ListRemove(WorkListName, value);
+                    Logger.Error().Message("Error getting queue payload: {0}", value).Write();
+                    await _db.ListRemoveAsync(WorkListName, value).AnyContext();
                     return null;
                 }
 
-                EventHandler.OnDequeue(this, value, payload);
-
+                var enqueuedTimeTicks = await _cache.GetAsync<long?>(GetEnqueuedTimeKey(value)).AnyContext() ?? 0;
+                var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(value)).AnyContext() ?? -1;
+                var entry = new QueueEntry<T>(value, payload, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
-                UpdateStats();
+                await OnDequeuedAsync(entry).AnyContext();
 
-                Log.Debug().Message("Dequeued item: {0}", value).Write();
-                return new QueueEntry<T>(value, payload, this);
+                Logger.Debug().Message("Dequeued item: {0}", value).Write();
+                return entry;
             } catch (Exception ex) {
-                Log.Error().Message("Error getting queue payload: {0}", value).Exception(ex).Write();
+                Logger.Error().Exception(ex).Message("Error getting queue payload: {0}", value).Write();
                 throw;
             }
         }
 
-        public virtual void Complete(string id) {
-            Log.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
-            EventHandler.OnComplete(this, id);
+        public override async Task CompleteAsync(string id) {
+            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+
+            var tasks = new List<Task>();
             var batch = _db.CreateBatch();
-            batch.ListRemoveAsync(WorkListName, id);
-            batch.KeyDeleteAsync(GetPayloadKey(id));
-            batch.KeyDeleteAsync(GetAttemptsKey(id));
-            batch.KeyDeleteAsync(GetDequeuedTimeKey(id));
-            batch.KeyDeleteAsync(GetWaitTimeKey(id));
+            tasks.Add(batch.ListRemoveAsync(WorkListName, id));
+            tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+            tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
             batch.Execute();
+
+            await Task.WhenAll(tasks.ToArray()).AnyContext();
+
             Interlocked.Increment(ref _completedCount);
-            UpdateStats();
-            Log.Trace().Message("Complete done: {0}", id).Write();
+            await OnCompletedAsync(id).AnyContext();
+            Logger.Trace().Message("Complete done: {0}", id).Write();
         }
 
-        public virtual void Abandon(string id) {
-            Log.Debug().Message("Queue {0} abandon item: {1}", _queueName + ":" + QueueId, id).Write();
-            EventHandler.OnAbandon(this, id); 
-            var attemptsValue = _cache.Get<int?>(GetAttemptsKey(id));
+        public override async Task AbandonAsync(string id) {
+            Logger.Debug().Message($"Queue {_queueName}:{QueueId} abandon item: {id}").Write();
+            var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(id)).AnyContext();
             int attempts = 1;
             if (attemptsValue.HasValue)
                 attempts = attemptsValue.Value + 1;
-            Log.Trace().Message("Item attempts: {0}", attempts).Write();
-
+            
             var retryDelay = GetRetryDelay(attempts);
-            Log.Trace().Message("Retry attempts: {0} delay: {1} allowed: {2}", attempts, retryDelay.ToString(), _retries).Write();
+            Logger.Trace().Message($"Item: {id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}").Write();
             if (attempts > _retries) {
-                Log.Trace().Message("Exceeded retry limit moving to deadletter: {0}", id).Write();
-                _db.ListRemove(WorkListName, id);
-                _db.ListLeftPush(DeadListName, id);
-                _db.KeyExpire(GetPayloadKey(id), _deadLetterTtl);
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
+                Logger.Trace().Message($"Exceeded retry limit moving to deadletter: {id}").Write();
+
+                var tx = _db.CreateTransaction();
+                tx.ListRemoveAsync(WorkListName, id);
+                tx.ListLeftPushAsync(DeadListName, id);
+                tx.KeyExpireAsync(GetPayloadKey(id), _deadLetterTtl);
+                var success = await tx.ExecuteAsync().AnyContext();
+                if (!success)
+                    throw new Exception($"Unable to move item to wait list: {id}");
+
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
-                Log.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
+                Logger.Trace().Message($"Adding item to wait list for future retry: {id}").Write();
+                await _cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+
                 var tx = _db.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, id);
                 tx.ListLeftPushAsync(WaitListName, id);
-                var success = tx.Execute();
+                var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception("Unable to move item to wait list.");
-
-                _cache.Set(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl());
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
+                    throw new Exception($"Unable to move item to wait list: {id}");
             } else {
-                Log.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
+                Logger.Trace().Message($"Adding item back to queue for retry: {id}").Write();
+                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+
                 var tx = _db.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, id);
                 tx.ListLeftPushAsync(QueueListName, id);
-                var success = tx.Execute();
+                var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception("Unable to move item to queue list.");
-
-                _cache.Increment(GetAttemptsKey(id), 1, GetAttemptsTtl());
-                _subscriber.Publish(GetTopicName(), id);
+                    throw new Exception($"Unable to move item to queue list: {id}");
+                
+                // This should pulse the monitor.
+                await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
-            UpdateStats();
-            Log.Trace().Message("Abondon complete: {0}", id).Write();
+            await OnAbandonedAsync(id).AnyContext();
+            Logger.Trace().Message($"Abandon complete: {id}").Write();
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -325,164 +360,133 @@ namespace Foundatio.Queues {
             return TimeSpan.FromMilliseconds(_retryDelay.TotalMilliseconds * multiplier);
         }
 
-        public IEnumerable<T> GetDeadletterItems() {
+        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             throw new NotImplementedException();
         }
 
-        public virtual void DeleteQueue() {
-            Log.Trace().Message("Deleting queue: {0}", _queueName).Write();
-            DeleteList(QueueListName);
-            DeleteList(WorkListName);
-            DeleteList(WaitListName);
-            DeleteList(DeadListName);
+        public override async Task DeleteQueueAsync() {
+            Logger.Trace().Message("Deleting queue: {0}", _queueName).Write();
+            await DeleteListAsync(QueueListName).AnyContext();
+            await DeleteListAsync(WorkListName).AnyContext();
+            await DeleteListAsync(WaitListName).AnyContext();
+            await DeleteListAsync(DeadListName).AnyContext();
             _enqueuedCount = 0;
             _dequeuedCount = 0;
             _completedCount = 0;
             _abandonedCount = 0;
             _workerErrorCount = 0;
-            UpdateStats();
         }
 
-        private void DeleteList(string name) {
-            var itemIds = _db.ListRange(name);
+        private async Task DeleteListAsync(string name) {
+            // TODO Look into running this as a batch query.
+            var itemIds = await _db.ListRangeAsync(name).AnyContext();
             foreach (var id in itemIds) {
-                _db.KeyDelete(GetPayloadKey(id));
-                _db.KeyDelete(GetAttemptsKey(id));
-                _db.KeyDelete(GetDequeuedTimeKey(id));
-                _db.KeyDelete(GetWaitTimeKey(id));
+                await _db.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
             }
-            _db.KeyDelete(name);
+
+            await _db.KeyDeleteAsync(name).AnyContext();
         }
 
-        private void TrimDeadletterItems(int maxItems) {
-            var itemIds = _db.ListRange(DeadListName).Skip(maxItems);
+        private async Task TrimDeadletterItemsAsync(int maxItems) {
+            // TODO Look into running this as a batch query.
+            var itemIds = (await _db.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
             foreach (var id in itemIds) {
-                _db.KeyDelete(GetPayloadKey(id));
-                _db.KeyDelete(GetAttemptsKey(id));
-                _db.KeyDelete(GetDequeuedTimeKey(id));
-                _db.KeyDelete(GetWaitTimeKey(id));
-                _db.ListRemove(QueueListName, id);
-                _db.ListRemove(WorkListName, id);
-                _db.ListRemove(WaitListName, id);
-                _db.ListRemove(DeadListName, id);
+                await _db.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
+                await _db.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
+                await _db.ListRemoveAsync(QueueListName, id).AnyContext();
+                await _db.ListRemoveAsync(WorkListName, id).AnyContext();
+                await _db.ListRemoveAsync(WaitListName, id).AnyContext();
+                await _db.ListRemoveAsync(DeadListName, id).AnyContext();
             }
         }
 
-        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
-            Log.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
-            _autoEvent.Set();
+        private async void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+            Logger.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
+            using (await _monitor.EnterAsync())
+                _monitor.Pulse();
         }
 
-        private Task WorkerLoop(CancellationToken token) {
-            Log.Trace().Message("WorkerLoop Start {0}", _queueName).Write();
-            while (!token.IsCancellationRequested && _workerAction != null) {
-                Log.Trace().Message("WorkerLoop Pass {0}", _queueName).Write();
-                QueueEntry<T> queueEntry = null;
-                try {
-                    queueEntry = Dequeue();
-                } catch (TimeoutException) { }
-
-                if (token.IsCancellationRequested || queueEntry == null)
-                    continue;
-
-                try {
-                    _workerAction(queueEntry);
-                    if (_workerAutoComplete)
-                        queueEntry.Complete();
-                } catch (Exception ex) {
-                    Log.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
-                    queueEntry.Abandon();
-                    Interlocked.Increment(ref _workerErrorCount);
-                }
-            }
-
-            Log.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueName, token.IsCancellationRequested).Write();
-
-            return TaskHelper.Completed();
-        }
-
-        private void UpdateStats() {
-            if (_metrics == null || String.IsNullOrEmpty(QueueSizeStatName))
-                return;
-            
-            long count = GetQueueCount();
-            _metrics.Gauge(QueueSizeStatName, count);
-        }
-
-        internal void DoMaintenanceWork() {
-            Log.Trace().Message("DoMaintenance: Name={0} Id={1}", _queueName, QueueId).Write();
+        internal async Task DoMaintenanceWorkAsync() {
+            Logger.Trace().Message("DoMaintenance: Name={0} Id={1}", _queueName, QueueId).Write();
 
             try {
-                var workIds = _db.ListRange(WorkListName);
+                var workIds = await _db.ListRangeAsync(WorkListName).AnyContext();
                 foreach (var workId in workIds) {
-                    var dequeuedTimeTicks = _cache.Get<long?>(GetDequeuedTimeKey(workId));
+                    var dequeuedTimeTicks = await _cache.GetAsync<long?>(GetDequeuedTimeKey(workId)).AnyContext();
 
                     // dequeue time should be set, use current time
                     if (!dequeuedTimeTicks.HasValue) {
-                        _cache.Set(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl());
+                        await _cache.SetAsync(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
                         continue;
                     }
 
                     var dequeuedTime = new DateTime(dequeuedTimeTicks.Value);
-                    Log.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
+                    Logger.Trace().Message("Dequeue time {0}", dequeuedTime).Write();
                     if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
                         continue;
 
-                    Log.Trace().Message("Auto abandon item {0}", workId).Write();
-                    Abandon(workId);
+                    Logger.Trace().Message("Auto abandon item {0}", workId).Write();
+                    await AbandonAsync(workId).AnyContext();
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error checking for work item timeouts: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("Error checking for work item timeouts: {0}", ex.Message).Write();
             }
 
             try {
-                var waitIds = _db.ListRange(WaitListName);
+                var waitIds = await _db.ListRangeAsync(WaitListName).AnyContext();
                 foreach (var waitId in waitIds) {
-                    var waitTimeTicks = _cache.Get<long?>(GetWaitTimeKey(waitId));
-                    Log.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
+                    var waitTimeTicks = await _cache.GetAsync<long?>(GetWaitTimeKey(waitId)).AnyContext();
+                    Logger.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
 
                     if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)
                         continue;
 
-                    Log.Trace().Message("Getting retry lock").Write();
+                    Logger.Trace().Message("Getting retry lock").Write();
 
-                    Log.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
+                    Logger.Trace().Message("Adding item back to queue for retry: {0}", waitId).Write();
                     var tx = _db.CreateTransaction();
-#pragma warning disable 4014
                     tx.ListRemoveAsync(WaitListName, waitId);
                     tx.ListLeftPushAsync(QueueListName, waitId);
-#pragma warning restore 4014
-                    var success = tx.Execute();
+                    var success = await tx.ExecuteAsync().AnyContext();
                     if (!success)
                         throw new Exception("Unable to move item to queue list.");
 
-                    _db.KeyDelete(GetWaitTimeKey(waitId));
-                    _subscriber.Publish(GetTopicName(), waitId);
+                    await _db.KeyDeleteAsync(GetWaitTimeKey(waitId)).AnyContext();
+                    await _subscriber.PublishAsync(GetTopicName(), waitId).AnyContext();
                 }
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error adding items back to the queue after the retry delay: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("Error adding items back to the queue after the retry delay: {0}", ex.Message).Write();
             }
 
             try {
-                TrimDeadletterItems(_deadLetterMaxItems);
+                await TrimDeadletterItemsAsync(_deadLetterMaxItems).AnyContext();
             } catch (Exception ex) {
-                Log.Error().Exception(ex).Message("Error trimming deadletter items: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message("Error trimming deadletter items: {0}", ex.Message).Write();
             }
         }
 
-        private void DoMaintenanceWork(object state) {
-            Log.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
-            _maintenanceLockProvider.TryUsingLock(_queueName + "-maintenance", DoMaintenanceWork, acquireTimeout: TimeSpan.Zero);
+        private async Task DoMaintenanceWorkLoop(CancellationToken token) {
+            while (!token.IsCancellationRequested) {
+                Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
+                await _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
+            }
         }
 
-        public virtual void Dispose() {
-            Log.Trace().Message("Queue {0} dispose", _queueName).Write();
-            StopWorking();
-            if (_queueDisposedCancellationTokenSource != null)
-                _queueDisposedCancellationTokenSource.Cancel();
-            if (_maintenanceTimer != null)
-                _maintenanceTimer.Dispose();
+        public override async void Dispose() {
+            Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
+
+            await _subscriber.UnsubscribeAllAsync().AnyContext();
+            _queueDisposedCancellationTokenSource?.Cancel();
+
+            base.Dispose();
         }
     }
 }
