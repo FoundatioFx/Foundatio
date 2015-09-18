@@ -164,7 +164,7 @@ Allows you to run a long running process (in process or out of process) with out
 
     public HelloWorldQueueJob(IQueue<HelloWorldQueueItem> queue) : base(queue) {}
     
-    protected override Task<JobResult> ProcessQueueItemAsync(QueueEntry<HelloWorldQueueItem> queueEntry) {
+    protected override Task<JobResult> ProcessQueueItemAsync(QueueEntry<HelloWorldQueueItem> queueEntry, CancellationToken cancellationToken) {
        RunCount++;
 
        return Task.FromResult(JobResult.Success);
@@ -207,7 +207,7 @@ Allows you to run a long running process (in process or out of process) with out
   using Foundatio.Jobs;
 
   public class HelloWorldWorkItemHandler : WorkItemHandlerBase {
-    public override async Task HandleItemAsync(WorkItemContext ctx) {
+    public override async Task HandleItemAsync(WorkItemContext ctx, CancellationToken cancellationToken) {
       var workItem = ctx.GetData<HelloWorldWorkItem>();
 
       // We can report the progress over the message bus easily.

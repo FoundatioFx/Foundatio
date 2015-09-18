@@ -57,7 +57,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected abstract Task<JobResult> RunInternalAsync(CancellationToken token);
+        protected abstract Task<JobResult> RunInternalAsync(CancellationToken cancellationToken);
         
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Extensions;
@@ -13,7 +14,7 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<PingRequest> queueEntry) {
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<PingRequest> queueEntry, CancellationToken cancellationToken) {
             RunCount++;
 
             Console.WriteLine("Pong!");

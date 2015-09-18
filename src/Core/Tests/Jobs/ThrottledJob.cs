@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Jobs {
             return _locker.AcquireLockAsync("WithLockingJob", acquireTimeout: TimeSpan.Zero);
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
+        protected override Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
             RunCount++;
 
             return Task.FromResult(JobResult.Success);

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Messaging;
@@ -15,7 +16,7 @@ namespace Foundatio.Jobs {
             _handlers = handlers;
         }
 
-        protected async override Task<JobResult> ProcessQueueItemAsync(QueueEntry<WorkItemData> queueEntry) {
+        protected async override Task<JobResult> ProcessQueueItemAsync(QueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken) {
             var workItemDataType = Type.GetType(queueEntry.Value.Type);
             if (workItemDataType == null)
                 return JobResult.FailedWithMessage("Could not resolve work item data type.");
@@ -46,12 +47,12 @@ namespace Foundatio.Jobs {
                 }).AnyContext();
 
             var ctx = new WorkItemContext(workItemData, JobId, progressCallback);
-            using (var lockValue = await handler.GetWorkItemLockAsync(ctx).AnyContext()) {
+            using (var lockValue = await handler.GetWorkItemLockAsync(ctx, cancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
                 
 				try {
-                    await handler.HandleItemAsync(ctx).AnyContext();
+                    await handler.HandleItemAsync(ctx, cancellationToken).AnyContext();
                 } catch (Exception ex) {
                     await queueEntry.AbandonAsync().AnyContext();
                     return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);

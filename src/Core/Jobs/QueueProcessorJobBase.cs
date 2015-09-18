@@ -12,12 +12,13 @@ namespace Foundatio.Jobs {
 
         public QueueProcessorJobBase(IQueue<T> queue) {
             _queue = queue;
+            AutoComplete = true;
         }
 
         protected bool AutoComplete { get; set; }
 
-        protected override async Task<JobResult> RunInternalAsync(CancellationToken token) {
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(token, TimeSpan.FromSeconds(30).ToCancellationToken());
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
 
             QueueEntry<T> queueEntry;
             try {
@@ -30,13 +31,13 @@ namespace Foundatio.Jobs {
             if (queueEntry == null)
                 return JobResult.Success;
             
-            using (var lockValue = await GetQueueItemLockAsync(queueEntry).AnyContext()) {
+            using (var lockValue = await GetQueueItemLockAsync(queueEntry, cancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 
                 Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
                 try {
-                    var result = await ProcessQueueItemAsync(queueEntry).AnyContext();
+                    var result = await ProcessQueueItemAsync(queueEntry, cancellationToken).AnyContext();
 
                     if (!AutoComplete)
                         return result;
@@ -54,7 +55,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry) {
+        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken) {
             return Task.FromResult(Disposable.Empty);
         }
         
@@ -66,7 +67,7 @@ namespace Foundatio.Jobs {
             }).AnyContext();
         }
 
-        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry);
+        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken);
     }
 
     public interface IQueueProcessorJob : IDisposable {

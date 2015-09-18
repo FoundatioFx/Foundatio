@@ -27,7 +27,7 @@ namespace Foundatio.Tests.Jobs {
             var handlerRegistry = new WorkItemHandlers();
             var job = new WorkItemJob(queue, messageBus, handlerRegistry);
 
-            handlerRegistry.Register<MyWorkItem>(async ctx => {
+            handlerRegistry.Register<MyWorkItem>(async (ctx, token) => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
 
@@ -69,7 +69,7 @@ namespace Foundatio.Tests.Jobs {
 
             var jobIds = new ConcurrentDictionary<string, int>();
 
-            handlerRegistry.Register<MyWorkItem>(async ctx => {
+            handlerRegistry.Register<MyWorkItem>(async (ctx, token) => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
 
@@ -164,7 +164,7 @@ namespace Foundatio.Tests.Jobs {
             var handlerRegistry = new WorkItemHandlers();
             var job = new WorkItemJob(queue, messageBus, handlerRegistry);
 
-            handlerRegistry.Register<MyWorkItem>(ctx => {
+            handlerRegistry.Register<MyWorkItem>((ctx, token) => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
                 throw new ApplicationException();
@@ -198,7 +198,7 @@ namespace Foundatio.Tests.Jobs {
 
         public MyDependency Dependency { get; private set; }
 
-        public override async Task HandleItemAsync(WorkItemContext context) {
+        public override async Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken) {
             Assert.NotNull(Dependency);
 
             var jobData = context.GetData<MyWorkItem>();
