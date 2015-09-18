@@ -24,13 +24,19 @@ namespace Foundatio.Jobs {
             try {
                 queueEntry = await _queue.DequeueAsync(linkedCancellationToken.Token).AnyContext();
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error trying to dequeue message: {0}", ex.Message).Write();
+                Logger.Error().Exception(ex).Message($"Error trying to dequeue message: {ex.Message}").Write();
                 return JobResult.FromException(ex);
             }
 
             if (queueEntry == null)
                 return JobResult.Success;
-            
+
+            if (cancellationToken.IsCancellationRequested) {
+                Logger.Info().Message($"Job was cancelled. Abandoning queue item: {queueEntry.Id}").Write();
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.Cancelled;
+            }
+
             using (var lockValue = await GetQueueItemLockAsync(queueEntry, cancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
