@@ -8,8 +8,8 @@ using Foundatio.Queues;
 
 namespace Foundatio.JobSample.Jobs {
     public class PingQueueJob : QueueProcessorJobBase<PingRequest> {
-        public PingQueueJob(IQueue<PingRequest> queue)
-            : base(queue) {
+        public PingQueueJob(IQueue<PingRequest> queue) : base(queue) {
+            AutoComplete = false;
         }
 
         public int RunCount { get; set; }

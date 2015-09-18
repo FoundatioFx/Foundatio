@@ -24,14 +24,11 @@ namespace Foundatio.Tests.Jobs {
             }
 
             if (RandomData.GetBool(10)) {
-                await queueEntry.AbandonAsync().AnyContext();
                 await _metrics.CounterAsync("abandoned").AnyContext();
                 return JobResult.FailedWithMessage("Abandoned");
             }
-
-            await queueEntry.CompleteAsync().AnyContext();
+            
             await _metrics.CounterAsync("completed").AnyContext();
-
             return JobResult.Success;
         }
     }

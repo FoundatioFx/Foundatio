@@ -14,6 +14,7 @@ namespace Foundatio.Jobs {
         public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers) : base(queue) {
             _messageBus = messageBus;
             _handlers = handlers;
+            AutoComplete = false;
         }
 
         protected async override Task<JobResult> ProcessQueueItemAsync(QueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken) {
