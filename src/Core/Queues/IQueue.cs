@@ -5,15 +5,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public interface IQueue<T> : IHaveSerializer, IDisposable where T : class {
-        event EventHandler<EnqueuingEventArgs<T>> Enqueuing;
-        event EventHandler<EnqueuedEventArgs<T>> Enqueued;
-        event EventHandler<DequeuedEventArgs<T>> Dequeued;
-        event EventHandler<CompletedEventArgs<T>> Completed;
-        event EventHandler<AbandonedEventArgs<T>> Abandoned;
-        
+        AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; set; }
+        AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; set; }
+        AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; set; }
+        AsyncEvent<CompletedEventArgs<T>> Completed { get; set; }
+        AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; set; }
+
         void AttachBehavior(IQueueBehavior<T> behavior);
 
         Task<string> EnqueueAsync(T data);

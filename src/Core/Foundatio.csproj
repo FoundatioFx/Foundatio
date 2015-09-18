@@ -124,6 +124,7 @@
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
+    <Compile Include="Utility\AsyncEvent.cs" />
     <Compile Include="Utility\DataDictionary.cs" />
     <Compile Include="Utility\EmptyDisposable.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />

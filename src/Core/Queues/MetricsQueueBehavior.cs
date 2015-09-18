@@ -38,8 +38,8 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async void OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
-            base.OnEnqueued(sender, enqueuedEventArgs);
+        protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
+            await base.OnEnqueued(sender, enqueuedEventArgs).AnyContext();
             await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(enqueuedEventArgs.Data);
@@ -48,8 +48,8 @@ namespace Foundatio.Queues {
             await _metricsClient.CounterAsync(GetFullMetricName("enqueued")).AnyContext();
         }
 
-        protected override async void OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
-            base.OnDequeued(sender, dequeuedEventArgs);
+        protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+            await base.OnDequeued(sender, dequeuedEventArgs).AnyContext();
             await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Data);
@@ -73,8 +73,8 @@ namespace Foundatio.Queues {
             await _metricsClient.TimerAsync(GetFullMetricName("queuetime"), time).AnyContext();
         }
 
-        protected override async void OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
-            base.OnCompleted(sender, completedEventArgs);
+        protected override async Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
+            await base.OnCompleted(sender, completedEventArgs).AnyContext();
             await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(completedEventArgs.Metadata);
@@ -88,8 +88,8 @@ namespace Foundatio.Queues {
             await _metricsClient.TimerAsync(GetFullMetricName("processtime"), time).AnyContext();
         }
 
-        protected override async void OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
-            base.OnAbandoned(sender, abandonedEventArgs);
+        protected override async Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
+            await base.OnAbandoned(sender, abandonedEventArgs).AnyContext();
             await ReportQueueCountAsync().AnyContext();
 
             string customMetricName = GetCustomMetricName(abandonedEventArgs.Metadata);

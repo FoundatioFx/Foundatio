@@ -47,7 +47,7 @@ namespace Foundatio.Tests.Jobs {
         
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
-            const int workItemCount = 15;
+            const int workItemCount = 100;
             var metrics = new InMemoryMetricsClient();
             metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
 

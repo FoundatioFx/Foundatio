@@ -48,22 +48,22 @@ namespace Foundatio.Queues {
 
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 
-        public virtual event EventHandler<EnqueuingEventArgs<T>> Enqueuing;
+        public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; set; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
-        protected virtual Task<bool> OnEnqueuingAsync(T data) {
+        protected virtual async Task<bool> OnEnqueuingAsync(T data) {
             var args = new EnqueuingEventArgs<T> {
                 Queue = this,
                 Data = data
             };
             
-            Enqueuing?.Invoke(this, args);
-            return Task.FromResult(!args.Cancel);
+            await (Enqueuing?.InvokeAsync(this, args) ?? TaskHelper.Completed()).AnyContext();
+            return !args.Cancel;
         }
 
-        public virtual event EventHandler<EnqueuedEventArgs<T>> Enqueued;
+        public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; set; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
-        protected virtual Task OnEnqueuedAsync(T data, string id) {
-            Enqueued?.Invoke(this, new EnqueuedEventArgs<T> {
+        protected virtual async Task OnEnqueuedAsync(T data, string id) {
+            await (Enqueued?.InvokeAsync(this, new EnqueuedEventArgs<T> {
                 Queue = this,
                 Data = data,
                 Metadata = new QueueEntryMetadata {
@@ -71,50 +71,48 @@ namespace Foundatio.Queues {
                     EnqueuedTimeUtc = DateTime.UtcNow,
                     Id = id
                 }
-            });
-
-            return TaskHelper.Completed();
+            }) ?? TaskHelper.Completed()).AnyContext();
         }
 
-        public virtual event EventHandler<DequeuedEventArgs<T>> Dequeued;
+        public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; set; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual async Task OnDequeuedAsync(QueueEntry<T> entry) {
             var info = entry.ToMetadata();
-            Dequeued?.Invoke(this, new DequeuedEventArgs<T> {
+            await (Dequeued?.InvokeAsync(this, new DequeuedEventArgs<T> {
                 Queue = this,
                 Data = entry.Value,
                 Metadata = info
-            });
+            }) ?? TaskHelper.Completed()).AnyContext();
 
             await _queueEntryCache.SetAsync(entry.Id, info).AnyContext();
         }
 
-        public virtual event EventHandler<CompletedEventArgs<T>> Completed;
+        public AsyncEvent<CompletedEventArgs<T>> Completed { get; set; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
         protected virtual async Task OnCompletedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
             if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
                 queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
 
-            Completed?.Invoke(this, new CompletedEventArgs<T> {
+            await (Completed?.InvokeAsync(this, new CompletedEventArgs<T> {
                 Queue = this,
                 Metadata = queueEntry
-            });
+            }) ?? TaskHelper.Completed()).AnyContext();
 
             await _queueEntryCache.RemoveAsync(id).AnyContext();
         }
 
-        public virtual event EventHandler<AbandonedEventArgs<T>> Abandoned;
+        public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; set; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual async Task OnAbandonedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
             if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
                 queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
             
-            Abandoned?.Invoke(this, new AbandonedEventArgs<T> {
+            await (Abandoned?.InvokeAsync(this, new AbandonedEventArgs<T> {
                 Queue = this,
                 Metadata = queueEntry
-            });
+            }) ?? TaskHelper.Completed()).AnyContext();
 
             await _queueEntryCache.RemoveAsync(id).AnyContext();
         }

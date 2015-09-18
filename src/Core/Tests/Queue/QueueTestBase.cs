@@ -50,7 +50,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDequeueEfficiently() {
-            const int iterations = 10;
+            const int iterations = 100;
 
             var queue = GetQueue(runQueueMaintenance: false);
             if (queue == null)
@@ -446,7 +446,10 @@ namespace Foundatio.Tests.Queue {
             var metricsClient = new InMemoryMetricsClient();
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
             var queue = new InMemoryQueue<WorkItemData>(behaviours: new[] { behavior });
-            queue.Completed += (sender, e) => { eventRaised.Set(); };
+            queue.Completed += (sender, e) => {
+                eventRaised.Set();
+                return TaskHelper.Completed();
+            };
 
             var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
 

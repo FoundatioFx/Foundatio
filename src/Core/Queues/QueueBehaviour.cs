@@ -1,5 +1,6 @@
 ﻿using System;
-using Foundatio.Logging;
+using System.Threading.Tasks;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public interface IQueueBehavior<T> where T : class {
@@ -24,15 +25,25 @@ namespace Foundatio.Queues {
             _queue.Abandoned += OnAbandoned;
         }
 
-        protected virtual void OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {}
+        protected virtual Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {
+            return TaskHelper.Completed();
+        }
 
-        protected virtual void OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {}
+        protected virtual Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
+            return TaskHelper.Completed();
+        }
 
-        protected virtual void OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {}
+        protected virtual Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+            return TaskHelper.Completed();
+        }
 
-        protected virtual void OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {}
+        protected virtual Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
+            return TaskHelper.Completed();
+        }
 
-        protected virtual void OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {}
+        protected virtual Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
+            return TaskHelper.Completed();
+        }
 
         public void Dispose() {
             _queue.Enqueuing -= OnEnqueuing;
