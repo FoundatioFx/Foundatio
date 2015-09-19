@@ -32,8 +32,8 @@ namespace Foundatio.Queues {
         private readonly Timer _maintenanceTimer;
         private readonly CancellationTokenSource _disposeTokenSource;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviours = null)
-            : base(serializer, behaviours)
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null)
+            : base(serializer, behaviors)
         {
             _retries = retries;
             if (retryDelay.HasValue)
