@@ -29,10 +29,10 @@ namespace Foundatio.Messaging {
                 _namespaceManager.CreateSubscription(_topicName, _subscriptionName);
 
             _subscriptionClient = SubscriptionClient.CreateFromConnectionString(connectionString, _topicName, _subscriptionName, ReceiveMode.ReceiveAndDelete);
-            _subscriptionClient.OnMessage(OnMessage, new OnMessageOptions { AutoComplete = true });
+            _subscriptionClient.OnMessageAsync(OnMessageAsync, new OnMessageOptions { AutoComplete = true });
         }
 
-        private async void OnMessage(BrokeredMessage brokeredMessage) {
+        private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
             Logger.Trace().Message($"OnMessage: {brokeredMessage.MessageId}").Write();
             var message = brokeredMessage.GetBody<MessageBusData>();
 
@@ -52,10 +52,9 @@ namespace Foundatio.Messaging {
             var brokeredMessage = new BrokeredMessage(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName, Data = await _serializer.SerializeToStringAsync(message).AnyContext() 
             });
-            
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+
+            if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
-            }
 
             await _topicClient.SendAsync(brokeredMessage).AnyContext();
         }

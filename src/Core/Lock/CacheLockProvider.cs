@@ -32,11 +32,11 @@ namespace Foundatio.Lock {
 
                 _isSubscribed = true;
                 Logger.Trace().Message("Subscribing to cache lock released.").Write();
-                _messageBus.Subscribe<CacheLockReleased>(message => OnLockReleased(message));
+                _messageBus.Subscribe<CacheLockReleased>(OnLockReleasedAsync);
             }
         }
 
-        private async void OnLockReleased(CacheLockReleased msg) {
+        private async Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken) {
             Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
             AsyncMonitor monitor;
             if (!_monitors.TryGetValue(msg.Name, out monitor))

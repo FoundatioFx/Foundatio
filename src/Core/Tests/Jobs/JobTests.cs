@@ -56,7 +56,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public async void CanRunMultipleInstances() {
+        public async Task CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
             await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext();
@@ -69,7 +69,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public async void CanCancelContinuousJobs() {
+        public async Task CanCancelContinuousJobs() {
             var job = new HelloWorldJob();
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken()).AnyContext();
             Assert.Equal(1, job.RunCount);
@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
-        public async void CanRunThrottledJobs() {
+        public async Task CanRunThrottledJobs() {
             var client = new InMemoryCacheClient();
             var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
             

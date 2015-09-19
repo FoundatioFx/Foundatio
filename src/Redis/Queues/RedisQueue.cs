@@ -37,7 +37,7 @@ namespace Foundatio.Queues {
         protected readonly ILockProvider _maintenanceLockProvider;
         protected readonly bool _runMaintenanceTasks;
         protected Task _maintenanceTask;
-        protected static readonly object _lockObject = new object();
+        protected readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
@@ -76,11 +76,11 @@ namespace Foundatio.Queues {
             Logger.Trace().Message("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString()).Write();
         }
 
-        private void EnsureMaintenanceRunning() {
+        private async Task EnsureMaintenanceRunningAsync() {
             if (!_runMaintenanceTasks || _maintenanceTask != null)
                 return;
 
-            lock (_lockObject) {
+            using (await  _lock.LockAsync()) {
                 if (_maintenanceTask != null)
                     return;
 
@@ -89,17 +89,17 @@ namespace Foundatio.Queues {
             }
         }
 
-        private void EnsureTopicSubscription() {
+        private async Task EnsureTopicSubscriptionAsync() {
             if (_isSubscribed)
                 return;
 
-            lock (_lockObject) {
+            using (await _lock.LockAsync()) {
                 if (_isSubscribed)
                     return;
 
                 _isSubscribed = true;
                 Logger.Trace().Message($"Subscribing to enqueue messages for {_queueName}.").Write();
-                _subscriber.Subscribe(GetTopicName(), OnTopicMessage);
+                await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessage(channel, value).AnyContext()).AnyContext();
             }
         }
 
@@ -227,8 +227,8 @@ namespace Foundatio.Queues {
 
         public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
-            EnsureMaintenanceRunning();
-            EnsureTopicSubscription();
+            await EnsureMaintenanceRunningAsync().AnyContext();
+            await EnsureTopicSubscriptionAsync().AnyContext();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
@@ -378,36 +378,44 @@ namespace Foundatio.Queues {
         }
 
         private async Task DeleteListAsync(string name) {
-            // TODO Look into running this as a batch query.
             var itemIds = await _db.ListRangeAsync(name).AnyContext();
             foreach (var id in itemIds) {
-                await _db.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
+                var tasks = new List<Task>();
+                var batch = _db.CreateBatch();
+                tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
+
+                batch.Execute();
+                await Task.WhenAll(tasks.ToArray()).AnyContext();
             }
 
             await _db.KeyDeleteAsync(name).AnyContext();
         }
 
         private async Task TrimDeadletterItemsAsync(int maxItems) {
-            // TODO Look into running this as a batch query.
             var itemIds = (await _db.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
             foreach (var id in itemIds) {
-                await _db.KeyDeleteAsync(GetPayloadKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetAttemptsKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetEnqueuedTimeKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetDequeuedTimeKey(id)).AnyContext();
-                await _db.KeyDeleteAsync(GetWaitTimeKey(id)).AnyContext();
-                await _db.ListRemoveAsync(QueueListName, id).AnyContext();
-                await _db.ListRemoveAsync(WorkListName, id).AnyContext();
-                await _db.ListRemoveAsync(WaitListName, id).AnyContext();
-                await _db.ListRemoveAsync(DeadListName, id).AnyContext();
+                var tasks = new List<Task>();
+                var batch = _db.CreateBatch();
+                tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
+                tasks.Add(batch.ListRemoveAsync(QueueListName, id));
+                tasks.Add(batch.ListRemoveAsync(WorkListName, id));
+                tasks.Add(batch.ListRemoveAsync(WaitListName, id));
+                tasks.Add(batch.ListRemoveAsync(DeadListName, id));
+
+                batch.Execute();
+                await Task.WhenAll(tasks.ToArray()).AnyContext();
             }
         }
 
-        private async void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+        private async Task OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             Logger.Trace().Message("Queue OnMessage {0}: {1}", _queueName, redisValue).Write();
             using (await _monitor.EnterAsync())
                 _monitor.Pulse();
