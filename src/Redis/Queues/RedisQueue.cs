@@ -481,8 +481,8 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async Task DoMaintenanceWorkLoop(CancellationToken token) {
-            while (!token.IsCancellationRequested) {
+        private async Task DoMaintenanceWorkLoop(CancellationToken cancellationToken) {
+            while (!cancellationToken.IsCancellationRequested) {
                 Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
                 await _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
             }

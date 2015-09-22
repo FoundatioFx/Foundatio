@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -16,6 +18,31 @@ namespace Foundatio.Tests.Queue {
                 _queue = new InMemoryQueue<SimpleWorkItem>(retries, retryDelay, workItemTimeout: workItemTimeout);
 
             return _queue;
+        }
+
+        [Fact]
+        public async Task TestAsyncEvents() {
+            var q = new InMemoryQueue<SimpleWorkItem>();
+            q.Enqueuing += async (sender, args) => {
+                await Task.Delay(250);
+                Logger.Info().Message("First Enqueuing.").Write();
+            };
+            q.Enqueuing += async (sender, args) => {
+                await Task.Delay(250);
+                Logger.Info().Message("Second Enqueuing.").Write();
+            };
+            q.Enqueued += async (sender, args) => {
+                await Task.Delay(250);
+                Logger.Info().Message("First.").Write();
+            };
+            q.Enqueued += async (sender, args) => {
+                await Task.Delay(250);
+                Logger.Info().Message("Second.").Write();
+            };
+            var sw = Stopwatch.StartNew();
+            await q.EnqueueAsync(new SimpleWorkItem());
+            sw.Stop();
+            _writer.WriteLine(sw.Elapsed.ToString());
         }
 
         [Fact]

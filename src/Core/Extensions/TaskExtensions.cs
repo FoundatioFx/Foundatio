@@ -7,7 +7,7 @@ using Nito.AsyncEx;
 
 namespace Foundatio.Extensions {
     internal static class TaskExtensions {
-        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken) {
+        public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.WhenAny(countdownEvent.WaitAsync(), cancellationToken.AsTask());
         }
 
@@ -15,7 +15,7 @@ namespace Foundatio.Extensions {
             return countdownEvent.WaitAsync(timeout.ToCancellationToken());
         }
 
-        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken) {
+        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.WhenAny(resetEvent.WaitAsync(), cancellationToken.AsTask());
         }
 

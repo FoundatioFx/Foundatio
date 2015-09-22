@@ -65,7 +65,7 @@ namespace Foundatio.Messaging {
             await _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget).AnyContext();
         }
 
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) {
+        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
             EnsureTopicSubscription();
             base.Subscribe(handler, cancellationToken);
         }

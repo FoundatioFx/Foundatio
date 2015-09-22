@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
 
         protected bool AutoComplete { get; set; }
 
-        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
 
             QueueEntry<T> queueEntry;
@@ -61,7 +61,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken) {
+        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.FromResult(Disposable.Empty);
         }
         
@@ -73,7 +73,7 @@ namespace Foundatio.Jobs {
             }).AnyContext();
         }
 
-        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken);
+        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken));
     }
 
     public interface IQueueProcessorJob : IDisposable {

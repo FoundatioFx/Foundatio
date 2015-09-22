@@ -44,7 +44,7 @@ namespace Foundatio.Messaging {
             }
         }
 
-        public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = new CancellationToken()) where T : class {
+        public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,

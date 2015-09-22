@@ -36,7 +36,7 @@ namespace Foundatio.Lock {
             }
         }
 
-        private async Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken) {
+        private async Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
             AsyncMonitor monitor;
             if (!_monitors.TryGetValue(msg.Name, out monitor))

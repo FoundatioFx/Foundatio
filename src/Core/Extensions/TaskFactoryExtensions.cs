@@ -9,7 +9,7 @@ namespace Foundatio.Extensions {
             return StartNewDelayed(factory, millisecondsDelay, CancellationToken.None);
         }
 
-        public static Task StartNewDelayed(this TaskFactory factory, int millisecondsDelay, CancellationToken cancellationToken) {
+        public static Task StartNewDelayed(this TaskFactory factory, int millisecondsDelay, CancellationToken cancellationToken = default(CancellationToken)) {
             // Validate arguments
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             if (millisecondsDelay < 0) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
@@ -60,7 +60,7 @@ namespace Foundatio.Extensions {
         public static Task StartNewDelayed(
             this TaskFactory factory,
             int millisecondsDelay, Action action,
-            CancellationToken cancellationToken) {
+            CancellationToken cancellationToken = default(CancellationToken)) {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
@@ -97,7 +97,7 @@ namespace Foundatio.Extensions {
         public static Task StartNewDelayed(
             this TaskFactory factory,
             int millisecondsDelay, Action<object> action, object state,
-            CancellationToken cancellationToken) {
+            CancellationToken cancellationToken = default(CancellationToken)) {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, action, state, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
@@ -149,7 +149,7 @@ namespace Foundatio.Extensions {
         public static Task<TResult> StartNewDelayed<TResult>(
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<TResult> function,
-            CancellationToken cancellationToken) {
+            CancellationToken cancellationToken = default(CancellationToken)) {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }
@@ -185,7 +185,7 @@ namespace Foundatio.Extensions {
         public static Task<TResult> StartNewDelayed<TResult>(
             this TaskFactory<TResult> factory,
             int millisecondsDelay, Func<object, TResult> function, object state,
-            CancellationToken cancellationToken) {
+            CancellationToken cancellationToken = default(CancellationToken)) {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             return StartNewDelayed(factory, millisecondsDelay, function, state, cancellationToken, factory.CreationOptions, factory.GetTargetScheduler());
         }

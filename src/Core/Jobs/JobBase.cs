@@ -49,15 +49,15 @@ namespace Foundatio.Jobs {
             }
         }
 
-        private async Task<JobResult> TryRunAsync(CancellationToken token) {
+        private async Task<JobResult> TryRunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             try {
-                return await RunInternalAsync(token).AnyContext();
+                return await RunInternalAsync(cancellationToken).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex);
             }
         }
 
-        protected abstract Task<JobResult> RunInternalAsync(CancellationToken cancellationToken);
+        protected abstract Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken));
         
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;

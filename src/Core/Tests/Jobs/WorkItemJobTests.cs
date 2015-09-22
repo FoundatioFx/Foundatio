@@ -198,7 +198,7 @@ namespace Foundatio.Tests.Jobs {
 
         public MyDependency Dependency { get; private set; }
 
-        public override async Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken) {
+        public override async Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken = default(CancellationToken)) {
             Assert.NotNull(Dependency);
 
             var jobData = context.GetData<MyWorkItem>();

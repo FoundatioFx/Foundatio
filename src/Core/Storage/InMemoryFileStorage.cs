@@ -22,7 +22,7 @@ namespace Foundatio.Storage {
         public long MaxFileSize { get; set; }
         public long MaxFiles { get; set; }
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -49,7 +49,7 @@ namespace Foundatio.Storage {
             }
         }
 
-        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -72,7 +72,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(newpath))
@@ -91,7 +91,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(targetpath))
@@ -109,7 +109,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -123,7 +123,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (limit.HasValue && limit.Value <= 0)
                 return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 

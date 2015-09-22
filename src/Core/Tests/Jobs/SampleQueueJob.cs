@@ -15,7 +15,7 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken) {
+        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
             await _metrics.CounterAsync("dequeued").AnyContext();
 
             if (RandomData.GetBool(10)) {
@@ -45,7 +45,7 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             await _metrics.CounterAsync("runs").AnyContext();
 
             if (RandomData.GetBool(10)) {

@@ -14,7 +14,7 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken) {
+        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             RunCount++;
 
             Console.WriteLine("Hello World!");
