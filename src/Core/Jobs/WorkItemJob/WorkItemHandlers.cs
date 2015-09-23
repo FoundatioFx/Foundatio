@@ -49,7 +49,7 @@ namespace Foundatio.Jobs {
         public abstract Task HandleItemAsync(WorkItemContext context, CancellationToken cancellationToken = default(CancellationToken));
         
         protected int CalculateProgress(long total, long completed, int startProgress = 0, int endProgress = 100) {
-            return Math.Min(startProgress + (int)((100 * (double)completed / total) * (((double)endProgress - startProgress) / 100)), endProgress);
+            return startProgress + (int)((100 * (double)completed / total) * (((double)endProgress - startProgress) / 100));
         }
     }
 
