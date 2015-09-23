@@ -89,9 +89,12 @@
     <Compile Include="Lock\ThrottlingLockProvider.cs" />
     <Compile Include="Logging\DisposeAction.cs" />
     <Compile Include="Logging\ILogBuilder.cs" />
+    <Compile Include="Logging\ILogger.cs" />
+    <Compile Include="Logging\ILogWriter.cs" />
     <Compile Include="Logging\LogBuilder.cs" />
     <Compile Include="Logging\LogData.cs" />
     <Compile Include="Logging\Logger.cs" />
+    <Compile Include="Logging\LoggerCreateBuilder.cs" />
     <Compile Include="Logging\LoggerExtensions.cs" />
     <Compile Include="Logging\LogLevel.cs" />
     <Compile Include="Logging\NullLogBuilder.cs" />

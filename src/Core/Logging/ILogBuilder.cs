@@ -1,11 +1,13 @@
 using System;
 using System.Runtime.CompilerServices;
 
-namespace Foundatio.Logging {
+namespace Foundatio.Logging
+{
     /// <summary>
     /// A fluent <see langword="interface"/> to build log messages.
     /// </summary>
-    public interface ILogBuilder {
+    public interface ILogBuilder
+    {
         /// <summary>
         /// Gets the log data that is being built.
         /// </summary>
@@ -45,7 +47,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="arg0">The object to format.</param>
         /// <returns></returns>
         ILogBuilder Message(string format, object arg0);
@@ -53,7 +55,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <returns></returns>
@@ -62,7 +64,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <param name="arg2">The third object to format.</param>
@@ -72,7 +74,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <param name="arg2">The third object to format.</param>
@@ -83,7 +85,7 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
         ILogBuilder Message(string format, params object[] args);
@@ -92,7 +94,7 @@ namespace Foundatio.Logging {
         /// Sets the log message and parameters for formating on the logging event.
         /// </summary>
         /// <param name="provider">An object that supplies culture-specific formatting information.</param>
-        /// <param name="format">A composite format String.</param>
+        /// <param name="format">A composite format string.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
         ILogBuilder Message(IFormatProvider provider, string format, params object[] args);
@@ -119,7 +121,10 @@ namespace Foundatio.Logging {
         /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
         /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
-        void Write([CallerMemberName] string callerMemberName = null, [CallerFilePath] string callerFilePath = null, [CallerLineNumber] int callerLineNumber = 0);
+        void Write(
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
 
         /// <summary>
         /// Writes the log event to the underlying logger if the condition delegate is true.
@@ -128,7 +133,11 @@ namespace Foundatio.Logging {
         /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
         /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
-        void WriteIf(Func<bool> condition, [CallerMemberName] string callerMemberName = null, [CallerFilePath] string callerFilePath = null, [CallerLineNumber] int callerLineNumber = 0);
+        void WriteIf(
+            Func<bool> condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
 
         /// <summary>
         /// Writes the log event to the underlying logger if the condition is true.
@@ -137,6 +146,10 @@ namespace Foundatio.Logging {
         /// <param name="callerMemberName">The method or property name of the caller to the method. This is set at by the compiler.</param>
         /// <param name="callerFilePath">The full path of the source file that contains the caller. This is set at by the compiler.</param>
         /// <param name="callerLineNumber">The line number in the source file at which the method is called. This is set at by the compiler.</param>
-        void WriteIf(bool condition, [CallerMemberName] string callerMemberName = null, [CallerFilePath] string callerFilePath = null, [CallerLineNumber] int callerLineNumber = 0);
+        void WriteIf(
+            bool condition,
+            [CallerMemberName]string callerMemberName = null,
+            [CallerFilePath]string callerFilePath = null,
+            [CallerLineNumber]int callerLineNumber = 0);
     }
 }
