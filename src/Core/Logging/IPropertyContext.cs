@@ -49,21 +49,7 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <param name="key">The key of the value to set.</param>
         /// <param name="value">The value associated with the specified key. The value will be converted to a string.</param>
-        void Set(string key, object value);
-
-        /// <summary>
-        /// Sets the <paramref name="value"/> associated with the specified <paramref name="key" />.
-        /// </summary>
-        /// <param name="key">The key of the value to set.</param>
-        /// <param name="value">The value associated with the specified key. The value will be converted to a string.</param>
         /// <returns>An <see cref="IDisposable"/> that will remove the key on dispose.</returns>
-        IDisposable Push(string key, object value);
-
-        /// <summary>
-        /// Removes the value with the specified <paramref name="key" /> from the property context.
-        /// </summary>
-        /// <param name="key">The key of the element to remove.</param>
-        /// <returns><c>true</c> if the element is successfully found and removed; otherwise, <c>false</c>. This method returns <c>false</c> if key is not found.</returns>
-        object Pop(string key);
+        IDisposable Set(string key, object value);
     }
 }

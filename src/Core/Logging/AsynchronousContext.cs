@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Remoting.Messaging;
 
 namespace Foundatio.Logging {
     /// <summary>
@@ -27,7 +26,7 @@ namespace Foundatio.Logging {
         /// Removes all keys and values from the property context
         /// </summary>
         public void Clear() {
-            CallContext.FreeNamedDataSlot(_slotName);
+            System.Runtime.Remoting.Messaging.CallContext.FreeNamedDataSlot(_slotName);
         }
 
         /// <summary>
@@ -105,7 +104,7 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <param name="key">The key of the value to set.</param>
         /// <param name="value">The value associated with the specified key.</param>
-        public void Set(string key, object value) {
+        public IDisposable Set(string key, object value) {
             var dictionary = GetDictionary()
                              ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
@@ -113,43 +112,18 @@ namespace Foundatio.Logging {
 
             // CallContext value must be immutable, reassign value
             SetDictionary(dictionary);
-        }
-
-        /// <summary>
-        /// Sets the <paramref name="value" /> associated with the specified <paramref name="key" />.
-        /// </summary>
-        /// <param name="key">The key of the value to set.</param>
-        /// <param name="value">The value associated with the specified key.</param>
-        /// <returns>
-        /// An <see cref="IDisposable" /> that will remove the key on dispose.
-        /// </returns>
-        public IDisposable Push(string key, object value) {
-            Set(key, value);
 
             return new DisposeAction(() => Remove(key));
         }
 
-        /// <summary>
-        /// Removes the value with the specified <paramref name="key" /> from the property context.
-        /// </summary>
-        /// <param name="key">The key of the element to remove.</param>
-        /// <returns>
-        ///   <c>true</c> if the element is successfully found and removed; otherwise, <c>false</c>. This method returns <c>false</c> if key is not found.
-        /// </returns>
-        public object Pop(string key) {
-            var value = Get(key);
-            Remove(key);
-            return value;
-        }
-
 
         private IDictionary<string, object> GetDictionary() {
-            var data = CallContext.LogicalGetData(_slotName);
+            var data = System.Runtime.Remoting.Messaging.CallContext.LogicalGetData(_slotName);
             return data as IDictionary<string, object>;
         }
 
         private void SetDictionary(IDictionary<string, object> value) {
-            CallContext.LogicalSetData(_slotName, value);
+            System.Runtime.Remoting.Messaging.CallContext.LogicalSetData(_slotName, value);
         }
     }
 }

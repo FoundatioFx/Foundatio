@@ -16,7 +16,6 @@ namespace Foundatio.Logging {
         private static readonly object _writerLock;
         private static Action<LogData> _logAction;
         private static ILogWriter _logWriter;
-        private static bool _hasSearched;
         private static LogLevel _minimumLogLevel = LogLevel.Trace;
 
         // only create if used
@@ -33,11 +32,12 @@ namespace Foundatio.Logging {
         static Logger() {
             _writerLock = new object();
             _logAction = DebugWrite;
-            _hasSearched = false;
 
             _globalProperties = new Lazy<IPropertyContext>(CreateGlobal);
             _threadProperties = new ThreadLocal<IPropertyContext>(CreateLocal);
             _asyncProperties = new Lazy<IPropertyContext>(CreateAsync);
+
+            _logWriter = new TraceLogWriter();
         }
 
         /// <summary>
@@ -302,10 +302,8 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <param name="writer">The <see langword="delegate"/> to write logs to.</param>
         public static void RegisterWriter(Action<LogData> writer) {
-            lock (_writerLock) {
-                _hasSearched = true;
+            lock (_writerLock)
                 _logAction = writer;
-            }
         }
 
         /// <summary>
@@ -314,10 +312,8 @@ namespace Foundatio.Logging {
         /// <param name="writer">The ILogWriter to write logs to.</param>
         public static void RegisterWriter<TWriter>(TWriter writer)
             where TWriter : ILogWriter {
-            lock (_writerLock) {
-                _hasSearched = true;
+            lock (_writerLock)
                 _logWriter = writer;
-            }
         }
 
 
@@ -364,41 +360,10 @@ namespace Foundatio.Logging {
 
         private static Action<LogData> ResolveWriter() {
             lock (_writerLock) {
-                SearchWriter();
                 if (_logWriter != null)
                     return _logWriter.WriteLog;
 
                 return _logAction ?? DebugWrite;
-            }
-        }
-
-        private static void SearchWriter() {
-            if (_hasSearched)
-                return;
-
-            _hasSearched = true;
-
-            //search all assemblies for ILogWriter
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-            foreach (var a in assemblies) {
-                if (a.IsDynamic)
-                    continue;
-
-                Type[] types;
-
-                try {
-                    types = a.GetExportedTypes();
-                } catch (ReflectionTypeLoadException e) {
-                    types = e.Types.Where(t => t != null).ToArray();
-                }
-
-                var writerType = typeof(ILogWriter);
-                var type = types.FirstOrDefault(t => !t.IsAbstract && writerType.IsAssignableFrom(t));
-                if (type == null)
-                    continue;
-
-                _logWriter = Activator.CreateInstance(type) as ILogWriter;
-                return;
             }
         }
 

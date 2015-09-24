@@ -100,6 +100,7 @@
     <Compile Include="Logging\LogLevel.cs" />
     <Compile Include="Logging\NullLogBuilder.cs" />
     <Compile Include="Logging\PropertyContext.cs" />
+    <Compile Include="Logging\TraceLogWriter.cs" />
     <Compile Include="Messaging\IMessageBus.cs" />
     <Compile Include="Messaging\IMessagePublisher.cs" />
     <Compile Include="Messaging\IMessageSubscriber.cs" />
