@@ -381,6 +381,9 @@ namespace Foundatio.Logging {
             //search all assemblies for ILogWriter
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             foreach (var a in assemblies) {
+                if (a.IsDynamic)
+                    continue;
+
                 Type[] types;
 
                 try {
