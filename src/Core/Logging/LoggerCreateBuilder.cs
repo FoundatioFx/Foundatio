@@ -1,20 +1,17 @@
 using System;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// A fluent class to build a <see cref="LogFactory"/>.
     /// </summary>
-    public class LoggerCreateBuilder
-    {
+    public class LoggerCreateBuilder {
         private readonly Logger _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LoggerCreateBuilder"/> class.
         /// </summary>
         /// <param name="logger">The factory.</param>
-        public LoggerCreateBuilder(Logger logger)
-        {
+        public LoggerCreateBuilder(Logger logger) {
             _logger = logger;
         }
 
@@ -24,8 +21,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="logger">The name of the logger.</param>
         /// <returns></returns>
-        public LoggerCreateBuilder Logger(string logger)
-        {
+        public LoggerCreateBuilder Logger(string logger) {
             _logger.Name = logger;
 
             return this;
@@ -36,8 +32,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <typeparam name="TLogger">The type of the logger.</typeparam>
         /// <returns></returns>
-        public LoggerCreateBuilder Logger<TLogger>()
-        {
+        public LoggerCreateBuilder Logger<TLogger>() {
             _logger.Name = typeof(TLogger).FullName;
 
             return this;
@@ -48,8 +43,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="type">The type of the logger.</param>
         /// <returns></returns>
-        public LoggerCreateBuilder Logger(Type type)
-        {
+        public LoggerCreateBuilder Logger(Type type) {
             _logger.Name = type.FullName;
 
             return this;
@@ -63,8 +57,7 @@ namespace Foundatio.Logging
         /// <param name="value">The value of the context property.</param>
         /// <returns></returns>
         /// <exception cref="System.ArgumentNullException">name</exception>
-        public LoggerCreateBuilder Property(string name, object value)
-        {
+        public LoggerCreateBuilder Property(string name, object value) {
             if (name == null)
                 throw new ArgumentNullException("name");
 

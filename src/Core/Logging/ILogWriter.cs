@@ -1,12 +1,10 @@
 using System;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// An <see langword="interface"/> defining a log writer.
     /// </summary>
-    public interface ILogWriter
-    {
+    public interface ILogWriter {
         /// <summary>
         /// Writes the specified <see cref="LogData"/> to the underlying logger.
         /// </summary>

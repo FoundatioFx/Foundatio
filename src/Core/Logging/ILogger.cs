@@ -1,12 +1,10 @@
 using System;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// A logger <see langword="interface"/> for starting log messages.
     /// </summary>
-    public interface ILogger
-    {
+    public interface ILogger {
         /// <summary>
         /// Start a fluent <see cref="LogBuilder" /> with the specified <see cref="LogLevel" />.
         /// </summary>

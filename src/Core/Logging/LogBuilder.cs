@@ -4,14 +4,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// A fluent <see langword="interface"/> to build log messages.
     /// </summary>
     [DebuggerStepThrough]
-	public sealed class LogBuilder : ILogBuilder
-    {
+    public sealed class LogBuilder : ILogBuilder {
         private readonly LogData _data;
         private readonly Action<LogData> _writer;
 
@@ -21,8 +19,7 @@ namespace Foundatio.Logging
         /// <param name="logLevel">The starting trace level.</param>
         /// <param name="writer">The delegate to write logs to.</param>
         /// <exception cref="System.ArgumentNullException">writer</exception>
-        public LogBuilder(LogLevel logLevel, Action<LogData> writer)
-        {
+        public LogBuilder(LogLevel logLevel, Action<LogData> writer) {
             if (writer == null)
                 throw new ArgumentNullException("writer");
 
@@ -39,8 +36,7 @@ namespace Foundatio.Logging
         /// <value>
         /// The log data.
         /// </value>
-        public LogData LogData
-        {
+        public LogData LogData {
             get { return _data; }
         }
 
@@ -49,8 +45,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="logLevel">The level of the logging event.</param>
         /// <returns></returns>
-        public ILogBuilder Level(LogLevel logLevel)
-        {
+        public ILogBuilder Level(LogLevel logLevel) {
             _data.LogLevel = logLevel;
             return this;
         }
@@ -60,8 +55,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="logger">The name of the logger.</param>
         /// <returns></returns>
-        public ILogBuilder Logger(string logger)
-        {
+        public ILogBuilder Logger(string logger) {
             _data.Logger = logger;
 
             return this;
@@ -72,8 +66,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <typeparam name="TLogger">The type of the logger.</typeparam>
         /// <returns></returns>
-        public ILogBuilder Logger<TLogger>()
-        {
+        public ILogBuilder Logger<TLogger>() {
             _data.Logger = typeof(TLogger).FullName;
 
             return this;
@@ -84,8 +77,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="message">The log message for the logging event.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string message)
-        {
+        public ILogBuilder Message(string message) {
             _data.Message = message;
 
             return this;
@@ -97,8 +89,7 @@ namespace Foundatio.Logging
         /// <param name="format">A composite format string.</param>
         /// <param name="arg0">The object to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string format, object arg0)
-        {
+        public ILogBuilder Message(string format, object arg0) {
             _data.Message = format;
             _data.Parameters = new[] { arg0 };
 
@@ -112,8 +103,7 @@ namespace Foundatio.Logging
         /// <param name="arg0">The first object to format.</param>
         /// <param name="arg1">The second object to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string format, object arg0, object arg1)
-        {
+        public ILogBuilder Message(string format, object arg0, object arg1) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1 };
 
@@ -128,8 +118,7 @@ namespace Foundatio.Logging
         /// <param name="arg1">The second object to format.</param>
         /// <param name="arg2">The third object to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string format, object arg0, object arg1, object arg2)
-        {
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2 };
 
@@ -145,8 +134,7 @@ namespace Foundatio.Logging
         /// <param name="arg2">The third object to format.</param>
         /// <param name="arg3">The fourth object to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3)
-        {
+        public ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2, arg3 };
 
@@ -159,8 +147,7 @@ namespace Foundatio.Logging
         /// <param name="format">A composite format string.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(string format, params object[] args)
-        {
+        public ILogBuilder Message(string format, params object[] args) {
             _data.Message = format;
             _data.Parameters = args;
 
@@ -174,8 +161,7 @@ namespace Foundatio.Logging
         /// <param name="format">A composite format string.</param>
         /// <param name="args">An object array that contains zero or more objects to format.</param>
         /// <returns></returns>
-        public ILogBuilder Message(IFormatProvider provider, string format, params object[] args)
-        {
+        public ILogBuilder Message(IFormatProvider provider, string format, params object[] args) {
             _data.FormatProvider = provider;
             _data.Message = format;
             _data.Parameters = args;
@@ -190,8 +176,7 @@ namespace Foundatio.Logging
         /// <param name="value">The value of the context property.</param>
         /// <returns></returns>
         /// <exception cref="System.ArgumentNullException">name</exception>
-        public ILogBuilder Property(string name, object value)
-        {
+        public ILogBuilder Property(string name, object value) {
             if (name == null)
                 throw new ArgumentNullException("name");
 
@@ -207,8 +192,7 @@ namespace Foundatio.Logging
         /// </summary>
         /// <param name="exception">The exception information of the logging event.</param>
         /// <returns></returns>
-        public ILogBuilder Exception(Exception exception)
-        {
+        public ILogBuilder Exception(Exception exception) {
             _data.Exception = exception;
             return this;
         }
@@ -222,8 +206,7 @@ namespace Foundatio.Logging
         public void Write(
             [CallerMemberName]string callerMemberName = null,
             [CallerFilePath]string callerFilePath = null,
-            [CallerLineNumber]int callerLineNumber = 0)
-        {
+            [CallerLineNumber]int callerLineNumber = 0) {
             if (callerMemberName != null)
                 _data.MemberName = callerMemberName;
             if (callerFilePath != null)
@@ -246,8 +229,7 @@ namespace Foundatio.Logging
             Func<bool> condition,
             [CallerMemberName]string callerMemberName = null,
             [CallerFilePath]string callerFilePath = null,
-            [CallerLineNumber]int callerLineNumber = 0)
-        {
+            [CallerLineNumber]int callerLineNumber = 0) {
             if (condition == null || !condition())
                 return;
 
@@ -265,8 +247,7 @@ namespace Foundatio.Logging
             bool condition,
             [CallerMemberName]string callerMemberName = null,
             [CallerFilePath]string callerFilePath = null,
-            [CallerLineNumber]int callerLineNumber = 0)
-        {
+            [CallerLineNumber]int callerLineNumber = 0) {
             if (!condition)
                 return;
 

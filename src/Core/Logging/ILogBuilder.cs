@@ -1,13 +1,11 @@
 using System;
 using System.Runtime.CompilerServices;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// A fluent <see langword="interface"/> to build log messages.
     /// </summary>
-    public interface ILogBuilder
-    {
+    public interface ILogBuilder {
         /// <summary>
         /// Gets the log data that is being built.
         /// </summary>
