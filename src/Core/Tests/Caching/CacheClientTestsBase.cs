@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,17 +28,24 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync("test", 1).AnyContext();
                 Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
 
-                Assert.False(await cache.AddAsync("test", 2));
+                Assert.False(await cache.AddAsync("test", 2).AnyContext());
                 Assert.Equal(1, await cache.GetAsync<int>("test").AnyContext());
 
-                Assert.True(await cache.ReplaceAsync("test", 2));
+                Assert.True(await cache.ReplaceAsync("test", 2).AnyContext());
                 Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
 
-                Assert.True(await cache.RemoveAsync("test"));
+                Assert.True(await cache.RemoveAsync("test").AnyContext());
                 Assert.Null(await cache.GetAsync<int?>("test").AnyContext());
                 
-                Assert.True(await cache.AddAsync("test", 2));
+                Assert.True(await cache.AddAsync("test", 2).AnyContext());
                 Assert.Equal(2, await cache.GetAsync<int>("test").AnyContext());
+                
+                Assert.True(await cache.ReplaceAsync("test", new MyData("Testing") { Message = "Testing" }).AnyContext());
+                var result = await cache.TryGetAsync<MyData>("test").AnyContext();
+                Assert.NotNull(result);
+                Assert.True(result.HasValue);
+                Assert.Equal("Testing", result.Value.FromConstructor);
+                Assert.Equal("Testing", result.Value.Message);
             }
         }
         
@@ -269,9 +277,11 @@ namespace Foundatio.Tests.Caching {
                         }
                     },
                     DictionarySimples = new Dictionary<string, SimpleModel> {
-                        { "sdf", new SimpleModel {
-                            Data1 = "Sachin"
-                        } }
+                        { "sdf", new SimpleModel { Data1 = "Sachin" } }
+                    },
+
+                    DerivedDictionarySimples = new SampleDictionary<string, SimpleModel> {
+                        { "sdf", new SimpleModel { Data1 = "Sachin" } }
                     }
                 }).AnyContext();
 
@@ -300,12 +310,99 @@ namespace Foundatio.Tests.Caching {
         public ICollection<SimpleModel> Simples { get; set; }
         public bool Data3 { get; set; }
         public IDictionary<string, SimpleModel> DictionarySimples { get; set; }
+        public SampleDictionary<string, SimpleModel> DerivedDictionarySimples { get; set; } 
     }
 
     public class MyData {
         private readonly string _blah = "blah";
+
+        public MyData() {}
+
+        public MyData(string fromConstructorValue) {
+            FromConstructor = fromConstructorValue;
+        }
+
+        public string Blah => _blah;
+        public string FromConstructor { get; }
         public string Type { get; set; }
         public DateTimeOffset Date { get; set; }
         public string Message { get; set; }
+    }
+
+    public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue> {
+        private readonly IDictionary<TKey, TValue> _dictionary;
+
+        public SampleDictionary() {
+            _dictionary = new Dictionary<TKey, TValue>();
+        }
+
+        public SampleDictionary(IDictionary<TKey, TValue> dictionary) {
+            _dictionary = new Dictionary<TKey, TValue>(dictionary);
+        }
+
+        public SampleDictionary(IEqualityComparer<TKey> comparer) {
+            _dictionary = new Dictionary<TKey, TValue>(comparer);
+        }
+
+        public SampleDictionary(IDictionary<TKey, TValue> dictionary, IEqualityComparer<TKey> comparer) {
+            _dictionary = new Dictionary<TKey, TValue>(dictionary, comparer);
+        }
+
+        public void Add(TKey key, TValue value) {
+            _dictionary.Add(key, value);
+        }
+
+        public void Add(KeyValuePair<TKey, TValue> item) {
+            _dictionary.Add(item);
+        }
+
+        public bool Remove(TKey key) {
+            return _dictionary.Remove(key);
+        }
+
+        public bool Remove(KeyValuePair<TKey, TValue> item) {
+            return _dictionary.Remove(item);
+        }
+
+        public void Clear() {
+            _dictionary.Clear();
+        }
+
+        public bool ContainsKey(TKey key) {
+            return _dictionary.ContainsKey(key);
+        }
+
+        public bool Contains(KeyValuePair<TKey, TValue> item) {
+            return _dictionary.Contains(item);
+        }
+
+        public bool TryGetValue(TKey key, out TValue value) {
+            return _dictionary.TryGetValue(key, out value);
+        }
+
+        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex) {
+            _dictionary.CopyTo(array, arrayIndex);
+        }
+
+        public ICollection<TKey> Keys => _dictionary.Keys;
+
+        public ICollection<TValue> Values => _dictionary.Values;
+
+        public int Count => _dictionary.Count;
+
+        public bool IsReadOnly => _dictionary.IsReadOnly;
+
+        public TValue this[TKey key] {
+            get { return _dictionary[key]; }
+            set { _dictionary[key] = value; }
+        }
+
+        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() {
+            return _dictionary.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
     }
 }
