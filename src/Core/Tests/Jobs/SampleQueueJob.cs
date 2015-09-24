@@ -16,19 +16,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
-            await _metrics.CounterAsync("dequeued").AnyContext();
+            await _metrics.CounterAsync("dequeued");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors").AnyContext();
+                await _metrics.CounterAsync("errors");
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned").AnyContext();
+                await _metrics.CounterAsync("abandoned");
                 return JobResult.FailedWithMessage("Abandoned");
             }
             
-            await _metrics.CounterAsync("completed").AnyContext();
+            await _metrics.CounterAsync("completed");
             return JobResult.Success;
         }
     }
@@ -46,19 +46,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            await _metrics.CounterAsync("runs").AnyContext();
+            await _metrics.CounterAsync("runs");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors").AnyContext();
+                await _metrics.CounterAsync("errors");
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("failed").AnyContext();
+                await _metrics.CounterAsync("failed");
                 return JobResult.FailedWithMessage("Failed");
             }
 
-            await _metrics.CounterAsync("completed").AnyContext();
+            await _metrics.CounterAsync("completed");
             return JobResult.Success;
         }
     }

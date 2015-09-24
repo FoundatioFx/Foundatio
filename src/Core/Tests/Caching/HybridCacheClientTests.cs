@@ -63,19 +63,19 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.SetAsync("test", 1).AnyContext();
+            await firstCache.SetAsync("test", 1);
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await firstCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await firstCache.GetAsync<int>("test"));
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
             Assert.Equal(1, secondCache.LocalCacheHits);
         }
 
@@ -88,24 +88,24 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.SetAsync("test", 1, TimeSpan.FromMilliseconds(100)).AnyContext();
+            await firstCache.SetAsync("test", 1, TimeSpan.FromMilliseconds(100));
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await firstCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await firstCache.GetAsync<int>("test"));
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test").AnyContext());
+            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
             while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0) && sw.ElapsedMilliseconds < 150)
-                await Task.Delay(25).AnyContext();
+                await Task.Delay(25);
 
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);

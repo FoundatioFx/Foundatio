@@ -28,33 +28,33 @@ namespace Foundatio.Tests.Locks {
                 return;
 
             using (locker) {
-                await locker.ReleaseLockAsync("test").AnyContext();
+                await locker.ReleaseLockAsync("test");
 
-                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
+                using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1))) {
                     Assert.NotNull(lock1);
-                    Assert.True(await locker.IsLockedAsync("test").AnyContext());
-                    var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
+                    Assert.True(await locker.IsLockedAsync("test"));
+                    var lock2 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
                     Assert.Null(lock2);
                 }
 
-                Assert.False(await locker.IsLockedAsync("test").AnyContext());
+                Assert.False(await locker.IsLockedAsync("test"));
 
                 int counter = 0;
 
                 await Run.InParallel(25, async i => {
                     var sw = Stopwatch.StartNew();
-                    using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext()) {
+                    using (var lock1 = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                         sw.Stop();
                         Logger.Trace().Message($"Lock {i}: start").Write();
                         string message = lock1 != null ? "Acquired" : "Unable to acquire";
                         Logger.Trace().Message($"Lock {i}: {message} in {sw.ElapsedMilliseconds}ms").Write();
 
                         Assert.NotNull(lock1);
-                        Assert.True(await locker.IsLockedAsync("test").AnyContext(), $"Lock {i}: was acquired but is not locked");
+                        Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
                         Interlocked.Increment(ref counter);
                         Logger.Trace().Message($"Lock {i}: end").Write();
                     }
-                }).AnyContext();
+                });
 
                 Assert.Equal(25, counter);
             }
@@ -67,20 +67,20 @@ namespace Foundatio.Tests.Locks {
 
             using (locker) {
                 Logger.Info().Message("Releasing lock").Write();
-                await locker.ReleaseLockAsync("test").AnyContext();
+                await locker.ReleaseLockAsync("test");
                 
                 Logger.Info().Message("Acquiring lock #1").Write();
-                var testLock = await locker.AcquireLockAsync("test", lockTimeout: TimeSpan.FromMilliseconds(150)).AnyContext();
+                var testLock = await locker.AcquireLockAsync("test", lockTimeout: TimeSpan.FromMilliseconds(150));
                 Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.NotNull(testLock);
 
                 Logger.Info().Message("Acquiring lock #2").Write();
-                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
                 Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.Null(testLock);
 
                 Logger.Info().Message("Acquiring lock #3").Write();
-                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100)).AnyContext();
+                testLock = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
                 Logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
                 Assert.NotNull(testLock);
             }
@@ -92,27 +92,27 @@ namespace Foundatio.Tests.Locks {
             if (locker == null)
                 return;
 
-            await locker.ReleaseLockAsync("test").AnyContext();
+            await locker.ReleaseLockAsync("test");
 
             // sleep until start of throttling period
-            await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now).AnyContext();
+            await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now);
 
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < 5; i++)
-                await locker.AcquireLockAsync("test").AnyContext();
+                await locker.AcquireLockAsync("test");
             sw.Stop();
 
             _output.WriteLine(sw.Elapsed.ToString());
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
-            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250)).AnyContext();
+            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
             
             sw.Restart();
-            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1.5)).AnyContext();
+            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());

@@ -22,7 +22,7 @@ namespace Foundatio.Tests.Jobs {
             const int workItemCount = 100;
             var metrics = new InMemoryMetricsClient();
             var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
-            await queue.DeleteQueueAsync().AnyContext();
+            await queue.DeleteQueueAsync();
             queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
@@ -30,16 +30,16 @@ namespace Foundatio.Tests.Jobs {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,
                     Path = "somepath" + index
-                }).AnyContext();
+                });
             });
 
             var job = new SampleQueueJob(queue, metrics);
-            await Task.Delay(10).AnyContext();
-            await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask).AnyContext();
+            await Task.Delay(10);
+            await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
             metrics.DisplayStats(_writer);
 
-            var stats = await queue.GetQueueStatsAsync().AnyContext();
+            var stats = await queue.GetQueueStatsAsync();
             Assert.Equal(0, stats.Queued);
             Assert.Equal(workItemCount, stats.Enqueued);
             Assert.Equal(workItemCount, stats.Dequeued);
@@ -54,7 +54,7 @@ namespace Foundatio.Tests.Jobs {
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
                 var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
-                await q.DeleteQueueAsync().AnyContext();
+                await q.DeleteQueueAsync();
                 q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
                 queues.Add(q);
             }
@@ -64,22 +64,22 @@ namespace Foundatio.Tests.Jobs {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,
                     Path = RandomData.GetString()
-                }).AnyContext();
+                });
             });
 
             var cancellationTokenSource = new CancellationTokenSource();
             await Run.InParallel(jobCount, async index => {
                 var queue = queues[index - 1];
                 var job = new SampleQueueJob(queue, metrics);
-                await job.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 cancellationTokenSource.Cancel();
-            }).AnyContext();
+            });
 
-            await enqueueTask.AnyContext();
+            await enqueueTask;
 
             var queueStats = new List<QueueStats>();
             for (int i = 0; i < queues.Count; i++) {
-                var stats = await queues[i].GetQueueStatsAsync().AnyContext();
+                var stats = await queues[i].GetQueueStatsAsync();
                 Logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
                 queueStats.Add(stats);
             }

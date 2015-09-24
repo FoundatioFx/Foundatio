@@ -20,8 +20,8 @@ namespace Foundatio.Tests.Jobs {
         protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             RunCount++;
 
-            await Task.Delay(150, cancellationToken).AnyContext();
-            Assert.True(await _locker.IsLockedAsync("WithLockingJob").AnyContext());
+            await Task.Delay(150, cancellationToken);
+            Assert.True(await _locker.IsLockedAsync("WithLockingJob"));
 
             return JobResult.Success;
         }

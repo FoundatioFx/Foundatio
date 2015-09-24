@@ -32,14 +32,14 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
 
                 for (int i = 0; i < 10; i++) {
-                    await Task.Delay(100).AnyContext();
-                    await ctx.ReportProgressAsync(10 * i).AnyContext();
+                    await Task.Delay(100);
+                    await ctx.ReportProgressAsync(10 * i);
                 }
             });
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {
                 SomeData = "Test"
-            }, true).AnyContext();
+            }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -48,7 +48,7 @@ namespace Foundatio.Tests.Jobs {
                 statusCount++;
             });
 
-            await job.RunUntilEmptyAsync().AnyContext();
+            await job.RunUntilEmptyAsync();
 
             Assert.Equal(12, statusCount);
         }
@@ -77,7 +77,7 @@ namespace Foundatio.Tests.Jobs {
                 Logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
 
                 for (int i = 0; i < 10; i++)
-                    await ctx.ReportProgressAsync(10 * i).AnyContext();
+                    await ctx.ReportProgressAsync(10 * i);
 
                 if (RandomData.GetBool(1)) {
                     Interlocked.Increment(ref errors);
@@ -89,7 +89,7 @@ namespace Foundatio.Tests.Jobs {
                 await queue.EnqueueAsync(new MyWorkItem {
                     SomeData = "Test",
                     Index = i
-                }, true).AnyContext();
+                }, true);
 
             var completedItems = new List<string>();
             object completedItemsLock = new object();
@@ -105,22 +105,22 @@ namespace Foundatio.Tests.Jobs {
             var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var tasks = new List<Task> {
                 Task.Run(async () => {
-                    await j1.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
                     cancellationTokenSource.Cancel();
                 }, cancellationTokenSource.Token),
                 Task.Run(async () => {
-                    await j2.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    await j2.RunUntilEmptyAsync(cancellationTokenSource.Token);
                     cancellationTokenSource.Cancel();
                 }, cancellationTokenSource.Token),
                 Task.Run(async () => {
-                    await j3.RunUntilEmptyAsync(cancellationTokenSource.Token).AnyContext();
+                    await j3.RunUntilEmptyAsync(cancellationTokenSource.Token);
                     cancellationTokenSource.Cancel();
                 }, cancellationTokenSource.Token)
             };
 
             try {
-                await Task.WhenAll(tasks).AnyContext();
-                await Task.Delay(100).AnyContext();
+                await Task.WhenAll(tasks);
+                await Task.Delay(100);
             } catch (TaskCanceledException) {}
 
             Logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
@@ -143,7 +143,7 @@ namespace Foundatio.Tests.Jobs {
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {
                 SomeData = "Test"
-            }, true).AnyContext();
+            }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -152,7 +152,7 @@ namespace Foundatio.Tests.Jobs {
                 statusCount++;
             });
 
-            await job.RunUntilEmptyAsync().AnyContext();
+            await job.RunUntilEmptyAsync();
 
             Assert.Equal(11, statusCount);
         }
@@ -172,7 +172,7 @@ namespace Foundatio.Tests.Jobs {
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {
                 SomeData = "Test"
-            }, true).AnyContext();
+            }, true);
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
@@ -181,7 +181,7 @@ namespace Foundatio.Tests.Jobs {
                 statusCount++;
             });
 
-            await job.RunUntilEmptyAsync().AnyContext();
+            await job.RunUntilEmptyAsync();
             Assert.Equal(3, statusCount);
         }
     }
@@ -205,8 +205,8 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 1; i < 10; i++) {
-                await Task.Delay(100).AnyContext();
-                await context.ReportProgressAsync(10 * i).AnyContext();
+                await Task.Delay(100);
+                await context.ReportProgressAsync(10 * i);
             }
         }
     }

@@ -33,13 +33,13 @@ namespace Foundatio.Tests.Messaging {
                     Logger.Trace().Message("Set event").Write();
                 });
 
-                await Task.Delay(100).AnyContext();
+                await Task.Delay(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 Trace.WriteLine("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             }
         }
 
@@ -64,11 +64,11 @@ namespace Foundatio.Tests.Messaging {
                 await Run.InParallel(numConcurrentMessages, async i => {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello"
-                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300))).AnyContext();
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
                     Logger.Trace().Message("Published one...").Write();
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 sw.Stop();
                 
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
@@ -96,9 +96,9 @@ namespace Foundatio.Tests.Messaging {
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
             }
         }
 
@@ -122,9 +122,9 @@ namespace Foundatio.Tests.Messaging {
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }
@@ -145,9 +145,9 @@ namespace Foundatio.Tests.Messaging {
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
             }
         }
 
@@ -164,15 +164,15 @@ namespace Foundatio.Tests.Messaging {
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
             }
         }
 
@@ -188,15 +188,15 @@ namespace Foundatio.Tests.Messaging {
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageB {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 await messageBus.PublishAsync(new SimpleMessageC {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
             }
         }
 
@@ -208,16 +208,16 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await Task.Delay(100).AnyContext();
+                await Task.Delay(100);
                 var resetEvent = new AsyncAutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         
@@ -242,18 +242,18 @@ namespace Foundatio.Tests.Messaging {
 
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
                 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(1, messageCount);
 
                 countdown = new AsyncCountdownEvent(1);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
-                }).AnyContext();
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(1, messageCount);
             }
