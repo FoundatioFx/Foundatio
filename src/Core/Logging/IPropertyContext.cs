@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Logging
-{
+namespace Foundatio.Logging {
     /// <summary>
     /// An <see langword="interface"/> defining a logger property context.
     /// </summary>
-    public interface IPropertyContext
-    {
+    public interface IPropertyContext {
         /// <summary>
         /// Applies the context properties to the specified <paramref name="builder"/>.
         /// </summary>
