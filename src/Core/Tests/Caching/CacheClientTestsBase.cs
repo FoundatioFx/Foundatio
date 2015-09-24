@@ -8,7 +8,6 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Caching {

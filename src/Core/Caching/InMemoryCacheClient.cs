@@ -18,65 +18,17 @@ namespace Foundatio.Caching {
         private readonly Timer _maintenanceTimer;
 
         public InMemoryCacheClient() {
+            ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite, Timeout.Infinite);
         }
 
         public bool FlushOnDispose { get; set; }
-
         public int Count => _memory.Count;
-
         public int? MaxItems { get; set; }
-
         public bool ShouldCloneValues { get; set; }
-
         public long Hits => _hits;
-
         public long Misses => _misses;
-
-        public ICollection<string> Keys {
-            get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
-        }
-
-        public void Dispose() {
-            _maintenanceTimer.Dispose();
-        }
-
-        private void ScheduleNextMaintenance(DateTime value) {
-            if (value == DateTime.MaxValue)
-                return;
-
-            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
-                return;
-            
-            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
-            _nextMaintenance = value;
-            Logger.Trace().Message("Scheduling maintenance: delay={0}", delay).Write();
-            _maintenanceTimer.Change(delay, Timeout.Infinite);
-        }
-
-        private async Task DoMaintenanceAsync() {
-            Logger.Trace().Message("Running DoMaintenance").Write();
-            DateTime minExpiration = DateTime.MaxValue;
-            var now = DateTime.UtcNow;
-            var expiredKeys = new List<string>();
-            
-            foreach (string key in _memory.Keys) {
-                var expiresAt = _memory[key].ExpiresAt;
-                if (expiresAt <= now)
-                    expiredKeys.Add(key);
-                else if (expiresAt < minExpiration)
-                    minExpiration = expiresAt;
-            }
-
-            ScheduleNextMaintenance(minExpiration);
-            
-            foreach (var key in expiredKeys) {
-                await this.RemoveAsync(key).AnyContext();
-                OnItemExpired(key);
-                Logger.Trace().Message("Removed expired key: key={0}", key).Write();
-            }
-        }
 
         public event EventHandler<string> ItemExpired;
 
@@ -84,55 +36,8 @@ namespace Foundatio.Caching {
             ItemExpired?.Invoke(this, key);
         }
 
-        private class CacheEntry {
-            private object _cacheValue;
-            private static long _instanceCount;
-            private readonly bool _shouldClone;
-#if DEBUG
-            private long _usageCount;
-#endif
-
-            public CacheEntry(object value, DateTime expiresAt, bool shouldClone = true) {
-                Value = value;
-                ExpiresAt = expiresAt;
-                LastModifiedTicks = DateTime.UtcNow.Ticks;
-                _shouldClone = shouldClone;
-                InstanceNumber = Interlocked.Increment(ref _instanceCount);
-            }
-
-            internal long InstanceNumber { get; private set; }
-            internal DateTime ExpiresAt { get; set; }
-            internal long LastAccessTicks { get; private set; }
-            internal long LastModifiedTicks { get; private set; }
-#if DEBUG
-            internal long UsageCount => _usageCount;
-#endif
-
-            internal object Value {
-                get {
-                    LastAccessTicks = DateTime.UtcNow.Ticks;
-#if DEBUG
-                    Interlocked.Increment(ref _usageCount);
-#endif
-                    return _shouldClone ? _cacheValue.Copy() : _cacheValue;
-                }
-                set {
-                    _cacheValue = _shouldClone ? value.Copy() : value;
-                    LastAccessTicks = DateTime.UtcNow.Ticks;
-                    LastModifiedTicks = DateTime.UtcNow.Ticks;
-                }
-            }
-
-            public T GetValue<T>() {
-                var val = Value;
-                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
-                    return (T)Convert.ChangeType(val, typeof(T));
-
-                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
-                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
-
-                return (T)val;
-            }
+        public ICollection<string> Keys {
+            get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -323,6 +228,97 @@ namespace Foundatio.Caching {
             }
 
             return TaskHelper.Completed();
+        }
+
+        private void ScheduleNextMaintenance(DateTime value) {
+            if (value == DateTime.MaxValue)
+                return;
+
+            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
+                return;
+
+            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
+            _nextMaintenance = value;
+            Logger.Trace().Message("Scheduling maintenance: delay={0}", delay).Write();
+            _maintenanceTimer.Change(delay, Timeout.Infinite);
+        }
+
+        private async Task DoMaintenanceAsync() {
+            Logger.Trace().Message("Running DoMaintenance").Write();
+            DateTime minExpiration = DateTime.MaxValue;
+            var now = DateTime.UtcNow;
+            var expiredKeys = new List<string>();
+
+            foreach (string key in _memory.Keys) {
+                var expiresAt = _memory[key].ExpiresAt;
+                if (expiresAt <= now)
+                    expiredKeys.Add(key);
+                else if (expiresAt < minExpiration)
+                    minExpiration = expiresAt;
+            }
+
+            ScheduleNextMaintenance(minExpiration);
+
+            foreach (var key in expiredKeys) {
+                await this.RemoveAsync(key).AnyContext();
+                OnItemExpired(key);
+                Logger.Trace().Message("Removed expired key: key={0}", key).Write();
+            }
+        }
+
+        public void Dispose() {
+            _maintenanceTimer.Dispose();
+        }
+
+        private class CacheEntry {
+            private object _cacheValue;
+            private static long _instanceCount;
+            private readonly bool _shouldClone;
+#if DEBUG
+            private long _usageCount;
+#endif
+
+            public CacheEntry(object value, DateTime expiresAt, bool shouldClone = true) {
+                _shouldClone = shouldClone;
+                Value = value;
+                ExpiresAt = expiresAt;
+                LastModifiedTicks = DateTime.UtcNow.Ticks;
+                InstanceNumber = Interlocked.Increment(ref _instanceCount);
+            }
+
+            internal long InstanceNumber { get; private set; }
+            internal DateTime ExpiresAt { get; set; }
+            internal long LastAccessTicks { get; private set; }
+            internal long LastModifiedTicks { get; private set; }
+#if DEBUG
+            internal long UsageCount => _usageCount;
+#endif
+
+            internal object Value {
+                get {
+                    LastAccessTicks = DateTime.UtcNow.Ticks;
+#if DEBUG
+                    Interlocked.Increment(ref _usageCount);
+#endif
+                    return _shouldClone ? _cacheValue.Copy() : _cacheValue;
+                }
+                set {
+                    _cacheValue = _shouldClone ? value.Copy() : value;
+                    LastAccessTicks = DateTime.UtcNow.Ticks;
+                    LastModifiedTicks = DateTime.UtcNow.Ticks;
+                }
+            }
+
+            public T GetValue<T>() {
+                var val = Value;
+                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
+                    return (T)Convert.ChangeType(val, typeof(T));
+
+                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
+                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
+
+                return (T)val;
+            }
         }
     }
 }
