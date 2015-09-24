@@ -8,12 +8,10 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Utility;
-using Nito.AsyncEx;
 
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
-        private readonly AsyncLock _asyncLock = new AsyncLock();
         private long _hits;
         private long _misses;
         private DateTime? _nextMaintenance;
@@ -29,6 +27,8 @@ namespace Foundatio.Caching {
         public int Count => _memory.Count;
 
         public int? MaxItems { get; set; }
+
+        public bool ShouldCloneValues { get; set; }
 
         public long Hits => _hits;
 
@@ -87,14 +87,16 @@ namespace Foundatio.Caching {
         private class CacheEntry {
             private object _cacheValue;
             private static long _instanceCount;
+            private readonly bool _shouldClone;
 #if DEBUG
             private long _usageCount;
 #endif
 
-            public CacheEntry(object value, DateTime expiresAt) {
+            public CacheEntry(object value, DateTime expiresAt, bool shouldClone = true) {
                 Value = value;
                 ExpiresAt = expiresAt;
                 LastModifiedTicks = DateTime.UtcNow.Ticks;
+                _shouldClone = shouldClone;
                 InstanceNumber = Interlocked.Increment(ref _instanceCount);
             }
 
@@ -112,10 +114,10 @@ namespace Foundatio.Caching {
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
-                    return _cacheValue.Copy();
+                    return _shouldClone ? _cacheValue.Copy() : _cacheValue;
                 }
                 set {
-                    _cacheValue = value.Copy();
+                    _cacheValue = _shouldClone ? value.Copy() : value;
                     LastAccessTicks = DateTime.UtcNow.Ticks;
                     LastModifiedTicks = DateTime.UtcNow.Ticks;
                 }
@@ -207,12 +209,12 @@ namespace Foundatio.Caching {
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            return SetInternalAsync(key, new CacheEntry(value, expiresAt), true);
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            return SetInternalAsync(key, new CacheEntry(value, expiresAt));
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
@@ -275,7 +277,7 @@ namespace Foundatio.Caching {
             }
 
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt), (k, entry) => {
+            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
