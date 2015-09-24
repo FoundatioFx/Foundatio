@@ -239,7 +239,7 @@ namespace Foundatio.Extensions {
                             // Complex types are cloned by checking their actual, concrete type (fields
                             // may be typed to an interface or base class) and requesting a cloner for that
                             // type during runtime
-                            MethodInfo getOrCreateClonerMethodInfo = typeof(ExpressionTreeCloner).GetMethod(
+                            MethodInfo getOrCreateClonerMethodInfo = typeof(ObjectExtensions).GetMethod(
                                 "GetOrCreateDeepFieldBasedCloner",
                                 BindingFlags.NonPublic | BindingFlags.Static
                                 );
@@ -392,7 +392,7 @@ namespace Foundatio.Extensions {
                 // Complex types are cloned by checking their actual, concrete type (fields
                 // may be typed to an interface or base class) and requesting a cloner for that
                 // type during runtime
-                MethodInfo getOrCreateClonerMethodInfo = typeof(ExpressionTreeCloner).GetMethod(
+                MethodInfo getOrCreateClonerMethodInfo = typeof(ObjectExtensions).GetMethod(
                     "GetOrCreateDeepFieldBasedCloner",
                     BindingFlags.NonPublic | BindingFlags.Static
                     );
