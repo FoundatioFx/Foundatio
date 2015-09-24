@@ -14,5 +14,31 @@ namespace Foundatio.Lock {
         public static Task<IDisposable> AcquireLockAsync(this ILockProvider provider, string name, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
             return provider.AcquireLockAsync(name, lockTimeout, acquireTimeout.ToCancellationToken(TimeSpan.FromMinutes(1)));
         }
+
+        public static async Task TryUsingLockAsync(this ILockProvider locker, string name, Func<CancellationToken, Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            using (var l = await locker.AcquireLockAsync(name, lockTimeout, cancellationToken).AnyContext())
+                if (l != null)
+                    await work(cancellationToken).AnyContext();
+        }
+
+        public static async Task TryUsingLockAsync(this ILockProvider locker, string name, Func<Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            using (var l = await locker.AcquireLockAsync(name, lockTimeout, cancellationToken).AnyContext())
+                if (l != null)
+                    await work().AnyContext();
+        }
+
+        public static async Task TryUsingLockAsync(this ILockProvider locker, string name, Func<CancellationToken, Task> work, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
+            var cancellationToken = acquireTimeout?.ToCancellationToken() ?? default(CancellationToken);
+            using (var l = await locker.AcquireLockAsync(name, lockTimeout, cancellationToken).AnyContext())
+                if (l != null)
+                    await work(cancellationToken).AnyContext();
+        }
+
+        public static async Task TryUsingLockAsync(this ILockProvider locker, string name, Func<Task> work, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
+            var cancellationToken = acquireTimeout?.ToCancellationToken() ?? default(CancellationToken);
+            using (var l = await locker.AcquireLockAsync(name, lockTimeout, cancellationToken).AnyContext())
+                if (l != null)
+                    await work().AnyContext();
+        }
     }
 }
