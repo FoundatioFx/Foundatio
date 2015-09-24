@@ -303,6 +303,7 @@ namespace Foundatio.Tests.Caching {
     }
 
     public class MyData {
+        private readonly string _blah = "blah";
         public string Type { get; set; }
         public DateTimeOffset Date { get; set; }
         public string Message { get; set; }
