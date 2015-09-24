@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace Foundatio.Logging {
@@ -102,7 +103,7 @@ namespace Foundatio.Logging {
             message.Append("[").Append(DateTime.UtcNow.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append(Logger).Append("] ");
 
             if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName)) {
-                message.Append("[").Append(LoggerExtensions.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
+                message.Append("[").Append(Path.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
             }
 
             if (Parameters != null && Parameters.Length > 0)

@@ -61,7 +61,7 @@ namespace Foundatio.Logging {
             if (name == null)
                 throw new ArgumentNullException("name");
 
-            _logger.Properties[name] = value;
+            _logger.Properties.Set(name, value);
             return this;
         }
     }

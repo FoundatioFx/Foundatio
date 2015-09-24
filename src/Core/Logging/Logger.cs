@@ -20,10 +20,11 @@ namespace Foundatio.Logging {
         private static LogLevel _minimumLogLevel = LogLevel.Trace;
 
         // only create if used
-        private static readonly ThreadLocal<IDictionary<string, string>> _threadProperties;
-        private static readonly Lazy<IDictionary<string, string>> _globalProperties;
+        private static readonly Lazy<IPropertyContext> _asyncProperties;
+        private static readonly ThreadLocal<IPropertyContext> _threadProperties;
+        private static readonly Lazy<IPropertyContext> _globalProperties;
 
-        private readonly Lazy<IDictionary<string, object>> _properties;
+        private readonly Lazy<IPropertyContext> _properties;
 
 
         /// <summary>
@@ -34,15 +35,16 @@ namespace Foundatio.Logging {
             _logAction = DebugWrite;
             _hasSearched = false;
 
-            _globalProperties = new Lazy<IDictionary<string, string>>(CreateGlobal);
-            _threadProperties = new ThreadLocal<IDictionary<string, string>>(CreateLocal);
+            _globalProperties = new Lazy<IPropertyContext>(CreateGlobal);
+            _threadProperties = new ThreadLocal<IPropertyContext>(CreateLocal);
+            _asyncProperties = new Lazy<IPropertyContext>(CreateAsync);
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Logger"/> class.
         /// </summary>
         public Logger() {
-            _properties = new Lazy<IDictionary<string, object>>(() => new Dictionary<string, object>());
+            _properties = new Lazy<IPropertyContext>(() => new PropertyContext());
         }
 
 
@@ -53,7 +55,7 @@ namespace Foundatio.Logging {
         /// The global properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IDictionary<string, string> GlobalProperties {
+        public static IPropertyContext GlobalProperties {
             get { return _globalProperties.Value; }
         }
 
@@ -64,8 +66,19 @@ namespace Foundatio.Logging {
         /// The thread-local properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IDictionary<string, string> ThreadProperties {
+        public static IPropertyContext ThreadProperties {
             get { return _threadProperties.Value; }
+        }
+
+        /// <summary>
+        /// Gets the property context that maintains state across asynchronous tasks and call contexts. All values are copied to each log on write.
+        /// </summary>
+        /// <value>
+        /// The asynchronous property context.
+        /// </value>
+        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        public static IPropertyContext AsyncProperties {
+            get { return _asyncProperties.Value; }
         }
 
 
@@ -76,7 +89,7 @@ namespace Foundatio.Logging {
         /// The logger initial default properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public IDictionary<string, object> Properties {
+        public IPropertyContext Properties {
             get { return _properties.Value; }
         }
 
@@ -327,7 +340,7 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <returns></returns>
         public static ILogger CreateLogger([CallerFilePath]string callerFilePath = null) {
-            return new Logger { Name = LoggerExtensions.GetFileNameWithoutExtension(callerFilePath ?? string.Empty) };
+            return new Logger { Name = GetName(callerFilePath) };
         }
 
         /// <summary>
@@ -394,7 +407,7 @@ namespace Foundatio.Logging {
             if (logLevel < _minimumLogLevel || logLevel == LogLevel.None)
                 return new NullLogBuilder();
 
-            string name = LoggerExtensions.GetFileNameWithoutExtension(callerFilePath ?? string.Empty);
+            string name = GetName(callerFilePath);
 
             var writer = ResolveWriter();
             var builder = new LogBuilder(logLevel, writer);
@@ -405,41 +418,64 @@ namespace Foundatio.Logging {
             return builder;
         }
 
-        private static IDictionary<string, string> CreateLocal() {
-            var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            dictionary.Add("ThreadId", Thread.CurrentThread.ManagedThreadId.ToString(CultureInfo.InvariantCulture));
+        private static string GetName(string path) {
+            if (path == null)
+                return string.Empty;
 
-            return dictionary;
+            var parts = path.Split('\\', '/');
+            var p = parts.LastOrDefault();
+            if (p == null)
+                return null;
+
+            int length;
+            if ((length = p.LastIndexOf('.')) == -1)
+                return p;
+
+            return p.Substring(0, length);
         }
 
-        private static IDictionary<string, string> CreateGlobal() {
-            var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            dictionary.Add("MachineName", Environment.MachineName);
+        private static IPropertyContext CreateAsync() {
+            var propertyContext = new AsynchronousContext();
+            return propertyContext;
+        }
 
-            return dictionary;
+        private static IPropertyContext CreateLocal() {
+            var propertyContext = new PropertyContext();
+            propertyContext.Set("ThreadId", Thread.CurrentThread.ManagedThreadId);
+
+            return propertyContext;
+        }
+
+        private static IPropertyContext CreateGlobal() {
+            var propertyContext = new PropertyContext();
+            propertyContext.Set("MachineName", Environment.MachineName);
+
+            return propertyContext;
         }
 
         private static void MergeProperties(ILogBuilder builder) {
             // copy global properties to current builder only if it has been created
             if (_globalProperties.IsValueCreated)
-                foreach (var pair in _globalProperties.Value)
-                    builder.Property(pair.Key, pair.Value);
+                _globalProperties.Value.Apply(builder);
 
             // copy thread-local properties to current builder only if it has been created
             if (_threadProperties.IsValueCreated)
-                foreach (var pair in _threadProperties.Value)
-                    builder.Property(pair.Key, pair.Value);
+                _threadProperties.Value.Apply(builder);
+
+            // copy async properties to current builder only if it has been created
+            if (_asyncProperties.IsValueCreated)
+                _asyncProperties.Value.Apply(builder);
         }
 
 
         private ILogBuilder MergeDefaults(ILogBuilder builder) {
             // copy logger name
-            if (!string.IsNullOrEmpty(Name))
+            if (!String.IsNullOrEmpty(Name))
                 builder.Logger(Name);
 
             // copy properties to current builder
-            foreach (var pair in Properties)
-                builder.Property(pair.Key, pair.Value);
+            if (_properties.IsValueCreated)
+                _properties.Value.Apply(builder);
 
             return builder;
         }
