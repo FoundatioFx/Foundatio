@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.Serialization;
@@ -321,6 +322,9 @@ namespace Foundatio.Extensions {
                 FieldInfo fieldInfo = fieldInfos[index];
                 Type fieldType = fieldInfo.FieldType;
 
+                if (fieldInfo.IsInitOnly)
+                    continue;
+
                 if (fieldType.IsPrimitive || (fieldType == typeof(string))) {
                     // Primitive types and strings can be transferred by simple assignment
                     transferExpressions.Add(
@@ -359,6 +363,9 @@ namespace Foundatio.Extensions {
             var fieldTransferExpressions = new List<Expression>();
             var fieldVariables = new List<ParameterExpression>();
 
+            if (fieldInfo.IsInitOnly)
+                return;
+            
             if (fieldType.IsArray) {
                 // Arrays need to be cloned element-by-element
                 Expression fieldClone;
