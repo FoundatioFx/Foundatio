@@ -8,7 +8,6 @@ using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Caching {
@@ -40,11 +39,10 @@ namespace Foundatio.Tests.Caching {
                 Assert.True(await cache.AddAsync("test", 2));
                 Assert.Equal(2, await cache.GetAsync<int>("test"));
                 
-                Assert.True(await cache.ReplaceAsync("test", new MyData("Testing") { Message = "Testing" }));
+                Assert.True(await cache.ReplaceAsync("test", new MyData { Message = "Testing" }));
                 var result = await cache.TryGetAsync<MyData>("test");
                 Assert.NotNull(result);
                 Assert.True(result.HasValue);
-                Assert.Equal("Testing", result.Value.FromConstructor);
                 Assert.Equal("Testing", result.Value.Message);
             }
         }
@@ -315,15 +313,7 @@ namespace Foundatio.Tests.Caching {
 
     public class MyData {
         private readonly string _blah = "blah";
-
-        public MyData() {}
-
-        public MyData(string fromConstructorValue) {
-            FromConstructor = fromConstructorValue;
-        }
-
         public string Blah => _blah;
-        public string FromConstructor { get; }
         public string Type { get; set; }
         public DateTimeOffset Date { get; set; }
         public string Message { get; set; }
