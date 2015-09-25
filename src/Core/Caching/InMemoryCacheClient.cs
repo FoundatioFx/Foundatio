@@ -41,10 +41,14 @@ namespace Foundatio.Caching {
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            if (keys == null || !keys.Any()) {
+            if (keys == null) {
+                var count = _memory.Count;
                 _memory.Clear();
-                return Task.FromResult(0);
+                return Task.FromResult(count);
             }
+
+            if (!keys.Any())
+                return TaskHelper.FromResult(0);
 
             int removed = 0;
             foreach (var key in keys) {
