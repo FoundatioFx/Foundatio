@@ -117,7 +117,11 @@ namespace Foundatio.Tests.Caching {
 
                 await scopedCache2.SetAsync("test", 1);
 
-                await scopedCache1.RemoveAllAsync();
+                var result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
+                Assert.Equal(2, result);
+                // delete without any matching keys
+                result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
+                Assert.Equal(0, result);
                 Assert.Null(await scopedCache1.GetAsync<int?>("test"));
                 Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
                 Assert.Equal(1, await cache.GetAsync<int>("test"));
