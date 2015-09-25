@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using Foundatio.Extensions;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 using Foundatio.Logging;
+using Foundatio.Metrics;
 
 namespace Foundatio.Jobs {
     public class JobRunOptions {
@@ -18,13 +20,61 @@ namespace Foundatio.Jobs {
 
         public string JobTypeName { get; set; }
         public Type JobType { get; set; }
+        public string ServiceProviderTypeName { get; set; }
+        public Type ServiceProviderType { get; set; }
         public bool RunContinuous { get; set; }
         public TimeSpan? Interval { get; set; }
         public int IterationLimit { get; set; }
         public int InstanceCount { get; set; }
+        public bool? NoServiceProvider { get; set; }
     }
 
     public class JobRunner {
+        public static int RunInConsole(JobRunOptions options) {
+            int result;
+            string jobName = "N/A";
+            try {
+                ResolveTypes(options);
+                var jobType = options.JobType;
+                jobName = jobType.Name;
+
+                Logger.GlobalProperties.Set("job", jobName);
+                if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))
+                    ServiceProvider.SetServiceProvider(options.ServiceProviderType);
+
+                // force bootstrap now so logging will be configured
+                if (ServiceProvider.Current is IBootstrappedServiceProvider)
+                    ((IBootstrappedServiceProvider)ServiceProvider.Current).Bootstrap();
+
+                Logger.Info().Message("Starting job...").Write();
+
+                var metricsClient = ServiceProvider.Current.GetService<IMetricsClient>() as InMemoryMetricsClient;
+                metricsClient?.StartDisplayingStats(TimeSpan.FromSeconds(5), new LoggerTextWriter());
+
+                result = JobRunner.RunAsync(options).Result;
+
+                if (Debugger.IsAttached)
+                    Console.ReadKey();
+            } catch (FileNotFoundException e) {
+                Console.Error.WriteLine("{0} ({1})", e.GetMessage(), e.FileName);
+                Logger.Error().Message($"{e.GetMessage()} ({e.FileName})").Write();
+
+                if (Debugger.IsAttached)
+                    Console.ReadKey();
+                return 1;
+            } catch (Exception e) {
+                Console.Error.WriteLine(e.ToString());
+                Logger.Error().Exception(e).Message($"Job \"{jobName}\" error: {e.GetMessage()}").Write();
+
+                if (Debugger.IsAttached)
+                    Console.ReadKey();
+
+                return 1;
+            }
+
+            return result;
+        }
+
         public static Task<JobResult> RunAsync(Type jobType, CancellationToken cancellationToken = default(CancellationToken)) {
             return CreateJobInstance(jobType).RunAsync(cancellationToken);
         }
@@ -50,7 +100,7 @@ namespace Foundatio.Jobs {
         }
 
         public static async Task<int> RunAsync(JobRunOptions options, CancellationToken cancellationToken = default(CancellationToken)) {
-            ResolveJobType(options);
+            ResolveTypes(options);
             if (options.JobType == null)
                 return -1;
 
@@ -64,9 +114,12 @@ namespace Foundatio.Jobs {
             return 0;
         }
 
-        public static void ResolveJobType(JobRunOptions options) {
+        public static void ResolveTypes(JobRunOptions options) {
             if (options.JobType == null)
                 options.JobType = TypeHelper.ResolveType(options.JobTypeName, typeof(JobBase));
+
+            if (options.ServiceProviderType == null)
+                options.ServiceProviderType = TypeHelper.ResolveType(options.ServiceProviderTypeName, typeof(IServiceProvider));
         }
 
         public static JobBase CreateJobInstance(string jobTypeName) {

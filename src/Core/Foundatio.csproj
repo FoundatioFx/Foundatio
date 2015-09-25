@@ -96,6 +96,7 @@
     <Compile Include="Logging\LogData.cs" />
     <Compile Include="Logging\Logger.cs" />
     <Compile Include="Logging\LoggerCreateBuilder.cs" />
+    <Compile Include="Logging\LoggerTextWriter.cs" />
     <Compile Include="Logging\LogLevel.cs" />
     <Compile Include="Logging\NullLogBuilder.cs" />
     <Compile Include="Logging\PropertyContext.cs" />

@@ -55,7 +55,7 @@ namespace Foundatio.Caching {
             try {
                 var result = await _db.ScriptEvaluateAsync("return redis.call('del', unpack(redis.call('keys', ARGV[1])))", null, new[] {(RedisValue)(prefix + "*")}).AnyContext();
                 return (int)result;
-            } catch (RedisServerException ex) {
+            } catch (RedisServerException) {
                 return 0;
             }
         }
