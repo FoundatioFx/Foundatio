@@ -107,7 +107,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            return await _cacheClient.GetAsync<object>(name).AnyContext() != null;
+            return (await _cacheClient.GetAsync<object>(name).AnyContext()).HasValue;
         }
 
         public async Task ReleaseLockAsync(string name) {

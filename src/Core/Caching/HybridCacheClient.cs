@@ -66,15 +66,15 @@ namespace Foundatio.Caching {
             return await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
         }
 
-        public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
-            var cacheValue = await _localCache.TryGetAsync<T>(key).AnyContext();
+        public async Task<CacheValue<T>> GetAsync<T>(string key) {
+            var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 Logger.Trace().Message("Local cache hit: {0}", key).Write();
                 Interlocked.Increment(ref _localCacheHits);
                 return cacheValue;
             }
 
-            cacheValue = await _distributedCache.TryGetAsync<T>(key).AnyContext();
+            cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
 
@@ -83,10 +83,10 @@ namespace Foundatio.Caching {
                 return cacheValue;
             }
 
-            return CacheValue<T>.Null;
+            return CacheValue<T>.NoValue;
         }
 
-        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             return _distributedCache.GetAllAsync<T>(keys);
         }
 

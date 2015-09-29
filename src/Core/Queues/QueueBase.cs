@@ -91,12 +91,12 @@ namespace Foundatio.Queues {
 
         protected virtual async Task OnCompletedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
-            if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
-                queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+            if (queueEntry.HasValue && queueEntry.Value.DequeuedTimeUtc > DateTime.MinValue)
+                queueEntry.Value.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.Value.DequeuedTimeUtc);
 
             await (Completed?.InvokeAsync(this, new CompletedEventArgs<T> {
                 Queue = this,
-                Metadata = queueEntry
+                Metadata = queueEntry.Value
             }) ?? TaskHelper.Completed()).AnyContext();
 
             await _queueEntryCache.RemoveAsync(id).AnyContext();
@@ -106,12 +106,12 @@ namespace Foundatio.Queues {
 
         protected virtual async Task OnAbandonedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
-            if (queueEntry != null && queueEntry.DequeuedTimeUtc > DateTime.MinValue)
-                queueEntry.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.DequeuedTimeUtc);
+            if (queueEntry.HasValue && queueEntry.Value.DequeuedTimeUtc > DateTime.MinValue)
+                queueEntry.Value.ProcessingTime = DateTime.UtcNow.Subtract(queueEntry.Value.DequeuedTimeUtc);
             
             await (Abandoned?.InvokeAsync(this, new AbandonedEventArgs<T> {
                 Queue = this,
-                Metadata = queueEntry
+                Metadata = queueEntry.Value
             }) ?? TaskHelper.Completed()).AnyContext();
 
             await _queueEntryCache.RemoveAsync(id).AnyContext();

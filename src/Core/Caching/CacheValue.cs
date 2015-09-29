@@ -1,16 +1,18 @@
-﻿using System;
-
-namespace Foundatio.Caching {
+﻿namespace Foundatio.Caching {
     public class CacheValue<T> {
         public CacheValue(T value, bool hasValue) {
             Value = value;
             HasValue = hasValue;
         }
 
-        public bool HasValue { get; private set; }
+        public bool HasValue { get; }
 
-        public T Value { get; private set; }
+        public bool IsNull => Value == null;
 
-        public static CacheValue<T> Null => new CacheValue<T>(default(T), false);
+        public T Value { get; }
+
+        public static CacheValue<T> Null => new CacheValue<T>(default(T), true);
+
+        public static CacheValue<T> NoValue => new CacheValue<T>(default(T), false);
     }
 }

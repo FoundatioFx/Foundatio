@@ -81,18 +81,18 @@ namespace Foundatio.Caching {
             return RemoveAllAsync(keysToRemove);
         }
 
-        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
+        public Task<CacheValue<T>> GetAsync<T>(string key) {
             CacheEntry cacheEntry;
             if (!_memory.TryGetValue(key, out cacheEntry)) {
                 Interlocked.Increment(ref _misses);
-                return Task.FromResult(CacheValue<T>.Null);
+                return Task.FromResult(CacheValue<T>.NoValue);
             }
 
             if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
                 Logger.Trace().Message($"TryGetAsync: Removing expired key {key}").Write();
                 _memory.TryRemove(key, out cacheEntry);
                 Interlocked.Increment(ref _misses);
-                return Task.FromResult(CacheValue<T>.Null);
+                return Task.FromResult(CacheValue<T>.NoValue);
             }
 
             Interlocked.Increment(ref _hits);
@@ -102,12 +102,12 @@ namespace Foundatio.Caching {
                 return Task.FromResult(new CacheValue<T>(value, true));
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
-                return Task.FromResult(new CacheValue<T>(default(T), false));
+                return Task.FromResult(CacheValue<T>.NoValue);
             }
         }
 
-        public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var valueMap = new Dictionary<string, T>();
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
+            var valueMap = new Dictionary<string, CacheValue<T>>();
             foreach (var key in keys) {
                 var value = await this.GetAsync<T>(key).AnyContext();
                 valueMap[key] = value;

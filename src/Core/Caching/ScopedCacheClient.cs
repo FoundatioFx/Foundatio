@@ -33,11 +33,11 @@ namespace Foundatio.Caching {
             return UnscopedCache.RemoveByPrefixAsync(GetScopedCacheKey(prefix));
         }
 
-        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
-            return UnscopedCache.TryGetAsync<T>(GetScopedCacheKey(key));
+        public Task<CacheValue<T>> GetAsync<T>(string key) {
+            return UnscopedCache.GetAsync<T>(GetScopedCacheKey(key));
         }
 
-        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             return UnscopedCache.GetAllAsync<T>(GetScopedCacheKey(keys));
         }
 

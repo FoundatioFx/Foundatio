@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
@@ -12,12 +13,12 @@ namespace Foundatio.Caching {
             return Task.FromResult(0);
         }
 
-        public Task<CacheValue<T>> TryGetAsync<T>(string key) {
-            return Task.FromResult(CacheValue<T>.Null);
+        public Task<CacheValue<T>> GetAsync<T>(string key) {
+            return Task.FromResult(CacheValue<T>.NoValue);
         }
 
-        public Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) { 
-            return Task.FromResult<IDictionary<string, T>>(new Dictionary<string, T>());
+        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) { 
+            return Task.FromResult<IDictionary<string, CacheValue<T>>>(keys.ToDictionary(k => k, k => CacheValue<T>.NoValue));
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

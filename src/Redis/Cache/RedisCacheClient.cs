@@ -60,35 +60,51 @@ namespace Foundatio.Caching {
             }
         }
 
-        public async Task<CacheValue<T>> TryGetAsync<T>(string key) {
+        private static RedisValue _nullValue = "@@NULL";
+
+        public async Task<CacheValue<T>> GetAsync<T>(string key) {
             var redisValue = await _db.StringGetAsync(key).AnyContext();
-            if (redisValue == RedisValue.Null)
-                return CacheValue<T>.Null;
             
-            try {
+            return await RedisValueToCacheValue<T>(redisValue);
+        }
+
+        private async Task<CacheValue<T>> RedisValueToCacheValue<T>(RedisValue redisValue) {
+            if (!redisValue.HasValue) return CacheValue<T>.NoValue;
+            if (redisValue == _nullValue) return CacheValue<T>.Null;
+
+            try
+            {
                 T value;
-                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
-                    value = (T)Convert.ChangeType(redisValue, typeof(T));
-                else if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
-                    value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(typeof(T)));
+                if (typeof (T) == typeof (Int16) || typeof (T) == typeof (Int32) || typeof (T) == typeof (Int64) ||
+                    typeof (T) == typeof (bool) || typeof (T) == typeof (double) || typeof (T) == typeof (string))
+                    value = (T) Convert.ChangeType(redisValue, typeof (T));
+                else if (typeof (T) == typeof (Int16?) || typeof (T) == typeof (Int32?) || typeof (T) == typeof (Int64?) ||
+                         typeof (T) == typeof (bool?) || typeof (T) == typeof (double?))
+                    value = redisValue.IsNull
+                        ? default(T)
+                        : (T) Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(typeof (T)));
                 else
                     value = await _serializer.DeserializeAsync<T>(redisValue.ToString()).AnyContext();
 
                 return new CacheValue<T>(value, true);
-            } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{redisValue}\" to type {typeof(T).FullName}").Write();
-                return new CacheValue<T>(default(T), false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error()
+                    .Exception(ex)
+                    .Message($"Unable to deserialize value \"{redisValue}\" to type {typeof (T).FullName}")
+                    .Write();
+                return CacheValue<T>.NoValue;
             }
         }
 
-        public async Task<IDictionary<string, T>> GetAllAsync<T>(IEnumerable<string> keys) {
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             var keyArray = keys.ToArray();
             var values = await _db.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray()).AnyContext();
 
-            var result = new Dictionary<string, T>();
+            var result = new Dictionary<string, CacheValue<T>>();
             for (int i = 0; i < keyArray.Length; i++) {
-                T value = await _serializer.DeserializeAsync<T>((string)values[i]).AnyContext();
-                result.Add(keyArray[i], value);
+                result.Add(keyArray[i], await RedisValueToCacheValue<T>(values[i]));
             }
 
             return result;
@@ -109,6 +125,9 @@ namespace Foundatio.Caching {
         }
 
         protected async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
+            if (value == null)
+                return await _db.StringSetAsync(key, _nullValue, expiresIn, when, flags).AnyContext();
+
             if (typeof(T) == typeof(Int16))
                 return await _db.StringSetAsync(key, Convert.ToInt16(value), expiresIn, when, flags).AnyContext();
             if (typeof(T) == typeof(Int32))
@@ -117,6 +136,8 @@ namespace Foundatio.Caching {
                 return await _db.StringSetAsync(key, Convert.ToInt64(value), expiresIn, when, flags).AnyContext();
             if (typeof(T) == typeof(bool))
                 return await _db.StringSetAsync(key, Convert.ToBoolean(value), expiresIn, when, flags).AnyContext();
+            if (typeof(T) == typeof(string))
+                return await _db.StringSetAsync(key, value?.ToString(), expiresIn, when, flags).AnyContext();
 
             var data = await _serializer.SerializeAsync(value).AnyContext();
             return await _db.StringSetAsync(key, data, expiresIn, when, flags).AnyContext();

@@ -9,11 +9,50 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Utility;
+using Newtonsoft.Json;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : CaptureTests {
         protected virtual ICacheClient GetCacheClient() {
             return null;
+        }
+
+        public virtual async Task CanGetAll() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                await cache.SetAsync("test1", 1);
+                await cache.SetAsync("test2", 2);
+                await cache.SetAsync("test3", 3);
+                var result = await cache.GetAllAsync<int>(new [] { "test1", "test2", "test3" });
+                Assert.NotNull(result);
+                Assert.Equal(3, result.Count);
+
+                await cache.SetAsync("obj1", new SimpleModel {Data1 = "data 1", Data2 = 1 });
+                await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
+                await cache.SetAsync("obj3", (SimpleModel)null);
+
+                var json = JsonConvert.SerializeObject(new SimpleModel {Data1 = "test 1", Data2 = 4});
+                await cache.SetAsync("obj4", json);
+
+                //await cache.SetAsync("obj4", "{ \"Data1\":\"data 3\", \"Data2\":3 }");
+                var result2 = await cache.GetAllAsync<SimpleModel>(new[] { "obj1", "obj2", "obj3", "obj4", "obj5" });
+                Assert.NotNull(result2);
+                Assert.Equal(5, result2.Count);
+                Assert.True(result2["obj3"].IsNull);
+                Assert.False(result2["obj5"].HasValue);
+
+                await cache.SetAsync("str1", "string 1");
+                await cache.SetAsync("str2", "string 2");
+                await cache.SetAsync("str3", (string)null);
+                var result3 = await cache.GetAllAsync<string>(new[] { "str1", "str2", "str3" });
+                Assert.NotNull(result3);
+                Assert.Equal(3, result3.Count);
+            }
         }
 
         public virtual async Task CanSetAndGetValue() {
@@ -24,23 +63,37 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
+                Assert.False((await cache.GetAsync<int>("donkey")).HasValue);
+
+                SimpleModel nullable = null;
+                await cache.SetAsync("nullable", nullable);
+                var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
+                Assert.True(nullCacheValue.HasValue);
+                Assert.True(nullCacheValue.IsNull);
+
+                int? nullableInt = null;
+                await cache.SetAsync("nullableInt", nullableInt);
+                var nullIntCacheValue = await cache.GetAsync<int?>("nullableInt");
+                Assert.True(nullIntCacheValue.HasValue);
+                Assert.True(nullIntCacheValue.IsNull);
+
                 await cache.SetAsync("test", 1);
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
 
                 Assert.False(await cache.AddAsync("test", 2));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
 
                 Assert.True(await cache.ReplaceAsync("test", 2));
-                Assert.Equal(2, await cache.GetAsync<int>("test"));
+                Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
 
                 Assert.True(await cache.RemoveAsync("test"));
-                Assert.Null(await cache.GetAsync<int?>("test"));
+                Assert.False((await cache.GetAsync<int>("test")).HasValue);
                 
                 Assert.True(await cache.AddAsync("test", 2));
-                Assert.Equal(2, await cache.GetAsync<int>("test"));
+                Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
                 
                 Assert.True(await cache.ReplaceAsync("test", new MyData { Message = "Testing" }));
-                var result = await cache.TryGetAsync<MyData>("test");
+                var result = await cache.GetAsync<MyData>("test");
                 Assert.NotNull(result);
                 Assert.True(result.HasValue);
                 Assert.Equal("Testing", result.Value.Message);
@@ -74,22 +127,22 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync();
 
                 await cache.SetAsync<int>("test", 1);
-                var cacheValue = await cache.GetAsync<long?>("test");
+                var cacheValue = await cache.GetAsync<long>("test");
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(1L, cacheValue.Value);
 
                 await cache.SetAsync<long>("test", Int64.MaxValue);
-                cacheValue = await cache.GetAsync<int?>("test");
-                Assert.False(cacheValue.HasValue);
+                var cacheValue2 = await cache.GetAsync<int>("test");
+                Assert.False(cacheValue2.HasValue);
 
-                cacheValue = await cache.GetAsync<long?>("test");
+                cacheValue = await cache.GetAsync<long>("test");
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(Int64.MaxValue, cacheValue.Value);
 
                 await cache.SetAsync<MyData>("test", new MyData {
                     Message = "test"
                 });
-                cacheValue = await cache.GetAsync<long?>("test");
+                cacheValue = await cache.GetAsync<long>("test");
                 Assert.False(cacheValue.HasValue);
             }
         }
@@ -108,12 +161,12 @@ namespace Foundatio.Tests.Caching {
                 await scopedCache1.SetAsync("test", 2);
                 await nestedScopedCache1.SetAsync("test", 3);
 
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
-                Assert.Equal(2, await scopedCache1.GetAsync<int>("test"));
-                Assert.Equal(3, await nestedScopedCache1.GetAsync<int>("test"));
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+                Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
+                Assert.Equal(3, (await nestedScopedCache1.GetAsync<int>("test")).Value);
 
-                Assert.Equal(3, await scopedCache1.GetAsync<int>("nested:test"));
-                Assert.Equal(3, await cache.GetAsync<int>("scoped1:nested:test"));
+                Assert.Equal(3, (await scopedCache1.GetAsync<int>("nested:test")).Value);
+                Assert.Equal(3, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
 
                 await scopedCache2.SetAsync("test", 1);
 
@@ -124,16 +177,16 @@ namespace Foundatio.Tests.Caching {
                 result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
                 Assert.Equal(0, result);
 
-                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
-                Assert.Equal(1, await scopedCache2.GetAsync<int>("test"));
+                Assert.False((await scopedCache1.GetAsync<int>("test")).HasValue);
+                Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+                Assert.Equal(1, (await scopedCache2.GetAsync<int>("test")).Value);
 
                 await scopedCache2.RemoveAllAsync();
-                Assert.Null(await scopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await nestedScopedCache1.GetAsync<int?>("test"));
-                Assert.Null(await scopedCache2.GetAsync<int?>("test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.False((await scopedCache1.GetAsync<int>("test")).HasValue);
+                Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
+                Assert.False((await scopedCache2.GetAsync<int>("test")).HasValue);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
             }
         }
 
@@ -149,13 +202,13 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync("test", 1);
                 await cache.SetAsync(prefix + "test", 1);
                 await cache.SetAsync(prefix + "test2", 4);
-                Assert.Equal(1, await cache.GetAsync<int>(prefix + "test"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.Equal(1, (await cache.GetAsync<int>(prefix + "test")).Value);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
 
                 await cache.RemoveByPrefixAsync(prefix);
-                Assert.Null(await cache.GetAsync<int?>(prefix + "test"));
-                Assert.Null(await cache.GetAsync<int?>(prefix + "test2"));
-                Assert.Equal(1, await cache.GetAsync<int>("test"));
+                Assert.False((await cache.GetAsync<int>(prefix + "test")).HasValue);
+                Assert.False((await cache.GetAsync<int>(prefix + "test2")).HasValue);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
             }
         }
 
@@ -177,10 +230,10 @@ namespace Foundatio.Tests.Caching {
                 value.Type = "modified";
                 var cachedValue = await cache.GetAsync<MyData>("test");
                 Assert.NotNull(cachedValue);
-                Assert.Equal(dt, cachedValue.Date);
-                Assert.False(value.Equals(cachedValue), "Should not be same reference object.");
-                Assert.Equal("Hello World", cachedValue.Message);
-                Assert.Equal("test", cachedValue.Type);
+                Assert.Equal(dt, cachedValue.Value.Date);
+                Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object.");
+                Assert.Equal("Hello World", cachedValue.Value.Message);
+                Assert.Equal("test", cachedValue.Value.Type);
             }
         }
 
@@ -197,13 +250,13 @@ namespace Foundatio.Tests.Caching {
                 Assert.True(success);
                 success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
                 Assert.True(success);
-                Assert.Equal(1, await cache.GetAsync<int?>("test"));
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
                 Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
 
                 await Task.Delay(500);
-                Assert.Null(await cache.GetAsync<int?>("test"));
+                Assert.False((await cache.GetAsync<int>("test")).HasValue);
                 Assert.Null(await cache.GetExpirationAsync("test"));
-                Assert.Null(await cache.GetAsync<int?>("test2"));
+                Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                 Assert.Null(await cache.GetExpirationAsync("test2"));
             }
         }
@@ -220,9 +273,9 @@ namespace Foundatio.Tests.Caching {
             for (int i = 0; i < itemCount; i++) {
                 await cacheClient.SetAsync("test", 13422);
                 await cacheClient.SetAsync("flag", true);
-                Assert.Equal(13422, await cacheClient.GetAsync<int>("test"));
-                Assert.Null(await cacheClient.GetAsync<int?>("test2"));
-                Assert.True(await cacheClient.GetAsync<bool>("flag"));
+                Assert.Equal(13422, (await cacheClient.GetAsync<int>("test")).Value);
+                Assert.Null(await cacheClient.GetAsync<int>("test2"));
+                Assert.True((await cacheClient.GetAsync<bool>("flag")).Value);
                 await metrics.CounterAsync("work");
             }
             metrics.DisplayStats(_writer);
@@ -243,9 +296,9 @@ namespace Foundatio.Tests.Caching {
                     Data2 = 12
                 });
                 var model = await cacheClient.GetAsync<SimpleModel>("test");
-                Assert.NotNull(model);
-                Assert.Equal("Hello", model.Data1);
-                Assert.Equal(12, model.Data2);
+                Assert.True(model.HasValue);
+                Assert.Equal("Hello", model.Value.Data1);
+                Assert.Equal(12, model.Value.Data2);
                 await metrics.CounterAsync("work");
             }
 
@@ -290,9 +343,9 @@ namespace Foundatio.Tests.Caching {
                 });
 
                 var model = await cacheClient.GetAsync<ComplexModel>("test");
-                Assert.NotNull(model);
-                Assert.Equal("Hello", model.Data1);
-                Assert.Equal(12, model.Data2);
+                Assert.True(model.HasValue);
+                Assert.Equal("Hello", model.Value.Data1);
+                Assert.Equal(12, model.Value.Data2);
                 await metrics.CounterAsync("work");
             }
 

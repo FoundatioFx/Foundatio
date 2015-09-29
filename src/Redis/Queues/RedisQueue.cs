@@ -265,9 +265,9 @@ namespace Foundatio.Queues {
                     return null;
                 }
 
-                var enqueuedTimeTicks = await _cache.GetAsync<long?>(GetEnqueuedTimeKey(value)).AnyContext() ?? 0;
-                var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(value)).AnyContext() ?? -1;
-                var entry = new QueueEntry<T>(value, payload, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
+                var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(value), 0).AnyContext();
+                var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(value), -1).AnyContext();
+                var entry = new QueueEntry<T>(value, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 await OnDequeuedAsync(entry).AnyContext();
 
@@ -301,10 +301,10 @@ namespace Foundatio.Queues {
 
         public override async Task AbandonAsync(string id) {
             Logger.Debug().Message($"Queue {_queueName}:{QueueId} abandon item: {id}").Write();
-            var attemptsValue = await _cache.GetAsync<int?>(GetAttemptsKey(id)).AnyContext();
+            var attemptsCachedValue = await _cache.GetAsync<int>(GetAttemptsKey(id)).AnyContext();
             int attempts = 1;
-            if (attemptsValue.HasValue)
-                attempts = attemptsValue.Value + 1;
+            if (attemptsCachedValue.HasValue)
+                attempts = attemptsCachedValue.Value + 1;
             
             var retryDelay = GetRetryDelay(attempts);
             Logger.Trace().Message($"Item: {id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}").Write();
@@ -427,7 +427,7 @@ namespace Foundatio.Queues {
             try {
                 var workIds = await _db.ListRangeAsync(WorkListName).AnyContext();
                 foreach (var workId in workIds) {
-                    var dequeuedTimeTicks = await _cache.GetAsync<long?>(GetDequeuedTimeKey(workId)).AnyContext();
+                    var dequeuedTimeTicks = await _cache.GetAsync<long>(GetDequeuedTimeKey(workId)).AnyContext();
 
                     // dequeue time should be set, use current time
                     if (!dequeuedTimeTicks.HasValue) {
@@ -451,7 +451,7 @@ namespace Foundatio.Queues {
             try {
                 var waitIds = await _db.ListRangeAsync(WaitListName).AnyContext();
                 foreach (var waitId in waitIds) {
-                    var waitTimeTicks = await _cache.GetAsync<long?>(GetWaitTimeKey(waitId)).AnyContext();
+                    var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId)).AnyContext();
                     Logger.Trace().Message("Wait time: {0}", waitTimeTicks).Write();
 
                     if (waitTimeTicks.HasValue && waitTimeTicks.Value > DateTime.UtcNow.Ticks)

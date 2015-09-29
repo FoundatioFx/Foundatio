@@ -68,14 +68,14 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await firstCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await firstCache.GetAsync<int>("test")).Value);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
             Assert.Equal(1, secondCache.LocalCacheHits);
         }
 
@@ -93,14 +93,14 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await firstCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await firstCache.GetAsync<int>("test")).Value);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, await secondCache.GetAsync<int>("test"));
+            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
