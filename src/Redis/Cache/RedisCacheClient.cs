@@ -88,8 +88,7 @@ namespace Foundatio.Caching {
 
                 return new CacheValue<T>(value, true);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 Logger.Error()
                     .Exception(ex)
                     .Message($"Unable to deserialize value \"{redisValue}\" to type {typeof (T).FullName}")

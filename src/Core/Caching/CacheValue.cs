@@ -14,5 +14,9 @@
         public static CacheValue<T> Null => new CacheValue<T>(default(T), true);
 
         public static CacheValue<T> NoValue => new CacheValue<T>(default(T), false);
+
+        public override string ToString() {
+            return Value.ToString();
+        }
     }
 }
