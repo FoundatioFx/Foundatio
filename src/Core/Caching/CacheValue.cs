@@ -18,7 +18,7 @@ namespace Foundatio.Caching {
         public static CacheValue<T> NoValue => new CacheValue<T>(default(T), false);
 
         public override string ToString() {
-            return Nullable.GetUnderlyingType(typeof(T)) != null && Value == null ? null : Value.ToString();
+            return Value?.ToString() ?? "<null>";
         }
     }
 }

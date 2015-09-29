@@ -93,9 +93,6 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.RemoveAllAsync();
-            await secondCache.RemoveAllAsync();
-
             var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
             await firstCache.SetAsync(cacheKey, 1, TimeSpan.FromMilliseconds(250));
             Assert.Equal(1, firstCache.LocalCache.Count);
