@@ -88,7 +88,7 @@ namespace Foundatio.Lock {
 
         public async Task<bool> IsLockedAsync(string name) {
             string cacheKey = GetCacheKey(name, DateTime.UtcNow);
-            var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
+            var hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
 
             return hitCount >= _maxHitsPerPeriod;
         }
