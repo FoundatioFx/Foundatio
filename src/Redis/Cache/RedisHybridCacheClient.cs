@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.Caching {
     public class RedisHybridCacheClient : HybridCacheClient {
-        public RedisHybridCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null)
-            : base(new RedisCacheClient(connectionMultiplexer, serializer), new RedisMessageBus(connectionMultiplexer.GetSubscriber(), "cache-messages", serializer)) { }
+        public RedisHybridCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, string channelName = "cache-messages")
+            : base(new RedisCacheClient(connectionMultiplexer, serializer), new RedisMessageBus(connectionMultiplexer.GetSubscriber(), channelName, serializer)) { }
     }
 }

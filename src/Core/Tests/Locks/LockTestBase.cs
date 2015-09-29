@@ -92,27 +92,30 @@ namespace Foundatio.Tests.Locks {
             if (locker == null)
                 return;
 
-            await locker.ReleaseLockAsync("test");
+            var lockName = Guid.NewGuid().ToString("N").Substring(10);
+            await locker.ReleaseLockAsync(lockName);
 
             // sleep until start of throttling period
             await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now);
 
             var sw = Stopwatch.StartNew();
-            for (int i = 0; i < 5; i++)
-                await locker.AcquireLockAsync("test");
+            for (int i = 0; i < 5; i++) {
+                var l = await locker.AcquireLockAsync(lockName);
+                Assert.NotNull(l);
+            }
             sw.Stop();
 
             _output.WriteLine(sw.Elapsed.ToString());
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
-            var result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            var result = await locker.AcquireLockAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
             _output.WriteLine(sw.Elapsed.ToString());
             
             sw.Restart();
-            result = await locker.AcquireLockAsync("test", acquireTimeout: TimeSpan.FromSeconds(1.5));
+            result = await locker.AcquireLockAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
             _output.WriteLine(sw.Elapsed.ToString());

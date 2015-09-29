@@ -13,7 +13,7 @@ using Newtonsoft.Json;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : CaptureTests {
-        protected virtual ICacheClient GetCacheClient() {
+        protected virtual ICacheClient GetCacheClient(string channelName = null) {
             return null;
         }
 
@@ -108,9 +108,10 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
+                var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                 long adds = 0;
                 await Run.InParallel(5, async i => {
-                    if (await cache.AddAsync("test", i))
+                    if (await cache.AddAsync(cacheKey, i))
                         Interlocked.Increment(ref adds);
                 });
 
@@ -153,6 +154,8 @@ namespace Foundatio.Tests.Caching {
                 return;
 
             using (cache) {
+                await cache.RemoveAllAsync();
+
                 var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
                 var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
                 var scopedCache2 = new ScopedCacheClient(cache, "scoped2");

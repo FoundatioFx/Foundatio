@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Messaging;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
@@ -16,7 +15,7 @@ namespace Foundatio.Tests.Caching {
 
         public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
-        protected override ICacheClient GetCacheClient() {
+        protected override ICacheClient GetCacheClient(string channelName = null) {
             return new HybridCacheClient(_distributedCache, _messageBus);
         }
 
@@ -57,50 +56,60 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillUseLocalCache() {
-            var firstCache = GetCacheClient() as HybridCacheClient;
+            var channelName = Guid.NewGuid().ToString("N").Substring(10);
+            var firstCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(firstCache);
 
-            var secondCache = GetCacheClient() as HybridCacheClient;
+            var secondCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.SetAsync("test", 1);
+            await firstCache.RemoveAllAsync();
+            await secondCache.RemoveAllAsync();
+
+            var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+            await firstCache.SetAsync(cacheKey, 1);
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await firstCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await firstCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(1, secondCache.LocalCacheHits);
         }
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
             Logger.Trace().Message("Warm the log...").Write();
-            var firstCache = GetCacheClient() as HybridCacheClient;
+            var channelName = Guid.NewGuid().ToString("N").Substring(10);
+            var firstCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(firstCache);
 
-            var secondCache = GetCacheClient() as HybridCacheClient;
+            var secondCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.SetAsync("test", 1, TimeSpan.FromMilliseconds(100));
+            await firstCache.RemoveAllAsync();
+            await secondCache.RemoveAllAsync();
+
+            var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+            await firstCache.SetAsync(cacheKey, 1, TimeSpan.FromMilliseconds(250));
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await firstCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await firstCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>("test")).Value);
+            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
