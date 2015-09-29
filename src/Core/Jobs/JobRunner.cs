@@ -35,12 +35,16 @@ namespace Foundatio.Jobs {
             string jobName = "N/A";
             try {
                 ResolveTypes(options);
-                var jobType = options.JobType;
-                jobName = jobType.Name;
+                if (options.JobType == null) {
+                    Console.Error.WriteLine($"Unable to resolve job type {options.JobTypeName}.");
+                    return -1;
+                }
+
+                jobName = options.JobType.Name;
 
                 Logger.GlobalProperties.Set("job", jobName);
                 if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))
-                    ServiceProvider.SetServiceProvider(options.ServiceProviderType);
+                    ServiceProvider.SetServiceProvider(options.ServiceProviderType ?? options.JobType);
 
                 // force bootstrap now so logging will be configured
                 if (ServiceProvider.Current is IBootstrappedServiceProvider)
@@ -49,7 +53,7 @@ namespace Foundatio.Jobs {
                 Logger.Info().Message("Starting job...").Write();
 
                 var metricsClient = ServiceProvider.Current.GetService<IMetricsClient>() as InMemoryMetricsClient;
-                metricsClient?.StartDisplayingStats(TimeSpan.FromSeconds(5), new LoggerTextWriter());
+                metricsClient?.StartDisplayingStats(TimeSpan.FromSeconds(5), new LoggerTextWriter { Source = "Metrics" });
 
                 result = JobRunner.RunAsync(options).Result;
 
@@ -115,10 +119,10 @@ namespace Foundatio.Jobs {
         }
 
         public static void ResolveTypes(JobRunOptions options) {
-            if (options.JobType == null)
+            if (options.JobType == null && !String.IsNullOrEmpty(options.JobTypeName))
                 options.JobType = TypeHelper.ResolveType(options.JobTypeName, typeof(JobBase));
 
-            if (options.ServiceProviderType == null)
+            if (options.ServiceProviderType == null && !String.IsNullOrEmpty(options.ServiceProviderTypeName))
                 options.ServiceProviderType = TypeHelper.ResolveType(options.ServiceProviderTypeName, typeof(IServiceProvider));
         }
 

@@ -28,7 +28,7 @@ namespace Foundatio.JobRunner {
         [HelpOption]
         public string GetUsage() {
             var help = new HelpText {
-                Heading = String.Format("Foundatio Job Runner v{0}", Program.GetInformationalVersion()),
+                Heading = $"Foundatio Job Runner v{Program.GetInformationalVersion()}",
                 AdditionalNewLineAfterOption = false,
                 AddDashesToOption = true
             };
