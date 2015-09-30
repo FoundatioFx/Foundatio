@@ -97,7 +97,7 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            var countdownEvent = new AsyncCountdownEvent(1);
+            var countdownEvent = new AsyncCountdownEvent(2);
             firstCache.LocalCache.ItemExpired += (sender, args) => {
                 _writer.WriteLine("First expired: " + args.Key);
                 countdownEvent.Signal();
@@ -109,7 +109,7 @@ namespace Foundatio.Tests.Caching {
                 return TaskHelper.Completed();
             };
 
-            var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+            var cacheKey = "willexpireremote";
             _writer.WriteLine("Set");
             await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
             _writer.WriteLine("Done Set");

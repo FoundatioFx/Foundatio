@@ -78,6 +78,7 @@ namespace Foundatio.Caching {
                 }
             }
 
+            Logger.Trace().Message("Local cache miss: {0}", key).Write();
             cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
             if (requiresSerialization && cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
@@ -89,7 +90,7 @@ namespace Foundatio.Caching {
 
             if (cacheValue.HasValue)
                 return cacheValue;
-
+            
             return CacheValue<T>.NoValue;
         }
 
@@ -106,6 +107,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (TypeRequiresSerialization(typeof(T))) {
+                Logger.Trace().Message($"Adding key {key} to local cache.").Write();
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
             }
@@ -118,6 +120,7 @@ namespace Foundatio.Caching {
                 return 0;
 
             if (TypeRequiresSerialization(typeof(T))) {
+                Logger.Trace().Message($"Adding keys {values.Keys} to local cache.").Write();
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = values.Keys.ToArray()}).AnyContext();
                 await _localCache.SetAllAsync(values, expiresIn).AnyContext();
             }
