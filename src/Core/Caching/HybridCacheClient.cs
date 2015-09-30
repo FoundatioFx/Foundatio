@@ -100,6 +100,7 @@ namespace Foundatio.Caching {
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (TypeRequiresSerialization(typeof(T)))
                 await _localCache.AddAsync(key, value, expiresIn).AnyContext();
+
             return await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         }
 
@@ -108,6 +109,7 @@ namespace Foundatio.Caching {
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
             }
+
             return await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
         }
 
@@ -119,6 +121,7 @@ namespace Foundatio.Caching {
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = values.Keys.ToArray()}).AnyContext();
                 await _localCache.SetAllAsync(values, expiresIn).AnyContext();
             }
+
             return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
         }
 
@@ -127,6 +130,7 @@ namespace Foundatio.Caching {
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
                 await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
             }
+
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 

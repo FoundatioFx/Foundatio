@@ -10,7 +10,7 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T> : IQueue<T> where T : class {
+    public abstract class QueueBase<T> : MaintenanceBase, IQueue<T> where T : class {
         private readonly InMemoryCacheClient _queueEntryCache = new InMemoryCacheClient {
             MaxItems = 1000
         };
@@ -121,8 +121,10 @@ namespace Foundatio.Queues {
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public virtual void Dispose() {
+        public override void Dispose() {
             Logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
+
+            base.Dispose();
 
             var disposableSerializer = _serializer as IDisposable;
             disposableSerializer?.Dispose();
