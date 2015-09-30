@@ -208,7 +208,7 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return -1;
             }
-
+            
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;

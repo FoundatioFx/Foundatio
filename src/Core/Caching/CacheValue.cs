@@ -1,4 +1,6 @@
-﻿namespace Foundatio.Caching {
+﻿using System;
+
+namespace Foundatio.Caching {
     public class CacheValue<T> {
         public CacheValue(T value, bool hasValue) {
             Value = value;
@@ -16,7 +18,7 @@
         public static CacheValue<T> NoValue => new CacheValue<T>(default(T), false);
 
         public override string ToString() {
-            return Value.ToString();
+            return Value?.ToString() ?? "<null>";
         }
     }
 }
