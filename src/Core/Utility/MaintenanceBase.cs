@@ -43,7 +43,7 @@ namespace Foundatio.Utility {
         }
         
         public virtual void Dispose() {
-            _maintenanceTimer.Dispose();
+            _maintenanceTimer?.Dispose();
         }
     }
 }
