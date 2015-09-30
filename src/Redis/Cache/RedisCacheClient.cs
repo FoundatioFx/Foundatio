@@ -65,7 +65,7 @@ namespace Foundatio.Caching {
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             var redisValue = await _db.StringGetAsync(key).AnyContext();
             
-            return await RedisValueToCacheValue<T>(redisValue);
+            return await RedisValueToCacheValue<T>(redisValue).AnyContext();
         }
 
         private async Task<CacheValue<T>> RedisValueToCacheValue<T>(RedisValue redisValue) {
@@ -102,9 +102,8 @@ namespace Foundatio.Caching {
             var values = await _db.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray()).AnyContext();
 
             var result = new Dictionary<string, CacheValue<T>>();
-            for (int i = 0; i < keyArray.Length; i++) {
-                result.Add(keyArray[i], await RedisValueToCacheValue<T>(values[i]));
-            }
+            for (int i = 0; i < keyArray.Length; i++)
+                result.Add(keyArray[i], await RedisValueToCacheValue<T>(values[i]).AnyContext());
 
             return result;
         }

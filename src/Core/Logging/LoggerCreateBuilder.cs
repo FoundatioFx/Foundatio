@@ -59,7 +59,7 @@ namespace Foundatio.Logging {
         /// <exception cref="System.ArgumentNullException">name</exception>
         public LoggerCreateBuilder Property(string name, object value) {
             if (name == null)
-                throw new ArgumentNullException("name");
+                throw new ArgumentNullException(nameof(name));
 
             _logger.Properties.Set(name, value);
             return this;

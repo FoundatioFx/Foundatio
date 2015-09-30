@@ -97,7 +97,7 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            var countdownEvent = new AsyncCountdownEvent(1);
+            var countdownEvent = new AsyncCountdownEvent(2);
             firstCache.LocalCache.ItemExpired += (sender, args) => {
                 _writer.WriteLine("First expired: " + args.Key);
                 countdownEvent.Signal();
@@ -110,20 +110,23 @@ namespace Foundatio.Tests.Caching {
             };
 
             var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
-            _writer.WriteLine("Set");
+            _writer.WriteLine("First Set");
             await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
-            _writer.WriteLine("Done Set");
+            _writer.WriteLine("Done First Set");
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
+            _writer.WriteLine("First Get");
             Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
+            _writer.WriteLine("Second Get");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
+            _writer.WriteLine("Second Get from local cache");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, secondCache.LocalCacheHits);
 

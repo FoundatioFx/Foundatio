@@ -45,7 +45,7 @@ namespace Foundatio.Messaging {
             }
 
             object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body);
+            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Utility {
     public class AsyncEvent<TEventArgs> where TEventArgs : EventArgs {
@@ -46,10 +47,10 @@ namespace Foundatio.Utility {
                 tmpInvocationList = new List<Func<object, TEventArgs, Task>>(_invocationList);
 
             if (_parallelInvoke)
-                await Task.WhenAll(tmpInvocationList.Select(callback => callback(sender, eventArgs)));
+                await Task.WhenAll(tmpInvocationList.Select(callback => callback(sender, eventArgs))).AnyContext();
             else
                 foreach (var callback in tmpInvocationList)
-                    await callback(sender, eventArgs);
+                    await callback(sender, eventArgs).AnyContext();
         }
     }
 }

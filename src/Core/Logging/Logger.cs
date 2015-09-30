@@ -52,9 +52,7 @@ namespace Foundatio.Logging {
         /// The global properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IPropertyContext GlobalProperties {
-            get { return _globalProperties.Value; }
-        }
+        public static IPropertyContext GlobalProperties => _globalProperties.Value;
 
         /// <summary>
         /// Gets the thread-local properties dictionary.  All values are copied to each log on write.
@@ -63,9 +61,7 @@ namespace Foundatio.Logging {
         /// The thread-local properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IPropertyContext ThreadProperties {
-            get { return _threadProperties.Value; }
-        }
+        public static IPropertyContext ThreadProperties => _threadProperties.Value;
 
         /// <summary>
         /// Gets the property context that maintains state across asynchronous tasks and call contexts. All values are copied to each log on write.
@@ -74,10 +70,7 @@ namespace Foundatio.Logging {
         /// The asynchronous property context.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public static IPropertyContext AsyncProperties {
-            get { return _asyncProperties.Value; }
-        }
-
+        public static IPropertyContext AsyncProperties => _asyncProperties.Value;
 
         /// <summary>
         /// Gets the logger initial default properties dictionary.  All values are copied to each log.
@@ -86,9 +79,7 @@ namespace Foundatio.Logging {
         /// The logger initial default properties dictionary.
         /// </value>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        public IPropertyContext Properties {
-            get { return _properties.Value; }
-        }
+        public IPropertyContext Properties => _properties.Value;
 
         /// <summary>
         /// Gets the logger name.
@@ -115,7 +106,6 @@ namespace Foundatio.Logging {
         /// Start a fluent <see cref="LogBuilder" /> with the specified <see cref="LogLevel" />.
         /// </summary>
         /// <param name="logLevel">The log level.</param>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -134,10 +124,7 @@ namespace Foundatio.Logging {
         /// A fluent Logger instance.
         /// </returns>
         public static ILogBuilder Log(Func<LogLevel> logLevelFactory, [CallerFilePath]string callerFilePath = null) {
-            var logLevel = (logLevelFactory != null)
-                ? logLevelFactory()
-                : LogLevel.Debug;
-
+            var logLevel = logLevelFactory?.Invoke() ?? LogLevel.Debug;
             return CreateBuilder(logLevel, callerFilePath);
         }
 
@@ -145,7 +132,6 @@ namespace Foundatio.Logging {
         /// Start a fluent <see cref="LogBuilder" /> with the computed <see cref="LogLevel" />.
         /// </summary>
         /// <param name="logLevelFactory">The log level factory.</param>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -167,7 +153,6 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Start a fluent <see cref="LogLevel.Trace" /> logger.
         /// </summary>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -211,7 +196,6 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Start a fluent <see cref="LogLevel.Info" /> logger.
         /// </summary>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -233,7 +217,6 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Start a fluent <see cref="LogLevel.Warn" /> logger.
         /// </summary>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -255,7 +238,6 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Start a fluent <see cref="LogLevel.Error" /> logger.
         /// </summary>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -277,7 +259,6 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Start a fluent <see cref="LogLevel.Fatal" /> logger.
         /// </summary>
-        /// <param name="callerFilePath">The full path of the source file that contains the caller. This is the file path at the time of compile.</param>
         /// <returns>
         /// A fluent Logger instance.
         /// </returns>
@@ -300,7 +281,7 @@ namespace Foundatio.Logging {
         /// <param name="writer">The <see langword="delegate"/> to write logs to.</param>
         public static void RegisterWriter(Action<LogData> writer) {
             if (writer == null)
-                throw new ArgumentNullException("writer");
+                throw new ArgumentNullException(nameof(writer));
 
             var current = _logAction;
             Interlocked.CompareExchange(ref _logAction, writer, current);
@@ -313,7 +294,7 @@ namespace Foundatio.Logging {
         public static void RegisterWriter<TWriter>(TWriter writer)
             where TWriter : ILogWriter {
             if (writer == null)
-                throw new ArgumentNullException("writer");
+                throw new ArgumentNullException(nameof(writer));
 
             var current = _logWriter;
             Interlocked.CompareExchange(ref _logWriter, writer, current);

@@ -147,6 +147,7 @@ namespace Foundatio.Caching {
             if (entry.ExpiresAt < DateTime.UtcNow) {
                 Logger.Trace().Message($"SetInternalAsync: Removing expired key {key}").Write();
                 await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
                 return false;
             }
 
@@ -204,6 +205,7 @@ namespace Foundatio.Caching {
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
                 return -1;
             }
             
@@ -246,18 +248,19 @@ namespace Foundatio.Caching {
             return Task.FromResult<TimeSpan?>(null);
         }
 
-        public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
+        public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
             DateTime expiresAt = DateTime.UtcNow.Add(expiresIn);
-            if (expiresAt < DateTime.UtcNow)
-                return this.RemoveAsync(key);
+            if (expiresAt < DateTime.UtcNow) {
+                await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
+                return;
+            }
 
             CacheEntry value;
             if (_memory.TryGetValue(key, out value)) {
                 value.ExpiresAt = expiresAt;
                 ScheduleNextMaintenance(expiresAt);
             }
-
-            return TaskHelper.Completed();
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {
@@ -275,7 +278,7 @@ namespace Foundatio.Caching {
             
             foreach (var key in expiredKeys) {
                 await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key);
+                await OnItemExpiredAsync(key).AnyContext();
                 Logger.Trace().Message("Removed expired key: key={0}", key).Write();
             }
 

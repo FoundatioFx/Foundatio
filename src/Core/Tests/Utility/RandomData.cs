@@ -213,9 +213,9 @@ namespace Foundatio.Tests.Utility {
 
         public static string GetWords(int minWords = 2, int maxWords = 10, bool titleCaseFirstWord = true, bool titleCaseAllWords = true) {
             if (minWords < 2)
-                throw new ArgumentException("minWords must 2 or more.", "minWords");
+                throw new ArgumentException("minWords must 2 or more.", nameof(minWords));
             if (maxWords < 2)
-                throw new ArgumentException("maxWords must 2 or more.", "maxWords");
+                throw new ArgumentException("maxWords must 2 or more.", nameof(maxWords));
 
             var builder = new StringBuilder();
             int numberOfWords = GetInt(minWords, maxWords);
@@ -227,9 +227,9 @@ namespace Foundatio.Tests.Utility {
 
         public static string GetSentence(int minWords = 5, int maxWords = 25) {
             if (minWords < 3)
-                throw new ArgumentException("minWords must 3 or more.", "minWords");
+                throw new ArgumentException("minWords must 3 or more.", nameof(minWords));
             if (maxWords < 3)
-                throw new ArgumentException("maxWords must 3 or more.", "maxWords");
+                throw new ArgumentException("maxWords must 3 or more.", nameof(maxWords));
 
             var builder = new StringBuilder();
             builder.Append(UpperCaseFirstCharacter(_words[GetInt(0, _words.Length)]));
@@ -258,9 +258,9 @@ namespace Foundatio.Tests.Utility {
 
         public static string GetParagraphs(int count = 3, int minSentences = 3, int maxSentences = 25, int minSentenceWords = 5, int maxSentenceWords = 25, bool html = false) {
             if (count < 1)
-                throw new ArgumentException("Count must be 1 or more.", "count");
+                throw new ArgumentException("Count must be 1 or more.", nameof(count));
             if (minSentences < 1)
-                throw new ArgumentException("minSentences must be 1 or more.", "minSentences");
+                throw new ArgumentException("minSentences must be 1 or more.", nameof(minSentences));
 
             var builder = new StringBuilder();
             if (html)

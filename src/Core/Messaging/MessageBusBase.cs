@@ -26,7 +26,7 @@ namespace Foundatio.Messaging {
                     continue;
 
                 try {
-                    await subscriber.Action(message, subscriber.CancellationToken);
+                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                 } catch (Exception ex) {
                     Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
                 }

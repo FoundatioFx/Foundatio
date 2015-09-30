@@ -21,7 +21,7 @@ namespace Foundatio.Logging {
         /// <exception cref="System.ArgumentNullException">writer</exception>
         public LogBuilder(LogLevel logLevel, Action<LogData> writer) {
             if (writer == null)
-                throw new ArgumentNullException("writer");
+                throw new ArgumentNullException(nameof(writer));
 
             _writer = writer;
             _data = new LogData();
@@ -178,7 +178,7 @@ namespace Foundatio.Logging {
         /// <exception cref="System.ArgumentNullException">name</exception>
         public ILogBuilder Property(string name, object value) {
             if (name == null)
-                throw new ArgumentNullException("name");
+                throw new ArgumentNullException(nameof(name));
 
             if (_data.Properties == null)
                 _data.Properties = new Dictionary<string, object>();
