@@ -109,7 +109,7 @@ namespace Foundatio.Tests.Caching {
                 return TaskHelper.Completed();
             };
 
-            var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+            var cacheKey = "willexpireremote";
             _writer.WriteLine("First Set");
             await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
             _writer.WriteLine("Done First Set");
