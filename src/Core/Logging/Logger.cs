@@ -13,7 +13,6 @@ namespace Foundatio.Logging {
     /// </summary>
     [DebuggerStepThrough]
     public sealed class Logger : ILogger {
-        private static readonly object _writerLock;
         private static Action<LogData> _logAction;
         private static ILogWriter _logWriter;
         private static LogLevel _minimumLogLevel = LogLevel.Trace;
@@ -30,14 +29,12 @@ namespace Foundatio.Logging {
         /// Initializes the <see cref="Logger"/> class.
         /// </summary>
         static Logger() {
-            _writerLock = new object();
-            _logAction = DebugWrite;
-
             _globalProperties = new Lazy<IPropertyContext>(CreateGlobal);
             _threadProperties = new ThreadLocal<IPropertyContext>(CreateLocal);
             _asyncProperties = new Lazy<IPropertyContext>(CreateAsync);
 
             _logWriter = new TraceLogWriter();
+            _logAction = _logWriter.WriteLog;
         }
 
         /// <summary>
@@ -302,8 +299,11 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <param name="writer">The <see langword="delegate"/> to write logs to.</param>
         public static void RegisterWriter(Action<LogData> writer) {
-            lock (_writerLock)
-                _logAction = writer;
+            if (writer == null)
+                throw new ArgumentNullException("writer");
+
+            var current = _logAction;
+            Interlocked.CompareExchange(ref _logAction, writer, current);
         }
 
         /// <summary>
@@ -312,8 +312,13 @@ namespace Foundatio.Logging {
         /// <param name="writer">The ILogWriter to write logs to.</param>
         public static void RegisterWriter<TWriter>(TWriter writer)
             where TWriter : ILogWriter {
-            lock (_writerLock)
-                _logWriter = writer;
+            if (writer == null)
+                throw new ArgumentNullException("writer");
+
+            var current = _logWriter;
+            Interlocked.CompareExchange(ref _logWriter, writer, current);
+
+            RegisterWriter(_logWriter.WriteLog);
         }
 
 
@@ -359,12 +364,8 @@ namespace Foundatio.Logging {
 
 
         private static Action<LogData> ResolveWriter() {
-            lock (_writerLock) {
-                if (_logWriter != null)
-                    return _logWriter.WriteLog;
-
-                return _logAction ?? DebugWrite;
-            }
+            var writer = _logAction ?? DebugWrite;
+            return writer;
         }
 
         private static void DebugWrite(LogData logData) {
