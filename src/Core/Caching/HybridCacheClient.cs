@@ -118,8 +118,9 @@ namespace Foundatio.Caching {
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.IncrementAsync(key, amount, expiresIn).AnyContext();
-            return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+            var total = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+            await _localCache.SetAsync(key, amount, expiresIn);
+            return total;
         }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
