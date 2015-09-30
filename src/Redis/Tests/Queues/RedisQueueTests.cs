@@ -142,6 +142,9 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             FlushAll();
+            if (CountAllKeys() != 0)
+                FlushAll();
+
             Assert.Equal(0, CountAllKeys());
 
             using (queue) {
