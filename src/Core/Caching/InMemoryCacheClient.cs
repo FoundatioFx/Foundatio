@@ -10,18 +10,15 @@ using Foundatio.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Caching {
-    public class InMemoryCacheClient : ICacheClient {
+    public class InMemoryCacheClient : MaintenanceBase, ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private long _hits;
         private long _misses;
-        private DateTime? _nextMaintenance;
-        private readonly Timer _maintenanceTimer;
 
         public InMemoryCacheClient() {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
-            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite,
-                Timeout.Infinite);
+            InitializeMaintenance();
         }
 
         public bool FlushOnDispose { get; set; }
@@ -262,22 +259,8 @@ namespace Foundatio.Caching {
 
             return TaskHelper.Completed();
         }
-
-        private void ScheduleNextMaintenance(DateTime value) {
-            if (value == DateTime.MaxValue)
-                return;
-
-            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
-                return;
-
-            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
-            _nextMaintenance = value;
-            Logger.Trace().Message("Scheduling maintenance: delay={0}", delay).Write();
-            _maintenanceTimer.Change(delay, Timeout.Infinite);
-        }
-
-        private async Task DoMaintenanceAsync() {
-            Logger.Trace().Message("Running DoMaintenance").Write();
+        
+        protected override async Task<DateTime> DoMaintenanceAsync() {
             DateTime minExpiration = DateTime.MaxValue;
             var now = DateTime.UtcNow;
             var expiredKeys = new List<string>();
@@ -289,20 +272,16 @@ namespace Foundatio.Caching {
                 else if (expiresAt < minExpiration)
                     minExpiration = expiresAt;
             }
-
-            ScheduleNextMaintenance(minExpiration);
-
+            
             foreach (var key in expiredKeys) {
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key);
                 Logger.Trace().Message("Removed expired key: key={0}", key).Write();
             }
-        }
 
-        public void Dispose() {
-            _maintenanceTimer.Dispose();
+            return minExpiration;
         }
-
+        
         private class CacheEntry {
             private object _cacheValue;
             private static long _instanceCount;

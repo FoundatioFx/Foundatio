@@ -28,13 +28,9 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private DateTime? _nextMaintenance;
-        private readonly Timer _maintenanceTimer;
         private readonly CancellationTokenSource _disposeTokenSource;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null)
-            : base(serializer, behaviors)
-        {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
             _retries = retries;
             if (retryDelay.HasValue)
                 _retryDelay = retryDelay.Value;
@@ -43,7 +39,7 @@ namespace Foundatio.Queues {
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
 
-            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite, Timeout.Infinite);
+            InitializeMaintenance();
             _disposeTokenSource = new CancellationTokenSource();
         }
 
@@ -230,24 +226,8 @@ namespace Foundatio.Queues {
 
             return TaskHelper.Completed();
         }
-
-        private void ScheduleNextMaintenance(DateTime value) {
-            Logger.Trace().Message("ScheduleNextMaintenance: value={0}", value).Write();
-            if (value == DateTime.MaxValue)
-                return;
-
-            if (_nextMaintenance.HasValue && value > _nextMaintenance.Value)
-                return;
-
-            int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
-            _nextMaintenance = value;
-            Logger.Trace().Message("Scheduling maintenance: delay={0}", delay).Write();
-            _maintenanceTimer.Change(delay, Timeout.Infinite);
-        }
-
-        private async Task DoMaintenanceAsync() {
-            Logger.Trace().Message("DoMaintenance {0}", typeof(T).Name).Write();
-
+        
+        protected override async Task<DateTime> DoMaintenanceAsync() {
             DateTime minAbandonAt = DateTime.MaxValue;
             var now = DateTime.UtcNow;
             var abandonedKeys = new List<string>();
@@ -258,24 +238,19 @@ namespace Foundatio.Queues {
                 else if (abandonAt < minAbandonAt)
                     minAbandonAt = abandonAt;
             }
-
-            _nextMaintenance = null;
-            ScheduleNextMaintenance(minAbandonAt);
-
-            if (abandonedKeys.Count == 0)
-                return;
-
+            
             foreach (var key in abandonedKeys) {
                 Logger.Info().Message("DoMaintenance Abandon: {0}", key).Write();
 				await AbandonAsync(key).AnyContext();
                 Interlocked.Increment(ref _workerItemTimeoutCount);
             }
+
+            return minAbandonAt;
         }
 
         public override void Dispose() {
             base.Dispose();
             _disposeTokenSource?.Cancel();
-            _maintenanceTimer.Dispose();
         }
 
         private class QueueInfo<TData> {
