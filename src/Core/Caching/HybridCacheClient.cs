@@ -21,9 +21,9 @@ namespace Foundatio.Caching {
             _localCache.MaxItems = 100;
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
-            _localCache.ItemExpired += async (sender, key) => {
-                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-                Logger.Trace().Message("Item expired event: key={0}", key).Write();
+            _localCache.ItemExpired += async (sender, args) => {
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key } }).AnyContext();
+                Logger.Trace().Message("Item expired event: key={0}", args.Key).Write();
             };
         }
 
@@ -67,21 +67,28 @@ namespace Foundatio.Caching {
         }
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
-            var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
-            if (cacheValue.HasValue) {
-                Logger.Trace().Message("Local cache hit: {0}", key).Write();
-                Interlocked.Increment(ref _localCacheHits);
-                return cacheValue;
+            CacheValue<T> cacheValue;
+            bool requiresSerialization = TypeRequiresSerialization(typeof(T));
+            if (requiresSerialization) {
+                cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
+                if (cacheValue.HasValue) {
+                    Logger.Trace().Message("Local cache hit: {0}", key).Write();
+                    Interlocked.Increment(ref _localCacheHits);
+                    return cacheValue;
+                }
             }
 
             cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
-            if (cacheValue.HasValue) {
+            if (requiresSerialization && cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
 
                 Logger.Trace().Message($"Setting Local cache key: {key} with expiration: {expiration}").Write();
                 await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
             }
+
+            if (cacheValue.HasValue)
+                return cacheValue;
 
             return CacheValue<T>.NoValue;
         }
@@ -91,13 +98,16 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _localCache.AddAsync(key, value, expiresIn).AnyContext();
+            if (TypeRequiresSerialization(typeof(T)))
+                await _localCache.AddAsync(key, value, expiresIn).AnyContext();
             return await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         }
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.SetAsync(key, value, expiresIn).AnyContext();
+            if (TypeRequiresSerialization(typeof(T))) {
+                await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
+                await _localCache.SetAsync(key, value, expiresIn).AnyContext();
+            }
             return await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
         }
 
@@ -105,20 +115,22 @@ namespace Foundatio.Caching {
             if (values == null)
                 return 0;
 
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
-            await _localCache.SetAllAsync(values, expiresIn).AnyContext();
+            if (TypeRequiresSerialization(typeof(T))) {
+                await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = values.Keys.ToArray()}).AnyContext();
+                await _localCache.SetAllAsync(values, expiresIn).AnyContext();
+            }
             return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+            if (TypeRequiresSerialization(typeof(T))) {
+                await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
+                await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+            }
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.IncrementAsync(key, amount, expiresIn).AnyContext();
             return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         }
 
@@ -130,6 +142,16 @@ namespace Foundatio.Caching {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
             await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
+        }
+
+        private bool TypeRequiresSerialization(Type t) {
+            if (t == typeof(Int16) || t == typeof(Int32) || t == typeof(Int64) ||
+                t == typeof(bool) || t == typeof(double) || t == typeof(string) ||
+                t == typeof(Int16?) || t == typeof(Int32?) || t == typeof(Int64?) ||
+                t == typeof(bool?) || t == typeof(double?))
+                return false;
+
+            return true;
         }
 
         public void Dispose() { }

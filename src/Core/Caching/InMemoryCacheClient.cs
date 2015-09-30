@@ -20,7 +20,8 @@ namespace Foundatio.Caching {
         public InMemoryCacheClient() {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
-            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite, Timeout.Infinite);
+            _maintenanceTimer = new Timer(async s => await DoMaintenanceAsync(), null, Timeout.Infinite,
+                Timeout.Infinite);
         }
 
         public bool FlushOnDispose { get; set; }
@@ -30,14 +31,26 @@ namespace Foundatio.Caching {
         public long Hits => _hits;
         public long Misses => _misses;
 
-        public event EventHandler<string> ItemExpired;
+        public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; set; } = new AsyncEvent<ItemExpiredEventArgs>();
 
-        private void OnItemExpired(string key) {
-            ItemExpired?.Invoke(this, key);
+        protected virtual async Task OnItemExpiredAsync(string key) {
+            var args = new ItemExpiredEventArgs {
+                Client = this,
+                Key = key
+            };
+
+            await (ItemExpired?.InvokeAsync(this, args) ?? TaskHelper.Completed()).AnyContext();
         }
 
         public ICollection<string> Keys {
-            get { return _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).Select(kvp => kvp.Key).ToList(); }
+            get {
+                return
+                    _memory.ToArray()
+                        .OrderBy(kvp => kvp.Value.LastAccessTicks)
+                        .ThenBy(kvp => kvp.Value.InstanceNumber)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+            }
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -54,7 +67,7 @@ namespace Foundatio.Caching {
             foreach (var key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
-                
+
                 Logger.Trace().Message($"RemoveAllAsync: Removing key {key}").Write();
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
@@ -75,7 +88,10 @@ namespace Foundatio.Caching {
                         keysToRemove.Add(current.Key);
                 }
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error trying to remove items from cache with this {0} prefix", prefix).Write();
+                Logger.Error()
+                    .Exception(ex)
+                    .Message("Error trying to remove items from cache with this {0} prefix", prefix)
+                    .Write();
             }
 
             return RemoveAllAsync(keysToRemove);
@@ -101,7 +117,10 @@ namespace Foundatio.Caching {
                 T value = cacheEntry.GetValue<T>();
                 return Task.FromResult(new CacheValue<T>(value, true));
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}").Write();
+                Logger.Error()
+                    .Exception(ex)
+                    .Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}")
+                    .Write();
                 return Task.FromResult(CacheValue<T>.NoValue);
             }
         }
@@ -150,8 +169,13 @@ namespace Foundatio.Caching {
             ScheduleNextMaintenance(entry.ExpiresAt);
 
             if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
-                string oldest = _memory.ToArray().OrderBy(kvp => kvp.Value.LastAccessTicks).ThenBy(kvp => kvp.Value.InstanceNumber).First().Key;
-                
+                string oldest =
+                    _memory.ToArray()
+                        .OrderBy(kvp => kvp.Value.LastAccessTicks)
+                        .ThenBy(kvp => kvp.Value.InstanceNumber)
+                        .First()
+                        .Key;
+
                 Logger.Trace().Message($"SetInternalAsync: Removing key {key}").Write();
                 CacheEntry cacheEntry;
                 _memory.TryRemove(oldest, out cacheEntry);
@@ -175,7 +199,7 @@ namespace Foundatio.Caching {
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (!_memory.ContainsKey(key))
                 return false;
-            
+
             return await SetAsync(key, value, expiresIn).AnyContext();
         }
 
@@ -211,10 +235,10 @@ namespace Foundatio.Caching {
             CacheEntry value;
             if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
                 return Task.FromResult<TimeSpan?>(null);
-            
+
             if (value.ExpiresAt >= DateTime.UtcNow)
                 return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(DateTime.UtcNow));
-            
+
             Logger.Trace().Message($"GetExpirationAsync: Removing expired key {key}").Write();
             _memory.TryRemove(key, out value);
             return Task.FromResult<TimeSpan?>(null);
@@ -265,7 +289,7 @@ namespace Foundatio.Caching {
 
             foreach (var key in expiredKeys) {
                 await this.RemoveAsync(key).AnyContext();
-                OnItemExpired(key);
+                await OnItemExpiredAsync(key);
                 Logger.Trace().Message("Removed expired key: key={0}", key).Write();
             }
         }
@@ -315,14 +339,21 @@ namespace Foundatio.Caching {
 
             public T GetValue<T>() {
                 var val = Value;
-                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) || typeof(T) == typeof(bool) || typeof(T) == typeof(double))
+                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) ||
+                    typeof(T) == typeof(bool) || typeof(T) == typeof(double))
                     return (T)Convert.ChangeType(val, typeof(T));
 
-                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) || typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
+                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) ||
+                    typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
                     return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
 
                 return (T)val;
             }
         }
+    }
+
+    public class ItemExpiredEventArgs : EventArgs {
+        public InMemoryCacheClient Client { get; set; }
+        public string Key { get; set; }
     }
 }

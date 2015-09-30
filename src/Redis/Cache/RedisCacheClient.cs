@@ -60,7 +60,7 @@ namespace Foundatio.Caching {
             }
         }
 
-        private static RedisValue _nullValue = "@@NULL";
+        private static readonly RedisValue _nullValue = "@@NULL";
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             var redisValue = await _db.StringGetAsync(key).AnyContext();

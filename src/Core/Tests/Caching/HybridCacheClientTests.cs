@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Extensions;
 using Foundatio.Messaging;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
+using Foundatio.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -63,23 +67,25 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.RemoveAllAsync();
-            await secondCache.RemoveAllAsync();
+            await firstCache.SetAsync("first1", 1);
+            await firstCache.IncrementAsync("first2");
+            // doesnt use localcache for simple types
+            Assert.Equal(0, firstCache.LocalCache.Count);
 
             var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
-            await firstCache.SetAsync(cacheKey, 1);
+            await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await firstCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, secondCache.LocalCacheHits);
         }
 
@@ -93,29 +99,38 @@ namespace Foundatio.Tests.Caching {
             var secondCache = GetCacheClient(channelName) as HybridCacheClient;
             Assert.NotNull(secondCache);
 
-            await firstCache.RemoveAllAsync();
-            await secondCache.RemoveAllAsync();
+            var countdownEvent = new AsyncCountdownEvent(1);
+            firstCache.LocalCache.ItemExpired += (sender, args) => {
+                _writer.WriteLine("First expired: " + args.Key);
+                countdownEvent.Signal();
+                return TaskHelper.Completed();
+            };
+            secondCache.LocalCache.ItemExpired += (sender, args) => {
+                _writer.WriteLine("Second expired: " + args.Key);
+                countdownEvent.Signal();
+                return TaskHelper.Completed();
+            };
 
             var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
-            await firstCache.SetAsync(cacheKey, 1, TimeSpan.FromMilliseconds(250));
+            _writer.WriteLine("Set");
+            await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
+            _writer.WriteLine("Done Set");
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await firstCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            Assert.Equal(1, (await secondCache.GetAsync<int>(cacheKey)).Value);
+            Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
-            while ((firstCache.LocalCache.Count > 0 || secondCache.LocalCache.Count > 0) && sw.ElapsedMilliseconds < 150)
-                await Task.Delay(25);
-
+            await countdownEvent.WaitAsync(new CancellationTokenSource(500).Token);
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);
             Assert.Equal(0, firstCache.LocalCache.Count);
