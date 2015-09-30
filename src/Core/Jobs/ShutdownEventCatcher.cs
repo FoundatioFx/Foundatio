@@ -5,8 +5,7 @@ namespace Foundatio.Jobs {
     public static class ShutdownEventCatcher {
         public static event Action<ShutdownEventArgs> Shutdown;
         static void RaiseShutdownEvent(ShutdownEventArgs args) {
-            if (null != Shutdown)
-                Shutdown(args);
+            Shutdown?.Invoke(args);
         }
 
         [DllImport("Kernel32")]

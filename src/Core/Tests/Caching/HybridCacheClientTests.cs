@@ -19,7 +19,7 @@ namespace Foundatio.Tests.Caching {
 
         public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
-        protected override ICacheClient GetCacheClient(string channelName = null) {
+        protected override ICacheClient GetCacheClient() {
             return new HybridCacheClient(_distributedCache, _messageBus);
         }
 
@@ -60,11 +60,10 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillUseLocalCache() {
-            var channelName = Guid.NewGuid().ToString("N").Substring(10);
-            var firstCache = GetCacheClient(channelName) as HybridCacheClient;
+            var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 
-            var secondCache = GetCacheClient(channelName) as HybridCacheClient;
+            var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
             await firstCache.SetAsync("first1", 1);
@@ -92,11 +91,10 @@ namespace Foundatio.Tests.Caching {
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
             Logger.Trace().Message("Warm the log...").Write();
-            var channelName = Guid.NewGuid().ToString("N").Substring(10);
-            var firstCache = GetCacheClient(channelName) as HybridCacheClient;
+            var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 
-            var secondCache = GetCacheClient(channelName) as HybridCacheClient;
+            var secondCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(secondCache);
 
             var countdownEvent = new AsyncCountdownEvent(1);

@@ -13,7 +13,7 @@ using Newtonsoft.Json;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : CaptureTests {
-        protected virtual ICacheClient GetCacheClient(string channelName = null) {
+        protected virtual ICacheClient GetCacheClient() {
             return null;
         }
 

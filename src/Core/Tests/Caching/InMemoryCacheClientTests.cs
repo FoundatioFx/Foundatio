@@ -10,7 +10,7 @@ namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
         public InMemoryCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
-        protected override ICacheClient GetCacheClient(string channelName = null) {
+        protected override ICacheClient GetCacheClient() {
             return new InMemoryCacheClient();
         }
 
