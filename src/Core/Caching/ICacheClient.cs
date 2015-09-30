@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 
@@ -22,6 +23,10 @@ namespace Foundatio.Caching {
         public static async Task<T> GetAsync<T>(this ICacheClient client, string key, T defaultValue) {
             var cacheValue = await client.GetAsync<T>(key).AnyContext();
             return cacheValue.HasValue ? cacheValue.Value : defaultValue;
+        }
+
+        public static Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(this ICacheClient client, params string[] keys) {
+            return client.GetAllAsync<T>(keys.ToArray());
         }
 
         public static async Task<bool> RemoveAsync(this ICacheClient client, string key) {
@@ -56,7 +61,7 @@ namespace Foundatio.Caching {
             return client.SetAllAsync(values, expiresAtUtc?.Subtract(DateTime.UtcNow));
         }
         
-        public static Task SetExpirationAsync<T>(this ICacheClient client, string key, DateTime expiresAtUtc) {
+        public static Task SetExpirationAsync(this ICacheClient client, string key, DateTime expiresAtUtc) {
             return client.SetExpirationAsync(key, expiresAtUtc.Subtract(DateTime.UtcNow));
         }
     }

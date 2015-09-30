@@ -165,7 +165,9 @@ namespace Foundatio.Caching {
             }
             
             var result = amount >= 0 ? await _db.StringIncrementAsync(key, amount).AnyContext() : await _db.StringDecrementAsync(key, -amount).AnyContext();
-            await _db.KeyExpireAsync(key, expiresIn).AnyContext();
+            if (expiresIn.HasValue)
+                await _db.KeyExpireAsync(key, expiresIn).AnyContext();
+
             return result;
         }
 
