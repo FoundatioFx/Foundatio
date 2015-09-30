@@ -141,6 +141,7 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            // TODO: Look up the existing expiration if expiresIn is null.
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
@@ -223,11 +224,15 @@ namespace Foundatio.Caching {
                 else
                     entry.Value = amount;
 
-                entry.ExpiresAt = expiresAt;
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
                 return entry;
             });
 
-            ScheduleNextMaintenance(expiresAt);
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
             return result.GetValue<long>();
         }
 
