@@ -33,10 +33,11 @@ namespace Foundatio.Messaging {
 
                 if (subscriber.CancellationToken.IsCancellationRequested) {
                     Subscriber sub;
-                    if (_subscribers.TryRemove(subscriber.Id, out sub))
+                    if (_subscribers.TryRemove(subscriber.Id, out sub)) {
                         Logger.Trace().Message($"Removed cancelled subscriber: {subscriber.Id}").Write();
-                    else
+                    } else {
                         Logger.Trace().Message($"Unable to remove cancelled subscriber: {subscriber.Id}").Write();
+                    }
                 }
             }
         }
@@ -92,8 +93,9 @@ namespace Foundatio.Messaging {
                 DelayedMessage message;
                 if (!_delayedMessages.TryRemove(messageId, out message))
                     continue;
-
+#if DEBUG
                 Logger.Trace().Message("DoMaintenance Send Delayed: {0}", message.MessageType).Write();
+#endif
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
 

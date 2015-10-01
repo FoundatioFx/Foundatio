@@ -40,8 +40,9 @@ namespace Foundatio.Jobs {
             using (var lockValue = await GetQueueItemLockAsync(queueEntry, cancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
-
-                Logger.Trace().Message("Processing queue entry '{0}'.", queueEntry.Id).Write();
+#if DEBUG
+                Logger.Trace().Message($"Processing queue entry '{queueEntry.Id}'.").Write();
+#endif
                 try {
                     var result = await ProcessQueueItemAsync(queueEntry, cancellationToken).AnyContext();
 
@@ -68,7 +69,9 @@ namespace Foundatio.Jobs {
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             await RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () => {
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
-                Logger.Trace().Message("RunUntilEmpty continuation: queue: {0} working={1}", stats.Queued, stats.Working).Write();
+#if DEBUG
+                Logger.Trace().Message($"RunUntilEmpty continuation: queue: {stats.Queued} working={stats.Working}").Write();
+#endif
                 return stats.Queued + stats.Working > 0;
             }).AnyContext();
         }

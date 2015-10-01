@@ -13,9 +13,13 @@ namespace Foundatio.Lock {
         }
 
         public async void Dispose() {
+#if DEBUG
             Logger.Trace().Message($"Disposing lock: {_name}").Write();
+#endif
             await _lockProvider.ReleaseLockAsync(_name).AnyContext();
+#if DEBUG
             Logger.Trace().Message($"Disposed lock: {_name}").Write();
+#endif
         }
     }
 }

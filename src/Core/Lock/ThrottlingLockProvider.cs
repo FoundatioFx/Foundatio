@@ -24,8 +24,9 @@ namespace Foundatio.Lock {
         }
 
         public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+#if DEBUG
             Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
-            
+#endif   
             bool allowLock = false;
             byte errors = 0;
 
@@ -33,10 +34,13 @@ namespace Foundatio.Lock {
                 string cacheKey = GetCacheKey(name, DateTime.UtcNow);
 
                 try {
+#if DEBUG
                     Logger.Trace().Message("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey).Write();
+#endif
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
+#if DEBUG
                     Logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
-
+#endif
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, DateTime.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
                         
@@ -45,23 +49,32 @@ namespace Foundatio.Lock {
                             allowLock = true;
                             break;
                         }
-
+#if DEBUG
                         Logger.Trace().Message("Max hits exceeded after increment for {0}.", name).Write();
+#endif
                     } else {
+#if DEBUG
                         Logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
+#endif
                     }
                     
                     if (cancellationToken.IsCancellationRequested) {
+#if DEBUG
                         Logger.Trace().Message("Cancellation Requested.").Write();
+#endif
                         break;
                     }
 
                     var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                     if (sleepUntil > DateTime.UtcNow) {
+#if DEBUG
                         Logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
+#endif
                         await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
                     } else {
+#if DEBUG
                         Logger.Trace().Message("Default sleep.").Write();
+#endif
                         await Task.Delay(50, cancellationToken).AnyContext();
                     }
                 } catch (TaskCanceledException) {
@@ -76,13 +89,17 @@ namespace Foundatio.Lock {
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
-            if (cancellationToken.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested) {
+#if DEBUG
                 Logger.Trace().Message("Cancellation requested.").Write();
+#endif
+            }
 
             if (!allowLock)
                 return null;
-
+#if DEBUG
             Logger.Trace().Message("Allowing lock: {0}", name).Write();
+#endif
             return new DisposableLock(name, this);
         }
 
@@ -94,7 +111,9 @@ namespace Foundatio.Lock {
         }
 
         public Task ReleaseLockAsync(string name) {
+#if DEBUG
             Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
+#endif
             return TaskHelper.Completed();
         }
 

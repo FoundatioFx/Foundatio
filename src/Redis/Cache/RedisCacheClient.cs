@@ -72,8 +72,7 @@ namespace Foundatio.Caching {
             if (!redisValue.HasValue) return CacheValue<T>.NoValue;
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
-            try
-            {
+            try {
                 T value;
                 if (typeof (T) == typeof (Int16) || typeof (T) == typeof (Int32) || typeof (T) == typeof (Int64) ||
                     typeof (T) == typeof (bool) || typeof (T) == typeof (double) || typeof (T) == typeof (string))
@@ -87,8 +86,7 @@ namespace Foundatio.Caching {
                     value = await _serializer.DeserializeAsync<T>(redisValue.ToString()).AnyContext();
 
                 return new CacheValue<T>(value, true);
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 Logger.Error()
                     .Exception(ex)
                     .Message($"Unable to deserialize value \"{redisValue}\" to type {typeof (T).FullName}")
@@ -110,7 +108,9 @@ namespace Foundatio.Caching {
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
+#if DEBUG
                 Logger.Trace().Message($"Removing expired key: {key}").Write();
+#endif
                 await this.RemoveAsync(key).AnyContext();
                 return false;
             }

@@ -33,7 +33,9 @@ namespace Foundatio.Messaging {
         }
 
         private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
+#if DEBUG
             Logger.Trace().Message($"OnMessage: {brokeredMessage.MessageId}").Write();
+#endif
             var message = brokeredMessage.GetBody<MessageBusData>();
 
             Type messageType;

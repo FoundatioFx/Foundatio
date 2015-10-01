@@ -35,7 +35,9 @@ namespace Foundatio.Messaging {
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
+#if DEBUG
             Logger.Trace().Message($"OnMessage: {channel}").Write();
+#endif
             var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
 
             Type messageType;
@@ -51,7 +53,9 @@ namespace Foundatio.Messaging {
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            Logger.Trace().Message("Message Publish: {0}", messageType.FullName).Write();
+#if DEBUG
+            Logger.Trace().Message($"Message Publish: {messageType.FullName}").Write();
+#endif
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
