@@ -83,7 +83,7 @@ var workItem = await queue.DequeueAsync();
 Locks ensure a resource is only accessed by one consumer at any given time. We provide two different locking implementations that derive from the [`ILockProvider` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/ILockProvider.cs):
 
 1. [CacheLockProvider](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/CacheLockProvider.cs): A lock implementation that uses cache to communicate between processes.
-2. [ThrottlingLockProvider](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/ThrottlingLockProvider.cs): A lock implementation that only allows a certian amount of locks through. You could use this to throttle api calls to some external service and it will throttle them across all processes asking for that lock.
+2. [ThrottlingLockProvider](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Lock/ThrottlingLockProvider.cs): A lock implementation that only allows a certain amount of locks through. You could use this to throttle api calls to some external service and it will throttle them across all processes asking for that lock.
 
 It's worth noting that all lock providers take a `ICacheClient`. This allows you to ensure your code locks properly across machines.
 
