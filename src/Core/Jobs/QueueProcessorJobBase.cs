@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Lock;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Foundatio.Logging;
@@ -37,14 +38,14 @@ namespace Foundatio.Jobs {
                 return JobResult.Cancelled;
             }
 
-            using (var lockValue = await GetQueueItemLockAsync(queueEntry, cancellationToken).AnyContext()) {
+            using (var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 #if DEBUG
                 Logger.Trace().Message($"Processing queue entry '{queueEntry.Id}'.").Write();
 #endif
                 try {
-                    var result = await ProcessQueueItemAsync(queueEntry, cancellationToken).AnyContext();
+                    var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
 
                     if (!AutoComplete)
                         return result;
@@ -62,8 +63,8 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected virtual Task<IDisposable> GetQueueItemLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
-            return Task.FromResult(Disposable.Empty);
+        protected virtual Task<ILock> GetQueueEntryLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
+            return Task.FromResult(Disposable.EmptyLock);
         }
         
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
@@ -76,7 +77,19 @@ namespace Foundatio.Jobs {
             }).AnyContext();
         }
 
-        protected abstract Task<JobResult> ProcessQueueItemAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<T> context);
+    }
+    
+    public class JobQueueEntryContext<T> where T : class {
+        public JobQueueEntryContext(QueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) {
+            QueueEntry = queueEntry;
+            QueueEntryLock = queueEntryLock;
+            CancellationToken = cancellationToken;
+        }
+
+        public QueueEntry<T> QueueEntry { get; private set; }
+        public CancellationToken CancellationToken { get; private set; }
+        public ILock QueueEntryLock { get; private set; }
     }
 
     public interface IQueueProcessorJob : IDisposable {

@@ -15,20 +15,20 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
-            await _metrics.CounterAsync("dequeued");
+        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {
+            await _metrics.CounterAsync("dequeued").AnyContext();
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                await _metrics.CounterAsync("errors").AnyContext();
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned");
+                await _metrics.CounterAsync("abandoned").AnyContext();
                 return JobResult.FailedWithMessage("Abandoned");
             }
             
-            await _metrics.CounterAsync("completed");
+            await _metrics.CounterAsync("completed").AnyContext();
             return JobResult.Success;
         }
     }
@@ -46,19 +46,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            await _metrics.CounterAsync("runs");
+            await _metrics.CounterAsync("runs").AnyContext();
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                await _metrics.CounterAsync("errors").AnyContext();
                 throw new ApplicationException("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("failed");
+                await _metrics.CounterAsync("failed").AnyContext();
                 return JobResult.FailedWithMessage("Failed");
             }
 
-            await _metrics.CounterAsync("completed");
+            await _metrics.CounterAsync("completed").AnyContext();
             return JobResult.Success;
         }
     }

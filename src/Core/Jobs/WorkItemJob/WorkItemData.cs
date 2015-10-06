@@ -1,17 +1,14 @@
 ﻿using System;
 using Foundatio.Metrics;
 
-namespace Foundatio.Jobs
-{
-    public class WorkItemData : IHaveMetricName
-    {
+namespace Foundatio.Jobs {
+    public class WorkItemData : IHaveMetricName {
         public string WorkItemId { get; set; }
         public string Type { get; set; }
         public string Data { get; set; }
         public bool SendProgressReports { get; set; }
 
-        public string GetMetricName()
-        {
+        public string GetMetricName() {
             if (String.IsNullOrEmpty(Type))
                 return null;
 
@@ -22,8 +19,7 @@ namespace Foundatio.Jobs
             return type?.ToLowerInvariant();
         }
 
-        public string GetTypeName(string assemblyQualifiedName)
-        {
+        public string GetTypeName(string assemblyQualifiedName) {
             if (String.IsNullOrEmpty(assemblyQualifiedName))
                 return null;
 
