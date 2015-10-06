@@ -15,7 +15,6 @@ namespace Foundatio.Jobs {
         }
 
         public void Register<TWorkItem, THandler>() where TWorkItem : class where THandler : IWorkItemHandler {
-
             _handlers.TryAdd(typeof(TWorkItem), new Lazy<IWorkItemHandler>(() => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
         }
 

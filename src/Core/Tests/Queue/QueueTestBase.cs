@@ -9,6 +9,7 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Nito.AsyncEx;

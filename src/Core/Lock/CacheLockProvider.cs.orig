@@ -48,9 +48,13 @@ namespace Foundatio.Lock {
                 monitor.Pulse();
         }
 
+<<<<<<< HEAD
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+=======
+        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
 #if DEBUG
-            Logger.Trace().Message($"AcquireAsync: {name}").Write();
+>>>>>>> origin/master
+            Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
 #endif
             EnsureTopicSubscription();
             if (!lockTimeout.HasValue)
@@ -126,10 +130,15 @@ namespace Foundatio.Lock {
             return (await _cacheClient.GetAsync<object>(name).AnyContext()).HasValue;
         }
 
+<<<<<<< HEAD
         public async Task ReleaseAsync(string name) {
+            Logger.Trace().Message("ReleaseAsync: {0}", name).Write();
+=======
+        public async Task ReleaseLockAsync(string name) {
 #if DEBUG
-            Logger.Trace().Message($"ReleaseAsync: {name}").Write();
+            Logger.Trace().Message($"ReleaseLockAsync: {name}").Write();
 #endif
+>>>>>>> origin/master
             await _cacheClient.RemoveAsync(name).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }

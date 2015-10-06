@@ -524,8 +524,12 @@ namespace Foundatio.Queues {
             while (!cancellationToken.IsCancellationRequested) {
 #if DEBUG
                 Logger.Trace().Message("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId).Write();
-#endif
+<<<<<<< HEAD
                 await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
+=======
+#endif
+                await _maintenanceLockProvider.TryUsingLockAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
+>>>>>>> origin/master
             }
         }
 

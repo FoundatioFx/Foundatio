@@ -21,7 +21,6 @@ namespace Foundatio.Caching {
             InitializeMaintenance();
         }
 
-        public bool FlushOnDispose { get; set; }
         public int Count => _memory.Count;
         public int? MaxItems { get; set; }
         public bool ShouldCloneValues { get; set; }
@@ -64,8 +63,9 @@ namespace Foundatio.Caching {
             foreach (var key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
-
+#if DEBUG
                 Logger.Trace().Message($"RemoveAllAsync: Removing key {key}").Write();
+#endif
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
                     removed++;
@@ -94,31 +94,34 @@ namespace Foundatio.Caching {
             return RemoveAllAsync(keysToRemove);
         }
 
-        public Task<CacheValue<T>> GetAsync<T>(string key) {
+        public async Task<CacheValue<T>> GetAsync<T>(string key) {
             CacheEntry cacheEntry;
             if (!_memory.TryGetValue(key, out cacheEntry)) {
                 Interlocked.Increment(ref _misses);
-                return Task.FromResult(CacheValue<T>.NoValue);
+                return CacheValue<T>.NoValue;
             }
 
             if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
+#if DEBUG
                 Logger.Trace().Message($"TryGetAsync: Removing expired key {key}").Write();
+#endif
                 _memory.TryRemove(key, out cacheEntry);
+                await OnItemExpiredAsync(key).AnyContext();
                 Interlocked.Increment(ref _misses);
-                return Task.FromResult(CacheValue<T>.NoValue);
+                return CacheValue<T>.NoValue;
             }
 
             Interlocked.Increment(ref _hits);
 
             try {
                 T value = cacheEntry.GetValue<T>();
-                return Task.FromResult(new CacheValue<T>(value, true));
+                return new CacheValue<T>(value, true);
             } catch (Exception ex) {
                 Logger.Error()
                     .Exception(ex)
                     .Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}")
                     .Write();
-                return Task.FromResult(CacheValue<T>.NoValue);
+                return CacheValue<T>.NoValue;
             }
         }
 
@@ -145,7 +148,9 @@ namespace Foundatio.Caching {
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (entry.ExpiresAt < DateTime.UtcNow) {
+#if DEBUG
                 Logger.Trace().Message($"SetInternalAsync: Removing expired key {key}").Write();
+#endif
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
                 return false;
@@ -159,10 +164,14 @@ namespace Foundatio.Caching {
 
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
                 }
-                Logger.Trace().Message("Added cache key: {0}", key).Write();
+#if DEBUG
+                Logger.Trace().Message($"Added cache key: {key}").Write();
+#endif
             } else {
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
-                Logger.Trace().Message("Set cache key: {0}", key).Write();
+#if DEBUG
+                Logger.Trace().Message($"Set cache key: {key}").Write();
+#endif
             }
 
             ScheduleNextMaintenance(entry.ExpiresAt);
@@ -174,8 +183,9 @@ namespace Foundatio.Caching {
                         .ThenBy(kvp => kvp.Value.InstanceNumber)
                         .First()
                         .Key;
-
+#if DEBUG
                 Logger.Trace().Message($"SetInternalAsync: Removing key {key}").Write();
+#endif
                 CacheEntry cacheEntry;
                 _memory.TryRemove(oldest, out cacheEntry);
             }
@@ -195,11 +205,11 @@ namespace Foundatio.Caching {
             return result;
         }
 
-        public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (!_memory.ContainsKey(key))
-                return false;
+                return Task.FromResult(false);
 
-            return await SetAsync(key, value, expiresIn).AnyContext();
+            return SetAsync(key, value, expiresIn);
         }
 
         public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
@@ -235,17 +245,19 @@ namespace Foundatio.Caching {
             return result.GetValue<long>();
         }
 
-        public Task<TimeSpan?> GetExpirationAsync(string key) {
+        public async Task<TimeSpan?> GetExpirationAsync(string key) {
             CacheEntry value;
             if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
-                return Task.FromResult<TimeSpan?>(null);
+                return null;
 
             if (value.ExpiresAt >= DateTime.UtcNow)
-                return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(DateTime.UtcNow));
-
+                return value.ExpiresAt.Subtract(DateTime.UtcNow);
+#if DEBUG
             Logger.Trace().Message($"GetExpirationAsync: Removing expired key {key}").Write();
+#endif
             _memory.TryRemove(key, out value);
-            return Task.FromResult<TimeSpan?>(null);
+            await OnItemExpiredAsync(key).AnyContext();
+            return null;
         }
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
@@ -277,9 +289,11 @@ namespace Foundatio.Caching {
             }
             
             foreach (var key in expiredKeys) {
+#if DEBUG
+                Logger.Trace().Message("Removing expired key: key={0}", key).Write();
+#endif
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
-                Logger.Trace().Message("Removed expired key: key={0}", key).Write();
             }
 
             return minExpiration;

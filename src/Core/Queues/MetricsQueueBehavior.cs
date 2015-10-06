@@ -33,7 +33,9 @@ namespace Foundatio.Queues {
 
                 _nextQueueCountTime = DateTime.UtcNow.AddMilliseconds(500);
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
+#if DEBUG
                 Logger.Trace().Message("Reporting queue count").Write();
+#endif
                 await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
             }
         }

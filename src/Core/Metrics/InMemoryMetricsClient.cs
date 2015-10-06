@@ -95,7 +95,9 @@ namespace Foundatio.Metrics {
         public IDictionary<string, GaugeStats> Gauges => _gauges;
 
         public Task CounterAsync(string statName, int value = 1) {
-            Logger.Trace().Message("Counter: {0} value: {1}", statName, value).Write();
+#if DEBUG
+            Logger.Trace().Message($"Counter: {statName} value: {value}").Write();
+#endif
             _counters.AddOrUpdate(statName, key => new CounterStats(value), (key, stats) => {
                 stats.Increment(value);
                 return stats;
@@ -117,23 +119,29 @@ namespace Foundatio.Metrics {
             
             long startingCount = GetCount(statName);
             long expectedCount = startingCount + count;
-            Logger.Trace().Message("Wait: count={0} current={1}", count, startingCount).Write();
+#if DEBUG
+            Logger.Trace().Message($"Wait: count={count} current={startingCount}").Write();
+#endif
             if (work != null)
                 await work().AnyContext();
 
             if (GetCount(statName) >= expectedCount)
                 return true;
             
+            // TODO: Should we update this to use monitors?
             var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
                     await resetEvent.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) {}
-                Logger.Trace().Message("Got signal: count={0} expected={1}", GetCount(statName), expectedCount).Write();
+#if DEBUG
+                Logger.Trace().Message($"Got signal: count={GetCount(statName)} expected={expectedCount}").Write();
+#endif
                 resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && GetCount(statName) < expectedCount);
-
-            Logger.Trace().Message("Done waiting: count={0} expected={1} success={2}", GetCount(statName), expectedCount, !cancellationToken.IsCancellationRequested).Write();
+#if DEBUG
+            Logger.Trace().Message($"Done waiting: count={GetCount(statName)} expected={expectedCount} success={!cancellationToken.IsCancellationRequested}").Write();
+#endif
             return !cancellationToken.IsCancellationRequested;
         }
         public Task GaugeAsync(string statName, double value) {
