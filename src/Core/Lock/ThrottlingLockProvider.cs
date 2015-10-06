@@ -23,7 +23,7 @@ namespace Foundatio.Lock {
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
             
             bool allowLock = false;
@@ -93,8 +93,13 @@ namespace Foundatio.Lock {
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public Task ReleaseLockAsync(string name) {
-            Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
+        public Task ReleaseAsync(string name) {
+            Logger.Trace().Message("ReleaseAsync: {0}", name).Write();
+            return TaskHelper.Completed();
+        }
+
+        public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
+            Logger.Trace().Message("RenewAsync: {0}", name).Write();
             return TaskHelper.Completed();
         }
 

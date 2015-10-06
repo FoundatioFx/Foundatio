@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Messaging;
@@ -14,17 +13,20 @@ namespace Foundatio.Jobs {
         public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers) : base(queue) {
             _messageBus = messageBus;
             _handlers = handlers;
-            AutoComplete = false;
+            AutoComplete = true;
+            AutoRenewLockOnProgress = true;
         }
 
-        protected async override Task<JobResult> ProcessQueueItemAsync(QueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
-            var workItemDataType = Type.GetType(queueEntry.Value.Type);
+        protected bool AutoRenewLockOnProgress { get; set; }
+
+        protected async override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {
+            var workItemDataType = Type.GetType(context.QueueEntry.Value.Type);
             if (workItemDataType == null)
                 return JobResult.FailedWithMessage("Could not resolve work item data type.");
 
             object workItemData;
             try {
-                workItemData = await _queue.Serializer.DeserializeAsync(queueEntry.Value.Data, workItemDataType).AnyContext();
+                workItemData = await _queue.Serializer.DeserializeAsync(context.QueueEntry.Value.Data, workItemDataType).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex, "Failed to parse work item data.");
             }
@@ -33,38 +35,42 @@ namespace Foundatio.Jobs {
             if (handler == null)
                 return JobResult.FailedWithMessage("Handler for type {0} not registered.", workItemDataType.Name);
 
-            var progressCallback = new Func<int, string, Task>(async (progress, message) => await _messageBus.PublishAsync(new WorkItemStatus {
-                WorkItemId = queueEntry.Value.WorkItemId,
-                Progress = progress,
-                Message = message,
-                Type = queueEntry.Value.Type
-            }).AnyContext());
-
-            if (queueEntry.Value.SendProgressReports)
+            if (context.QueueEntry.Value.SendProgressReports)
                 await _messageBus.PublishAsync(new WorkItemStatus {
-                    WorkItemId = queueEntry.Value.WorkItemId,
+                    WorkItemId = context.QueueEntry.Value.WorkItemId,
                     Progress = 0,
-                    Type = queueEntry.Value.Type
+                    Type = context.QueueEntry.Value.Type
                 }).AnyContext();
 
-            var ctx = new WorkItemContext(workItemData, JobId, progressCallback);
-            using (var lockValue = await handler.GetWorkItemLockAsync(ctx, cancellationToken).AnyContext()) {
+            using (var lockValue = await handler.GetWorkItemLockAsync(workItemData, context.CancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
-                
-				try {
-                    await handler.HandleItemAsync(ctx, cancellationToken).AnyContext();
+
+                var progressCallback = new Func<int, string, Task>(async (progress, message) => {
+                    if (AutoRenewLockOnProgress && lockValue != null)
+                        await lockValue.RenewAsync().AnyContext();
+
+                    await _messageBus.PublishAsync(new WorkItemStatus {
+                        WorkItemId = context.QueueEntry.Value.WorkItemId,
+                        Progress = progress,
+                        Message = message,
+                        Type = context.QueueEntry.Value.Type
+                    }).AnyContext();
+                });
+
+                try {
+                    await handler.HandleItemAsync(new WorkItemContext(context, workItemData, JobId, lockValue, progressCallback)).AnyContext();
                 } catch (Exception ex) {
-                    await queueEntry.AbandonAsync().AnyContext();
+                    await context.QueueEntry.AbandonAsync().AnyContext();
                     return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
                 }
 
-                await queueEntry.CompleteAsync().AnyContext();
-                if (queueEntry.Value.SendProgressReports)
+                await context.QueueEntry.CompleteAsync().AnyContext();
+                if (context.QueueEntry.Value.SendProgressReports)
                     await _messageBus.PublishAsync(new WorkItemStatus {
-                        WorkItemId = queueEntry.Value.WorkItemId,
+                        WorkItemId = context.QueueEntry.Value.WorkItemId,
                         Progress = 100,
-                        Type = queueEntry.Value.Type
+                        Type = context.QueueEntry.Value.Type
                     }).AnyContext();
 
                 return JobResult.Success;

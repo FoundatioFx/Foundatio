@@ -8,7 +8,7 @@ using Foundatio.Serializer;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {
-    public class RedisCacheClient : ICacheClient, IHaveSerializer {
+    public sealed class RedisCacheClient : ICacheClient, IHaveSerializer {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _db;
         private readonly ISerializer _serializer;
@@ -122,7 +122,7 @@ namespace Foundatio.Caching {
             return InternalSetAsync(key, value, expiresIn);
         }
 
-        protected async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
+        private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
             if (value == null)
                 return await _db.StringSetAsync(key, _nullValue, expiresIn, when, flags).AnyContext();
 

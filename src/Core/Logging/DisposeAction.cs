@@ -4,7 +4,7 @@ namespace Foundatio.Logging {
     /// <summary>
     /// A class that will call an <see cref="Action"/> when Disposed.
     /// </summary>
-    public class DisposeAction : IDisposable {
+    public sealed class DisposeAction : IDisposable {
         private readonly Action _exitAction;
 
         /// <summary>

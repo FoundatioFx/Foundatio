@@ -46,7 +46,7 @@ namespace Foundatio.Lock {
                 monitor.Pulse();
         }
 
-        public async Task<IDisposable> AcquireLockAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             Logger.Trace().Message($"AcquireLockAsync: {name}").Write();
             EnsureTopicSubscription();
             if (!lockTimeout.HasValue)
@@ -110,12 +110,19 @@ namespace Foundatio.Lock {
             return (await _cacheClient.GetAsync<object>(name).AnyContext()).HasValue;
         }
 
-        public async Task ReleaseLockAsync(string name) {
-            Logger.Trace().Message("ReleaseLockAsync: {0}", name).Write();
+        public async Task ReleaseAsync(string name) {
+            Logger.Trace().Message("ReleaseAsync: {0}", name).Write();
             await _cacheClient.RemoveAsync(name).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }
-        
+
+        public async Task RenewAsync(String name, TimeSpan? lockExtension = null) {
+            Logger.Trace().Message("RenewAsync: {0}", name).Write();
+            if (!lockExtension.HasValue)
+                lockExtension = TimeSpan.FromMinutes(20);
+            await _cacheClient.SetExpirationAsync(name, lockExtension.Value).AnyContext();
+        }
+
         public void Dispose() { }
     }
 

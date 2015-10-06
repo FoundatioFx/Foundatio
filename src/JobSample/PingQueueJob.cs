@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Extensions;
@@ -14,15 +13,15 @@ namespace Foundatio.JobSample.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override async Task<JobResult> ProcessQueueItemAsync(QueueEntry<PingRequest> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<PingRequest> context) {
             RunCount++;
 
             Console.WriteLine("Pong!");
 
             if (RandomData.GetBool(80))
-                await queueEntry.CompleteAsync().AnyContext();
+                await context.QueueEntry.CompleteAsync().AnyContext();
             else if (RandomData.GetBool(80))
-                await queueEntry.AbandonAsync().AnyContext();
+                await context.QueueEntry.AbandonAsync().AnyContext();
 
             return JobResult.Success;
         }

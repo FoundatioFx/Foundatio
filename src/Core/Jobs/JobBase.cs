@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Utility;
 
@@ -11,8 +12,8 @@ namespace Foundatio.Jobs {
             JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
-        protected virtual Task<IDisposable> GetJobLockAsync() {
-            return Task.FromResult(Disposable.Empty);
+        protected virtual Task<ILock> GetJobLockAsync() {
+            return Task.FromResult(Disposable.EmptyLock);
         }
 
         public string JobId { get; private set; }
