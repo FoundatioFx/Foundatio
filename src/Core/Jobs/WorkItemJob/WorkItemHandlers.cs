@@ -37,8 +37,8 @@ namespace Foundatio.Jobs {
 
     public interface IWorkItemHandler {
         Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken));
-
         Task HandleItemAsync(WorkItemContext context);
+        bool AutoRenewLockOnProgress { get; set; }
     }
 
     public interface IOneTimeWorkItemHandler : IWorkItemHandler {
@@ -50,6 +50,7 @@ namespace Foundatio.Jobs {
             return Task.FromResult(Disposable.EmptyLock);
         }
 
+        public bool AutoRenewLockOnProgress { get; set; }
         public abstract Task HandleItemAsync(WorkItemContext context);
 
         public abstract string GetKey();
@@ -64,6 +65,7 @@ namespace Foundatio.Jobs {
             return Task.FromResult(Disposable.EmptyLock);
         }
 
+        public bool AutoRenewLockOnProgress { get; set; }
         public abstract Task HandleItemAsync(WorkItemContext context);
         
         protected int CalculateProgress(long total, long completed, int startProgress = 0, int endProgress = 100) {
@@ -77,6 +79,8 @@ namespace Foundatio.Jobs {
         public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler) {
             _handler = handler;
         }
+
+        public bool AutoRenewLockOnProgress { get; set; }
 
         public Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.FromResult(Disposable.EmptyLock);

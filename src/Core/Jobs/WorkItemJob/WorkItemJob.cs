@@ -14,10 +14,7 @@ namespace Foundatio.Jobs {
             _messageBus = messageBus;
             _handlers = handlers;
             AutoComplete = true;
-            AutoRenewLockOnProgress = true;
         }
-
-        protected bool AutoRenewLockOnProgress { get; set; }
 
         protected async override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {
             var workItemDataType = Type.GetType(context.QueueEntry.Value.Type);
@@ -47,7 +44,7 @@ namespace Foundatio.Jobs {
                     return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
 
                 var progressCallback = new Func<int, string, Task>(async (progress, message) => {
-                    if (AutoRenewLockOnProgress && lockValue != null)
+                    if (handler.AutoRenewLockOnProgress && lockValue != null)
                         await lockValue.RenewAsync().AnyContext();
 
                     await _messageBus.PublishAsync(new WorkItemStatus {
