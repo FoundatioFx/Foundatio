@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -30,7 +31,7 @@ namespace Foundatio.Jobs {
     }
 
     public class JobRunner {
-        public static int RunInConsole(JobRunOptions options) {
+        public static int RunInConsole(JobRunOptions options, Action<IServiceProvider> afterBootstrap = null) {
             int result;
             string jobName = "N/A";
             try {
@@ -52,8 +53,7 @@ namespace Foundatio.Jobs {
 
                 Logger.Info().Message("Starting job...").Write();
 
-                var metricsClient = ServiceProvider.Current.GetService<IMetricsClient>() as InMemoryMetricsClient;
-                metricsClient?.StartDisplayingStats(TimeSpan.FromSeconds(5), new LoggerTextWriter { Source = "Metrics" });
+                afterBootstrap?.Invoke(ServiceProvider.Current);
 
                 result = JobRunner.RunAsync(options).Result;
 
