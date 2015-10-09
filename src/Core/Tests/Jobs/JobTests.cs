@@ -59,12 +59,12 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken());
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken());
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
             
-            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken());
+            await JobRunner.RunContinuousAsync(typeof(HelloWorldJob), null, null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken());
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
