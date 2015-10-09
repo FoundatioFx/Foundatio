@@ -20,7 +20,8 @@ namespace Foundatio.JobRunner {
                 JobTypeName = ca.JobType,
                 ServiceProviderTypeName = ca.ServiceProviderType,
                 InstanceCount = ca.InstanceCount,
-                Interval = TimeSpan.FromMilliseconds(ca.Delay),
+                Interval = TimeSpan.FromMilliseconds(ca.Interval),
+                InitialDelay = TimeSpan.FromSeconds(ca.InitialDelay),
                 RunContinuous = ca.RunContinuously,
                 NoServiceProvider = ca.NoServiceProvider
             });

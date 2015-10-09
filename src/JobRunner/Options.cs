@@ -19,8 +19,11 @@ namespace Foundatio.JobRunner {
         [Option('q', "quiet", Required = false, DefaultValue = false, HelpText = "Don't output header text.")]
         public bool Quiet { get; set; }
 
-        [Option('d', "delay", Required = false, DefaultValue = 0, HelpText = "Amount of time in milliseconds to delay between continuous job runs.")]
-        public int Delay { get; set; }
+        [Option('z', "interval", Required = false, DefaultValue = 0, HelpText = "Amount of time in milliseconds to delay between continuous job runs.")]
+        public int Interval { get; set; }
+
+        [Option('d', "delay", Required = false, DefaultValue = 0, HelpText = "Amount of time in seconds to delay job startup.")]
+        public int InitialDelay { get; set; }
 
         [Option('i', "instances", Required = false, DefaultValue = 1, HelpText = "Number of concurrent job instances to run. Only applies to continuous jobs.")]
         public int InstanceCount { get; set; }
