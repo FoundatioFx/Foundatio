@@ -8,6 +8,8 @@ namespace Foundatio.Logging {
     /// A class holding log data before being written.
     /// </summary>
     public sealed class LogData {
+        private IDictionary<String, Object> _properties;
+
         /// <summary>
         /// Gets or sets the logger name.
         /// </summary>
@@ -39,7 +41,7 @@ namespace Foundatio.Logging {
         /// The parameters.
         /// </value>
         public object[] Parameters { get; set; }
-
+        
         /// <summary>
         /// Gets or sets the format provider.
         /// </summary>
@@ -86,7 +88,10 @@ namespace Foundatio.Logging {
         /// <value>
         /// The log properties.
         /// </value>
-        public IDictionary<string, object> Properties { get; set; }
+        public IDictionary<string, object> Properties {
+            get { return _properties ?? (_properties = new Dictionary<String, Object>()); }
+            set { _properties = value; }
+        }
 
         /// <summary>
         /// Returns a <see cref="System.String" /> that represents this instance.
