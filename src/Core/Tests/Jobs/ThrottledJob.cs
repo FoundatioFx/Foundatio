@@ -15,10 +15,10 @@ namespace Foundatio.Tests.Jobs {
         public int RunCount { get; set; }
 
         protected override Task<ILock> GetJobLockAsync() {
-            return _locker.AcquireAsync("WithLockingJob", acquireTimeout: TimeSpan.Zero);
+            return _locker.AcquireAsync(nameof(ThrottledJob), acquireTimeout: TimeSpan.Zero);
         }
 
-        protected override Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
             RunCount++;
 
             return Task.FromResult(JobResult.Success);

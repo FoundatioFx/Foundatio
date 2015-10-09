@@ -18,8 +18,12 @@ namespace Foundatio.Jobs {
 
         protected bool AutoComplete { get; set; }
 
-        protected override async Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
+        protected sealed override Task<ILock> GetJobLockAsync() {
+            return base.GetJobLockAsync();
+        }
+
+        protected override async Task<JobResult> RunInternalAsync(JobRunContext context) {
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
 
             QueueEntry<T> queueEntry;
             try {
@@ -32,20 +36,20 @@ namespace Foundatio.Jobs {
             if (queueEntry == null)
                 return JobResult.Success;
 
-            if (cancellationToken.IsCancellationRequested) {
+            if (context.CancellationToken.IsCancellationRequested) {
                 Logger.Info().Message($"Job was cancelled. Abandoning queue item: {queueEntry.Id}").Write();
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.Cancelled;
             }
 
-            using (var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext()) {
+            using (var lockValue = await GetQueueEntryLockAsync(queueEntry, context.CancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 #if DEBUG
                 Logger.Trace().Message($"Processing queue entry '{queueEntry.Id}'.").Write();
 #endif
                 try {
-                    var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
+                    var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, context.CancellationToken)).AnyContext();
 
                     if (!AutoComplete)
                         return result;

@@ -24,10 +24,11 @@ namespace Foundatio.Logging {
                 throw new ArgumentNullException(nameof(writer));
 
             _writer = writer;
-            _data = new LogData();
-            _data.LogLevel = logLevel;
-            _data.FormatProvider = CultureInfo.InvariantCulture;
-            _data.Logger = typeof(Logger).FullName;
+            _data = new LogData {
+                LogLevel = logLevel,
+                FormatProvider = CultureInfo.InvariantCulture,
+                Logger = typeof(Logger).FullName
+            };
         }
 
         /// <summary>
@@ -36,9 +37,7 @@ namespace Foundatio.Logging {
         /// <value>
         /// The log data.
         /// </value>
-        public LogData LogData {
-            get { return _data; }
-        }
+        public LogData LogData => _data;
 
         /// <summary>
         /// Sets the level of the logging event.
@@ -57,7 +56,6 @@ namespace Foundatio.Logging {
         /// <returns></returns>
         public ILogBuilder Logger(string logger) {
             _data.Logger = logger;
-
             return this;
         }
 
@@ -68,7 +66,6 @@ namespace Foundatio.Logging {
         /// <returns></returns>
         public ILogBuilder Logger<TLogger>() {
             _data.Logger = typeof(TLogger).FullName;
-
             return this;
         }
 
@@ -79,7 +76,6 @@ namespace Foundatio.Logging {
         /// <returns></returns>
         public ILogBuilder Message(string message) {
             _data.Message = message;
-
             return this;
         }
 
@@ -92,7 +88,6 @@ namespace Foundatio.Logging {
         public ILogBuilder Message(string format, object arg0) {
             _data.Message = format;
             _data.Parameters = new[] { arg0 };
-
             return this;
         }
 
@@ -106,7 +101,6 @@ namespace Foundatio.Logging {
         public ILogBuilder Message(string format, object arg0, object arg1) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1 };
-
             return this;
         }
 
@@ -121,7 +115,6 @@ namespace Foundatio.Logging {
         public ILogBuilder Message(string format, object arg0, object arg1, object arg2) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2 };
-
             return this;
         }
 
@@ -137,7 +130,6 @@ namespace Foundatio.Logging {
         public ILogBuilder Message(string format, object arg0, object arg1, object arg2, object arg3) {
             _data.Message = format;
             _data.Parameters = new[] { arg0, arg1, arg2, arg3 };
-
             return this;
         }
 
@@ -150,7 +142,6 @@ namespace Foundatio.Logging {
         public ILogBuilder Message(string format, params object[] args) {
             _data.Message = format;
             _data.Parameters = args;
-
             return this;
         }
 
@@ -165,7 +156,6 @@ namespace Foundatio.Logging {
             _data.FormatProvider = provider;
             _data.Message = format;
             _data.Parameters = args;
-
             return this;
         }
 

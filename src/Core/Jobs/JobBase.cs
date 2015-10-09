@@ -34,7 +34,7 @@ namespace Foundatio.Jobs {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
-                var result = await TryRunAsync(cancellationToken).AnyContext();
+                var result = await TryRunAsync(new JobRunContext(lockValue, cancellationToken)).AnyContext();
                 if (result != null) {
                     if (!result.IsSuccess)
                         Logger.Error().Message("Job run \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
@@ -50,15 +50,15 @@ namespace Foundatio.Jobs {
             }
         }
 
-        private async Task<JobResult> TryRunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        private async Task<JobResult> TryRunAsync(JobRunContext context) {
             try {
-                return await RunInternalAsync(cancellationToken).AnyContext();
+                return await RunInternalAsync(context).AnyContext();
             } catch (Exception ex) {
                 return JobResult.FromException(ex);
             }
         }
 
-        protected abstract Task<JobResult> RunInternalAsync(CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract Task<JobResult> RunInternalAsync(JobRunContext context);
         
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
@@ -97,5 +97,16 @@ namespace Foundatio.Jobs {
         }
         
         public virtual void Dispose() {}
+    }
+
+    public class JobRunContext {
+        public JobRunContext(ILock jobLock, CancellationToken cancellationToken = default(CancellationToken)) {
+            JobLock = jobLock;
+            CancellationToken = cancellationToken;
+        }
+
+        public ILock JobLock { get; private set; }
+
+        public CancellationToken CancellationToken { get; private set; }
     }
 }
