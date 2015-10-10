@@ -26,7 +26,7 @@ To summarize, if you want pain free development and testing while allowing your 
 
 ## Getting Started (Development)
 
-[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please contact us via in-app support or [open an issue](https://github.com/exceptionless/Foundatio/issues/new). We’re always here to help if you have any questions!
+[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/exceptionless/Foundatio/issues/new). We’re always here to help if you have any questions!
 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
