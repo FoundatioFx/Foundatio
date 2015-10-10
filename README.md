@@ -93,7 +93,12 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 using Foundatio.Lock;
 
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
-using (await locker.AcquireLockAsync("test")) {
+using (await locker.AcquireAsync("test")) {
+  // ...
+}
+
+ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
+using (await locker.AcquireAsync("test")) {
   // ...
 }
 ```
@@ -133,9 +138,8 @@ Allows you to run a long running process (in process or out of process) with out
   public class HelloWorldJob : JobBase {
     public int RunCount { get; set; }
 
-    protected override Task<JobResult> RunInternalAsync(CancellationToken token) {
-      RunCount++;
-
+    protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
+       RunCount++;
        return Task.FromResult(JobResult.Success);
     }
   }
