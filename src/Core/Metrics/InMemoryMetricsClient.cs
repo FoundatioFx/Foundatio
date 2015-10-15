@@ -62,7 +62,7 @@ namespace Foundatio.Metrics {
 
                 foreach (var key in _counters.Keys.ToList()) {
                     var counter = _counters[key];
-                    writer.WriteLine("Counter: {0} Value: {1} Rate: {2} Rate: {3}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.CurrentRate.ToString("#,##0.##'/s'").PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
+                    writer.WriteLine("Counter: {0} Value: {1} Rate: {2} Rate: {3}", key.PadRight(maxNameLength), counter.Value.ToString().PadRight(12), counter.RecentRate.ToString("#,##0.##'/s'").PadRight(12), counter.Rate.ToString("#,##0.##'/s'"));
                 }
 
                 foreach (var key in _gauges.Keys.ToList()) {
@@ -84,9 +84,9 @@ namespace Foundatio.Metrics {
 
         public MetricStats GetMetricStats() {
             return new MetricStats {
-                Counters = _counters,
-                Timings = _timings,
-                Gauges = _gauges
+                Counters = _counters.ToDictionary(kvp => kvp.Key, kvp => (ICounterStats)kvp.Value),
+                Timings = _timings.ToDictionary(kvp => kvp.Key, kvp => (ITimingStats)kvp.Value),
+                Gauges = _gauges.ToDictionary(kvp => kvp.Key, kvp => (IGaugeStats)kvp.Value)
             };
         }
 
@@ -173,48 +173,42 @@ namespace Foundatio.Metrics {
         public void Dispose() {}
     }
 
-    public class MetricStats {
-        public IDictionary<string, CounterStats> Counters { get; internal set; }
-        public IDictionary<string, TimingStats> Timings { get; internal set; }
-        public IDictionary<string, GaugeStats> Gauges { get; internal set; }
-    }
-
-    public class CounterStats {
+    public class CounterStats : ICounterStats {
         public CounterStats(long value) {
             Increment(value);
         }
 
         private long _value;
-        private long _currentValue;
+        private long _recentValue;
         private readonly Stopwatch _stopwatch = new Stopwatch();
-        private readonly Stopwatch _currentStopwatch = new Stopwatch();
+        private readonly Stopwatch _recentStopwatch = new Stopwatch();
 
         public long Value => _value;
-        public long CurrentValue => _currentValue;
+        public long RecentValue => _recentValue;
         public double Rate => ((double)Value / _stopwatch.Elapsed.TotalSeconds);
-        public double CurrentRate => ((double)CurrentValue / _currentStopwatch.Elapsed.TotalSeconds);
+        public double RecentRate => ((double)RecentValue / _recentStopwatch.Elapsed.TotalSeconds);
 
         private static readonly object _lock = new object();
         public void Increment(long value) {
             lock (_lock) {
                 _value += value;
-                _currentValue += value;
+                _recentValue += value;
 
                 if (!_stopwatch.IsRunning)
                     _stopwatch.Start();
 
-                if (!_currentStopwatch.IsRunning)
-                    _currentStopwatch.Start();
+                if (!_recentStopwatch.IsRunning)
+                    _recentStopwatch.Start();
 
-                if (_currentStopwatch.Elapsed > TimeSpan.FromMinutes(1)) {
-                    _currentValue = 0;
-                    _currentStopwatch.Restart();
+                if (_recentStopwatch.Elapsed > TimeSpan.FromMinutes(1)) {
+                    _recentValue = 0;
+                    _recentStopwatch.Restart();
                 }
             }
         }
     }
 
-    public class TimingStats {
+    public class TimingStats : ITimingStats {
         public TimingStats(long value) {
             Set(value);
         }
@@ -250,7 +244,7 @@ namespace Foundatio.Metrics {
         }
     }
 
-    public class GaugeStats {
+    public class GaugeStats : IGaugeStats {
         public GaugeStats(double value) {
             Set(value);
         }

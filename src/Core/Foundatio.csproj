@@ -107,6 +107,7 @@
     <Compile Include="Messaging\MessageBusBase.cs" />
     <Compile Include="Messaging\MessageBusData.cs" />
     <Compile Include="Metrics\IHaveMetricName.cs" />
+    <Compile Include="Metrics\IHaveMetricStats.cs" />
     <Compile Include="Metrics\MetricTimer.cs" />
     <Compile Include="Metrics\IMetricsClient.cs" />
     <Compile Include="Metrics\InMemoryMetricsClient.cs" />
