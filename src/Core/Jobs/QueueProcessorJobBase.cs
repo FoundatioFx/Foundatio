@@ -72,7 +72,7 @@ namespace Foundatio.Jobs {
         }
         
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            await RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () => {
+            await RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
 #if DEBUG
                 Logger.Trace().Message($"RunUntilEmpty continuation: queue: {stats.Queued} working={stats.Working}").Write();
