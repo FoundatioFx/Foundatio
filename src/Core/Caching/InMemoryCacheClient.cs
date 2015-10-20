@@ -27,7 +27,7 @@ namespace Foundatio.Caching {
         public long Hits => _hits;
         public long Misses => _misses;
 
-        public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; set; } = new AsyncEvent<ItemExpiredEventArgs>();
+        public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
 
         protected virtual async Task OnItemExpiredAsync(string key) {
             var args = new ItemExpiredEventArgs {

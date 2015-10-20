@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 
 namespace Foundatio.Utility {
-    public class AsyncEvent<TEventArgs> where TEventArgs : EventArgs {
+    public class AsyncEvent<TEventArgs> : IObservable<TEventArgs> where TEventArgs : EventArgs {
         private readonly List<Func<object, TEventArgs, Task>> _invocationList = new List<Func<object, TEventArgs, Task>>();
         private readonly object _lockObject = new object();
         private readonly bool _parallelInvoke;
@@ -14,30 +14,29 @@ namespace Foundatio.Utility {
             _parallelInvoke = parallelInvoke;
         } 
 
-        public static AsyncEvent<TEventArgs> operator +(AsyncEvent<TEventArgs> e, Func<object, TEventArgs, Task> callback) {
+        public IDisposable AddHandler(Func<object, TEventArgs, Task> callback) {
             if (callback == null)
                 throw new NullReferenceException("callback is null");
 
-            if (e == null)
-                e = new AsyncEvent<TEventArgs>();
+            lock (_lockObject)
+                _invocationList.Add(callback);
 
-            lock (e._lockObject)
-                e._invocationList.Add(callback);
-
-            return e;
+            return new EventHandlerDisposable<TEventArgs>(this, callback);
         }
 
-        public static AsyncEvent<TEventArgs> operator -(AsyncEvent<TEventArgs> e, Func<object, TEventArgs, Task> callback) {
+        public IDisposable AddHandler(Action<object, TEventArgs> callback) {
+            return AddHandler((sender, args) => {
+                callback(sender, args);
+                return TaskHelper.Completed();
+            });
+        }
+
+        public void RemoveHandler(Func<object, TEventArgs, Task> callback) {
             if (callback == null)
                 throw new NullReferenceException("callback is null");
 
-            if (e == null)
-                return null;
-
-            lock (e._lockObject)
-                e._invocationList.Remove(callback);
-
-            return e;
+            lock (_lockObject)
+                _invocationList.Remove(callback);
         }
 
         public async Task InvokeAsync(object sender, TEventArgs eventArgs) {
@@ -51,6 +50,24 @@ namespace Foundatio.Utility {
             else
                 foreach (var callback in tmpInvocationList)
                     await callback(sender, eventArgs).AnyContext();
+        }
+
+        public IDisposable Subscribe(IObserver<TEventArgs> observer) {
+            return AddHandler((sender, args) => observer.OnNext(args));
+        }
+
+        private class EventHandlerDisposable<T> : IDisposable where T : EventArgs {
+            private readonly AsyncEvent<T> _event;
+            private readonly Func<object, T, Task> _callback;
+
+            public EventHandlerDisposable(AsyncEvent<T> @event, Func<object, T, Task> callback) {
+                _event = @event;
+                _callback = callback;
+            }
+
+            public void Dispose() {
+                _event.RemoveHandler(_callback);
+            }
         }
     }
 }

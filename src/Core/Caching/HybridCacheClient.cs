@@ -21,12 +21,12 @@ namespace Foundatio.Caching {
             _localCache.MaxItems = 100;
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
-            _localCache.ItemExpired += async (sender, args) => {
+            _localCache.ItemExpired.AddHandler(async (sender, args) => {
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key } }).AnyContext();
 #if DEBUG
                 Logger.Trace().Message("Item expired event: key={0}", args.Key).Write();
 #endif
-            };
+            });
         }
 
         public InMemoryCacheClient LocalCache => _localCache;

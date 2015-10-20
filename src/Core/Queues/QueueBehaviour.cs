@@ -13,16 +13,16 @@ namespace Foundatio.Queues {
         public virtual void Attach(IQueue<T> queue) {
             _queue = queue;
 
-            _queue.Enqueuing -= OnEnqueuing;
-            _queue.Enqueuing += OnEnqueuing;
-            _queue.Enqueued -= OnEnqueued;
-            _queue.Enqueued += OnEnqueued;
-            _queue.Dequeued -= OnDequeued;
-            _queue.Dequeued += OnDequeued;
-            _queue.Completed -= OnCompleted;
-            _queue.Completed += OnCompleted;
-            _queue.Abandoned -= OnAbandoned;
-            _queue.Abandoned += OnAbandoned;
+            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
+            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
+            _queue.Enqueued.RemoveHandler(OnEnqueued);
+            _queue.Enqueued.RemoveHandler(OnEnqueued);
+            _queue.Dequeued.RemoveHandler(OnDequeued);
+            _queue.Dequeued.AddHandler(OnDequeued);
+            _queue.Completed.AddHandler(OnCompleted);
+            _queue.Completed.AddHandler(OnCompleted);
+            _queue.Abandoned.AddHandler(OnAbandoned);
+            _queue.Abandoned.AddHandler(OnAbandoned);
         }
 
         protected virtual Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {
@@ -46,11 +46,11 @@ namespace Foundatio.Queues {
         }
 
         public void Dispose() {
-            _queue.Enqueuing -= OnEnqueuing;
-            _queue.Enqueued -= OnEnqueued;
-            _queue.Dequeued -= OnDequeued;
-            _queue.Completed -= OnCompleted;
-            _queue.Abandoned -= OnAbandoned;
+            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
+            _queue.Enqueued.RemoveHandler(OnEnqueued);
+            _queue.Dequeued.RemoveHandler(OnDequeued);
+            _queue.Completed.RemoveHandler(OnCompleted);
+            _queue.Abandoned.RemoveHandler(OnAbandoned);
         }
     }
 }

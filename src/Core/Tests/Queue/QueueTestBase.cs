@@ -447,10 +447,10 @@ namespace Foundatio.Tests.Queue {
             var metricsClient = new InMemoryMetricsClient();
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
-            queue.Completed += (sender, e) => {
+            queue.Completed.AddHandler((sender, e) => {
                 eventRaised.Set();
                 return TaskHelper.Completed();
-            };
+            });
 
             var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
 

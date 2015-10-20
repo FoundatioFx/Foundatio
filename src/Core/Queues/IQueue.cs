@@ -9,11 +9,11 @@ using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public interface IQueue<T> : IHaveSerializer, IDisposable where T : class {
-        AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; set; }
-        AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; set; }
-        AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; set; }
-        AsyncEvent<CompletedEventArgs<T>> Completed { get; set; }
-        AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; set; }
+        AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
+        AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
+        AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
+        AsyncEvent<CompletedEventArgs<T>> Completed { get; }
+        AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
         void AttachBehavior(IQueueBehavior<T> behavior);
 

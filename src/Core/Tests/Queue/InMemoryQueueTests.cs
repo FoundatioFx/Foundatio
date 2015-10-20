@@ -23,23 +23,29 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public async Task TestAsyncEvents() {
             var q = new InMemoryQueue<SimpleWorkItem>();
-            q.Enqueuing += async (sender, args) => {
+            q.Enqueuing.AddHandler(async (sender, args) => {
                 await Task.Delay(250);
                 Logger.Info().Message("First Enqueuing.").Write();
-            };
-            q.Enqueuing += async (sender, args) => {
+            });
+            q.Enqueuing.AddHandler(async(sender, args) => {
                 await Task.Delay(250);
                 Logger.Info().Message("Second Enqueuing.").Write();
-            };
-            q.Enqueued += async (sender, args) => {
+            });
+            var e1 = q.Enqueued.AddHandler(async (sender, args) => {
                 await Task.Delay(250);
                 Logger.Info().Message("First.").Write();
-            };
-            q.Enqueued += async (sender, args) => {
+            });
+            q.Enqueued.AddHandler(async(sender, args) => {
                 await Task.Delay(250);
                 Logger.Info().Message("Second.").Write();
-            };
+            });
             var sw = Stopwatch.StartNew();
+            await q.EnqueueAsync(new SimpleWorkItem());
+            sw.Stop();
+            _writer.WriteLine(sw.Elapsed.ToString());
+
+            e1.Dispose();
+            sw.Restart();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
             _writer.WriteLine(sw.Elapsed.ToString());

@@ -48,7 +48,7 @@ namespace Foundatio.Queues {
 
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 
-        public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; set; } = new AsyncEvent<EnqueuingEventArgs<T>>();
+        public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
         protected virtual async Task<bool> OnEnqueuingAsync(T data) {
             var args = new EnqueuingEventArgs<T> {
@@ -60,7 +60,7 @@ namespace Foundatio.Queues {
             return !args.Cancel;
         }
 
-        public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; set; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
+        public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
         protected virtual async Task OnEnqueuedAsync(T data, string id) {
             await (Enqueued?.InvokeAsync(this, new EnqueuedEventArgs<T> {
@@ -74,7 +74,7 @@ namespace Foundatio.Queues {
             }) ?? TaskHelper.Completed()).AnyContext();
         }
 
-        public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; set; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
+        public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual async Task OnDequeuedAsync(QueueEntry<T> entry) {
             var info = entry.ToMetadata();
@@ -87,7 +87,7 @@ namespace Foundatio.Queues {
             await _queueEntryCache.SetAsync(entry.Id, info).AnyContext();
         }
 
-        public AsyncEvent<CompletedEventArgs<T>> Completed { get; set; } = new AsyncEvent<CompletedEventArgs<T>>(true);
+        public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
         protected virtual async Task OnCompletedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
@@ -102,7 +102,7 @@ namespace Foundatio.Queues {
             await _queueEntryCache.RemoveAsync(id).AnyContext();
         }
 
-        public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; set; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
+        public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual async Task OnAbandonedAsync(string id) {
             var queueEntry = await _queueEntryCache.GetAsync<QueueEntryMetadata>(id).AnyContext();
