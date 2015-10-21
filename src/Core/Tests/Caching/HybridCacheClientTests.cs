@@ -98,11 +98,11 @@ namespace Foundatio.Tests.Caching {
             Assert.NotNull(secondCache);
 
             var countdownEvent = new AsyncCountdownEvent(2);
-            firstCache.LocalCache.ItemExpired.AddHandler((sender, args) => {
+            firstCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
                 _writer.WriteLine("First expired: " + args.Key);
                 countdownEvent.Signal();
             });
-            secondCache.LocalCache.ItemExpired.AddHandler((sender, args) => {
+            secondCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
                 _writer.WriteLine("Second expired: " + args.Key);
                 countdownEvent.Signal();
             });

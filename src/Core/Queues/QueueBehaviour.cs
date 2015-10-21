@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -9,20 +10,16 @@ namespace Foundatio.Queues {
 
     public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable where T : class {
         protected IQueue<T> _queue;
+        private readonly List<IDisposable> _disposables = new List<IDisposable>();
 
         public virtual void Attach(IQueue<T> queue) {
             _queue = queue;
 
-            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
-            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
-            _queue.Enqueued.RemoveHandler(OnEnqueued);
-            _queue.Enqueued.RemoveHandler(OnEnqueued);
-            _queue.Dequeued.RemoveHandler(OnDequeued);
-            _queue.Dequeued.AddHandler(OnDequeued);
-            _queue.Completed.AddHandler(OnCompleted);
-            _queue.Completed.AddHandler(OnCompleted);
-            _queue.Abandoned.AddHandler(OnAbandoned);
-            _queue.Abandoned.AddHandler(OnAbandoned);
+            _disposables.Add(_queue.Enqueuing.AddHandler(OnEnqueuing));
+            _disposables.Add(_queue.Enqueued.AddHandler(OnEnqueued));
+            _disposables.Add(_queue.Dequeued.AddHandler(OnDequeued));
+            _disposables.Add(_queue.Completed.AddHandler(OnCompleted));
+            _disposables.Add(_queue.Abandoned.AddHandler(OnAbandoned));
         }
 
         protected virtual Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {
@@ -46,11 +43,8 @@ namespace Foundatio.Queues {
         }
 
         public void Dispose() {
-            _queue.Enqueuing.RemoveHandler(OnEnqueuing);
-            _queue.Enqueued.RemoveHandler(OnEnqueued);
-            _queue.Dequeued.RemoveHandler(OnDequeued);
-            _queue.Completed.RemoveHandler(OnCompleted);
-            _queue.Abandoned.RemoveHandler(OnAbandoned);
+            foreach (var disposable in _disposables)
+                disposable.Dispose();
         }
     }
 }

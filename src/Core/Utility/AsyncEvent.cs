@@ -24,7 +24,7 @@ namespace Foundatio.Utility {
             return new EventHandlerDisposable<TEventArgs>(this, callback);
         }
 
-        public IDisposable AddHandler(Action<object, TEventArgs> callback) {
+        public IDisposable AddSyncHandler(Action<object, TEventArgs> callback) {
             return AddHandler((sender, args) => {
                 callback(sender, args);
                 return TaskHelper.Completed();
@@ -53,7 +53,7 @@ namespace Foundatio.Utility {
         }
 
         public IDisposable Subscribe(IObserver<TEventArgs> observer) {
-            return AddHandler((sender, args) => observer.OnNext(args));
+            return AddSyncHandler((sender, args) => observer.OnNext(args));
         }
 
         private class EventHandlerDisposable<T> : IDisposable where T : EventArgs {
