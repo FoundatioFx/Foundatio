@@ -276,18 +276,29 @@ namespace Foundatio.Caching {
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {
-            DateTime minExpiration = DateTime.MaxValue;
-            var now = DateTime.UtcNow;
             var expiredKeys = new List<string>();
 
-            foreach (string key in _memory.Keys) {
-                var expiresAt = _memory[key].ExpiresAt;
-                if (expiresAt <= now)
-                    expiredKeys.Add(key);
-                else if (expiresAt < minExpiration)
-                    minExpiration = expiresAt;
+            DateTime utcNow = DateTime.UtcNow;
+            DateTime minExpiration = DateTime.MaxValue;
+
+            var enumerator = _memory.GetEnumerator();
+            try {
+                while (enumerator.MoveNext()) {
+                    var current = enumerator.Current;
+
+                    var expiresAt = current.Value.ExpiresAt;
+                    if (expiresAt <= utcNow)
+                        expiredKeys.Add(current.Key);
+                    else if (expiresAt < minExpiration)
+                        minExpiration = expiresAt;
+                }
+            } catch (Exception ex) {
+                Logger.Error()
+                    .Exception(ex)
+                    .Message("Error trying to find expired cache items.")
+                    .Write();
             }
-            
+
             foreach (var key in expiredKeys) {
 #if DEBUG
                 Logger.Trace().Message("Removing expired key: key={0}", key).Write();

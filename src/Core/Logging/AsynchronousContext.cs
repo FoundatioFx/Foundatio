@@ -105,9 +105,7 @@ namespace Foundatio.Logging {
         /// <param name="key">The key of the value to set.</param>
         /// <param name="value">The value associated with the specified key.</param>
         public IDisposable Set(string key, object value) {
-            var dictionary = GetDictionary()
-                             ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-
+            var dictionary = GetDictionary() ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             dictionary[key] = value;
 
             // CallContext value must be immutable, reassign value

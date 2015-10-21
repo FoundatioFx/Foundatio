@@ -257,15 +257,27 @@ namespace Foundatio.Queues {
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {
-            DateTime minAbandonAt = DateTime.MaxValue;
-            var now = DateTime.UtcNow;
             var abandonedKeys = new List<string>();
-            foreach (string key in _dequeued.Keys) {
-                var abandonAt = _dequeued[key].TimeDequeued.Add(_workItemTimeout);
-                if (abandonAt < now)
-                    abandonedKeys.Add(key);
-                else if (abandonAt < minAbandonAt)
-                    minAbandonAt = abandonAt;
+
+            DateTime utcNow = DateTime.UtcNow;
+            DateTime minAbandonAt = DateTime.MaxValue;
+
+            var enumerator = _dequeued.GetEnumerator();
+            try {
+                while (enumerator.MoveNext()) {
+                    var current = enumerator.Current;
+
+                    var abandonAt = current.Value.TimeDequeued.Add(_workItemTimeout);
+                    if (abandonAt < utcNow)
+                        abandonedKeys.Add(current.Key);
+                    else if (abandonAt < minAbandonAt)
+                        minAbandonAt = abandonAt;
+                }
+            } catch (Exception ex) {
+                Logger.Error()
+                    .Exception(ex)
+                    .Message("Error trying to find abandoned queue items.")
+                    .Write();
             }
             
             foreach (var key in abandonedKeys) {

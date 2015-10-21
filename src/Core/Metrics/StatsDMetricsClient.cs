@@ -48,8 +48,7 @@ namespace Foundatio.Metrics {
                 byte[] data = Encoding.ASCII.GetBytes(metric);
 
                 EnsureSocket();
-                if (_socket != null)
-                    _socket.SendTo(data, _endPoint);
+                _socket?.SendTo(data, _endPoint);
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
                 ResetUdpClient();
