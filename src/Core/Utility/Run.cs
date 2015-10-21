@@ -10,23 +10,23 @@ namespace Foundatio.Utility {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
         
-        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int attempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
 
-            int retries = 1;
+            int attempts = 1;
             do {
                 try {
                     return await action().AnyContext();
                 } catch {
-                    if (retries > attempts)
+                    if (attempts > maxAttempts)
                         throw;
                     
-                    await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(retries * 100), cancellationToken).AnyContext();
+                    await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
                 }
 
-                retries++;
-            } while (retries <= attempts && !cancellationToken.IsCancellationRequested);
+                attempts++;
+            } while (attempts <= maxAttempts && !cancellationToken.IsCancellationRequested);
 
             throw new TaskCanceledException("Should not get here.");
         }
