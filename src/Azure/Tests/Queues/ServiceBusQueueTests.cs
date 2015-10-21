@@ -11,9 +11,7 @@ namespace Foundatio.Azure.Tests.Queue {
     public class ServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output)
-        {
-        }
+        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
@@ -33,6 +31,11 @@ namespace Foundatio.Azure.Tests.Queue {
         [Fact]
         public override Task CanQueueAndDequeueWorkItem() {
             return base.CanQueueAndDequeueWorkItem();
+        }
+        
+        [Fact]
+        public override Task CanDequeueWithCancelledToken() {
+            return base.CanDequeueWithCancelledToken();
         }
 
         [Fact]

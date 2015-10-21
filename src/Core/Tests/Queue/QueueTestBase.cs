@@ -49,6 +49,36 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, stats.Queued);
             }
         }
+        
+        /// <summary>
+        /// When a cancelled token is passed into Dequeue, it will only try to dequeue one time and then exit.
+        /// </summary>
+        /// <returns></returns>
+        public virtual async Task CanDequeueWithCancelledToken() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                var workItem = await queue.DequeueAsync(new CancellationToken(true));
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                // TODO: We should verify that only one retry occurred.
+                await workItem.CompleteAsync();
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+            }
+        }
 
         public virtual async Task CanDequeueEfficiently() {
             const int iterations = 100;

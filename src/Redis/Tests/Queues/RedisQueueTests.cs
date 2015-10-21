@@ -29,7 +29,12 @@ namespace Foundatio.Redis.Tests.Queues {
         public override Task CanQueueAndDequeueWorkItem() {
             return base.CanQueueAndDequeueWorkItem();
         }
-        
+
+        [Fact]
+        public override Task CanDequeueWithCancelledToken() {
+            return base.CanDequeueWithCancelledToken();
+        }
+
         [Fact]
         public override Task CanDequeueEfficiently() {
             return base.CanDequeueEfficiently();

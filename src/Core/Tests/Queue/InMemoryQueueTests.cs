@@ -57,6 +57,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public override Task CanDequeueWithCancelledToken() {
+            return base.CanDequeueWithCancelledToken();
+        }
+
+        [Fact]
         public override Task CanDequeueEfficiently() {
             return base.CanDequeueEfficiently();
         }
