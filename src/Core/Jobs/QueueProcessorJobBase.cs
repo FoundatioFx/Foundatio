@@ -29,8 +29,7 @@ namespace Foundatio.Jobs {
             try {
                 queueEntry = await _queue.DequeueAsync(linkedCancellationToken.Token).AnyContext();
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message($"Error trying to dequeue message: {ex.Message}").Write();
-                return JobResult.FromException(ex);
+                return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
             }
 
             if (queueEntry == null)

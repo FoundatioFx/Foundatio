@@ -30,7 +30,7 @@ namespace Foundatio.Jobs {
 
             var handler = _handlers.GetHandler(workItemDataType);
             if (handler == null)
-                return JobResult.FailedWithMessage("Handler for type {0} not registered.", workItemDataType.Name);
+                return JobResult.FailedWithMessage($"Handler for type {workItemDataType.Name} not registered.");
 
             if (context.QueueEntry.Value.SendProgressReports)
                 await _messageBus.PublishAsync(new WorkItemStatus {
@@ -59,7 +59,7 @@ namespace Foundatio.Jobs {
                     await handler.HandleItemAsync(new WorkItemContext(context, workItemData, JobId, lockValue, progressCallback)).AnyContext();
                 } catch (Exception ex) {
                     await context.QueueEntry.AbandonAsync().AnyContext();
-                    return JobResult.FromException(ex, "Error in handler {0}.", workItemDataType.Name);
+                    return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
                 }
 
                 await context.QueueEntry.CompleteAsync().AnyContext();

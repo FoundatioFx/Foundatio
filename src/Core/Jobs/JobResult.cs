@@ -9,7 +9,7 @@ namespace Foundatio.Jobs {
 
         public static readonly JobResult None = new JobResult {
             IsSuccess = true,
-            Message = "Nothing to do."
+            Message = String.Empty
         };
 
         public static readonly JobResult Cancelled = new JobResult {
@@ -28,14 +28,6 @@ namespace Foundatio.Jobs {
             };
         }
 
-        public static JobResult FromException(Exception exception, string format, params object[] args) {
-            return new JobResult {
-                Error = exception,
-                IsSuccess = false,
-                Message = String.Format(format, args)
-            };
-        }
-
         public static JobResult SuccessWithMessage(string message) {
             return new JobResult {
                 IsSuccess = true,
@@ -43,24 +35,10 @@ namespace Foundatio.Jobs {
             };
         }
 
-        public static JobResult SuccessWithMessage(string format, params object[] args) {
-            return new JobResult {
-                IsSuccess = true,
-                Message = String.Format(format, args)
-            };
-        }
-
         public static JobResult FailedWithMessage(string message) {
             return new JobResult {
                 IsSuccess = false,
                 Message = message
-            };
-        }
-
-        public static JobResult FailedWithMessage(string format, params object[] args) {
-            return new JobResult {
-                IsSuccess = false,
-                Message = String.Format(format, args)
             };
         }
     }

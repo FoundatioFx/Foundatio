@@ -68,10 +68,12 @@ namespace Foundatio.Jobs {
 
             while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                 try {
-                    await RunAsync(cancellationToken).AnyContext();
-
+                    var result = await RunAsync(cancellationToken).AnyContext();
                     iterations++;
-                    if (interval.HasValue)
+
+                    if (result.Error != null)
+                        await Task.Delay(Math.Max(interval?.Milliseconds ?? 0, 100), cancellationToken).AnyContext();
+                    else if (interval.HasValue)
                         await Task.Delay(interval.Value, cancellationToken).AnyContext();
                     else if (iterations % 1000 == 0) // allow for cancellation token to get set
                         await Task.Delay(1).AnyContext();
