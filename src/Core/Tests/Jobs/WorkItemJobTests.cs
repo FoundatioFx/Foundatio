@@ -55,7 +55,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanHandleMultipleWorkItemInstances() {
-            const int workItemCount = 10000;
+            const int workItemCount = 1000;
 
             var metrics = new InMemoryMetricsClient();
             var queue = new InMemoryQueue<WorkItemData>(retries: 0, retryDelay: TimeSpan.Zero);
