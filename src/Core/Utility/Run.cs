@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 
@@ -8,45 +9,26 @@ namespace Foundatio.Utility {
         public static Task InParallel(int iterations, Func<int, Task> work) {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
-
-        public static Task Multiple(int iterations, Func<int, Task> work) {
-            return Task.WhenAll(Enumerable.Range(1, iterations).Select(work));
-        }
-
-        public static Task WithRetriesAsync(Action action, int attempts = 3, TimeSpan? retryInterval = null) {
-            return WithRetriesAsync<object>(() => {
-                action();
-                return null;
-            }, attempts, retryInterval);
-        }
-
-        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int attempts = 3, TimeSpan? retryInterval = null) {
+        
+        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int attempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
 
+            int retries = 1;
             do {
                 try {
                     return await action().AnyContext();
                 } catch {
-                    if (attempts <= 0)
+                    if (retries > attempts)
                         throw;
-
-                    if (retryInterval != null)
-                        await Task.Delay(retryInterval.Value).AnyContext();
-                    else
-                        await SleepBackOffMultiplierAsync(attempts).AnyContext();
+                    
+                    await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(retries * 100), cancellationToken).AnyContext();
                 }
-            } while (attempts-- > 1);
 
-            throw new ApplicationException("Should not get here.");
-        }
-        
-        private static async Task SleepBackOffMultiplierAsync(int i) {
-            var rand = new Random(Guid.NewGuid().GetHashCode());
-            var nextTry = rand.Next(
-                (int)Math.Pow(i, 2), (int)Math.Pow(i + 1, 2) + 1);
+                retries++;
+            } while (retries <= attempts && !cancellationToken.IsCancellationRequested);
 
-            await Task.Delay(nextTry).AnyContext();
+            throw new TaskCanceledException("Should not get here.");
         }
     }
 }

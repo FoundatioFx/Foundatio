@@ -10,6 +10,7 @@ using Foundatio.Lock;
 using Foundatio.Serializer;
 using Nito.AsyncEx;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using StackExchange.Redis;
 #pragma warning disable 4014
 
@@ -243,8 +244,8 @@ namespace Foundatio.Queues {
             await EnsureMaintenanceRunningAsync().AnyContext();
             await EnsureTopicSubscriptionAsync().AnyContext();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
-
-            RedisValue value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+            
+            RedisValue value = await GetRedisValueAsync(linkedCancellationToken).AnyContext();
             if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
                 return null;
 #if DEBUG
@@ -263,7 +264,7 @@ namespace Foundatio.Queues {
                 sw.Stop();
                 Logger.Trace().Message("Waited for dequeue: {0}", sw.Elapsed.ToString()).Write();
 #endif
-                value = await _db.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+                value = await GetRedisValueAsync(linkedCancellationToken).AnyContext();
 #if DEBUG
                 Logger.Trace().Message("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString())).Write();
 #endif
@@ -294,6 +295,17 @@ namespace Foundatio.Queues {
             } catch (Exception ex) {
                 Logger.Error().Exception(ex).Message("Error getting queue payload: {0}", value).Write();
                 throw;
+            }
+        }
+
+        private async Task<RedisValue> GetRedisValueAsync(CancellationToken linkedCancellationToken) {
+            if (linkedCancellationToken.IsCancellationRequested)
+                return RedisValue.Null;
+
+            try {
+                return await Run.WithRetriesAsync(() => _db.ListRightPopLeftPushAsync(QueueListName, WorkListName), 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken).AnyContext();
+            } catch (TaskCanceledException) {
+                return RedisValue.Null;
             }
         }
 
