@@ -205,13 +205,12 @@ namespace Foundatio.Queues {
 #if DEBUG
                     Logger.Trace().Message("Adding item to wait list for future retry: {0}", id).Write();
 #endif
-                    await Task.Delay(GetRetryDelay(info.Attempts)).AnyContext();
-                    await RetryAsync(info).AnyContext();
+                    var unawaited = Run.DelayedAsync(GetRetryDelay(info.Attempts), () => RetryAsync(info));
                 } else {
 #if DEBUG
                     Logger.Trace().Message("Adding item back to queue for retry: {0}", id).Write();
 #endif
-                    await RetryAsync(info).AnyContext();
+                    var unawaited = Task.Run(() => RetryAsync(info));
                 }
             } else {
 #if DEBUG
@@ -232,10 +231,10 @@ namespace Foundatio.Queues {
                 _monitor.Pulse();
         }
 
-        private int GetRetryDelay(int attempts) {
+        private TimeSpan GetRetryDelay(int attempts) {
             int maxMultiplier = _retryMultipliers.Length > 0 ? _retryMultipliers.Last() : 1;
             int multiplier = attempts <= _retryMultipliers.Length ? _retryMultipliers[attempts - 1] : maxMultiplier;
-            return (int)(_retryDelay.TotalMilliseconds * multiplier);
+            return TimeSpan.FromMilliseconds((int)(_retryDelay.TotalMilliseconds * multiplier));
         }
 
         public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {

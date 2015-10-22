@@ -6,6 +6,13 @@ using Foundatio.Extensions;
 
 namespace Foundatio.Utility {
     internal static class Run {
+        public static async Task DelayedAsync(TimeSpan delay, Func<Task> action) {
+            await Task.Run(async () => {
+                await Task.Delay(delay).AnyContext();
+                await action().AnyContext();
+            }).AnyContext();
+        }
+
         public static Task InParallel(int iterations, Func<int, Task> work) {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
