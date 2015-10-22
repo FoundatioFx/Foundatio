@@ -127,10 +127,8 @@ namespace Foundatio.Caching {
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             var valueMap = new Dictionary<string, CacheValue<T>>();
-            foreach (var key in keys) {
-                var value = await this.GetAsync<T>(key).AnyContext();
-                valueMap[key] = value;
-            }
+            foreach (var key in keys)
+                valueMap[key] = await GetAsync<T>(key).AnyContext();
 
             return valueMap;
         }

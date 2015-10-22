@@ -277,7 +277,7 @@ namespace Foundatio.Queues {
 
             try {
                 var payload = await _cache.GetAsync<T>(GetPayloadKey(value)).AnyContext();
-                if (payload == null) {
+                if (payload.IsNull) {
                     Logger.Error().Message("Error getting queue payload: {0}", value).Write();
                     await _db.ListRemoveAsync(WorkListName, value).AnyContext();
                     return null;
