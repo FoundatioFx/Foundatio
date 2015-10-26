@@ -15,6 +15,7 @@ namespace Foundatio.Caching {
         Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null);
         Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
         Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null);
+        Task<bool> ExistsAsync(string key);
         Task<TimeSpan?> GetExpirationAsync(string key);
         Task SetExpirationAsync(string key, TimeSpan expiresIn);
     }

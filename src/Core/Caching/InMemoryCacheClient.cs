@@ -242,6 +242,10 @@ namespace Foundatio.Caching {
 
             return result.GetValue<long>();
         }
+        
+        public Task<bool> ExistsAsync(string key) {
+            return Task.FromResult(_memory.ContainsKey(key));
+        }
 
         public async Task<TimeSpan?> GetExpirationAsync(string key) {
             CacheEntry value;

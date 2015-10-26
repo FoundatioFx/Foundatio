@@ -151,6 +151,10 @@ namespace Foundatio.Caching {
         public Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
             return _distributedCache.IncrementAsync(key, amount, expiresIn);
         }
+        
+        public Task<bool> ExistsAsync(string key) {
+            return _distributedCache.ExistsAsync(key);
+        }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
             return _distributedCache.GetExpirationAsync(key);

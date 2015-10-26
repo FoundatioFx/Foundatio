@@ -64,18 +64,22 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync();
 
                 Assert.False((await cache.GetAsync<int>("donkey")).HasValue);
+                Assert.False(await cache.ExistsAsync("donkey"));
 
                 SimpleModel nullable = null;
                 await cache.SetAsync("nullable", nullable);
                 var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
                 Assert.True(nullCacheValue.HasValue);
                 Assert.True(nullCacheValue.IsNull);
+                Assert.True(await cache.ExistsAsync("nullable"));
 
                 int? nullableInt = null;
+                Assert.False(await cache.ExistsAsync("nullableInt"));
                 await cache.SetAsync("nullableInt", nullableInt);
                 var nullIntCacheValue = await cache.GetAsync<int?>("nullableInt");
                 Assert.True(nullIntCacheValue.HasValue);
                 Assert.True(nullIntCacheValue.IsNull);
+                Assert.True(await cache.ExistsAsync("nullableInt"));
 
                 await cache.SetAsync("test", 1);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);

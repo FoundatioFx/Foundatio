@@ -169,6 +169,10 @@ namespace Foundatio.Caching {
 
             return result;
         }
+        
+        public Task<bool> ExistsAsync(string key) {
+            return _db.KeyExistsAsync(key);
+        }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
             return _db.KeyTimeToLiveAsync(key);

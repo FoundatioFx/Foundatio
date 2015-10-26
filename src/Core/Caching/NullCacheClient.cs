@@ -41,6 +41,10 @@ namespace Foundatio.Caching {
             return Task.FromResult(0L);
         }
 
+        public Task<bool> ExistsAsync(string key) {
+            return Task.FromResult(false);
+        }
+
         public Task<TimeSpan?> GetExpirationAsync(string key) {
             return Task.FromResult<TimeSpan?>(null);
         }
