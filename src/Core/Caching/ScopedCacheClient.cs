@@ -23,7 +23,7 @@ namespace Foundatio.Caching {
         }
         
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            if (keys == null || !keys.Any())
+            if (keys == null)
                 return RemoveByPrefixAsync(String.Empty);
 
             return UnscopedCache.RemoveAllAsync(GetScopedCacheKey(keys));
