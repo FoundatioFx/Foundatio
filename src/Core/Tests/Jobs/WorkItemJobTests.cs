@@ -182,7 +182,7 @@ namespace Foundatio.Tests.Jobs {
             });
 
             await job.RunUntilEmptyAsync();
-            Assert.Equal(3, statusCount);
+            Assert.Equal(1, statusCount);
         }
     }
 

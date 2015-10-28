@@ -360,7 +360,7 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                await resetEvent.WaitAsync();
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                 await Task.Delay(10);
 
                 var stats = await queue.GetQueueStatsAsync();
