@@ -1,4 +1,4 @@
-﻿namespace Foundatio.Repositories {
+﻿namespace Foundatio.Repositories.Models {
     public class PagingOptions {
         public int? Limit { get; set; }
         public int? Page { get; set; }

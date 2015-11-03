@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using Foundatio.Repositories.Models;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Repositories.Queries {
     public interface ISortableQuery {
         List<FieldSort> SortBy { get; }
         bool SortByScore { get; set; }

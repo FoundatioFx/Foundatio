@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Repositories.Models {
     public class FindResults<T> where T : class, new() {
         public FindResults(ICollection<T> documents = null, long total = 0, ICollection<FacetResult> facetResults = null, string scrollId = null, Func<FindResults<T>, Task<FindResults<T>>> getNextPage = null) {
             Documents = documents ?? new List<T>();

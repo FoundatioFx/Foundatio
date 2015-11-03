@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Repositories.Models;
-using Foundatio.Repositories.Models.Messaging;
 using FluentValidation;
 using Nest;
 using Elasticsearch.Net;
@@ -12,13 +10,12 @@ using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Repositories.Models;
 using Foundatio.Utility;
 
 namespace Foundatio.Repositories {
     public abstract class Repository<T> : ReadOnlyRepository<T>, IRepository<T> where T : class, IIdentity, new() {
         protected readonly static string EntityType = typeof(T).Name;
-        protected readonly static bool IsOwnedByOrganization = typeof(IOwnedByOrganization).IsAssignableFrom(typeof(T));
-        protected readonly static bool IsOwnedByContactAndOrganization = typeof(IOwnedByOrganizationAndContactWithIdentity).IsAssignableFrom(typeof(T));
         protected readonly static bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
         protected readonly static bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
@@ -129,7 +126,7 @@ namespace Foundatio.Repositories {
             if (documents == null || documents.Count == 0)
                 return;
 
-            if (documents.Any(d => d.Id.IsNullOrEmpty()))
+            if (documents.Any(d => String.IsNullOrEmpty(d.Id)))
                 throw new ApplicationException("Id must be set when calling Save.");
 
             string[] ids = documents.Where(d => !String.IsNullOrEmpty(d.Id)).Select(d => d.Id).ToArray();
@@ -396,53 +393,16 @@ namespace Foundatio.Repositories {
             return PublishMessageAsync(changeType, new[] { document }, data);
         }
 
-        protected async Task PublishMessageAsync(ChangeType changeType, IEnumerable<T> documents, IDictionary<string, object> data = null) {
-            if (IsOwnedByContactAndOrganization) {
-                foreach (var contactDocs in documents.Cast<IOwnedByOrganizationAndContactWithIdentity>().GroupBy(d => d.ContactId)) {
-                    var firstDoc = contactDocs.FirstOrDefault();
-                    if (firstDoc == null)
-                        continue;
+        protected virtual async Task PublishMessageAsync(ChangeType changeType, IEnumerable<T> documents, IDictionary<string, object> data = null) {
+            foreach (var doc in documents) {
+                var message = new EntityChanged {
+                    ChangeType = changeType,
+                    Id = doc.Id,
+                    Type = EntityType,
+                    Data = new DataDictionary(data ?? new Dictionary<string, object>())
+                };
 
-                    int count = contactDocs.Count();
-                    var message = new EntityChanged {
-                        ChangeType = changeType,
-                        OrganizationId = firstDoc.OrganizationId,
-                        Id = count == 1 ? firstDoc.Id : null,
-                        ContactId = firstDoc.ContactId,
-                        Type = EntityType,
-                        Data = new DataDictionary(data ?? new Dictionary<string, object>())
-                    };
-
-                    await PublishMessageAsync(message, TimeSpan.FromSeconds(1.5)).AnyContext();
-                }
-            } else if (IsOwnedByOrganization) {
-                foreach (var orgDocs in documents.Cast<IOwnedByOrganizationWithIdentity>().GroupBy(d => d.OrganizationId)) {
-                    var firstDoc = orgDocs.FirstOrDefault();
-                    if (firstDoc == null)
-                        continue;
-
-                    int count = orgDocs.Count();
-                    var message = new EntityChanged {
-                        ChangeType = changeType,
-                        OrganizationId = orgDocs.Key,
-                        Id = count == 1 ? firstDoc.Id : null,
-                        Type = EntityType,
-                        Data = new DataDictionary(data ?? new Dictionary<string, object>())
-                    };
-
-                    await PublishMessageAsync(message, TimeSpan.FromSeconds(1.5)).AnyContext();
-                }
-            } else {
-                foreach (var doc in documents) {
-                    var message = new EntityChanged {
-                        ChangeType = changeType,
-                        Id = doc.Id,
-                        Type = EntityType,
-                        Data = new DataDictionary(data ?? new Dictionary<string, object>())
-                    };
-
-                    await PublishMessageAsync(message, TimeSpan.FromSeconds(1.5)).AnyContext();
-                }
+                await PublishMessageAsync(message, TimeSpan.FromSeconds(1.5)).AnyContext();
             }
         }
 

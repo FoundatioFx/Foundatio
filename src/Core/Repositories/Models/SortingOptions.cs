@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Repositories.Models {
     public class SortingOptions {
-        public static SortingOptions Empty = new SortingOptions();
+        public static readonly SortingOptions Empty = new SortingOptions();
 
         public SortingOptions() {
             Fields = new List<FieldSort>();
@@ -14,7 +14,7 @@ namespace Foundatio.Repositories {
 
         public static SortingOptions Parse(string sort) {
             if (String.IsNullOrEmpty(sort))
-                return SortingOptions.Empty;
+                return Empty;
 
             var sortingOptions = new SortingOptions();
             var fields = sort.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);

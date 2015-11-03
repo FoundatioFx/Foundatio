@@ -1,4 +1,6 @@
-﻿namespace Foundatio.Repositories {
+﻿using System;
+
+namespace Foundatio.Repositories.Queries {
     public interface ISoftDeletesQuery {
         bool IncludeSoftDeletes { get; set; }
     }

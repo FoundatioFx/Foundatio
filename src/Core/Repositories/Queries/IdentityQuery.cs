@@ -1,7 +1,9 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace Foundatio.Repositories {
+using System;
+
+namespace Foundatio.Repositories.Queries {
     public interface IIdentityQuery {
         List<string> Ids { get; }
     }

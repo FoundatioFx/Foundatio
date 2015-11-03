@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Repositories.Models;
-using Foundatio.Repositories.Models.Messaging;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Repositories.Models {
     public class DocumentsChangeEventArgs<T> : EventArgs where T : class, IIdentity, new() {
         public DocumentsChangeEventArgs(ChangeType changeType, ICollection<ModifiedDocument<T>> documents, IRepository<T> repository) {
             ChangeType = changeType;

@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Foundatio.Repositories.Models;
 
-namespace Foundatio.Extensions
-{
-    public static class EnumerableExtensions
-    {
-        public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action)
-        {
+namespace Foundatio.Extensions {
+    public static class EnumerableExtensions {
+        public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action) {
             if (collection == null || action == null)
                 return;
 
@@ -64,6 +62,38 @@ namespace Foundatio.Extensions
                        select projection(xa, xb, key);
 
             return join.ToList();
+        }
+    
+        public static void EnsureIds<T>(this IEnumerable<T> values) where T : class, IIdentity {
+            if (values == null)
+                return;
+
+            foreach (var value in values) {
+                if (value.Id == null)
+                    value.Id = ObjectId.GenerateNewId().ToString();
+            }
+        }
+
+        public static void SetDates<T>(this IEnumerable<T> values) where T : class, IHaveDates {
+            if (values == null)
+                return;
+
+            foreach (var value in values) {
+                if (value.CreatedUtc == DateTime.MinValue)
+                    value.CreatedUtc = DateTime.UtcNow;
+
+                value.UpdatedUtc = DateTime.UtcNow;
+            }
+        }
+
+        public static void SetCreatedDates<T>(this IEnumerable<T> values) where T : class, IHaveCreatedDate {
+            if (values == null)
+                return;
+
+            foreach (var value in values) {
+                if (value.CreatedUtc == DateTime.MinValue)
+                    value.CreatedUtc = DateTime.UtcNow;
+            }
         }
     }
 }

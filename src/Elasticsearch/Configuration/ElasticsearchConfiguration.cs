@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using Elasticsearch.Net.ConnectionPool;
 using Foundatio.Caching;
+using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Queues;
@@ -98,8 +100,8 @@ namespace Foundatio.Elasticsearch.Configuration {
             return _indexMap.ContainsKey(entityType) ? _indexMap[entityType] : null;
         }
 
-        public IEnumerable<IElasticSearchIndex> GetIndexes() {
-            return new IElasticSearchIndex[] {
+        public IEnumerable<IElasticsearchIndex> GetIndexes() {
+            return new IElasticsearchIndex[] {
                 new OrganizationIndex(),
                 new ContactIndex()
             };

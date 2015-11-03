@@ -1,6 +1,6 @@
-using Foundatio.Collections;
+using System;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Repositories.Models {
     public class FacetResult {
         public FacetResult() {
             Terms = new NumberDictionary();

@@ -8,7 +8,9 @@ using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Repositories.Models;
+using Foundatio.Repositories.Queries;
 using Nest;
+using SortOrder = System.Data.SqlClient.SortOrder;
 
 namespace Foundatio.Repositories {
     public abstract class ReadOnlyRepository<T> : IReadOnlyRepository<T> where T : class, new() {
@@ -69,13 +71,13 @@ namespace Foundatio.Repositories {
             var response = await Context.ElasticClient.SearchAsync<TResult>(searchDescriptor).AnyContext();
             Context.ElasticClient.DisableTrace();
             if (!response.IsValid)
-                throw new ApplicationException($"ElasticSearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
+                throw new ApplicationException($"Elasticsearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
 
             if (pagableQuery?.UseSnapshotPaging == true) {
                 var scanResponse = response;
                 response = await Context.ElasticClient.ScrollAsync<TResult>("2m", response.ScrollId).AnyContext();
                 if (!response.IsValid)
-                    throw new ApplicationException($"ElasticSearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
+                    throw new ApplicationException($"Elasticsearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
 
                 result = new FindResults<TResult> {
                     Documents = response.Documents.ToList(),
@@ -152,7 +154,7 @@ namespace Foundatio.Repositories {
             if (result != null)
                 return result.Value;
 
-            var countDescriptor = new CountDescriptor<T>().Query(query.GetElasticSearchQuery(SupportsSoftDeletes));
+            var countDescriptor = new CountDescriptor<T>().Query(query.GetElasticsearchQuery(SupportsSoftDeletes));
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)
                 countDescriptor.Indices(indices);
@@ -372,7 +374,7 @@ namespace Foundatio.Repositories {
             var selectedFieldsQuery = query as ISelectedFieldsQuery;
             var facetQuery = query as IFacetQuery;
 
-            search.Query(query.GetElasticSearchQuery(SupportsSoftDeletes));
+            search.Query(query.GetElasticsearchQuery(SupportsSoftDeletes));
 
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)

@@ -6,15 +6,11 @@ using Elasticsearch.Net.Connection;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Extensions {
-    public static class ElasticSearchExtensions {
+    public static class ElasticsearchExtensions {
         private static readonly Lazy<PropertyInfo> _connectionSettingsProperty = new Lazy<PropertyInfo>(() => typeof(HttpConnection).GetProperty("ConnectionSettings", BindingFlags.NonPublic | BindingFlags.Instance));
 
         [Conditional("DEBUG")]
-        public static void EnableTrace(this IElasticClient client)
-        {
-            if (!Settings.Current.EnableElasticsearchTracing)
-                return;
-
+        public static void EnableTrace(this IElasticClient client) {
             var conn = client.Connection as HttpConnection;
             if (conn == null)
                 return;
@@ -25,9 +21,6 @@ namespace Foundatio.Elasticsearch.Extensions {
 
         [Conditional("DEBUG")]
         public static void DisableTrace(this IElasticClient client) {
-            if (!Settings.Current.EnableElasticsearchTracing)
-                return;
-
             var conn = client.Connection as HttpConnection;
             if (conn == null)
                 return;

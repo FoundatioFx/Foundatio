@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio.Repositories.Models.Messaging;
 using Foundatio.Utility;
 
 namespace Foundatio.Repositories.Models {
@@ -10,8 +9,6 @@ namespace Foundatio.Repositories.Models {
 
         public string Type { get; set; }
         public string Id { get; set; }
-        public string OrganizationId { get; set; }
-        public string ContactId { get; set; }
         public ChangeType ChangeType { get; set; }
         public DataDictionary Data { get; set; }
     }

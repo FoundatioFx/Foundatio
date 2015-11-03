@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Foundatio.Repositories.Models;
 
 namespace Foundatio.Repositories {
     public interface IReadOnlyRepository<T> where T : class, new() {

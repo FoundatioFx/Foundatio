@@ -1,4 +1,7 @@
-﻿namespace Foundatio.Repositories {
+﻿using System;
+using Foundatio.Repositories.Models;
+
+namespace Foundatio.Repositories.Queries {
     public interface IPagableQuery {
         int? Limit { get; set; }
         int? Page { get; set; }

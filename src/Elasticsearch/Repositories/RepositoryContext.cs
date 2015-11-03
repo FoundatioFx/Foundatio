@@ -1,12 +1,12 @@
 ﻿using FluentValidation;
 using Foundatio.Caching;
+using Foundatio.Elasticsearch.Configuration;
 using Foundatio.Messaging;
-using Foundatio.Repositories.Configuration;
 using Nest;
 
 namespace Foundatio.Repositories {
     public class RepositoryContext<T> where T : class {
-        public RepositoryContext(IElasticClient elasticClient, ElasticSearchConfiguration configuration, ICacheClient cache, IMessagePublisher messagePublisher, IValidator<T> validator) {
+        public RepositoryContext(IElasticClient elasticClient, ElasticsearchConfiguration configuration, ICacheClient cache, IMessagePublisher messagePublisher, IValidator<T> validator) {
             ElasticClient = elasticClient;
             Configuration = configuration;
             Validator = validator;
@@ -15,7 +15,7 @@ namespace Foundatio.Repositories {
         }
 
         public IElasticClient ElasticClient { get; }
-        public ElasticSearchConfiguration Configuration { get; }
+        public ElasticsearchConfiguration Configuration { get; }
         public IValidator<T> Validator { get; }
         public ICacheClient Cache { get; }
         public IMessagePublisher MessagePublisher { get; }
