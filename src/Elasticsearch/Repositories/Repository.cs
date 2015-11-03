@@ -20,9 +20,7 @@ namespace Foundatio.Repositories {
         protected readonly static bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
         protected Repository(RepositoryContext<T> context) : base(context) {}
-
-        public bool BatchNotifications { get; set; }
-
+        
         public async Task<T> AddAsync(T document, bool addToCache = false, TimeSpan? expiresIn = null, bool sendNotification = true) {
             if (document == null)
                 throw new ArgumentNullException(nameof(document));
@@ -217,7 +215,7 @@ namespace Foundatio.Repositories {
         public AsyncEvent<DocumentsEventArgs<T>> DocumentsAdding { get; } = new AsyncEvent<DocumentsEventArgs<T>>();
 
         private async Task OnDocumentsAddingAsync(ICollection<T> documents) {
-            documents.EnsureIds();
+            documents.EnsureIds(GetDocumentIdFunc);
 
             if (HasDates)
                 documents.Cast<IHaveDates>().SetDates();
@@ -412,5 +410,9 @@ namespace Foundatio.Repositories {
 
             await Context.MessagePublisher.PublishAsync(message, delay).AnyContext();
         }
+        
+        public bool BatchNotifications { get; set; }
+
+        protected Func<T, string> GetDocumentIdFunc { get { return d => null; } }
     }
 }

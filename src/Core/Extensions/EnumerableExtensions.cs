@@ -64,13 +64,13 @@ namespace Foundatio.Extensions {
             return join.ToList();
         }
     
-        public static void EnsureIds<T>(this IEnumerable<T> values) where T : class, IIdentity {
-            if (values == null)
+        public static void EnsureIds<T>(this IEnumerable<T> values, Func<string> genreateId) where T : class, IIdentity {
+            if (values == null || genreateId == null)
                 return;
 
             foreach (var value in values) {
                 if (value.Id == null)
-                    value.Id = ObjectId.GenerateNewId().ToString();
+                    value.Id = genreateId();
             }
         }
 
