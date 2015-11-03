@@ -29,6 +29,11 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanAdd() {
+            return base.CanAdd();
+        }
+
+        [Fact]
         public override Task CanAddConncurrently() {
             return base.CanAddConncurrently();
         }
