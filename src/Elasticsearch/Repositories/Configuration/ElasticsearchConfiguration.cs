@@ -81,19 +81,6 @@ namespace Foundatio.Elasticsearch.Configuration {
                 // enqueue reindex to new version
                 _lockProvider.TryUsingAsync("enqueue-reindex", () => _workItemQueue.EnqueueAsync(reindexWorkItem), TimeSpan.Zero, CancellationToken.None).Wait();
             }
-
-            // TODO: Move this to a one time work item.
-            // move activity to contact index
-            int activityVersion = GetAliasVersion(client, Settings.Current.AppScopePrefix + "activity");
-            if (activityVersion > 0) {
-                var index = GetIndexes().First(i => i.AliasName == ContactIndex.Alias);
-                _workItemQueue.EnqueueAsync(new ReindexWorkItem {
-                    OldIndex = String.Concat(Settings.Current.AppScopePrefix + "activity", "-v", activityVersion),
-                    NewIndex = index.VersionedName,
-                    DeleteOld = true,
-                    ParentMaps = { new ParentMap { Type = "activity", ParentPath = "contact_id" } }
-                }).Wait();
-            }
         }
 
         public string GetIndexAliasForType(Type entityType) {

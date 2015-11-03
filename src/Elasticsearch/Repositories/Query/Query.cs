@@ -9,12 +9,10 @@ namespace Foundatio.Elasticsearch.Repositories.Queries {
         ISelectedFieldsQuery, ISortableQuery, IParentQuery, IChildQuery {
         public Query() {
             Ids = new List<string>();
-            OrganizationIds = new List<string>();
             DateRanges = new List<DateRange>();
             FieldConditions = new List<FieldCondition>();
             SelectedFields = new List<string>();
             SortBy = new List<FieldSort>();
-            ContactIds = new List<string>();
             FacetFields = new List<FacetField>();
         }
 

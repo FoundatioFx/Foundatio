@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Foundatio.Elasticsearch.Extensions;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
