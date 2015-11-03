@@ -67,9 +67,10 @@ namespace Foundatio.Repositories {
             if (pagableQuery?.UseSnapshotPaging == true)
                 searchDescriptor.SearchType(SearchType.Scan).Scroll("2m");
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var response = await Context.ElasticClient.SearchAsync<TResult>(searchDescriptor).AnyContext();
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
+
             if (!response.IsValid)
                 throw new ApplicationException($"Elasticsearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
 
@@ -120,9 +121,9 @@ namespace Foundatio.Repositories {
                 return result;
 
             var searchDescriptor = CreateSearchDescriptor(query).Size(1);
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             result = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.FirstOrDefault();
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             await SetCachedQueryResultAsync(query, result).AnyContext();
 
@@ -161,9 +162,10 @@ namespace Foundatio.Repositories {
             countDescriptor.IgnoreUnavailable();
             countDescriptor.Type(GetTypeName());
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var results = await Context.ElasticClient.CountAsync<T>(countDescriptor).AnyContext();
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
+
             if (!results.IsValid)
                 throw new ApplicationException($"ElasticSearch error code \"{results.ConnectionStatus.HttpStatusCode}\".", results.ConnectionStatus.OriginalException);
 
@@ -189,12 +191,12 @@ namespace Foundatio.Repositories {
             if (result != null)
                 return result;
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             if (GetParentIdFunc == null) // we don't have the parent id
                 result = (await Context.ElasticClient.GetAsync<T>(id, GetIndexById(id)).AnyContext()).Source;
             else
                 result = await FindOneAsync(NewQuery().WithId(id)).AnyContext();
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             if (IsCacheEnabled && result != null && useCache)
                 await Cache.SetAsync(id, result, expiresIn ?? TimeSpan.FromSeconds(RepositoryConstants.DEFAULT_CACHE_EXPIRATION_SECONDS)).AnyContext();
@@ -227,12 +229,12 @@ namespace Foundatio.Repositories {
                 foreach (var id in itemsToFind)
                     multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id)));
 
-                Context.ElasticClient.EnableTrace();
+                if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
                 foreach (var doc in (await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext()).Documents.Where(doc => doc.Found)) {
                     results.Documents.Add(doc.Source as T);
                     itemsToFind.Remove(doc.Id);
                 }
-                Context.ElasticClient.DisableTrace();
+                if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
             }
 
             // fallback to doing a find
@@ -265,10 +267,10 @@ namespace Foundatio.Repositories {
             if (GetAllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => GetAllowedFacetFields.Contains(f.Field)))
                 throw new ArgumentException("All facet fields must be allowed.", nameof(query));
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var search = CreateSearchDescriptor(query).SearchType(SearchType.Count);
             var res = await Context.ElasticClient.SearchAsync<T>(search);
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             if (!res.IsValid) {
                 Logger.Error().Message("Retrieving term stats failed: {0}", res.ServerError.Error).Write();
@@ -320,10 +322,10 @@ namespace Foundatio.Repositories {
 
         protected virtual string[] GetAllowedFacetFields => new string[] { };
         protected virtual string[] GetAllowedSortFields => new string[] { };
-        protected virtual string GetTypeName() => typeof(T).Name.ToLowerUnderscoredWords();
+        protected virtual string GetTypeName() => typeof(T).Name;
         protected virtual string[] DefaultExcludes => new string[] { };
-        protected Func<T, string> GetParentIdFunc { get; set; }
-        protected Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
+        protected virtual Func<T, string> GetParentIdFunc { get; set; }
+        protected virtual Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
 
         protected virtual string[] GetIndexesByQuery(object query) {
             var withIndicesQuery = query as IElasticIndicesQuery;
@@ -347,9 +349,8 @@ namespace Foundatio.Repositories {
                     .Select(d => d.Id)
                     .ToList();
 
-                if (keys.Count > 0) {
+                if (keys.Count > 0)
                     await Cache.RemoveAllAsync(keys).AnyContext();
-                }
             }
         }
 

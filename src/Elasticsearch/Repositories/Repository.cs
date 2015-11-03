@@ -98,16 +98,15 @@ namespace Foundatio.Repositories {
                 })
                 .Size(Context.BulkBatchSize);
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var documents = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.ToList();
-            Context.ElasticClient.DisableTrace();
             while (documents.Count > 0) {
                 recordsAffected += documents.Count;
                 await RemoveAsync(documents, sendNotifications).AnyContext();
 
                 documents = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.ToList();
             }
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             return recordsAffected;
         }
@@ -136,8 +135,10 @@ namespace Foundatio.Repositories {
                 foreach (var doc in documents)
                     await Context.Validator.ValidateAndThrowAsync(doc).AnyContext();
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var result = await Context.ElasticClient.IndexManyAsync(documents, GetParentIdFunc, GetDocumentIndexFunc).AnyContext();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
+
             if (!result.IsValid)
                 throw new ApplicationException(String.Join("\r\n", result.ItemsWithErrors.Select(i => i.Error)), result.ConnectionStatus.OriginalException);
 
@@ -160,9 +161,9 @@ namespace Foundatio.Repositories {
                 .Scroll("4s")
                 .Size(Context.BulkBatchSize);
 
-            Context.ElasticClient.EnableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var scanResults = await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext();
-            Context.ElasticClient.DisableTrace();
+            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             // Check to see if no scroll id was returned. This will occur when the index doesn't exist.
             if (!scanResults.IsValid || String.IsNullOrEmpty(scanResults.ScrollId))

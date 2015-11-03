@@ -4,7 +4,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public static class QueryBuilder {
-        public static QueryContainer GetElasticSearchQuery(this object query, bool supportSoftDeletes = false) {
+        public static QueryContainer GetElasticsearchQuery(this object query, bool supportSoftDeletes = false) {
             QueryContainer container = new MatchAllQuery();
             container &= new FilteredQuery { Filter = ApplyFilter(query, null, supportSoftDeletes) };
 
@@ -21,11 +21,11 @@ namespace Foundatio.Elasticsearch.Repositories.Queries {
 
             var pq = query as IParentQuery;
             if (pq?.ParentQuery != null)
-                container &= new HasParentFilter { Query = pq.ParentQuery.GetElasticSearchQuery(supportSoftDeletes), Type = pq.ParentQuery.Type };
+                container &= new HasParentFilter { Query = pq.ParentQuery.GetElasticsearchQuery(supportSoftDeletes), Type = pq.ParentQuery.Type };
 
             var cq = query as IChildQuery;
             if (cq?.ChildQuery != null)
-                container &= new HasChildFilter { Query = cq.ChildQuery.GetElasticSearchQuery(supportSoftDeletes), Type = cq.ChildQuery.Type };
+                container &= new HasChildFilter { Query = cq.ChildQuery.GetElasticsearchQuery(supportSoftDeletes), Type = cq.ChildQuery.Type };
 
             var identityQuery = query as IIdentityQuery;
             if (identityQuery != null && identityQuery.Ids.Count > 0)
