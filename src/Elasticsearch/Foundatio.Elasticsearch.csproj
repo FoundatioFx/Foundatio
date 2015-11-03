@@ -73,6 +73,8 @@
       <Link>Extensions\TaskExtensions.cs</Link>
     </Compile>
     <Compile Include="Extensions\DateTimeExtensions.cs" />
+    <Compile Include="Jobs\ReindexWorkItem.cs" />
+    <Compile Include="Jobs\ReindexWorkItemHandler.cs" />
     <Compile Include="Repositories\Configuration\ElasticsearchConfigurationBase.cs" />
     <Compile Include="Repositories\Configuration\IElasticsearchIndex.cs" />
     <Compile Include="Extensions\ElasticSearchExtensions.cs" />
