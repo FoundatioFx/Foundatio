@@ -3,8 +3,7 @@ using System.Collections.Generic;
 
 namespace Foundatio.Elasticsearch.Jobs {
     public class ReindexWorkItem {
-        public ReindexWorkItem()
-        {
+        public ReindexWorkItem() {
             ParentMaps = new List<ParentMap>();
         }
 
@@ -14,11 +13,10 @@ namespace Foundatio.Elasticsearch.Jobs {
         public bool DeleteOld { get; set; }
         public string TimestampField { get; set; }
         public DateTime? StartUtc { get; set; }
-        public List<ParentMap> ParentMaps { get; set; } 
+        public List<ParentMap> ParentMaps { get; set; }
     }
 
-    public class ParentMap
-    {
+    public class ParentMap {
         public string Type { get; set; }
         public string ParentPath { get; set; }
     }

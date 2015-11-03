@@ -42,7 +42,6 @@ namespace Foundatio.Elasticsearch.Jobs {
             await context.ReportProgressAsync(90, $"Total: {result.Total} Completed: {result.Completed}").AnyContext();
 
             // TODO: Check to make sure the docs have been added to the new index before changing alias
-
             if (!String.IsNullOrEmpty(workItem.Alias)) {
                 await _client.AliasAsync(x => x
                     .Remove(a => a.Alias(workItem.Alias).Index(workItem.OldIndex))

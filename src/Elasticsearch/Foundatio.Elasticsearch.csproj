@@ -103,6 +103,7 @@
     <Compile Include="Repositories\RepositoryContext.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Foundatio.Elasticsearch.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

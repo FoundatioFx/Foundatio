@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Foundatio.Repositories.Models;
 
 namespace Foundatio.Extensions {
@@ -94,6 +95,18 @@ namespace Foundatio.Extensions {
                 if (value.CreatedUtc == DateTime.MinValue)
                     value.CreatedUtc = DateTime.UtcNow;
             }
+        }
+
+        /// <summary>
+        /// Converts a byte array to Hexadecimal.
+        /// </summary>
+        /// <param name="bytes">The bytes to convert.</param>
+        /// <returns>Hexadecimal string of the byte array.</returns>
+        public static string ToHex(this IEnumerable<byte> bytes) {
+            var sb = new StringBuilder();
+            foreach (byte b in bytes)
+                sb.Append(b.ToString("x2"));
+            return sb.ToString();
         }
     }
 }

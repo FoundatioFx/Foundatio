@@ -82,6 +82,8 @@ namespace Foundatio.Repositories {
             await RemoveAllAsync(new object(), false).AnyContext();
         }
 
+        protected List<string> RemoveAllIncludedFields { get; } = new List<string>();
+
         protected async Task<long> RemoveAllAsync(object query, bool sendNotifications = true) {
             if (query == null)
                 throw new ArgumentNullException(nameof(query));
@@ -91,8 +93,8 @@ namespace Foundatio.Repositories {
             var searchDescriptor = CreateSearchDescriptor(query)
                 .Source(s => {
                     s.Include(f => f.Id);
-                    if (IsOwnedByOrganization)
-                        s.Include("organization_id");
+                    if (RemoveAllIncludedFields.Count > 0)
+                        s.Include(RemoveAllIncludedFields.ToArray());
 
                     return s;
                 })
@@ -142,12 +144,8 @@ namespace Foundatio.Repositories {
 
             await OnDocumentsSavedAsync(documents, originalDocuments, sendNotifications).AnyContext();
         }
-
-        protected Task<long> UpdateAllAsync(string organizationId, object query, object update, bool sendNotifications = true) {
-            return UpdateAllAsync(new[] { organizationId }, query, update, sendNotifications);
-        }
-
-        protected async Task<long> UpdateAllAsync(string[] organizationIds, object query, object update, bool sendNotifications = true) {
+        
+        protected async Task<long> UpdateAllAsync(object query, object update, bool sendNotifications = true) {
             long recordsAffected = 0;
 
             var searchDescriptor = CreateSearchDescriptor(query)
@@ -190,13 +188,9 @@ namespace Foundatio.Repositories {
             if (recordsAffected <= 0)
                 return 0;
 
-            if (!sendNotifications)
-                return recordsAffected;
-
-            foreach (var organizationId in organizationIds) {
+            if (sendNotifications) {
                 await PublishMessageAsync(new EntityChanged {
                     ChangeType = ChangeType.Saved,
-                    OrganizationId = organizationId,
                     Type = EntityType
                 }, TimeSpan.FromSeconds(1.5)).AnyContext();
             }
@@ -407,6 +401,6 @@ namespace Foundatio.Repositories {
         
         public bool BatchNotifications { get; set; }
 
-        protected Func<T, string> GetDocumentIdFunc { get { return d => null; } }
+        protected virtual Func<T, string> GetDocumentIdFunc { get { return d => ObjectId.GenerateNewId().ToString(); } }
     }
 }

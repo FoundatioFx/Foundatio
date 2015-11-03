@@ -161,6 +161,7 @@
     <Compile Include="Utility\EmptyDisposable.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />
     <Compile Include="Utility\MaintenanceBase.cs" />
+    <Compile Include="Utility\ObjectId.cs" />
     <Compile Include="Utility\PathHelper.cs" />
     <Compile Include="Utility\Run.cs" />
     <Compile Include="Utility\TaskHelper.cs" />
