@@ -88,7 +88,6 @@
     <Compile Include="Repositories\Query\Parts\ElasticFilterQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FacetQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FieldConditionsQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\IdentityQuery.cs" />
     <Compile Include="Repositories\Query\Parts\ParentQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SearchQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SelectedFieldsQuery.cs" />
