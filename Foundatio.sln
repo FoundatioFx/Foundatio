@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+VisualStudioVersion = 14.0.24627.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio", "src\Core\Foundatio.csproj", "{F5B6C2B5-485F-4A4B-8E00-D5F77676CD6E}"
 EndProject
@@ -33,6 +33,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.JobSample", "src\JobSample\Foundatio.JobSample.csproj", "{CA7CD628-686F-4821-879B-5A8158C3EBB1}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNET", "src\MetricsNET\Foundatio.MetricsNET.csproj", "{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Elasticsearch", "src\Elasticsearch\Foundatio.Elasticsearch.csproj", "{3BFBD4C1-3F2C-46A4-9400-2CB9803644BE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -80,6 +82,10 @@ Global
 		{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5758D1EE-7C9C-4B6C-998C-C895B10B9F24}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3BFBD4C1-3F2C-46A4-9400-2CB9803644BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3BFBD4C1-3F2C-46A4-9400-2CB9803644BE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3BFBD4C1-3F2C-46A4-9400-2CB9803644BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3BFBD4C1-3F2C-46A4-9400-2CB9803644BE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
