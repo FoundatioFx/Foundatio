@@ -73,7 +73,7 @@
       <Link>Extensions\TaskExtensions.cs</Link>
     </Compile>
     <Compile Include="Extensions\DateTimeExtensions.cs" />
-    <Compile Include="Repositories\Configuration\ElasticsearchConfiguration.cs" />
+    <Compile Include="Repositories\Configuration\ElasticsearchConfigurationBase.cs" />
     <Compile Include="Repositories\Configuration\IElasticsearchIndex.cs" />
     <Compile Include="Extensions\ElasticSearchExtensions.cs" />
     <Compile Include="Extensions\ElasticSearchIndexExtensions.cs" />
