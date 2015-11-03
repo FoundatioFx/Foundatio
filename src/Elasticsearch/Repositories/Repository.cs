@@ -98,7 +98,6 @@ namespace Foundatio.Repositories {
                 })
                 .Size(Context.BulkBatchSize);
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var documents = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.ToList();
             while (documents.Count > 0) {
                 recordsAffected += documents.Count;
@@ -106,7 +105,6 @@ namespace Foundatio.Repositories {
 
                 documents = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.ToList();
             }
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
 
             return recordsAffected;
         }
@@ -135,10 +133,7 @@ namespace Foundatio.Repositories {
                 foreach (var doc in documents)
                     await Context.Validator.ValidateAndThrowAsync(doc).AnyContext();
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var result = await Context.ElasticClient.IndexManyAsync(documents, GetParentIdFunc, GetDocumentIndexFunc).AnyContext();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
             if (!result.IsValid)
                 throw new ApplicationException(String.Join("\r\n", result.ItemsWithErrors.Select(i => i.Error)), result.ConnectionStatus.OriginalException);
 
@@ -161,10 +156,8 @@ namespace Foundatio.Repositories {
                 .Scroll("4s")
                 .Size(Context.BulkBatchSize);
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var scanResults = await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
+           
             // Check to see if no scroll id was returned. This will occur when the index doesn't exist.
             if (!scanResults.IsValid || String.IsNullOrEmpty(scanResults.ScrollId))
                 return 0;

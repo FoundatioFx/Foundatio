@@ -67,10 +67,7 @@ namespace Foundatio.Repositories {
             if (pagableQuery?.UseSnapshotPaging == true)
                 searchDescriptor.SearchType(SearchType.Scan).Scroll("2m");
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var response = await Context.ElasticClient.SearchAsync<TResult>(searchDescriptor).AnyContext();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
             if (!response.IsValid)
                 throw new ApplicationException($"Elasticsearch error code \"{response.ConnectionStatus.HttpStatusCode}\".", response.ConnectionStatus.OriginalException);
 
@@ -121,10 +118,7 @@ namespace Foundatio.Repositories {
                 return result;
 
             var searchDescriptor = CreateSearchDescriptor(query).Size(1);
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             result = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.FirstOrDefault();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
             await SetCachedQueryResultAsync(query, result).AnyContext();
 
             return result;
@@ -162,10 +156,7 @@ namespace Foundatio.Repositories {
             countDescriptor.IgnoreUnavailable();
             countDescriptor.Type(GetTypeName());
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var results = await Context.ElasticClient.CountAsync<T>(countDescriptor).AnyContext();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
             if (!results.IsValid)
                 throw new ApplicationException($"ElasticSearch error code \"{results.ConnectionStatus.HttpStatusCode}\".", results.ConnectionStatus.OriginalException);
 
@@ -191,13 +182,11 @@ namespace Foundatio.Repositories {
             if (result != null)
                 return result;
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             if (GetParentIdFunc == null) // we don't have the parent id
                 result = (await Context.ElasticClient.GetAsync<T>(id, GetIndexById(id)).AnyContext()).Source;
             else
                 result = await FindOneAsync(NewQuery().WithId(id)).AnyContext();
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
+            
             if (IsCacheEnabled && result != null && useCache)
                 await Cache.SetAsync(id, result, expiresIn ?? TimeSpan.FromSeconds(RepositoryConstants.DEFAULT_CACHE_EXPIRATION_SECONDS)).AnyContext();
 
@@ -229,12 +218,10 @@ namespace Foundatio.Repositories {
                 foreach (var id in itemsToFind)
                     multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id)));
 
-                if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
                 foreach (var doc in (await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext()).Documents.Where(doc => doc.Found)) {
                     results.Documents.Add(doc.Source as T);
                     itemsToFind.Remove(doc.Id);
                 }
-                if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
             }
 
             // fallback to doing a find
@@ -267,11 +254,8 @@ namespace Foundatio.Repositories {
             if (GetAllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => GetAllowedFacetFields.Contains(f.Field)))
                 throw new ArgumentException("All facet fields must be allowed.", nameof(query));
 
-            if (Context.EnableTracing) Context.ElasticClient.EnableTrace();
             var search = CreateSearchDescriptor(query).SearchType(SearchType.Count);
             var res = await Context.ElasticClient.SearchAsync<T>(search);
-            if (Context.EnableTracing) Context.ElasticClient.DisableTrace();
-
             if (!res.IsValid) {
                 Logger.Error().Message("Retrieving term stats failed: {0}", res.ServerError.Error).Write();
                 throw new ApplicationException("Retrieving term stats failed.");

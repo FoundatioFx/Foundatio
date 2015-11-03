@@ -15,7 +15,6 @@ namespace Foundatio.Repositories {
         }
 
         public IElasticClient ElasticClient { get; }
-        public bool EnableTracing { get; }
         public ElasticsearchConfiguration Configuration { get; }
         public IValidator<T> Validator { get; }
         public ICacheClient Cache { get; }
