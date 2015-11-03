@@ -4,7 +4,7 @@ using Foundatio.Elasticsearch.Configuration;
 using Foundatio.Messaging;
 using Nest;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Elasticsearch.Repositories {
     public class RepositoryContext<T> where T : class {
         public RepositoryContext(ICacheClient cache, IElasticClient elasticClient, ElasticsearchConfigurationBase configuration, IMessagePublisher messagePublisher, IValidator<T> validator) {
             Cache = cache;

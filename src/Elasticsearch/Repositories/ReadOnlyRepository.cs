@@ -5,16 +5,17 @@ using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
-using Foundatio.Elasticsearch.Repositories;
 using Foundatio.Elasticsearch.Repositories.Queries;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Repositories;
 using Foundatio.Repositories.Models;
 using Foundatio.Repositories.Queries;
 using Nest;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Elasticsearch.Repositories {
     public abstract class ReadOnlyRepository<T> : IElasticsearchReadOnlyRepository<T> where T : class, new() {
+        protected readonly static string EntityType = typeof(T).Name;
         protected readonly static bool SupportsSoftDeletes = typeof(ISupportSoftDeletes).IsAssignableFrom(typeof(T));
         protected readonly static bool HasIdentity = typeof(IIdentity).IsAssignableFrom(typeof(T));
         protected readonly RepositoryContext<T> Context;
@@ -34,7 +35,7 @@ namespace Foundatio.Repositories {
 
             var pagableQuery = query as IPagableQuery;
             // don't use caching with snapshot paging.
-            bool allowCaching = pagableQuery == null || pagableQuery.UseSnapshotPaging == false;
+            bool allowCaching = IsCacheEnabled && (pagableQuery == null || pagableQuery.UseSnapshotPaging == false);
 
             Func<FindResults<TResult>, Task<FindResults<TResult>>> getNextPageFunc = async r => {
                 if (!String.IsNullOrEmpty(r.ScrollId)) {
@@ -113,14 +114,16 @@ namespace Foundatio.Repositories {
         protected async Task<T> FindOneAsync(object query) {
             if (query == null)
                 throw new ArgumentNullException(nameof(query));
-
-            var result = await GetCachedQueryResultAsync<T>(query).AnyContext();
+            
+            var result = IsCacheEnabled ? await GetCachedQueryResultAsync<T>(query).AnyContext() : null;
             if (result != null)
                 return result;
 
             var searchDescriptor = CreateSearchDescriptor(query).Size(1);
             result = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.FirstOrDefault();
-            await SetCachedQueryResultAsync(query, result).AnyContext();
+
+            if (IsCacheEnabled)
+                await SetCachedQueryResultAsync(query, result).AnyContext();
 
             return result;
         }
@@ -146,7 +149,7 @@ namespace Foundatio.Repositories {
             if (query == null)
                 throw new ArgumentNullException(nameof(query));
 
-            var result = await GetCachedQueryResultAsync<long?>(query, "count-").AnyContext();
+            var result = IsCacheEnabled ? await GetCachedQueryResultAsync<long?>(query, "count-").AnyContext() : null;
             if (result != null)
                 return result.Value;
 
@@ -161,11 +164,10 @@ namespace Foundatio.Repositories {
             if (!results.IsValid)
                 throw new ApplicationException($"ElasticSearch error code \"{results.ConnectionStatus.HttpStatusCode}\".", results.ConnectionStatus.OriginalException);
 
-            result = results.Count;
+            if (IsCacheEnabled)
+                await SetCachedQueryResultAsync(query, results.Count, "count-").AnyContext();
 
-            await SetCachedQueryResultAsync(query, result, "count-").AnyContext();
-
-            return result.Value;
+            return results.Count;
         }
 
         public async Task<long> CountAsync() {
@@ -307,7 +309,7 @@ namespace Foundatio.Repositories {
 
         protected virtual string[] GetAllowedFacetFields => new string[] { };
         protected virtual string[] GetAllowedSortFields => new string[] { };
-        protected virtual string GetTypeName() => typeof(T).Name;
+        protected virtual string GetTypeName() => EntityType;
         protected virtual string[] DefaultExcludes => new string[] { };
         protected virtual Func<T, string> GetParentIdFunc { get; set; }
         protected virtual Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
@@ -318,11 +320,11 @@ namespace Foundatio.Repositories {
         }
 
         protected virtual string GetIndexById(string id) => null;
-
+        
         protected ElasticQuery NewQuery() {
             return new ElasticQuery();
         }
-
+        
         protected virtual async Task InvalidateCacheAsync(ICollection<ModifiedDocument<T>> documents) {
             if (!IsCacheEnabled)
                 return;
@@ -338,7 +340,7 @@ namespace Foundatio.Repositories {
                     await Cache.RemoveAllAsync(keys).AnyContext();
             }
         }
-
+        
         public Task InvalidateCacheAsync(T document) {
             return InvalidateCacheAsync(new[] { document });
         }
@@ -382,7 +384,7 @@ namespace Foundatio.Repositories {
             if (sortableQuery?.SortBy.Count > 0)
                 foreach (var sort in sortableQuery.SortBy.Where(s => CanSortByField(s.Field)))
                     search.Sort(s => s.OnField(sort.Field)
-                        .Order(sort.Order == Models.SortOrder.Ascending ? Nest.SortOrder.Ascending : Nest.SortOrder.Descending));
+                        .Order(sort.Order == Foundatio.Repositories.Models.SortOrder.Ascending ? Nest.SortOrder.Ascending : Nest.SortOrder.Descending));
 
             if (facetQuery?.FacetFields.Count > 0) {
                 if (GetAllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => GetAllowedFacetFields.Contains(f.Field)))

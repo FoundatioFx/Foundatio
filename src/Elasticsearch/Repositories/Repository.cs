@@ -10,12 +10,12 @@ using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Repositories;
 using Foundatio.Repositories.Models;
 using Foundatio.Utility;
 
-namespace Foundatio.Repositories {
+namespace Foundatio.Elasticsearch.Repositories {
     public abstract class Repository<T> : ReadOnlyRepository<T>, IRepository<T> where T : class, IIdentity, new() {
-        protected readonly static string EntityType = typeof(T).Name;
         protected readonly static bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
         protected readonly static bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
