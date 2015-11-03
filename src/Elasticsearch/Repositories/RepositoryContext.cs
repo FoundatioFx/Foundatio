@@ -6,18 +6,18 @@ using Nest;
 
 namespace Foundatio.Repositories {
     public class RepositoryContext<T> where T : class {
-        public RepositoryContext(IElasticClient elasticClient, ElasticsearchConfiguration configuration, ICacheClient cache, IMessagePublisher messagePublisher, IValidator<T> validator) {
+        public RepositoryContext(ICacheClient cache, IElasticClient elasticClient, ElasticsearchConfigurationBase configuration, IMessagePublisher messagePublisher, IValidator<T> validator) {
+            Cache = cache;
             ElasticClient = elasticClient;
             Configuration = configuration;
             Validator = validator;
-            Cache = cache;
             MessagePublisher = messagePublisher;
         }
 
-        public IElasticClient ElasticClient { get; }
-        public ElasticsearchConfiguration Configuration { get; }
-        public IValidator<T> Validator { get; }
         public ICacheClient Cache { get; }
+        public IElasticClient ElasticClient { get; }
+        public ElasticsearchConfigurationBase Configuration { get; }
+        public IValidator<T> Validator { get; }
         public IMessagePublisher MessagePublisher { get; }
         public int BulkBatchSize { get; set; } = 1000;
     }

@@ -12,36 +12,35 @@ using Foundatio.Queues;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Configuration {
-    public class ElasticsearchConfiguration {
-        private readonly IQueue<WorkItemData> _workItemQueue;
-        private readonly ILockProvider _lockProvider;
-        private IDictionary<Type, string> _indexMap;
+    public abstract class ElasticsearchConfigurationBase {
+        protected readonly IQueue<WorkItemData> _workItemQueue;
+        protected readonly ILockProvider _lockProvider;
+        protected IDictionary<Type, string> _indexMap;
 
-        public ElasticsearchConfiguration(IQueue<WorkItemData> workItemQueue, ICacheClient cacheClient) {
+        public ElasticsearchConfigurationBase(IQueue<WorkItemData> workItemQueue, ICacheClient cacheClient) {
             _workItemQueue = workItemQueue;
             _lockProvider = new ThrottlingLockProvider(cacheClient, 1, TimeSpan.FromMinutes(1));
         }
 
-        public IElasticClient GetClient(IEnumerable<Uri> serverUris) {
-            var connectionPool = new StaticConnectionPool(serverUris);
+        public virtual IElasticClient GetClient(IEnumerable<Uri> serverUris) {
             var indexes = GetIndexes().ToList();
             _indexMap = indexes.SelectMany(idx => idx.GetIndexTypes()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Name);
-            var settings = new ConnectionSettings(connectionPool)
-                .MapDefaultTypeIndices(t => t.AddRange(indexes.ToTypeIndices()))
-                .MapDefaultTypeNames(t => {
-                    t.AddRange(indexes.SelectMany(idx => idx.GetIndexTypes().ToDictionary(k => k.Key, k => k.Value.Name)));
-                })
-                .SetDefaultTypeNameInferrer(p => p.Name.ToLowerUnderscoredWords())
-                .SetDefaultPropertyNameInferrer(p => p.ToLowerUnderscoredWords());
-            var client = new ElasticClient(settings, new KeepAliveHttpConnection(settings));
-
-            ConfigureIndexes(client);
-
+            
+            var client = new ElasticClient(GetConnectionSettings(serverUris, indexes));
+            ConfigureIndexes(client, indexes);
             return client;
         }
 
-        public void ConfigureIndexes(IElasticClient client) {
-            var indexes = GetIndexes();
+        protected virtual ConnectionSettings GetConnectionSettings(IEnumerable<Uri> serverUris, IEnumerable<IElasticsearchIndex> indexes) {
+            var connectionPool = new StaticConnectionPool(serverUris);
+            return new ConnectionSettings(connectionPool)
+                .MapDefaultTypeIndices(t => t.AddRange(indexes.ToTypeIndices()))
+                .MapDefaultTypeNames(t => {
+                    t.AddRange(indexes.SelectMany(idx => idx.GetIndexTypes().ToDictionary(k => k.Key, k => k.Value.Name)));
+                });
+        }
+
+        protected virtual void ConfigureIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes) {
             foreach (var index in indexes) {
                 var idx = index;
                 int currentVersion = GetAliasVersion(client, idx.AliasName);
@@ -83,18 +82,13 @@ namespace Foundatio.Elasticsearch.Configuration {
             }
         }
 
-        public string GetIndexAliasForType(Type entityType) {
+        protected string GetIndexAliasForType(Type entityType) {
             return _indexMap.ContainsKey(entityType) ? _indexMap[entityType] : null;
         }
 
-        public IEnumerable<IElasticsearchIndex> GetIndexes() {
-            return new IElasticsearchIndex[] {
-                new OrganizationIndex(),
-                new ContactIndex()
-            };
-        }
+        protected abstract IEnumerable<IElasticsearchIndex> GetIndexes();
 
-        public int GetAliasVersion(IElasticClient client, string alias) {
+        protected virtual int GetAliasVersion(IElasticClient client, string alias) {
             var res = client.GetAlias(a => a.Alias(alias));
             if (!res.Indices.Any())
                 return -1;
