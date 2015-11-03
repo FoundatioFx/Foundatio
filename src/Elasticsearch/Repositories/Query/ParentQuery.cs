@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public class ParentQuery : IIdentityQuery, IOrganizationIdQuery, IDateRangeQuery,
         IFieldConditionsQuery, ISearchQuery, IContactIdQuery, ITypeQuery {
         public ParentQuery() {

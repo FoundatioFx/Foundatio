@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using Foundatio.Repositories.Models;
+using Foundatio.Repositories.Queries;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public class Query : IIdentityQuery, ICachableQuery, IDateRangeQuery,
         IFieldConditionsQuery, IPagableQuery, ISearchQuery, IFacetQuery,
         ISelectedFieldsQuery, ISortableQuery, IParentQuery, IChildQuery {

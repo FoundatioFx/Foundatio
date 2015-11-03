@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Foundatio.Repositories.Queries;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IFacetQuery {
         List<FacetField> FacetFields { get; }
     }

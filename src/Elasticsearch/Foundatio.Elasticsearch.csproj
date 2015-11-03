@@ -77,6 +77,7 @@
     <Compile Include="Extensions\ElasticSearchExtensions.cs" />
     <Compile Include="Extensions\ElasticSearchIndexExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Repositories\IElasticsearchReadOnlyRepository.cs" />
     <Compile Include="Repositories\Query\ChildQuery.cs" />
     <Compile Include="Repositories\Query\ElasticQuery.cs" />
     <Compile Include="Repositories\Query\ParentQuery.cs" />
@@ -87,12 +88,10 @@
     <Compile Include="Repositories\Query\Parts\FacetQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FieldConditionsQuery.cs" />
     <Compile Include="Repositories\Query\Parts\IdentityQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\PagableQuery.cs" />
     <Compile Include="Repositories\Query\Parts\ParentQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SearchQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SelectedFieldsQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SoftDeletesQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\SortableQuery.cs" />
     <Compile Include="Repositories\Query\Parts\TypeQuery.cs" />
     <Compile Include="Repositories\Query\Query.cs" />
     <Compile Include="Repositories\Query\QueryBuilder.cs" />

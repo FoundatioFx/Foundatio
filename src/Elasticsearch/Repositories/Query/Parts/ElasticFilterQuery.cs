@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IElasticFilterQuery {
         FilterContainer ElasticFilter { get; set; }
     }

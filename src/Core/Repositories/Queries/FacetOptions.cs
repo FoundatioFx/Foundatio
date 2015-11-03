@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Repositories.Queries {
     public class FacetOptions {
         public static FacetOptions Empty = new FacetOptions();
 

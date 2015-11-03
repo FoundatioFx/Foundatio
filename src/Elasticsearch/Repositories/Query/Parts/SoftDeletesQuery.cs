@@ -1,4 +1,6 @@
-﻿namespace Foundatio.Elasticsearch.Repositories {
+﻿using System;
+
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface ISoftDeletesQuery {
         bool IncludeSoftDeletes { get; set; }
     }

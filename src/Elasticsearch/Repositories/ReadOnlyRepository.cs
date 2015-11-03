@@ -5,12 +5,12 @@ using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Elasticsearch.Repositories.Queries;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Repositories.Models;
 using Foundatio.Repositories.Queries;
 using Nest;
-using Foundatio.Elasticsearch.Repositories;
 
 namespace Foundatio.Repositories {
     public abstract class ReadOnlyRepository<T> : IReadOnlyRepository<T> where T : class, new() {
@@ -396,11 +396,11 @@ namespace Foundatio.Repositories {
             if (sortableQuery?.SortBy.Count > 0)
                 foreach (var sort in sortableQuery.SortBy.Where(s => CanSortByField(s.Field)))
                     search.Sort(s => s.OnField(sort.Field)
-                        .Order(sort.Order == SortOrder.Ascending ? Nest.SortOrder.Ascending : Nest.SortOrder.Descending));
+                        .Order(sort.Order == Models.SortOrder.Ascending ? Nest.SortOrder.Ascending : Nest.SortOrder.Descending));
 
             if (facetQuery?.FacetFields.Count > 0) {
                 if (GetAllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => GetAllowedFacetFields.Contains(f.Field)))
-                    throw new ArgumentException("All facet fields must be allowed.", "fields");
+                    throw new InvalidOperationException("All facet fields must be allowed.");
                 search.Aggregations(agg => facetQuery.GetAggregationDescriptor<T>());
             }
 

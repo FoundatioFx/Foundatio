@@ -2,7 +2,7 @@
 using System.Linq;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public static class QueryBuilder {
         public static QueryContainer GetElasticSearchQuery(this object query, bool supportSoftDeletes = false) {
             QueryContainer container = new MatchAllQuery();

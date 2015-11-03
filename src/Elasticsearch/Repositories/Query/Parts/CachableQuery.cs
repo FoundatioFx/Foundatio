@@ -1,7 +1,7 @@
 ﻿using System;
 using Foundatio.Repositories;
 
-namespace Foundatio.Elasticsearch.Repositories {
+namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface ICachableQuery {
         string CacheKey { get; set; }
         TimeSpan? ExpiresIn { get; set; }
