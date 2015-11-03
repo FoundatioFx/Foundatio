@@ -104,6 +104,26 @@ namespace Foundatio.Tests.Caching {
             }
         }
         
+        public virtual async Task CanAdd() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                string key = "type-id";
+                Assert.False(await cache.ExistsAsync(key));
+                Assert.True(await cache.AddAsync(key, true));
+                Assert.True(await cache.ExistsAsync(key));
+                
+                Assert.True(await cache.AddAsync(key + ":1", true, TimeSpan.FromMinutes(1)));
+                Assert.True(await cache.ExistsAsync(key + ":1"));
+
+                Assert.False(await cache.AddAsync(key, true, TimeSpan.FromMinutes(1)));
+            }
+        }
+
         public virtual async Task CanAddConncurrently() {
             var cache = GetCacheClient();
             if (cache == null)
@@ -115,7 +135,7 @@ namespace Foundatio.Tests.Caching {
                 var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                 long adds = 0;
                 await Run.InParallel(5, async i => {
-                    if (await cache.AddAsync(cacheKey, i))
+                    if (await cache.AddAsync(cacheKey, i, TimeSpan.FromMinutes(1)))
                         Interlocked.Increment(ref adds);
                 });
 
