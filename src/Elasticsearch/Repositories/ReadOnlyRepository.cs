@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Elasticsearch.Repositories;
 using Foundatio.Elasticsearch.Repositories.Queries;
 using Foundatio.Extensions;
 using Foundatio.Logging;
@@ -13,7 +14,7 @@ using Foundatio.Repositories.Queries;
 using Nest;
 
 namespace Foundatio.Repositories {
-    public abstract class ReadOnlyRepository<T> : IReadOnlyRepository<T> where T : class, new() {
+    public abstract class ReadOnlyRepository<T> : IElasticsearchReadOnlyRepository<T> where T : class, new() {
         protected readonly static bool SupportsSoftDeletes = typeof(ISupportSoftDeletes).IsAssignableFrom(typeof(T));
         protected readonly static bool HasIdentity = typeof(IIdentity).IsAssignableFrom(typeof(T));
         protected readonly RepositoryContext<T> Context;
