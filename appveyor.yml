@@ -34,6 +34,8 @@ before_test:
 deploy:
   - provider: Environment
     name: NuGet
+    on:
+      branch: master
 
 notifications:
   - provider: Slack
