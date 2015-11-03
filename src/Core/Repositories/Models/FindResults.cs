@@ -20,7 +20,8 @@ namespace Foundatio.Repositories.Models {
         public string ScrollId { get; set; }
         public int Page { get; set; } = 1;
         public bool HasMore { get; set; }
-        internal Func<FindResults<T>, Task<FindResults<T>>> GetNextPageFunc { get; set; }
+        // TODO: Internalize this
+        public Func<FindResults<T>, Task<FindResults<T>>> GetNextPageFunc { get; set; }
         public async Task<bool> NextPageAsync() {
             Documents.Clear();
 
