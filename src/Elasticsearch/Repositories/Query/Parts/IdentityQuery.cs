@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace Foundatio.Repositories.Queries {
+namespace Foundatio.Elasticsearch.Repositories {
     public interface IIdentityQuery {
         List<string> Ids { get; }
     }

@@ -19,5 +19,6 @@ namespace Foundatio.Repositories {
         public IValidator<T> Validator { get; }
         public ICacheClient Cache { get; }
         public IMessagePublisher MessagePublisher { get; }
+        public int BulkBatchSize { get; set; } = 1000;
     }
 }

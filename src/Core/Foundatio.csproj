@@ -125,6 +125,7 @@
     <Compile Include="Repositories\Models\FacetResult.cs" />
     <Compile Include="Repositories\Models\FindResults.cs" />
     <Compile Include="Repositories\Models\NumberDictionary.cs" />
+    <Compile Include="Repositories\Queries\FacetOptions.cs" />
     <Compile Include="Repositories\Queries\IdentityQuery.cs" />
     <Compile Include="Repositories\Models\IHaveDates.cs" />
     <Compile Include="Repositories\Models\IIdentity.cs" />

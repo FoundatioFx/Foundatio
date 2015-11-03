@@ -96,7 +96,7 @@ namespace Foundatio.Repositories {
 
                     return s;
                 })
-                .Size(Settings.Current.BulkBatchSize);
+                .Size(Context.BulkBatchSize);
 
             Context.ElasticClient.EnableTrace();
             var documents = (await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext()).Documents.ToList();
@@ -158,7 +158,7 @@ namespace Foundatio.Repositories {
                 .Source(s => s.Include(f => f.Id))
                 .SearchType(SearchType.Scan)
                 .Scroll("4s")
-                .Size(Settings.Current.BulkBatchSize);
+                .Size(Context.BulkBatchSize);
 
             Context.ElasticClient.EnableTrace();
             var scanResults = await Context.ElasticClient.SearchAsync<T>(searchDescriptor).AnyContext();

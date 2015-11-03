@@ -10,7 +10,7 @@ using Foundatio.Logging;
 using Foundatio.Repositories.Models;
 using Foundatio.Repositories.Queries;
 using Nest;
-using SortOrder = System.Data.SqlClient.SortOrder;
+using Foundatio.Elasticsearch.Repositories;
 
 namespace Foundatio.Repositories {
     public abstract class ReadOnlyRepository<T> : IReadOnlyRepository<T> where T : class, new() {
