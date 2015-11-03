@@ -81,6 +81,7 @@
     <Compile Include="Extensions\ElasticSearchIndexExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Repositories\IElasticsearchReadOnlyRepository.cs" />
+    <Compile Include="Repositories\MigrationsRepository.cs" />
     <Compile Include="Repositories\Query\ChildQuery.cs" />
     <Compile Include="Repositories\Query\ElasticQuery.cs" />
     <Compile Include="Repositories\Query\ParentQuery.cs" />
