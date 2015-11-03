@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Foundatio.Caching;
+using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Repositories.Models;
