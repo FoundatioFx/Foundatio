@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Elasticsearch.Net.ConnectionPool;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Elasticsearch.Jobs;
+using Foundatio.Elasticsearch.Repositories.Configuration;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
@@ -25,38 +27,57 @@ namespace Foundatio.Elasticsearch.Configuration {
 
         public virtual IElasticClient GetClient(IEnumerable<Uri> serverUris) {
             var indexes = GetIndexes().ToList();
-            _indexMap = indexes.SelectMany(idx => idx.GetIndexTypes()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Name);
-            
-            var client = new ElasticClient(GetConnectionSettings(serverUris, indexes));
+            _indexMap = indexes.ToIndexTypeNames();
+
+            var settings = GetConnectionSettings(serverUris, indexes);
+            var client = new ElasticClient(settings, new KeepAliveHttpConnection(settings));
             ConfigureIndexes(client, indexes);
             return client;
         }
 
         protected virtual ConnectionSettings GetConnectionSettings(IEnumerable<Uri> serverUris, IEnumerable<IElasticsearchIndex> indexes) {
-            var connectionPool = new StaticConnectionPool(serverUris);
-            return new ConnectionSettings(connectionPool)
+            return new ConnectionSettings(new StaticConnectionPool(serverUris))
                 .MapDefaultTypeIndices(t => t.AddRange(indexes.ToTypeIndices()))
-                .MapDefaultTypeNames(t => {
-                    t.AddRange(indexes.SelectMany(idx => idx.GetIndexTypes().ToDictionary(k => k.Key, k => k.Value.Name)));
-                });
+                .MapDefaultTypeNames(t => t.AddRange(indexes.ToIndexTypeNames()));
         }
 
-        protected virtual void ConfigureIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes) {
-            foreach (var index in indexes) {
-                var idx = index;
-                int currentVersion = GetAliasVersion(client, idx.AliasName);
-                bool newIndexExists = client.IndexExists(idx.VersionedName).Exists;
+        public virtual void ConfigureIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes = null) {
+            if (indexes == null)
+                indexes = GetIndexes();
 
+            foreach (var idx in indexes) {
+                int currentVersion = GetAliasVersion(client, idx.AliasName);
+
+                IIndicesOperationResponse response = null;
+                var templatedIndex = idx as ITemplatedElasticsearchIndex;
+                if (templatedIndex != null)
+                    response = client.PutTemplate(idx.VersionedName, template => templatedIndex.CreateTemplate(template).AddAlias(idx.AliasName));
+                else if (!client.IndexExists(idx.VersionedName).Exists)
+                    response = client.CreateIndex(idx.VersionedName, descriptor => idx.CreateIndex(descriptor).AddAlias(idx.AliasName));
+
+                Debug.Assert(response == null || response.IsValid, response?.ServerError != null ? response.ServerError.Error : "An error occurred creating the index or template.");
+                
+                bool newIndexExists = client.IndexExists(idx.VersionedName).Exists;
                 if (!newIndexExists)
                     client.CreateIndex(idx.VersionedName, idx.CreateIndex);
+                
+                // Add existing indexes to the alias.
+                if (!client.AliasExists(idx.AliasName).Exists) {
+                    if (templatedIndex != null) {
+                        var indices = client.IndicesStats().Indices.Where(kvp => kvp.Key.StartsWith(idx.VersionedName)).Select(kvp => kvp.Key).ToList();
+                        if (indices.Count > 0) {
+                            var descriptor = new AliasDescriptor();
+                            foreach (string name in indices)
+                                descriptor.Add(add => add.Index(name).Alias(idx.AliasName));
 
-                if (!client.AliasExists(idx.AliasName).Exists)
-                    client.Alias(a => a
-                        .Add(add => add
-                            .Index(idx.VersionedName)
-                            .Alias(idx.AliasName)
-                        )
-                    );
+                            response = client.Alias(descriptor);
+                        }
+                    } else {
+                        response = client.Alias(a => a.Add(add => add.Index(idx.VersionedName).Alias(idx.AliasName)));
+                    }
+
+                    Debug.Assert(response != null && response.IsValid, response?.ServerError != null ? response.ServerError.Error : "An error occurred creating the alias.");
+                }
 
                 // already on current version
                 if (currentVersion >= idx.Version || currentVersion < 1)
@@ -80,6 +101,24 @@ namespace Foundatio.Elasticsearch.Configuration {
 
                 // enqueue reindex to new version
                 _lockProvider.TryUsingAsync("enqueue-reindex", () => _workItemQueue.EnqueueAsync(reindexWorkItem), TimeSpan.Zero, CancellationToken.None).Wait();
+            }
+        }
+
+        public virtual void DeleteIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes = null) {
+            if (indexes == null)
+                indexes = GetIndexes();
+
+            var deleteResponse = client.DeleteIndex(i => i.AllIndices());
+            Debug.Assert(deleteResponse.IsValid, deleteResponse.ServerError != null ? deleteResponse.ServerError.Error : "An error occurred deleting the indexes.");
+
+            foreach (var idx in indexes) {
+                var templatedIndex = idx as ITemplatedElasticsearchIndex;
+                if (templatedIndex != null) {
+                    if (client.TemplateExists(idx.VersionedName).Exists) {
+                        var response = client.DeleteTemplate(idx.VersionedName);
+                        Debug.Assert(response.IsValid, response.ServerError != null ? response.ServerError.Error : "An error occurred deleting the index template.");
+                    }
+                }
             }
         }
 

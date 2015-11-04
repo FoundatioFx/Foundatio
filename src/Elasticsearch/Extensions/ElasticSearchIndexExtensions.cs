@@ -12,6 +12,10 @@ namespace Foundatio.Elasticsearch.Extensions {
             return indexes.SelectMany(idx => idx.GetIndexTypes().Select(kvp => new KeyValuePair<Type, string>(kvp.Key, idx.AliasName)));
         }
 
+        public static IDictionary<Type, string> ToIndexTypeNames(this IEnumerable<IElasticsearchIndex> indexes) {
+            return indexes.SelectMany(idx => idx.GetIndexTypes()).ToDictionary(k => k.Key, k => k.Value.Name);
+        }
+
         public static ICollection<FacetResult> ToFacetResults<T>(this ISearchResponse<T> res) where T : class {
             var result = new List<FacetResult>();
             if (res.Aggregations == null || res.Aggregations.Count == 0)

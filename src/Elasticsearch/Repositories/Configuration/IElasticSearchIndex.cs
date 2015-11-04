@@ -11,6 +11,10 @@ namespace Foundatio.Elasticsearch.Configuration {
         CreateIndexDescriptor CreateIndex(CreateIndexDescriptor idx);
     }
 
+    public interface ITemplatedElasticsearchIndex : IElasticsearchIndex {
+        PutTemplateDescriptor CreateTemplate(PutTemplateDescriptor template);
+    }
+
     public class IndexType {
         public string Name { get; set; }
         public string ParentPath { get; set; }

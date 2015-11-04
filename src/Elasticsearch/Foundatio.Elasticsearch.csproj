@@ -77,8 +77,8 @@
     <Compile Include="Jobs\ReindexWorkItemHandler.cs" />
     <Compile Include="Repositories\Configuration\ElasticsearchConfigurationBase.cs" />
     <Compile Include="Repositories\Configuration\IElasticsearchIndex.cs" />
-    <Compile Include="Extensions\ElasticSearchExtensions.cs" />
-    <Compile Include="Extensions\ElasticSearchIndexExtensions.cs" />
+    <Compile Include="Extensions\ElasticsearchExtensions.cs" />
+    <Compile Include="Extensions\ElasticsearchIndexExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Repositories\IElasticsearchReadOnlyRepository.cs" />
     <Compile Include="Repositories\MigrationsRepository.cs" />
