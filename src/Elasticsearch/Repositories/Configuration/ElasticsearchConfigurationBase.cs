@@ -107,18 +107,23 @@ namespace Foundatio.Elasticsearch.Configuration {
         public virtual void DeleteIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes = null) {
             if (indexes == null)
                 indexes = GetIndexes();
-
-            var deleteResponse = client.DeleteIndex(i => i.AllIndices());
-            Debug.Assert(deleteResponse.IsValid, deleteResponse.ServerError != null ? deleteResponse.ServerError.Error : "An error occurred deleting the indexes.");
-
+            
             foreach (var idx in indexes) {
+                IIndicesResponse deleteResponse;
+
                 var templatedIndex = idx as ITemplatedElasticsearchIndex;
                 if (templatedIndex != null) {
+                    deleteResponse = client.DeleteIndex(idx.VersionedName + "-*");
+
                     if (client.TemplateExists(idx.VersionedName).Exists) {
                         var response = client.DeleteTemplate(idx.VersionedName);
                         Debug.Assert(response.IsValid, response.ServerError != null ? response.ServerError.Error : "An error occurred deleting the index template.");
                     }
+                } else {
+                    deleteResponse = client.DeleteIndex(idx.VersionedName);
                 }
+
+                Debug.Assert(deleteResponse.IsValid, deleteResponse.ServerError != null ? deleteResponse.ServerError.Error : "An error occurred deleting the indexes.");
             }
         }
 
