@@ -80,6 +80,7 @@
     <Compile Include="Extensions\ElasticsearchExtensions.cs" />
     <Compile Include="Extensions\ElasticsearchIndexExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Repositories\Configuration\KeepAliveHttpConnection.cs" />
     <Compile Include="Repositories\IElasticsearchReadOnlyRepository.cs" />
     <Compile Include="Repositories\MigrationsRepository.cs" />
     <Compile Include="Repositories\Query\ChildQuery.cs" />
