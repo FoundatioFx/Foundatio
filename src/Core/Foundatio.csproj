@@ -137,6 +137,7 @@
     <Compile Include="Repositories\IReadOnlyRepository.cs" />
     <Compile Include="Repositories\IRepository.cs" />
     <Compile Include="Repositories\Models\ISupportSoftDeletes.cs" />
+    <Compile Include="Repositories\Queries\IQueryBuilder.cs" />
     <Compile Include="Repositories\Queries\PagableQuery.cs" />
     <Compile Include="Repositories\Models\PagingOptions.cs" />
     <Compile Include="Repositories\Queries\SoftDeletesQuery.cs" />

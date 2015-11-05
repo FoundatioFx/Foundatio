@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Foundatio.Repositories.Queries;
+using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IFacetQuery {
@@ -32,6 +33,17 @@ namespace Foundatio.Elasticsearch.Repositories.Queries {
             if (facets != null)
                 query.FacetFields.AddRange(facets.Fields);
             return query;
+        }
+
+        public static AggregationDescriptor<T> GetAggregationDescriptor<T>(this IFacetQuery query) where T : class {
+            if (query.FacetFields.Count == 0)
+                return null;
+
+            var descriptor = new AggregationDescriptor<T>();
+            foreach (var t in query.FacetFields)
+                descriptor = descriptor.Terms(t.Field, s => s.Field(t.Field).Size(t.Size ?? 100));
+
+            return descriptor;
         }
     }
 }
