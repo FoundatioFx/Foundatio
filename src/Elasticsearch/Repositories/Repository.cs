@@ -7,6 +7,7 @@ using Nest;
 using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Elasticsearch.Repositories.Queries;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
@@ -15,7 +16,7 @@ using Foundatio.Repositories.Models;
 using Foundatio.Utility;
 
 namespace Foundatio.Elasticsearch.Repositories {
-    public abstract class Repository<T> : ReadOnlyRepository<T>, IRepository<T> where T : class, IIdentity, new() {
+    public abstract class Repository<T, TQueryBuilder> : ReadOnlyRepository<T, TQueryBuilder>, IRepository<T> where T : class, IIdentity, new() where TQueryBuilder : Query, new() {
         protected readonly static bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
         protected readonly static bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
@@ -79,12 +80,12 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (IsCacheEnabled)
                 await Cache.RemoveAllAsync().AnyContext();
 
-            await RemoveAllAsync(new object(), false).AnyContext();
+            await RemoveAllAsync(NewQuery(), false).AnyContext();
         }
 
         protected List<string> RemoveAllIncludedFields { get; } = new List<string>();
 
-        protected async Task<long> RemoveAllAsync(object query, bool sendNotifications = true) {
+        protected async Task<long> RemoveAllAsync(TQueryBuilder query, bool sendNotifications = true) {
             if (query == null)
                 throw new ArgumentNullException(nameof(query));
 
@@ -145,7 +146,7 @@ namespace Foundatio.Elasticsearch.Repositories {
             await OnDocumentsSavedAsync(documents, originalDocuments, sendNotifications).AnyContext();
         }
         
-        protected async Task<long> UpdateAllAsync(object query, object update, bool sendNotifications = true) {
+        protected async Task<long> UpdateAllAsync(TQueryBuilder query, object update, bool sendNotifications = true) {
             long recordsAffected = 0;
 
             var searchDescriptor = CreateSearchDescriptor(query)
@@ -206,9 +207,9 @@ namespace Foundatio.Elasticsearch.Repositories {
             documents.EnsureIds(GetDocumentIdFunc);
 
             if (HasDates)
-                documents.Cast<IHaveDates>().SetDates();
+                documents.OfType<IHaveDates>().SetDates();
             else if (HasCreatedDate)
-                documents.Cast<IHaveCreatedDate>().SetCreatedDates();
+                documents.OfType<IHaveCreatedDate>().SetCreatedDates();
 
             if (DocumentsAdding != null)
                 await DocumentsAdding.InvokeAsync(this, new DocumentsEventArgs<T>(documents, this)).AnyContext();

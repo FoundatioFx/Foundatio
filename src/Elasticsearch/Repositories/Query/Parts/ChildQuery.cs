@@ -25,25 +25,5 @@ namespace Foundatio.Elasticsearch.Repositories.Queries {
 
             return query;
         }
-
-        public static ElasticQuery WithChildQuery<T>(this ElasticQuery query, Func<T, T> childQueryFunc) where T : class, ITypeQuery, new() {
-            if (childQueryFunc == null)
-                throw new ArgumentNullException(nameof(childQueryFunc));
-
-            var childQuery = query.ChildQuery as T ?? new T();
-            query.ChildQuery = childQueryFunc(childQuery);
-
-            return query;
-        }
-
-        public static ElasticQuery WithChildQuery(this ElasticQuery query, Func<ChildQuery, ChildQuery> childQueryFunc) {
-            if (childQueryFunc == null)
-                throw new ArgumentNullException(nameof(childQueryFunc));
-
-            var childQuery = query.ChildQuery as ChildQuery ?? new ChildQuery();
-            query.ChildQuery = childQueryFunc(childQuery);
-
-            return query;
-        }
     }
 }
