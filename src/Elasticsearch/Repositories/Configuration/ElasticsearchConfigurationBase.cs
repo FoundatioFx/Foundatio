@@ -57,10 +57,6 @@ namespace Foundatio.Elasticsearch.Configuration {
 
                 Debug.Assert(response == null || response.IsValid, response?.ServerError != null ? response.ServerError.Error : "An error occurred creating the index or template.");
                 
-                bool newIndexExists = client.IndexExists(idx.VersionedName).Exists;
-                if (!newIndexExists)
-                    client.CreateIndex(idx.VersionedName, idx.CreateIndex);
-                
                 // Add existing indexes to the alias.
                 if (!client.AliasExists(idx.AliasName).Exists) {
                     if (templatedIndex != null) {
