@@ -1,10 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Foundatio.Repositories;
+using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface ISelectedFieldsQuery {
         List<string> SelectedFields { get; }
+    }
+
+    public class SelectedFieldsQueryBuilder : QueryBuilderBase {
+        public override void BuildSearch<T>(IReadOnlyRepository<T> repository, SearchDescriptor<T> descriptor, object query) {
+            var selectedFieldsQuery = query as ISelectedFieldsQuery;
+            if (selectedFieldsQuery == null)
+                return;
+
+            var elasticRepo = repository as ElasticReadOnlyRepositoryBase<T>;
+            if (selectedFieldsQuery.SelectedFields.Count > 0)
+                descriptor.Source(s => s.Include(selectedFieldsQuery.SelectedFields.ToArray()));
+            else if (elasticRepo?.DefaultExcludes.Length > 0)
+                descriptor.Source(s => s.Exclude(elasticRepo.DefaultExcludes));
+        }
     }
 
     public static class SelectedFieldsQueryExtensions {

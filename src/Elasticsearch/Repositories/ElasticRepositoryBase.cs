@@ -15,11 +15,11 @@ using Foundatio.Repositories.Models;
 using Foundatio.Utility;
 
 namespace Foundatio.Elasticsearch.Repositories {
-    public abstract class Repository<T> : ReadOnlyRepository<T>, IRepository<T> where T : class, IIdentity, new() {
-        protected readonly static bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
-        protected readonly static bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
+    public abstract class ElasticRepositoryBase<T> : ElasticReadOnlyRepositoryBase<T>, IRepository<T> where T : class, IIdentity, new() {
+        protected internal readonly bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
+        protected internal readonly bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
-        protected Repository(RepositoryContext<T> context) : base(context) {}
+        protected ElasticRepositoryBase(ElasticRepositoryContext<T> context) : base(context) {}
         
         public async Task<T> AddAsync(T document, bool addToCache = false, TimeSpan? expiresIn = null, bool sendNotification = true) {
             if (document == null)

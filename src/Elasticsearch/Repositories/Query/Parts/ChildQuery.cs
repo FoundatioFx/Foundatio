@@ -1,8 +1,15 @@
 ﻿using System;
+using Foundatio.Repositories;
+using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IChildQuery {
         ITypeQuery ChildQuery { get; set; }
+    }
+
+    public class ChildQueryBuilder : QueryBuilderBase {
+        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
+        }
     }
 
     public static class ChildQueryExtensions {

@@ -5,8 +5,8 @@ using Foundatio.Messaging;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories {
-    public class RepositoryContext<T> where T : class {
-        public RepositoryContext(ICacheClient cache, IElasticClient elasticClient, ElasticsearchConfigurationBase configuration, IMessagePublisher messagePublisher, IValidator<T> validator) {
+    public class ElasticRepositoryContext<T> where T : class {
+        public ElasticRepositoryContext(ICacheClient cache, IElasticClient elasticClient, ElasticConfigurationBase configuration, IMessagePublisher messagePublisher, IValidator<T> validator) {
             Cache = cache;
             ElasticClient = elasticClient;
             Configuration = configuration;
@@ -16,7 +16,7 @@ namespace Foundatio.Elasticsearch.Repositories {
 
         public ICacheClient Cache { get; }
         public IElasticClient ElasticClient { get; }
-        public ElasticsearchConfigurationBase Configuration { get; }
+        public ElasticConfigurationBase Configuration { get; }
         public IValidator<T> Validator { get; }
         public IMessagePublisher MessagePublisher { get; }
         public int BulkBatchSize { get; set; } = 1000;

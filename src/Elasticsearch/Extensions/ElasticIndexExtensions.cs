@@ -7,12 +7,12 @@ using Foundatio.Repositories.Models;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Extensions {
-    public static class ElasticsearchIndexExtensions {
-        public static IEnumerable<KeyValuePair<Type, string>> ToTypeIndices(this IEnumerable<IElasticsearchIndex> indexes) {
+    public static class ElasticIndexExtensions {
+        public static IEnumerable<KeyValuePair<Type, string>> ToTypeIndices(this IEnumerable<IElasticIndex> indexes) {
             return indexes.SelectMany(idx => idx.GetIndexTypes().Select(kvp => new KeyValuePair<Type, string>(kvp.Key, idx.AliasName)));
         }
 
-        public static IDictionary<Type, string> ToIndexTypeNames(this IEnumerable<IElasticsearchIndex> indexes) {
+        public static IDictionary<Type, string> ToIndexTypeNames(this IEnumerable<IElasticIndex> indexes) {
             return indexes.SelectMany(idx => idx.GetIndexTypes()).ToDictionary(k => k.Key, k => k.Value.Name);
         }
 

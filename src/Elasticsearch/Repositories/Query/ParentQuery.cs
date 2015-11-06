@@ -2,8 +2,7 @@
 using Foundatio.Repositories.Queries;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
-    public class ParentQuery : IIdentityQuery, IDateRangeQuery,
-        IFieldConditionsQuery, ISearchQuery, ITypeQuery {
+    public class ParentQuery : IIdentityQuery, IDateRangeQuery, IFieldConditionsQuery, ISearchQuery, ITypeQuery {
         public ParentQuery() {
             DateRanges = new List<DateRange>();
             FieldConditions = new List<FieldCondition>();

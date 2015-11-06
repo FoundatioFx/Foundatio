@@ -15,12 +15,12 @@ using Foundatio.Queues;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Configuration {
-    public abstract class ElasticsearchConfigurationBase {
+    public abstract class ElasticConfigurationBase {
         protected readonly IQueue<WorkItemData> _workItemQueue;
         protected readonly ILockProvider _lockProvider;
         protected IDictionary<Type, string> _indexMap;
 
-        public ElasticsearchConfigurationBase(IQueue<WorkItemData> workItemQueue, ICacheClient cacheClient) {
+        public ElasticConfigurationBase(IQueue<WorkItemData> workItemQueue, ICacheClient cacheClient) {
             _workItemQueue = workItemQueue;
             _lockProvider = new ThrottlingLockProvider(cacheClient, 1, TimeSpan.FromMinutes(1));
         }
@@ -35,13 +35,13 @@ namespace Foundatio.Elasticsearch.Configuration {
             return client;
         }
 
-        protected virtual ConnectionSettings GetConnectionSettings(IEnumerable<Uri> serverUris, IEnumerable<IElasticsearchIndex> indexes) {
+        protected virtual ConnectionSettings GetConnectionSettings(IEnumerable<Uri> serverUris, IEnumerable<IElasticIndex> indexes) {
             return new ConnectionSettings(new StaticConnectionPool(serverUris))
                 .MapDefaultTypeIndices(t => t.AddRange(indexes.ToTypeIndices()))
                 .MapDefaultTypeNames(t => t.AddRange(indexes.ToIndexTypeNames()));
         }
 
-        public virtual void ConfigureIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes = null) {
+        public virtual void ConfigureIndexes(IElasticClient client, IEnumerable<IElasticIndex> indexes = null) {
             if (indexes == null)
                 indexes = GetIndexes();
 
@@ -49,7 +49,7 @@ namespace Foundatio.Elasticsearch.Configuration {
                 int currentVersion = GetAliasVersion(client, idx.AliasName);
 
                 IIndicesOperationResponse response = null;
-                var templatedIndex = idx as ITemplatedElasticsearchIndex;
+                var templatedIndex = idx as ITemplatedElasticIndex;
                 if (templatedIndex != null)
                     response = client.PutTemplate(idx.VersionedName, template => templatedIndex.CreateTemplate(template).AddAlias(idx.AliasName));
                 else if (!client.IndexExists(idx.VersionedName).Exists)
@@ -100,14 +100,14 @@ namespace Foundatio.Elasticsearch.Configuration {
             }
         }
 
-        public virtual void DeleteIndexes(IElasticClient client, IEnumerable<IElasticsearchIndex> indexes = null) {
+        public virtual void DeleteIndexes(IElasticClient client, IEnumerable<IElasticIndex> indexes = null) {
             if (indexes == null)
                 indexes = GetIndexes();
             
             foreach (var idx in indexes) {
                 IIndicesResponse deleteResponse;
 
-                var templatedIndex = idx as ITemplatedElasticsearchIndex;
+                var templatedIndex = idx as ITemplatedElasticIndex;
                 if (templatedIndex != null) {
                     deleteResponse = client.DeleteIndex(idx.VersionedName + "-*");
 
@@ -127,7 +127,7 @@ namespace Foundatio.Elasticsearch.Configuration {
             return _indexMap.ContainsKey(entityType) ? _indexMap[entityType] : null;
         }
 
-        protected abstract IEnumerable<IElasticsearchIndex> GetIndexes();
+        protected abstract IEnumerable<IElasticIndex> GetIndexes();
 
         protected virtual int GetAliasVersion(IElasticClient client, string alias) {
             var res = client.GetAlias(a => a.Alias(alias));

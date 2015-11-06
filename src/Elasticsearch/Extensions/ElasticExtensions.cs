@@ -5,7 +5,7 @@ using Elasticsearch.Net.Connection;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Extensions {
-    public static class ElasticsearchExtensions {
+    public static class ElasticExtensions {
         private static readonly Lazy<PropertyInfo> _connectionSettingsProperty = new Lazy<PropertyInfo>(() => typeof(HttpConnection).GetProperty("ConnectionSettings", BindingFlags.NonPublic | BindingFlags.Instance));
         
         public static void EnableTrace(this IElasticClient client) {

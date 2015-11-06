@@ -2,8 +2,7 @@
 using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
-    public class ChildQuery : IDateRangeQuery,
-        IFieldConditionsQuery, ISearchQuery, ITypeQuery {
+    public class ChildQuery : IDateRangeQuery, IFieldConditionsQuery, ISearchQuery, ITypeQuery {
         public ChildQuery() {
             DateRanges = new List<DateRange>();
             FieldConditions = new List<FieldCondition>();

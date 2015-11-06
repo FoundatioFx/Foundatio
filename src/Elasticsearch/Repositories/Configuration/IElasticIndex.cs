@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Configuration {
-    public interface IElasticsearchIndex {
+    public interface IElasticIndex {
         int Version { get; }
         string AliasName { get; }
         string VersionedName { get; }
@@ -11,7 +11,7 @@ namespace Foundatio.Elasticsearch.Configuration {
         CreateIndexDescriptor CreateIndex(CreateIndexDescriptor idx);
     }
 
-    public interface ITemplatedElasticsearchIndex : IElasticsearchIndex {
+    public interface ITemplatedElasticIndex : IElasticIndex {
         PutTemplateDescriptor CreateTemplate(PutTemplateDescriptor template);
     }
 

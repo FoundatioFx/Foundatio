@@ -75,13 +75,13 @@
     <Compile Include="Extensions\DateTimeExtensions.cs" />
     <Compile Include="Jobs\ReindexWorkItem.cs" />
     <Compile Include="Jobs\ReindexWorkItemHandler.cs" />
-    <Compile Include="Repositories\Configuration\ElasticsearchConfigurationBase.cs" />
-    <Compile Include="Repositories\Configuration\IElasticsearchIndex.cs" />
-    <Compile Include="Extensions\ElasticsearchExtensions.cs" />
-    <Compile Include="Extensions\ElasticsearchIndexExtensions.cs" />
+    <Compile Include="Repositories\Configuration\ElasticConfigurationBase.cs" />
+    <Compile Include="Repositories\Configuration\IElasticIndex.cs" />
+    <Compile Include="Extensions\ElasticExtensions.cs" />
+    <Compile Include="Extensions\ElasticIndexExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Repositories\Configuration\KeepAliveHttpConnection.cs" />
-    <Compile Include="Repositories\IElasticsearchReadOnlyRepository.cs" />
+    <Compile Include="Repositories\IElasticReadOnlyRepository.cs" />
     <Compile Include="Repositories\MigrationsRepository.cs" />
     <Compile Include="Repositories\Query\ChildQuery.cs" />
     <Compile Include="Repositories\Query\ElasticQuery.cs" />
@@ -92,16 +92,17 @@
     <Compile Include="Repositories\Query\Parts\ElasticFilterQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FacetQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FieldConditionsQuery.cs" />
+    <Compile Include="Repositories\Query\IQueryBuilder.cs" />
+    <Compile Include="Repositories\Query\Parts\PagableQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\ParentQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SearchQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SelectedFieldsQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\SoftDeletesQuery.cs" />
+    <Compile Include="Repositories\Query\Parts\SortableQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\TypeQuery.cs" />
     <Compile Include="Repositories\Query\Query.cs" />
-    <Compile Include="Repositories\Query\QueryBuilder.cs" />
-    <Compile Include="Repositories\ReadOnlyRepository.cs" />
-    <Compile Include="Repositories\Repository.cs" />
-    <Compile Include="Repositories\RepositoryContext.cs" />
+    <Compile Include="Repositories\ElasticReadOnlyRepositoryBase.cs" />
+    <Compile Include="Repositories\ElasticRepositoryBase.cs" />
+    <Compile Include="Repositories\ElasticRepositoryContext.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Foundatio.Elasticsearch.nuspec" />
