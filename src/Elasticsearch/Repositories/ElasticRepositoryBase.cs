@@ -206,9 +206,9 @@ namespace Foundatio.Elasticsearch.Repositories {
             documents.EnsureIds(GetDocumentIdFunc);
 
             if (HasDates)
-                documents.Cast<IHaveDates>().SetDates();
+                documents.OfType<IHaveDates>().SetDates();
             else if (HasCreatedDate)
-                documents.Cast<IHaveCreatedDate>().SetCreatedDates();
+                documents.OfType<IHaveCreatedDate>().SetCreatedDates();
 
             if (DocumentsAdding != null)
                 await DocumentsAdding.InvokeAsync(this, new DocumentsEventArgs<T>(documents, this)).AnyContext();

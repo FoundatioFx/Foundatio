@@ -369,88 +369,23 @@ namespace Foundatio.Elasticsearch.Repositories {
             return search;
         }
 
-        private QueryContainer GetElasticQuery(object query) {
+        protected internal QueryContainer GetElasticQuery(object query) {
             QueryContainer container = new MatchAllQuery();
             container &= new FilteredQuery { Filter = ApplyFilter(query, null) };
-
-            var builders = GetBuilders();
-            foreach (var builder in builders)
+            
+            foreach (var builder in GetBuilders())
                 builder.BuildQuery(this, container, query);
-
-            // TODO: Move this to query builder
-            var searchQuery = query as ISearchQuery;
-            if (!String.IsNullOrEmpty(searchQuery?.SearchQuery))
-                container &= new QueryStringQuery { Query = searchQuery.SearchQuery, DefaultOperator = searchQuery.DefaultSearchQueryOperator == SearchOperator.Or ? Operator.Or : Operator.And, AnalyzeWildcard = true };
-
+            
             return container;
         }
 
         private FilterContainer ApplyFilter(object query, FilterContainer container) {
             if (container == null)
                 container = new MatchAllFilter();
-
-            var builders = GetBuilders();
-            foreach (var builder in builders)
+            
+            foreach (var builder in GetBuilders())
                 builder.BuildFilter(this, container, query);
-
-            // TODO: Move these to query builder
-            var pq = query as IParentQuery;
-            if (pq?.ParentQuery != null)
-                container &= new HasParentFilter { Query = GetElasticQuery(pq.ParentQuery), Type = pq.ParentQuery.Type };
-
-            var cq = query as IChildQuery;
-            if (cq?.ChildQuery != null)
-                container &= new HasChildFilter { Query = GetElasticQuery(cq.ChildQuery), Type = cq.ChildQuery.Type };
-
-            var identityQuery = query as IIdentityQuery;
-            if (identityQuery != null && identityQuery.Ids.Count > 0)
-                container &= new IdsFilter { Values = identityQuery.Ids };
-
-            if (SupportsSoftDeletes) {
-                var softDeletesQuery = query as ISoftDeletesQuery;
-                bool includeDeleted = softDeletesQuery?.IncludeSoftDeletes ?? false;
-                container &= new TermFilter { Field = "deleted", Value = includeDeleted };
-            }
-
-            var dateRangeQuery = query as IDateRangeQuery;
-            if (dateRangeQuery?.DateRanges.Count > 0) {
-                foreach (var dateRange in dateRangeQuery.DateRanges.Where(dr => dr.UseDateRange))
-                    container &= new RangeFilter { Field = dateRange.Field, GreaterThanOrEqualTo = dateRange.GetStartDate().ToString("o"), LowerThanOrEqualTo = dateRange.GetEndDate().ToString("O") };
-            }
-
-            var searchQuery = query as ISearchQuery;
-            if (searchQuery != null) {
-                if (!String.IsNullOrEmpty(searchQuery.SystemFilter))
-                    container &= new QueryFilter { Query = QueryContainer.From(new QueryStringQuery { Query = searchQuery.SystemFilter, DefaultOperator = Operator.And }) };
-
-                if (!String.IsNullOrEmpty(searchQuery.Filter))
-                    container &= new QueryFilter { Query = QueryContainer.From(new QueryStringQuery { Query = searchQuery.Filter, DefaultOperator = Operator.And }) };
-            }
-
-            var elasticQuery = query as IElasticFilterQuery;
-            if (elasticQuery?.ElasticFilter != null)
-                container &= elasticQuery.ElasticFilter;
-
-            var fieldValuesQuery = query as IFieldConditionsQuery;
-            if (fieldValuesQuery?.FieldConditions.Count > 0) {
-                foreach (var fieldValue in fieldValuesQuery.FieldConditions) {
-                    switch (fieldValue.Operator) {
-                        case ComparisonOperator.Equals:
-                            container &= new TermFilter { Field = fieldValue.Field, Value = fieldValue.Value };
-                            break;
-                        case ComparisonOperator.NotEquals:
-                            container &= new NotFilter { Filter = FilterContainer.From(new TermFilter { Field = fieldValue.Field, Value = fieldValue.Value }) };
-                            break;
-                        case ComparisonOperator.IsEmpty:
-                            container &= new MissingFilter { Field = fieldValue.Field };
-                            break;
-                        case ComparisonOperator.HasValue:
-                            container &= new ExistsFilter { Field = fieldValue.Field };
-                            break;
-                    }
-                }
-            }
-
+            
             return container;
         }
 
@@ -460,16 +395,24 @@ namespace Foundatio.Elasticsearch.Repositories {
 
             return builders;
         }
-
+         
         protected virtual void RegisterBuilders(ICollection<IQueryBuilder> builders) {
             builders.Add(new PagableQueryBuilder());
+            builders.Add(new SelectedFieldsQueryBuilder());
             builders.Add(new SortableQueryBuilder());
             builders.Add(new FacetQueryBuilder());
+            builders.Add(new ParentQueryBuilder());
+            builders.Add(new ChildQueryBuilder());
+            builders.Add(new IdentityQueryBuilder());
+            builders.Add(new SoftDeletesQueryBuilder());
+            builders.Add(new DateRangeQueryBuilder());
+            builders.Add(new SearchQueryBuilder());
+            builders.Add(new ElasticFilterQueryBuilder());
+            builders.Add(new FieldConditionsQueryBuilder());
         }
 
         protected async Task<TResult> GetCachedQueryResultAsync<TResult>(object query, string cachePrefix = null, string cacheSuffix = null) {
             var cachedQuery = query as ICachableQuery;
-
             if (!IsCacheEnabled || cachedQuery == null || !cachedQuery.ShouldUseCache())
                 return default(TResult);
 
@@ -483,7 +426,6 @@ namespace Foundatio.Elasticsearch.Repositories {
 
         protected async Task SetCachedQueryResultAsync<TResult>(object query, TResult result, string cachePrefix = null, string cacheSuffix = null) {
             var cachedQuery = query as ICachableQuery;
-
             if (!IsCacheEnabled || result == null || cachedQuery == null || !cachedQuery.ShouldUseCache())
                 return;
 

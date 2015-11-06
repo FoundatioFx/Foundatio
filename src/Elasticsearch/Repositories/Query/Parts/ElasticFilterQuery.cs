@@ -1,11 +1,22 @@
 ﻿using System;
 using System.Collections.Generic;
 using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Repositories;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IElasticFilterQuery {
         FilterContainer ElasticFilter { get; set; }
+    }
+
+    public class ElasticFilterQueryBuilder : QueryBuilderBase {
+        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
+            var elasticQuery = query as IElasticFilterQuery;
+            if (elasticQuery?.ElasticFilter == null)
+                return;
+
+            container &= elasticQuery.ElasticFilter;
+        }
     }
 
     public static class ElasticFilterQueryExtensions {

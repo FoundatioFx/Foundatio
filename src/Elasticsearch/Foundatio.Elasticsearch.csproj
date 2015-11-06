@@ -93,10 +93,12 @@
     <Compile Include="Repositories\Query\Parts\FacetQuery.cs" />
     <Compile Include="Repositories\Query\Parts\FieldConditionsQuery.cs" />
     <Compile Include="Repositories\Query\IQueryBuilder.cs" />
+    <Compile Include="Repositories\Query\Parts\IdentityQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\PagableQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\ParentQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SearchQuery.cs" />
     <Compile Include="Repositories\Query\Parts\SelectedFieldsQuery.cs" />
+    <Compile Include="Repositories\Query\Parts\SoftDeletesQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\SortableQueryBuilder.cs" />
     <Compile Include="Repositories\Query\Parts\TypeQuery.cs" />
     <Compile Include="Repositories\Query\Query.cs" />
