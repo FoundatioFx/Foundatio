@@ -83,25 +83,35 @@
     <Compile Include="Repositories\Configuration\KeepAliveHttpConnection.cs" />
     <Compile Include="Repositories\IElasticReadOnlyRepository.cs" />
     <Compile Include="Repositories\MigrationsRepository.cs" />
-    <Compile Include="Repositories\Query\ChildQuery.cs" />
-    <Compile Include="Repositories\Query\ElasticQuery.cs" />
-    <Compile Include="Repositories\Query\ParentQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\CachableQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\ChildQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\DateRangeQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\ElasticFilterQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\FacetQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\FieldConditionsQuery.cs" />
-    <Compile Include="Repositories\Query\IQueryBuilder.cs" />
-    <Compile Include="Repositories\Query\Parts\IdentityQueryBuilder.cs" />
-    <Compile Include="Repositories\Query\Parts\PagableQueryBuilder.cs" />
-    <Compile Include="Repositories\Query\Parts\ParentQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\SearchQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\SelectedFieldsQuery.cs" />
-    <Compile Include="Repositories\Query\Parts\SoftDeletesQueryBuilder.cs" />
-    <Compile Include="Repositories\Query\Parts\SortableQueryBuilder.cs" />
-    <Compile Include="Repositories\Query\Parts\TypeQuery.cs" />
-    <Compile Include="Repositories\Query\Query.cs" />
+    <Compile Include="Repositories\Queries\Builders\QueryBuilderRegistry.cs" />
+    <Compile Include="Repositories\Queries\ChildQuery.cs" />
+    <Compile Include="Repositories\Queries\ElasticQuery.cs" />
+    <Compile Include="Repositories\Queries\Options\QueryOptions.cs" />
+    <Compile Include="Repositories\Queries\ParentQuery.cs" />
+    <Compile Include="Repositories\Queries\Parts\CachableQuery.cs" />
+    <Compile Include="Repositories\Queries\Parts\ChildQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\ChildQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\DateRangeQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\DateRangeQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\ElasticFilterQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\ElasticFilterQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\FacetQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\FacetQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\FieldConditionsQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\IQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Builders\FieldConditionsQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Builders\IdentityQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Builders\PagableQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\ParentQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\ParentQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\SearchQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\SearchQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\SelectedFieldsQuery.cs" />
+    <Compile Include="Repositories\Queries\Builders\SelectedFieldsQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Builders\SoftDeletesQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Builders\SortableQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\TypeQuery.cs" />
+    <Compile Include="Repositories\Queries\Query.cs" />
     <Compile Include="Repositories\ElasticReadOnlyRepositoryBase.cs" />
     <Compile Include="Repositories\ElasticRepositoryBase.cs" />
     <Compile Include="Repositories\ElasticRepositoryContext.cs" />
@@ -116,6 +126,7 @@
       <Name>Foundatio</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -1,19 +1,18 @@
 using System;
 using System.Linq;
-using Foundatio.Elasticsearch.Repositories.Queries;
-using Foundatio.Repositories;
+using Foundatio.Elasticsearch.Repositories.Queries.Options;
 using Foundatio.Repositories.Queries;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories.Query.Parts {
+namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SortableQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(IReadOnlyRepository<T> repository, SearchDescriptor<T> descriptor, object query) {
+        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
             var sortableQuery = query as ISortableQuery;
             if (sortableQuery == null || sortableQuery.SortBy.Count <= 0)
                 return;
 
-            var elasticRepo = repository as ElasticReadOnlyRepositoryBase<T>;
-            foreach (var sort in sortableQuery.SortBy.Where(s => CanSortByField(elasticRepo?.AllowedSortFields, s.Field)))
+            var opt = options as IQueryOptions;
+            foreach (var sort in sortableQuery.SortBy.Where(s => CanSortByField(opt?.AllowedSortFields, s.Field)))
                 descriptor.Sort(s => s.OnField(sort.Field)
                     .Order(sort.Order == Foundatio.Repositories.Models.SortOrder.Ascending ? SortOrder.Ascending : SortOrder.Descending));
         }

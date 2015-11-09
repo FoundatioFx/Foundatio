@@ -1,12 +1,10 @@
 ﻿using System;
-using Foundatio.Elasticsearch.Repositories.Queries;
-using Foundatio.Repositories;
 using Foundatio.Repositories.Queries;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories.Query.Parts {
+namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class IdentityQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
+        public override void BuildFilter(object query, object options, FilterContainer container) {
             var identityQuery = query as IIdentityQuery;
             if (identityQuery == null || identityQuery.Ids.Count <= 0)
                 return;

@@ -1,18 +1,17 @@
 ﻿using System;
-using Foundatio.Elasticsearch.Repositories.Queries;
-using Foundatio.Repositories;
+using Foundatio.Elasticsearch.Repositories.Queries.Options;
 using Foundatio.Repositories.Queries;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories.Query.Parts {
+namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SoftDeletesQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
+        public override void BuildFilter(object query, object options, FilterContainer container) {
             var softDeletesQuery = query as ISoftDeletesQuery;
             if (softDeletesQuery == null)
                 return;
 
-            var elasticRepo = repository as ElasticReadOnlyRepositoryBase<T>;
-            if (elasticRepo == null || !elasticRepo.SupportsSoftDeletes)
+            var opt = options as IQueryOptions;
+            if (opt == null ||! opt.SupportsSoftDeletes)
                 return;
             
             container &= new TermFilter { Field = "deleted", Value = softDeletesQuery.IncludeSoftDeletes };

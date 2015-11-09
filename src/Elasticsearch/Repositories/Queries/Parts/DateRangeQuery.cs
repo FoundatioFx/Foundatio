@@ -1,29 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using Foundatio.Repositories;
-using Foundatio.Repositories.Queries;
-using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IDateRangeQuery {
         List<DateRange> DateRanges { get; }
-    }
-
-    public class DateRangeQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
-            var dateRangeQuery = query as IDateRangeQuery;
-            if (dateRangeQuery == null || dateRangeQuery.DateRanges.Count <= 0)
-                return;
-
-            foreach (var dateRange in dateRangeQuery.DateRanges.Where(dr => dr.UseDateRange)) {
-                container &= new RangeFilter {
-                    Field = dateRange.Field,
-                    GreaterThanOrEqualTo = dateRange.GetStartDate().ToString("o"),
-                    LowerThanOrEqualTo = dateRange.GetEndDate().ToString("O")
-                };
-            }
-        }
     }
 
     public class DateRange {

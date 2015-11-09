@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public class ChildQuery : IDateRangeQuery, IFieldConditionsQuery, ISearchQuery, ITypeQuery {

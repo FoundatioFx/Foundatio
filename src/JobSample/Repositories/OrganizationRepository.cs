@@ -1,6 +1,7 @@
 ﻿using System;
 using Foundatio.Elasticsearch.Repositories;
 using Foundatio.Elasticsearch.Repositories.Queries;
+using Foundatio.Elasticsearch.Repositories.Queries.Builders;
 using Foundatio.Repositories.Models;
 
 namespace Foundatio.JobSample.Repositories {

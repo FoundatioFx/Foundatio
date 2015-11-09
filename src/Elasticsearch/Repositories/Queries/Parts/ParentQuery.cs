@@ -1,27 +1,8 @@
 ﻿using System;
-using Foundatio.Repositories;
-using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IParentQuery {
         ITypeQuery ParentQuery { get; set; }
-    }
-    
-    public class ParentQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
-            var parentQuery = query as IParentQuery;
-            if (parentQuery?.ParentQuery == null)
-                return;
-
-            var elasticRepo = repository as ElasticReadOnlyRepositoryBase<T>;
-            if (elasticRepo == null)
-                return;
-
-            container &= new HasParentFilter {
-                Query = elasticRepo.GetElasticQuery(parentQuery.ParentQuery),
-                Type = parentQuery.ParentQuery.Type
-            };
-        }
     }
 
     public static class ParentQueryExtensions {

@@ -1,12 +1,10 @@
 ﻿using System;
-using Foundatio.Elasticsearch.Repositories.Queries;
-using Foundatio.Repositories;
 using Foundatio.Repositories.Queries;
 using Nest;
 
-namespace Foundatio.Elasticsearch.Repositories.Query.Parts {
+namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class PagableQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(IReadOnlyRepository<T> repository, SearchDescriptor<T> descriptor, object query) {
+        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
             var pagableQuery = query as IPagableQuery;
             if (pagableQuery == null)
                 return;

@@ -7,6 +7,7 @@ using Nest;
 using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
+using Foundatio.Elasticsearch.Repositories.Queries.Options;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
@@ -342,20 +343,28 @@ namespace Foundatio.Elasticsearch.Repositories {
                 await Cache.SetAsync(document.Id, document, expiresIn ?? TimeSpan.FromSeconds(RepositoryConstants.DEFAULT_CACHE_EXPIRATION_SECONDS)).AnyContext();
         }
 
+        protected bool NotificationsEnabled { get; set; } = true;
+        
         private Task SendNotificationsAsync(ChangeType changeType, ICollection<T> documents) {
             return SendNotificationsAsync(changeType, documents.Select(d => new ModifiedDocument<T>(d, null)).ToList());
         }
 
         protected virtual async Task SendNotificationsAsync(ChangeType changeType, ICollection<ModifiedDocument<T>> documents) {
+            if (!NotificationsEnabled)
+                return;
+
+            var options = Options as IQueryOptions;
+            var supportsSoftDeletes = options != null && options.SupportsSoftDeletes;
+
             if (BatchNotifications && documents.Count > 1) {
-                if (!SupportsSoftDeletes || changeType != ChangeType.Saved) {
+                if (!supportsSoftDeletes || changeType != ChangeType.Saved) {
                     await PublishMessageAsync(changeType, documents.Select(d => d.Value)).AnyContext();
                     return;
                 }
                 var allDeleted = documents.All(d => d.Original != null && ((ISupportSoftDeletes)d.Original).IsDeleted == false && ((ISupportSoftDeletes)d.Value).IsDeleted);
                 await PublishMessageAsync(allDeleted ? ChangeType.Removed : changeType, documents.Select(d => d.Value)).AnyContext();
             } else {
-                if (!SupportsSoftDeletes) {
+                if (!supportsSoftDeletes) {
                     foreach (var d in documents)
                         await PublishMessageAsync(changeType, d.Value).AnyContext();
                     return;

@@ -1,27 +1,8 @@
 ﻿using System;
-using Foundatio.Repositories;
-using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries {
     public interface IChildQuery {
         ITypeQuery ChildQuery { get; set; }
-    }
-
-    public class ChildQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(IReadOnlyRepository<T> repository, FilterContainer container, object query) {
-            var childQuery = query as IChildQuery;
-            if (childQuery?.ChildQuery == null)
-                return;
-
-            var elasticRepo = repository as ElasticReadOnlyRepositoryBase<T>;
-            if (elasticRepo == null)
-                return;
-
-            container &= new HasChildFilter {
-                Query = elasticRepo.GetElasticQuery(childQuery.ChildQuery),
-                Type = childQuery.ChildQuery.Type
-            };
-        }
     }
 
     public static class ChildQueryExtensions {

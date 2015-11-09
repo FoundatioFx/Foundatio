@@ -6,7 +6,7 @@ using Elasticsearch.Net;
 using Foundatio.Caching;
 using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Elasticsearch.Repositories.Queries;
-using Foundatio.Elasticsearch.Repositories.Query.Parts;
+using Foundatio.Elasticsearch.Repositories.Queries.Options;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Repositories;
@@ -17,14 +17,14 @@ using Nest;
 namespace Foundatio.Elasticsearch.Repositories {
     public abstract class ElasticReadOnlyRepositoryBase<T> : IElasticReadOnlyRepository<T> where T : class, new() {
         protected internal readonly string EntityType = typeof(T).Name;
-        protected internal readonly bool SupportsSoftDeletes = typeof(ISupportSoftDeletes).IsAssignableFrom(typeof(T));
-        protected internal readonly bool HasIdentity = typeof(IIdentity).IsAssignableFrom(typeof(T));
         protected internal readonly ElasticRepositoryContext<T> Context;
         private ScopedCacheClient _scopedCacheClient;
 
         protected ElasticReadOnlyRepositoryBase(ElasticRepositoryContext<T> context) {
             Context = context;
         }
+        
+        protected virtual object Options { get; } = new QueryOptions(typeof(T));
 
         protected Task<FindResults<T>> FindAsync(object query) {
             return FindAsAsync<T>(query);
@@ -154,7 +154,7 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (result != null)
                 return result.Value;
 
-            var countDescriptor = new CountDescriptor<T>().Query(GetElasticQuery(query));
+            var countDescriptor = new CountDescriptor<T>().Query(Context.QueryBuilder.BuildQuery(query));
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)
                 countDescriptor.Indices(indices);
@@ -202,7 +202,8 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (ids == null || ids.Count == 0)
                 return results;
 
-            if (!HasIdentity)
+            var options = Options as IQueryOptions;
+            if (options == null || !options.HasIdentity)
                 throw new NotSupportedException("Model type must implement IIdentity.");
 
             if (IsCacheEnabled && useCache) {
@@ -255,7 +256,8 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (facetQuery == null || facetQuery.FacetFields.Count == 0)
                 throw new ArgumentException("Query must contain facet fields.", nameof(query));
 
-            if (AllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => AllowedFacetFields.Contains(f.Field)))
+            var options = Options as IQueryOptions;
+            if (options?.AllowedFacetFields.Length > 0 && !facetQuery.FacetFields.All(f => options.AllowedFacetFields.Contains(f.Field)))
                 throw new ArgumentException("All facet fields must be allowed.", nameof(query));
 
             var search = CreateSearchDescriptor(query).SearchType(SearchType.Count);
@@ -307,9 +309,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 return _scopedCacheClient;
             }
         }
-
-        protected internal virtual string[] AllowedFacetFields => new string[] { };
-        protected internal virtual string[] AllowedSortFields => new string[] { };
+        
         protected virtual string GetTypeName() => EntityType;
         protected internal virtual string[] DefaultExcludes => new string[] { };
         protected internal virtual Func<T, string> GetParentIdFunc { get; set; }
@@ -326,7 +326,8 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (!IsCacheEnabled)
                 return;
 
-            if (documents != null && documents.Count > 0 && HasIdentity) {
+            var options = Options as IQueryOptions;
+            if (documents != null && documents.Count > 0 && options != null && options.HasIdentity) {
                 var keys = documents
                     .Select(d => d.Value)
                     .Cast<IIdentity>()
@@ -353,64 +354,19 @@ namespace Foundatio.Elasticsearch.Repositories {
         protected SearchDescriptor<T> ConfigureSearchDescriptor(SearchDescriptor<T> search, object query) {
             if (search == null)
                 search = new SearchDescriptor<T>();
-
-            var builders = GetBuilders();
-            search.Query(GetElasticQuery(query));
+            
+            search.Query(Context.QueryBuilder.BuildQuery(query));
 
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)
                 search.Indices(indices);
             search.IgnoreUnavailable();
             search.Type(GetTypeName());
-
-            foreach (var builder in builders)
-                builder.BuildSearch(this, search, query);
-
+            
+            Context.QueryBuilder.BuildSearch(query, Options, search);
             return search;
         }
-
-        protected internal QueryContainer GetElasticQuery(object query) {
-            QueryContainer container = new MatchAllQuery();
-            container &= new FilteredQuery { Filter = ApplyFilter(query, null) };
-            
-            foreach (var builder in GetBuilders())
-                builder.BuildQuery(this, container, query);
-            
-            return container;
-        }
-
-        private FilterContainer ApplyFilter(object query, FilterContainer container) {
-            if (container == null)
-                container = new MatchAllFilter();
-            
-            foreach (var builder in GetBuilders())
-                builder.BuildFilter(this, container, query);
-            
-            return container;
-        }
-
-        private ICollection<IQueryBuilder> GetBuilders() {
-            var builders = new List<IQueryBuilder>();
-            RegisterBuilders(builders);
-
-            return builders;
-        }
-         
-        protected virtual void RegisterBuilders(ICollection<IQueryBuilder> builders) {
-            builders.Add(new PagableQueryBuilder());
-            builders.Add(new SelectedFieldsQueryBuilder());
-            builders.Add(new SortableQueryBuilder());
-            builders.Add(new FacetQueryBuilder());
-            builders.Add(new ParentQueryBuilder());
-            builders.Add(new ChildQueryBuilder());
-            builders.Add(new IdentityQueryBuilder());
-            builders.Add(new SoftDeletesQueryBuilder());
-            builders.Add(new DateRangeQueryBuilder());
-            builders.Add(new SearchQueryBuilder());
-            builders.Add(new ElasticFilterQueryBuilder());
-            builders.Add(new FieldConditionsQueryBuilder());
-        }
-
+        
         protected async Task<TResult> GetCachedQueryResultAsync<TResult>(object query, string cachePrefix = null, string cacheSuffix = null) {
             var cachedQuery = query as ICachableQuery;
             if (!IsCacheEnabled || cachedQuery == null || !cachedQuery.ShouldUseCache())
