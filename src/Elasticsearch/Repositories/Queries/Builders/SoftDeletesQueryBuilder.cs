@@ -11,7 +11,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
                 return;
 
             var opt = options as IQueryOptions;
-            if (opt == null ||! opt.SupportsSoftDeletes)
+            if (opt == null || !opt.SupportsSoftDeletes)
                 return;
             
             container &= new TermFilter { Field = "deleted", Value = softDeletesQuery.IncludeSoftDeletes };

@@ -5,7 +5,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class FieldConditionsQueryBuilder : QueryBuilderBase {
         public override void BuildFilter<T>(object query, object options, FilterContainer container) {
             var fieldValuesQuery = query as IFieldConditionsQuery;
-            if (fieldValuesQuery == null || fieldValuesQuery.FieldConditions.Count <= 0)
+            if (fieldValuesQuery?.FieldConditions == null || fieldValuesQuery.FieldConditions.Count <= 0)
                 return;
 
             foreach (var fieldValue in fieldValuesQuery.FieldConditions) {
