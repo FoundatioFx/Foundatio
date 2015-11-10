@@ -20,7 +20,9 @@ namespace Foundatio.Elasticsearch.Repositories {
         protected internal readonly bool HasDates = typeof(IHaveDates).IsAssignableFrom(typeof(T));
         protected internal readonly bool HasCreatedDate = typeof(IHaveCreatedDate).IsAssignableFrom(typeof(T));
 
-        protected ElasticRepositoryBase(ElasticRepositoryContext<T> context) : base(context) {}
+        protected ElasticRepositoryBase(ElasticRepositoryContext<T> context) : base(context) {
+            NotificationsEnabled = Context.MessagePublisher != null;
+        }
         
         public async Task<T> AddAsync(T document, bool addToCache = false, TimeSpan? expiresIn = null, bool sendNotification = true) {
             if (document == null)
@@ -189,12 +191,8 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (recordsAffected <= 0)
                 return 0;
 
-            if (sendNotifications) {
-                await PublishMessageAsync(new EntityChanged {
-                    ChangeType = ChangeType.Saved,
-                    Type = EntityType
-                }, TimeSpan.FromSeconds(1.5)).AnyContext();
-            }
+            if (sendNotifications)
+                await SendNotificationsAsync(ChangeType.Saved);
 
             return recordsAffected;
         }
@@ -344,7 +342,13 @@ namespace Foundatio.Elasticsearch.Repositories {
         }
 
         protected bool NotificationsEnabled { get; set; } = true;
-        
+
+        public bool BatchNotifications { get; set; }
+
+        private Task SendNotificationsAsync(ChangeType changeType) {
+            return SendNotificationsAsync(changeType, new List<T>());
+        }
+
         private Task SendNotificationsAsync(ChangeType changeType, ICollection<T> documents) {
             return SendNotificationsAsync(changeType, documents.Select(d => new ModifiedDocument<T>(d, null)).ToList());
         }
@@ -353,20 +357,29 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (!NotificationsEnabled)
                 return;
 
+            var delay = TimeSpan.FromSeconds(1.5);
+
             var options = Options as IQueryOptions;
             var supportsSoftDeletes = options != null && options.SupportsSoftDeletes;
-
-            if (BatchNotifications && documents.Count > 1) {
+            if (!documents.Any()) {
+                await PublishMessageAsync(CreateChangeTypeMessage(changeType, null), delay).AnyContext();
+            } else if (BatchNotifications && documents.Count > 1) {
+                // TODO: This needs to support batch notifications
                 if (!supportsSoftDeletes || changeType != ChangeType.Saved) {
-                    await PublishMessageAsync(changeType, documents.Select(d => d.Value)).AnyContext();
+                    foreach (var doc in documents.Select(d => d.Value)) {
+                        await PublishMessageAsync(CreateChangeTypeMessage(changeType, doc), delay).AnyContext();
+                    }
+
                     return;
                 }
                 var allDeleted = documents.All(d => d.Original != null && ((ISupportSoftDeletes)d.Original).IsDeleted == false && ((ISupportSoftDeletes)d.Value).IsDeleted);
-                await PublishMessageAsync(allDeleted ? ChangeType.Removed : changeType, documents.Select(d => d.Value)).AnyContext();
+                foreach (var doc in documents.Select(d => d.Value)) {
+                    await PublishMessageAsync(CreateChangeTypeMessage(allDeleted ? ChangeType.Removed : changeType, doc), delay).AnyContext();
+                }
             } else {
                 if (!supportsSoftDeletes) {
                     foreach (var d in documents)
-                        await PublishMessageAsync(changeType, d.Value).AnyContext();
+                        await PublishMessageAsync(CreateChangeTypeMessage(changeType, d.Value), delay).AnyContext();
                     return;
                 }
 
@@ -379,28 +392,20 @@ namespace Foundatio.Elasticsearch.Repositories {
                             docChangeType = ChangeType.Removed;
                     }
 
-                    await PublishMessageAsync(docChangeType, d.Value).AnyContext();
+                    await PublishMessageAsync(CreateChangeTypeMessage(docChangeType, d.Value), delay).AnyContext();
                 }
             }
         }
 
-        protected Task PublishMessageAsync(ChangeType changeType, T document, IDictionary<string, object> data = null) {
-            return PublishMessageAsync(changeType, new[] { document }, data);
+        protected virtual object CreateChangeTypeMessage(ChangeType changeType, T document, IDictionary<string, object> data = null) {
+            return new EntityChanged {
+                ChangeType = changeType,
+                Id = document?.Id,
+                Type = EntityType,
+                Data = new DataDictionary(data ?? new Dictionary<string, object>())
+            };
         }
-
-        protected virtual async Task PublishMessageAsync(ChangeType changeType, IEnumerable<T> documents, IDictionary<string, object> data = null) {
-            foreach (var doc in documents) {
-                var message = new EntityChanged {
-                    ChangeType = changeType,
-                    Id = doc.Id,
-                    Type = EntityType,
-                    Data = new DataDictionary(data ?? new Dictionary<string, object>())
-                };
-
-                await PublishMessageAsync(message, TimeSpan.FromSeconds(1.5)).AnyContext();
-            }
-        }
-
+        
         protected async Task PublishMessageAsync<TMessageType>(TMessageType message, TimeSpan? delay = null) where TMessageType : class {
             if (Context.MessagePublisher == null)
                 return;
@@ -408,8 +413,6 @@ namespace Foundatio.Elasticsearch.Repositories {
             await Context.MessagePublisher.PublishAsync(message, delay).AnyContext();
         }
         
-        public bool BatchNotifications { get; set; }
-
         protected virtual Func<T, string> GetDocumentIdFunc { get { return d => ObjectId.GenerateNewId().ToString(); } }
     }
 }
