@@ -192,7 +192,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 return 0;
 
             if (sendNotifications)
-                await SendNotificationsAsync(ChangeType.Saved);
+                await SendNotificationsAsync(ChangeType.Saved).AnyContext();
 
             return recordsAffected;
         }
