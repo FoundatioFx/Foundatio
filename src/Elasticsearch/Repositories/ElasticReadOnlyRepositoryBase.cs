@@ -311,7 +311,6 @@ namespace Foundatio.Elasticsearch.Repositories {
         }
         
         protected virtual string GetTypeName() => EntityType;
-        protected internal virtual string[] DefaultExcludes => new string[] { };
         protected internal virtual Func<T, string> GetParentIdFunc { get; set; }
         protected internal virtual Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
 
