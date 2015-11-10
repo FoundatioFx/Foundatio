@@ -25,24 +25,24 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
             _builders.Add(new FieldConditionsQueryBuilder());
         }
 
-        public QueryContainer BuildQuery(object query, object options = null, QueryContainer container = null) {
+        public QueryContainer BuildQuery<T>(object query, object options = null, QueryContainer container = null) where T : class, new() {
             if (container == null)
                 container = new MatchAllQuery();
 
-            container &= new FilteredQuery { Filter = BuildFilter(query, options) };
+            container &= new FilteredQuery { Filter = BuildFilter<T>(query, options) };
 
             foreach (var builder in _builders)
-                builder.BuildQuery(query, options, container);
+                builder.BuildQuery<T>(query, options, container);
 
             return container;
         }
 
-        public FilterContainer BuildFilter(object query, object options = null, FilterContainer container = null) {
+        public FilterContainer BuildFilter<T>(object query, object options = null, FilterContainer container = null) where T : class, new() {
             if (container == null)
                 container = new MatchAllFilter();
 
             foreach (var builder in _builders)
-                builder.BuildFilter(query, options, container);
+                builder.BuildFilter<T>(query, options, container);
 
             return container;
         }

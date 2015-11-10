@@ -3,7 +3,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SearchQueryBuilder : QueryBuilderBase {
-        public override void BuildQuery(object query, object options, QueryContainer container) {
+        public override void BuildQuery<T>(object query, object options, QueryContainer container) {
             var searchQuery = query as ISearchQuery;
             if (String.IsNullOrEmpty(searchQuery?.SearchQuery))
                 return;
@@ -15,7 +15,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
             };
         }
 
-        public override void BuildFilter(object query, object options, FilterContainer container) {
+        public override void BuildFilter<T>(object query, object options, FilterContainer container) {
             var searchQuery = query as ISearchQuery;
             if (searchQuery == null)
                 return;

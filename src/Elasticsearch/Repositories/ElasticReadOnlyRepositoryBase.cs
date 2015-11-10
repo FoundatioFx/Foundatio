@@ -154,7 +154,7 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (result != null)
                 return result.Value;
 
-            var countDescriptor = new CountDescriptor<T>().Query(Context.QueryBuilder.BuildQuery(query));
+            var countDescriptor = new CountDescriptor<T>().Query(Context.QueryBuilder.BuildQuery<T>(query));
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)
                 countDescriptor.Indices(indices);
@@ -355,7 +355,7 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (search == null)
                 search = new SearchDescriptor<T>();
             
-            search.Query(Context.QueryBuilder.BuildQuery(query));
+            search.Query(Context.QueryBuilder.BuildQuery<T>(query));
 
             var indices = GetIndexesByQuery(query);
             if (indices?.Length > 0)
