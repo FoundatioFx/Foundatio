@@ -6,7 +6,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SortableQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
+        public override void BuildSearch<T>(object query, object options, ref SearchDescriptor<T> descriptor) {
             var sortableQuery = query as ISortableQuery;
             if (sortableQuery?.SortBy == null || sortableQuery.SortBy.Count <= 0)
                 return;

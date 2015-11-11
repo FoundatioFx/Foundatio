@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Messaging;
@@ -12,7 +11,6 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
-using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 

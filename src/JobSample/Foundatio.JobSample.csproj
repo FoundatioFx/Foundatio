@@ -75,7 +75,6 @@
     <Compile Include="PingQueueJob.cs" />
     <Compile Include="HelloWorldJob.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Repositories\OrganizationRepository.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -84,10 +83,6 @@
     <ProjectReference Include="..\Core\Foundatio.csproj">
       <Project>{f5b6c2b5-485f-4a4b-8e00-d5f77676cd6e}</Project>
       <Name>Foundatio</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Elasticsearch\Foundatio.Elasticsearch.csproj">
-      <Project>{3bfbd4c1-3f2c-46a4-9400-2cb9803644be}</Project>
-      <Name>Foundatio.Elasticsearch</Name>
     </ProjectReference>
     <ProjectReference Include="..\Redis\Foundatio.Redis.csproj">
       <Project>{E2029C76-1003-4A72-8407-81DDF4B2B102}</Project>

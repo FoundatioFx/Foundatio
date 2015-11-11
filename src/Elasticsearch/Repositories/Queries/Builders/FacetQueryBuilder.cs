@@ -5,7 +5,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class FacetQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
+        public override void BuildSearch<T>(object query, object options, ref SearchDescriptor<T> descriptor) {
             var facetQuery = query as IFacetQuery;
             if (facetQuery?.FacetFields == null || facetQuery.FacetFields.Count <= 0)
                 return;

@@ -32,7 +32,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
             container &= new FilteredQuery { Filter = BuildFilter<T>(query, options) };
 
             foreach (var builder in _builders)
-                builder.BuildQuery<T>(query, options, container);
+                builder.BuildQuery<T>(query, options, ref container);
 
             return container;
         }
@@ -42,7 +42,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
                 container = new MatchAllFilter();
 
             foreach (var builder in _builders)
-                builder.BuildFilter<T>(query, options, container);
+                builder.BuildFilter<T>(query, options, ref container);
 
             return container;
         }
@@ -52,7 +52,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
                 descriptor = new SearchDescriptor<T>();
 
             foreach (var builder in _builders)
-                builder.BuildSearch(query, options, descriptor);
+                builder.BuildSearch(query, options, ref descriptor);
 
             return descriptor;
         }

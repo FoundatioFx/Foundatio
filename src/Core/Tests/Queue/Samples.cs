@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Text.RegularExpressions;
 using Foundatio.Metrics;
 
 namespace Foundatio.Tests.Queue {

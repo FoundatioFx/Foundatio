@@ -4,7 +4,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SelectedFieldsQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
+        public override void BuildSearch<T>(object query, object options, ref SearchDescriptor<T> descriptor) {
             var selectedFieldsQuery = query as ISelectedFieldsQuery;
             if (selectedFieldsQuery?.SelectedFields?.Count > 0) {
                 descriptor.Source(s => s.Include(selectedFieldsQuery.SelectedFields.ToArray()));

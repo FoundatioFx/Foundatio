@@ -5,7 +5,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class SoftDeletesQueryBuilder : QueryBuilderBase {
-        public override void BuildFilter<T>(object query, object options, FilterContainer container) {
+        public override void BuildFilter<T>(object query, object options, ref FilterContainer container) {
             var softDeletesQuery = query as ISoftDeletesQuery;
             if (softDeletesQuery == null)
                 return;

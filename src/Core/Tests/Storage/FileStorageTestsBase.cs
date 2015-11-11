@@ -5,13 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Logging;
 using Foundatio.Utility;
-using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {

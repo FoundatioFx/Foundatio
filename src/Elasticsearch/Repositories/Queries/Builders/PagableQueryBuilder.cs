@@ -4,7 +4,7 @@ using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
     public class PagableQueryBuilder : QueryBuilderBase {
-        public override void BuildSearch<T>(object query, object options, SearchDescriptor<T> descriptor) {
+        public override void BuildSearch<T>(object query, object options, ref SearchDescriptor<T> descriptor) {
             var pagableQuery = query as IPagableQuery;
             if (pagableQuery == null)
                 return;

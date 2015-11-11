@@ -102,6 +102,7 @@
     <Compile Include="Repositories\Queries\Builders\FieldConditionsQueryBuilder.cs" />
     <Compile Include="Repositories\Queries\Builders\IdentityQueryBuilder.cs" />
     <Compile Include="Repositories\Queries\Builders\PagableQueryBuilder.cs" />
+    <Compile Include="Repositories\Queries\Parts\ElasticIndicesQuery.cs" />
     <Compile Include="Repositories\Queries\Parts\ParentQuery.cs" />
     <Compile Include="Repositories\Queries\Builders\ParentQueryBuilder.cs" />
     <Compile Include="Repositories\Queries\Parts\SearchQuery.cs" />

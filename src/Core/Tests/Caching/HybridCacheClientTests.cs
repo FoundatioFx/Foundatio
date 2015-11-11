@@ -7,7 +7,6 @@ using Foundatio.Extensions;
 using Foundatio.Messaging;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
-using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
