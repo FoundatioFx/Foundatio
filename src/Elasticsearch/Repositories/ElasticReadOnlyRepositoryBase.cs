@@ -159,7 +159,6 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (indices?.Length > 0)
                 countDescriptor.Indices(indices);
             countDescriptor.IgnoreUnavailable();
-            countDescriptor.Type(GetTypeName());
 
             var results = await Context.ElasticClient.CountAsync<T>(countDescriptor).AnyContext();
             if (!results.IsValid)
@@ -360,7 +359,6 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (indices?.Length > 0)
                 search.Indices(indices);
             search.IgnoreUnavailable();
-            search.Type(GetTypeName());
             
             Context.QueryBuilder.BuildSearch(query, Options, search);
             return search;
