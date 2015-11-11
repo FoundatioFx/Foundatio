@@ -80,7 +80,7 @@ namespace Foundatio.Extensions {
                 return;
 
             foreach (var value in values) {
-                if (value.CreatedUtc == DateTime.MinValue)
+                if (value.CreatedUtc == DateTime.MinValue || value.CreatedUtc > DateTime.UtcNow)
                     value.CreatedUtc = DateTime.UtcNow;
 
                 value.UpdatedUtc = DateTime.UtcNow;
@@ -92,7 +92,7 @@ namespace Foundatio.Extensions {
                 return;
 
             foreach (var value in values) {
-                if (value.CreatedUtc == DateTime.MinValue)
+                if (value.CreatedUtc == DateTime.MinValue || value.CreatedUtc > DateTime.UtcNow)
                     value.CreatedUtc = DateTime.UtcNow;
             }
         }

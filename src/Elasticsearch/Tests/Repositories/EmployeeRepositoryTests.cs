@@ -97,6 +97,22 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
         }
 
         [Fact]
+        public async Task CannotSetFutureCreatedAndModifiedTimesAsync() {
+            RemoveData();
+
+            var employee = await _repository.AddAsync(EmployeeGenerator.Generate(createdUtc: DateTime.MaxValue, updatedUtc: DateTime.MaxValue));
+            Assert.True(employee.CreatedUtc != DateTime.MaxValue);
+            Assert.True(employee.UpdatedUtc != DateTime.MaxValue);
+            
+            employee.CreatedUtc = DateTime.MaxValue;
+            employee.UpdatedUtc = DateTime.MaxValue;
+
+            employee = await _repository.SaveAsync(employee);
+            Assert.True(employee.CreatedUtc != DateTime.MaxValue);
+            Assert.True(employee.UpdatedUtc != DateTime.MaxValue);
+        }
+
+        [Fact]
         public async Task CanAddToCacheAsync() {
             RemoveData();
 
