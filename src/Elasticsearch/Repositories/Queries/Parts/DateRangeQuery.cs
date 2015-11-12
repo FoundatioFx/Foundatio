@@ -28,7 +28,7 @@ namespace Foundatio.Elasticsearch.Repositories.Queries {
 
     public static class DateRangeQueryExtensions {
         public static T WithDateRange<T>(this T query, DateTime? start, DateTime? end, string field) where T : IDateRangeQuery {
-            query.DateRanges.Add(new DateRange { StartDate = start, EndDate = end, Field = field });
+            query.DateRanges?.Add(new DateRange { StartDate = start, EndDate = end, Field = field });
             return query;
         }
     }

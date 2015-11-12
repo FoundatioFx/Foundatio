@@ -26,9 +26,6 @@ namespace Foundatio.Elasticsearch.Repositories.Queries.Builders {
         }
 
         public QueryContainer BuildQuery<T>(object query, object options = null, QueryContainer container = null) where T : class, new() {
-            if (container == null)
-                container = new MatchAllQuery();
-
             container &= new FilteredQuery { Filter = BuildFilter<T>(query, options) };
 
             foreach (var builder in _builders)

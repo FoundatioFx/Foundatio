@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Configuration;
+using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Elasticsearch.Tests.Repositories.Builders;
 using Foundatio.Elasticsearch.Tests.Repositories.Configuration;
 using Foundatio.Elasticsearch.Tests.Repositories.Models;
 using Foundatio.Caching;
+using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Elasticsearch.Repositories;
 using Foundatio.Elasticsearch.Repositories.Queries.Builders;
 using Foundatio.Elasticsearch.Tests.Extensions;
@@ -27,7 +30,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             _queryBuilder.Register(new AgeQueryBuilder());
 
             _configuration = new ElasticConfiguration(_workItemQueue, _cache);
-            _client = _configuration.GetClient(new[] { new Uri("http://localhost:9200") });
+            _client = _configuration.GetClient(new[] { new Uri(ConfigurationManager.ConnectionStrings["ElasticConnectionString"].ConnectionString) });
             _repository = new EmployeeRepository(new ElasticRepositoryContext<Employee>(_cache, _client, _configuration, null, null, _queryBuilder));
         }
 
@@ -84,14 +87,14 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
             DateTime nowUtc = DateTime.UtcNow;
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
-            Assert.True(employee.CreatedUtc > nowUtc);
-            Assert.True(employee.UpdatedUtc > nowUtc);
+            Assert.True(employee.CreatedUtc >= nowUtc);
+            Assert.True(employee.UpdatedUtc >= nowUtc);
 
             DateTime createdUtc = employee.CreatedUtc;
             DateTime updatedUtc = employee.UpdatedUtc;
 
             employee.Name = Guid.NewGuid().ToString();
-            employee = await _repository.AddAsync(employee);
+            employee = await _repository.SaveAsync(employee);
             Assert.Equal(createdUtc, employee.CreatedUtc);
             Assert.True(updatedUtc < employee.UpdatedUtc);
         }
@@ -151,6 +154,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             Assert.Equal(0, _cache.Count);
             Assert.Equal(0, _cache.Hits);
 
+            await _client.RefreshAsync();
             var cachedResult = await _repository.GetByIdAsync(employee.Id, useCache: true);
             Assert.Equal(1, _cache.Count);
             Assert.Equal(0, _cache.Hits);
@@ -162,7 +166,24 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             Assert.Equal(employee.ToJson(), cachedResult.ToJson());
         }
 
+        [Fact]
+        public async Task GetByAgeAsync() {
+            RemoveData();
+            
+            var employee19 = await _repository.AddAsync(EmployeeGenerator.Generate(age: 19));
+            var employee20 = await _repository.AddAsync(EmployeeGenerator.Generate(age: 20));
+            await _client.RefreshAsync();
+
+            var result = await _repository.GetByAgeAsync(employee19.Age);
+            Assert.Equal(employee19.ToJson(), result.ToJson());
+
+            var results = await _repository.GetAllByAgeAsync(employee19.Age);
+            Assert.Equal(1, results.Total);
+            Assert.Equal(employee19.ToJson(), results.Documents.First().ToJson());
+        }
+
         private void RemoveData() {
+
             _cache.RemoveAllAsync();
             _configuration.DeleteIndexes(_client);
             _configuration.ConfigureIndexes(_client);

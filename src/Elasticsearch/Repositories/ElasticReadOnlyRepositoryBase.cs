@@ -185,8 +185,9 @@ namespace Foundatio.Elasticsearch.Repositories {
             if (result != null)
                 return result;
 
-            if (GetParentIdFunc == null) // we don't have the parent id
-                result = (await Context.ElasticClient.GetAsync<T>(id, GetIndexById(id)).AnyContext()).Source;
+            string index = GetIndexById(id);
+            if (GetParentIdFunc == null && index != null) // we don't have the parent id
+                result = (await Context.ElasticClient.GetAsync<T>(id, index).AnyContext()).Source;
             else
                 result = await FindOneAsync(new ElasticQuery().WithId(id)).AnyContext();
             
@@ -219,11 +220,17 @@ namespace Foundatio.Elasticsearch.Repositories {
             var multiGet = new MultiGetDescriptor();
 
             if (GetParentIdFunc == null) {
-                foreach (var id in itemsToFind)
-                    multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id)));
+                itemsToFind.ForEach(id => {
+                    string index = GetIndexById(id);
+                    if (!String.IsNullOrEmpty(index))
+                        multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id)));
+                });
 
-                foreach (var doc in (await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext()).Documents.Where(doc => doc.Found)) {
-                    results.Documents.Add(doc.Source as T);
+                var multiGetResults = await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext();
+                foreach (var doc in multiGetResults.Documents) {
+                    if (doc.Found)
+                        results.Documents.Add(doc.Source as T);
+
                     itemsToFind.Remove(doc.Id);
                 }
             }
