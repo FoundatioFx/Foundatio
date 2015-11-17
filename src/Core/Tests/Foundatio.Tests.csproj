@@ -33,6 +33,10 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Exceptionless.DateTimeExtensions, Version=3.1.41.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Exceptionless.DateTimeExtensions.3.1.41\lib\portable-net40+win+wpa81+MonoAndroid10+xamarinios10+MonoTouch10\Exceptionless.DateTimeExtensions.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Newtonsoft.Json, Version=7.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\Newtonsoft.Json.7.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
       <Private>True</Private>
@@ -108,6 +112,7 @@
     <Compile Include="Utility\CaptureFixture.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
+    <Compile Include="Utility\ObjectIdTests.cs" />
     <Compile Include="Utility\RandomData.cs" />
     <Compile Include="Utility\TestOutputWriter.cs" />
     <Compile Include="Utility\UdpListener.cs" />

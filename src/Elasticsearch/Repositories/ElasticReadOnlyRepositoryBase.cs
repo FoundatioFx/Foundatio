@@ -190,7 +190,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 result = (await Context.ElasticClient.GetAsync<T>(id, index).AnyContext()).Source;
             else
                 result = await FindOneAsync(new ElasticQuery().WithId(id)).AnyContext();
-            
+
             if (IsCacheEnabled && result != null && useCache)
                 await Cache.SetAsync(id, result, expiresIn ?? TimeSpan.FromSeconds(RepositoryConstants.DEFAULT_CACHE_EXPIRATION_SECONDS)).AnyContext();
 
@@ -319,7 +319,7 @@ namespace Foundatio.Elasticsearch.Repositories {
         protected virtual string GetTypeName() => EntityType;
         protected internal virtual Func<T, string> GetParentIdFunc { get; set; }
         protected internal virtual Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
-
+        
         protected virtual string[] GetIndexesByQuery(object query) {
             var withIndicesQuery = query as IElasticIndicesQuery;
             return withIndicesQuery?.Indices.ToArray();
