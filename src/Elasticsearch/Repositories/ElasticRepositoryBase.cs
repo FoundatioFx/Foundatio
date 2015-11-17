@@ -412,7 +412,5 @@ namespace Foundatio.Elasticsearch.Repositories {
 
             await Context.MessagePublisher.PublishAsync(message, delay).AnyContext();
         }
-        
-        protected virtual Func<T, string> GetDocumentIdFunc { get { return d => ObjectId.GenerateNewId().ToString(); } }
     }
 }

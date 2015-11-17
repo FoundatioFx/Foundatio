@@ -12,6 +12,7 @@ using Foundatio.Logging;
 using Foundatio.Repositories;
 using Foundatio.Repositories.Models;
 using Foundatio.Repositories.Queries;
+using Foundatio.Utility;
 using Nest;
 
 namespace Foundatio.Elasticsearch.Repositories {
@@ -220,23 +221,20 @@ namespace Foundatio.Elasticsearch.Repositories {
             var multiGet = new MultiGetDescriptor();
 
             if (GetParentIdFunc == null) {
-                itemsToFind.ForEach(id => {
-                    string index = GetIndexById(id);
-                    if (!String.IsNullOrEmpty(index))
-                        multiGet.Get<T>(f => f.Id(id).Index(index));
-                });
+                itemsToFind.ForEach(id => multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id))));
 
                 var multiGetResults = await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext();
                 foreach (var doc in multiGetResults.Documents) {
-                    if (doc.Found)
-                        results.Documents.Add(doc.Source as T);
+                    if (!doc.Found)
+                        continue;
 
+                    results.Documents.Add(doc.Source as T);
                     itemsToFind.Remove(doc.Id);
                 }
             }
 
             // fallback to doing a find
-            if (itemsToFind.Count > 0)
+            if (itemsToFind.Count > 0 && (GetParentIdFunc != null || GetDocumentIndexFunc != null))
                 results.Documents.AddRange((await FindAsync(new ElasticQuery().WithIds(itemsToFind)).AnyContext()).Documents);
 
             if (IsCacheEnabled && useCache) {
@@ -297,14 +295,8 @@ namespace Foundatio.Elasticsearch.Repositories {
 
             return GetFacetsAsync(search);
         }
-
-        protected void DisableCache() {
-            IsCacheEnabled = false;
-            _scopedCacheClient = new ScopedCacheClient(new NullCacheClient(), GetTypeName());
-        }
-
+        
         public bool IsCacheEnabled { get; private set; } = true;
-
         protected ScopedCacheClient Cache {
             get {
                 if (_scopedCacheClient == null) {
@@ -315,9 +307,15 @@ namespace Foundatio.Elasticsearch.Repositories {
                 return _scopedCacheClient;
             }
         }
-        
+        protected void DisableCache() {
+            IsCacheEnabled = false;
+            _scopedCacheClient = new ScopedCacheClient(new NullCacheClient(), GetTypeName());
+        }
+
+
         protected virtual string GetTypeName() => EntityType;
         protected Func<T, string> GetParentIdFunc { get; set; }
+        protected Func<T, string> GetDocumentIdFunc { get; set; } = d => ObjectId.GenerateNewId().ToString();
         protected Func<T, string> GetDocumentIndexFunc { get; set; }
         
         protected virtual string[] GetIndexesByQuery(object query) {

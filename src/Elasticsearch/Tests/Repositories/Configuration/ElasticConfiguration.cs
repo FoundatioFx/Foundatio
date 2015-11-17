@@ -10,7 +10,10 @@ namespace Foundatio.Elasticsearch.Tests.Repositories.Configuration {
         public ElasticConfiguration(IQueue<WorkItemData> workItemQueue, ICacheClient cacheClient) : base(workItemQueue, cacheClient) {}
 
         protected override IEnumerable<IElasticIndex> GetIndexes() {
-            return new[] { new EmployeeIndex() };
+            return new IElasticIndex[] {
+                new EmployeeIndex(),
+                new EmployeeWithDateIndex()
+            };
         }
     }
 }

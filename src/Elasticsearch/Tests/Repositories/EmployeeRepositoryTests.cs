@@ -2,6 +2,7 @@
 using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
+using Exceptionless.DateTimeExtensions;
 using Foundatio.Elasticsearch.Tests.Repositories.Builders;
 using Foundatio.Elasticsearch.Tests.Repositories.Configuration;
 using Foundatio.Elasticsearch.Tests.Repositories.Models;
@@ -21,8 +22,10 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
         private readonly IElasticClient _client;
         private readonly IQueue<WorkItemData> _workItemQueue = new InMemoryQueue<WorkItemData>();
         private readonly ElasticConfiguration _configuration;
+        private readonly EmployeeWithDateIndex _employeeWithDateIndex = new EmployeeWithDateIndex();
         private readonly QueryBuilderRegistry _queryBuilder = new QueryBuilderRegistry();
         private readonly EmployeeRepository _repository;
+        private readonly EmployeeWithDateBasedIndexRepository _repositoryWithDateBasedIndex;
 
         public EmployeeRepositoryTests() {
             _queryBuilder.RegisterDefaults();
@@ -31,11 +34,38 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             _configuration = new ElasticConfiguration(_workItemQueue, _cache);
             _client = _configuration.GetClient(new[] { new Uri(ConfigurationManager.ConnectionStrings["ElasticConnectionString"].ConnectionString) });
             _repository = new EmployeeRepository(new ElasticRepositoryContext<Employee>(_cache, _client, _configuration, null, null, _queryBuilder));
+            _repositoryWithDateBasedIndex = new EmployeeWithDateBasedIndexRepository(new ElasticRepositoryContext<EmployeeWithDate>(_cache, _client, _configuration, null, null, _queryBuilder), _employeeWithDateIndex);
+        }
+        
+        [Fact]
+        public async Task GetByDateBasedIndex() {
+            await RemoveDataAsync();
+
+            var indexes = await _client.GetIndicesPointingToAliasAsync(_employeeWithDateIndex.AliasName);
+            Assert.Equal(0, indexes.Count);
+            
+            var alias = await _client.GetAliasAsync(descriptor => descriptor.Alias(_employeeWithDateIndex.AliasName));
+            Assert.False(alias.IsValid);
+            Assert.Equal(0, alias.Indices.Count);
+
+            var employee = await _repositoryWithDateBasedIndex.AddAsync(EmployeeWithDateGenerator.Default);
+            Assert.NotNull(employee?.Id);
+            
+            employee = await _repositoryWithDateBasedIndex.AddAsync(EmployeeWithDateGenerator.Generate(startDate: DateTimeOffset.Now.SubtractMonths(1)));
+            Assert.NotNull(employee?.Id);
+
+            await _client.RefreshAsync();
+            alias = await _client.GetAliasAsync(descriptor => descriptor.Alias(_employeeWithDateIndex.AliasName));
+            Assert.True(alias.IsValid);
+            Assert.Equal(2, alias.Indices.Count);
+            
+            indexes = await _client.GetIndicesPointingToAliasAsync(_employeeWithDateIndex.AliasName);
+            Assert.Equal(2, indexes.Count);
         }
 
         [Fact]
         public async Task AddWithDefaultGeneratedIdAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
             Assert.NotNull(employee?.Id);
@@ -47,7 +77,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task AddWithExistingIdAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             string id = ObjectId.GenerateNewId().ToString();
             var employee = await _repository.AddAsync(EmployeeGenerator.Generate(id));
@@ -56,7 +86,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task SaveAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
             Assert.NotNull(employee?.Id);
@@ -70,7 +100,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task AddDuplicateAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             string id = ObjectId.GenerateNewId().ToString();
             var employee = await _repository.AddAsync(EmployeeGenerator.Generate(id));
@@ -82,7 +112,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task SetCreatedAndModifiedTimesAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             DateTime nowUtc = DateTime.UtcNow;
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
@@ -100,7 +130,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task CannotSetFutureCreatedAndModifiedTimesAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             var employee = await _repository.AddAsync(EmployeeGenerator.Generate(createdUtc: DateTime.MaxValue, updatedUtc: DateTime.MaxValue));
             Assert.True(employee.CreatedUtc != DateTime.MaxValue);
@@ -133,7 +163,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task CanAddToCacheAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             Assert.Equal(0, _cache.Count);
             var employee = await _repository.AddAsync(EmployeeGenerator.Default, addToCache: true);
@@ -148,7 +178,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task CanSaveToCacheAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             Assert.Equal(0, _cache.Count);
             var employee = await _repository.SaveAsync(EmployeeGenerator.Generate(ObjectId.GenerateNewId().ToString()), addToCache: true);
@@ -163,7 +193,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
         
         [Fact]
         public async Task GetFromCacheAsync() {
-            RemoveData();
+            await RemoveDataAsync();
 
             Assert.Equal(0, _cache.Count);
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
@@ -184,7 +214,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
 
         [Fact]
         public async Task GetByAgeAsync() {
-            RemoveData();
+            await RemoveDataAsync();
             
             var employee19 = await _repository.AddAsync(EmployeeGenerator.Generate(age: 19));
             var employee20 = await _repository.AddAsync(EmployeeGenerator.Generate(age: 20));
@@ -198,11 +228,11 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             Assert.Equal(employee19.ToJson(), results.Documents.First().ToJson());
         }
 
-        private void RemoveData() {
-
-            _cache.RemoveAllAsync();
+        private async Task RemoveDataAsync() {
+            await _cache.RemoveAllAsync();
             _configuration.DeleteIndexes(_client);
             _configuration.ConfigureIndexes(_client);
+            await _client.RefreshAsync();
         }
     }
 }

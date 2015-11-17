@@ -37,6 +37,10 @@
       <HintPath>..\..\..\packages\Elasticsearch.Net.1.7.1\lib\net45\Elasticsearch.Net.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="Exceptionless.DateTimeExtensions, Version=3.1.41.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Exceptionless.DateTimeExtensions.3.1.41\lib\portable-net40+win+wpa81+MonoAndroid10+xamarinios10+MonoTouch10\Exceptionless.DateTimeExtensions.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Exceptionless.RandomData, Version=1.0.15.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\Exceptionless.RandomData.1.0.15.0\lib\net40\Exceptionless.RandomData.dll</HintPath>
       <Private>True</Private>
@@ -85,10 +89,13 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Repositories\Builders\AgeQueryBuilder.cs" />
     <Compile Include="Repositories\Configuration\ElasticConfiguration.cs" />
+    <Compile Include="Repositories\Configuration\EmployeeWithDateIndex.cs" />
     <Compile Include="Repositories\Configuration\EmployeeIndex.cs" />
     <Compile Include="Repositories\EmployeeRepository.cs" />
     <Compile Include="Repositories\EmployeeRepositoryTests.cs" />
+    <Compile Include="Repositories\EmployeeWithDateBasedIndexRepository.cs" />
     <Compile Include="Repositories\Models\Employee.cs" />
+    <Compile Include="Repositories\Models\EmployeeWithDate.cs" />
     <Compile Include="Repositories\Queries\AgeQuery.cs" />
     <Compile Include="Repositories\AppRepositoryBase.cs" />
   </ItemGroup>
