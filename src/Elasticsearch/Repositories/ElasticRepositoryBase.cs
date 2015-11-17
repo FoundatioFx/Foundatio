@@ -72,7 +72,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 return;
 
             await OnDocumentsRemovingAsync(documents).AnyContext();
-            foreach (var g in documents.GroupBy(d => GetDocumentIndexFunc(d)))
+            foreach (var g in documents.GroupBy(d => GetDocumentIndexFunc?.Invoke(d)))
                 await Context.ElasticClient.DeleteByQueryAsync<T>(q => q.Query(q1 => q1.Ids(g.Select(d => d.Id))).Index(g.Key)).AnyContext();
 
             await OnDocumentsRemovedAsync(documents, sendNotification).AnyContext();

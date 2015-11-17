@@ -6,7 +6,6 @@ using Foundatio.Elasticsearch.Tests.Repositories.Builders;
 using Foundatio.Elasticsearch.Tests.Repositories.Configuration;
 using Foundatio.Elasticsearch.Tests.Repositories.Models;
 using Foundatio.Caching;
-using Foundatio.Elasticsearch.Extensions;
 using Foundatio.Elasticsearch.Repositories;
 using Foundatio.Elasticsearch.Repositories.Queries.Builders;
 using Foundatio.Elasticsearch.Tests.Extensions;
@@ -116,6 +115,23 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
         }
 
         [Fact]
+        public async Task CanGetByIds() {
+            var employee = await _repository.AddAsync(EmployeeGenerator.Generate());
+            Assert.NotNull(employee.Id);
+
+            var result = await _repository.GetByIdAsync(employee.Id);
+            Assert.NotNull(result);
+            Assert.Equal(employee.Id, result.Id);
+            
+            var employee2 = await _repository.AddAsync(EmployeeGenerator.Generate());
+            Assert.NotNull(employee2.Id);
+
+            var results = await _repository.GetByIdsAsync(new [] { employee.Id, employee2.Id });
+            Assert.NotNull(results);
+            Assert.Equal(2, results.Total);
+        }
+
+        [Fact]
         public async Task CanAddToCacheAsync() {
             RemoveData();
 
@@ -153,9 +169,9 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
             Assert.Equal(0, _cache.Count);
             Assert.Equal(0, _cache.Hits);
-
-            await _client.RefreshAsync();
+            
             var cachedResult = await _repository.GetByIdAsync(employee.Id, useCache: true);
+            Assert.NotNull(cachedResult);
             Assert.Equal(1, _cache.Count);
             Assert.Equal(0, _cache.Hits);
             Assert.Equal(employee.ToJson(), cachedResult.ToJson());

@@ -186,7 +186,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 return result;
 
             string index = GetIndexById(id);
-            if (GetParentIdFunc == null && index != null) // we don't have the parent id
+            if (GetParentIdFunc == null) // we don't have the parent id
                 result = (await Context.ElasticClient.GetAsync<T>(id, index).AnyContext()).Source;
             else
                 result = await FindOneAsync(new ElasticQuery().WithId(id)).AnyContext();
@@ -223,7 +223,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                 itemsToFind.ForEach(id => {
                     string index = GetIndexById(id);
                     if (!String.IsNullOrEmpty(index))
-                        multiGet.Get<T>(f => f.Id(id).Index(GetIndexById(id)));
+                        multiGet.Get<T>(f => f.Id(id).Index(index));
                 });
 
                 var multiGetResults = await Context.ElasticClient.MultiGetAsync(multiGet).AnyContext();
@@ -305,7 +305,7 @@ namespace Foundatio.Elasticsearch.Repositories {
 
         public bool IsCacheEnabled { get; private set; } = true;
 
-        protected internal ScopedCacheClient Cache {
+        protected ScopedCacheClient Cache {
             get {
                 if (_scopedCacheClient == null) {
                     IsCacheEnabled = Context.Cache != null;
@@ -317,15 +317,15 @@ namespace Foundatio.Elasticsearch.Repositories {
         }
         
         protected virtual string GetTypeName() => EntityType;
-        protected internal virtual Func<T, string> GetParentIdFunc { get; set; }
-        protected internal virtual Func<T, string> GetDocumentIndexFunc { get { return d => null; } }
+        protected Func<T, string> GetParentIdFunc { get; set; }
+        protected Func<T, string> GetDocumentIndexFunc { get; set; }
         
         protected virtual string[] GetIndexesByQuery(object query) {
             var withIndicesQuery = query as IElasticIndicesQuery;
             return withIndicesQuery?.Indices.ToArray();
         }
 
-        protected internal virtual string GetIndexById(string id) => null;
+        protected virtual string GetIndexById(string id) => null;
         
         protected virtual async Task InvalidateCacheAsync(ICollection<ModifiedDocument<T>> documents) {
             if (!IsCacheEnabled)
