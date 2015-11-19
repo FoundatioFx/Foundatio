@@ -16,7 +16,9 @@ namespace Foundatio.Serializer {
         }
 
         public Task<byte[]> SerializeAsync(object value) {
-            if (value == null) return Task.FromResult<byte[]>(null);
+            if (value == null)
+                return Task.FromResult<byte[]>(null);
+
             return Task.FromResult(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(value, _settings)));
         }
     }
