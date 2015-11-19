@@ -5,6 +5,8 @@ namespace Foundatio.Tests.Messaging {
         public string Data { get; set; }
     }
 
+    public class DerivedSimpleMessageA : SimpleMessageA {}
+
     public class SimpleMessageB : ISimpleMessage {
         public string Data { get; set; }
     }

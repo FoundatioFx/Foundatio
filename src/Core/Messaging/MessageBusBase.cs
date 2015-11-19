@@ -20,6 +20,9 @@ namespace Foundatio.Messaging {
         public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
 
         protected async Task SendMessageToSubscribersAsync(Type messageType, object message) {
+            if (message == null)
+                return;
+
             var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.IsAssignableFrom(messageType));
             foreach (var subscriber in messageTypeSubscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested)

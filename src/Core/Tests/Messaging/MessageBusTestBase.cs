@@ -43,6 +43,49 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
+        public virtual async Task CanHandleNullMessage() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            using (messageBus) {
+                var resetEvent = new AsyncManualResetEvent(false);
+                messageBus.Subscribe<object>(msg => {
+                    throw new ApplicationException();
+                });
+
+                await Task.Delay(100);
+                await messageBus.PublishAsync<object>(null);
+                Trace.WriteLine("Published one...");
+
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(1));
+            }
+        }
+        
+        public virtual async Task CanSendDerivedMessage() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            using (messageBus) {
+                var resetEvent = new AsyncManualResetEvent(false);
+                messageBus.Subscribe<SimpleMessageA>(msg => {
+                    Logger.Trace().Message("Got message").Write();
+                    Assert.Equal("Hello", msg.Data);
+                    resetEvent.Set();
+                    Logger.Trace().Message("Set event").Write();
+                });
+
+                await Task.Delay(100);
+                await messageBus.PublishAsync(new DerivedSimpleMessageA {
+                    Data = "Hello"
+                });
+                Trace.WriteLine("Published one...");
+
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
         public virtual async Task CanSendDelayedMessage() {
             const int numConcurrentMessages = 10000;
             var messageBus = GetMessageBus();

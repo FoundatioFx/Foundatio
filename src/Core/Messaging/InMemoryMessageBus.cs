@@ -7,6 +7,9 @@ using Foundatio.Utility;
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (message == null)
+                return TaskHelper.Completed();
+
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 

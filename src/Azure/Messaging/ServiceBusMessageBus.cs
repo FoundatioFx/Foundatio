@@ -51,6 +51,9 @@ namespace Foundatio.Messaging {
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (message == null)
+                return;
+
             var brokeredMessage = new BrokeredMessage(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName, Data = await _serializer.SerializeToStringAsync(message).AnyContext() 
             });

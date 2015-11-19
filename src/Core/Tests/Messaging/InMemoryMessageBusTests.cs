@@ -18,6 +18,16 @@ namespace Foundatio.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanHandleNullMessage() {
+            return base.CanHandleNullMessage();
+        }
+
+        [Fact]
+        public override Task CanSendDerivedMessage() {
+            return base.CanSendDerivedMessage();
+        }
+
+        [Fact]
         public override Task CanSendDelayedMessage() {
             return base.CanSendDelayedMessage();
         }

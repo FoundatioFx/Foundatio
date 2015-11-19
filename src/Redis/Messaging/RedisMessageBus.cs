@@ -53,6 +53,9 @@ namespace Foundatio.Messaging {
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (message == null)
+                return;
+
 #if DEBUG
             Logger.Trace().Message($"Message Publish: {messageType.FullName}").Write();
 #endif
