@@ -176,7 +176,11 @@ namespace Foundatio.Elasticsearch.Repositories {
                 }).AnyContext();
 
                 if (!bulkResult.IsValid) {
-                    Logger.Error().Message("Error occurred while bulk updating").Exception(bulkResult.ConnectionStatus.OriginalException).Write();
+                    Logger.Error()
+                        .Message("Error occurred while bulk updating")
+                        .Exception(bulkResult.ConnectionStatus.OriginalException ?? bulkResult.RequestInformation.OriginalException)
+                        .Property("Error", bulkResult.ServerError)
+                        .Write();
                     return 0;
                 }
 
