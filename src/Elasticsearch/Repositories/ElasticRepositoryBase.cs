@@ -362,24 +362,24 @@ namespace Foundatio.Elasticsearch.Repositories {
             var options = Options as IQueryOptions;
             var supportsSoftDeletes = options != null && options.SupportsSoftDeletes;
             if (!documents.Any()) {
-                await PublishMessageAsync(CreateChangeTypeMessage(changeType, null), delay).AnyContext();
+                await PublishChangeTypeMessageAsync(changeType, null, delay).AnyContext();
             } else if (BatchNotifications && documents.Count > 1) {
                 // TODO: This needs to support batch notifications
                 if (!supportsSoftDeletes || changeType != ChangeType.Saved) {
                     foreach (var doc in documents.Select(d => d.Value)) {
-                        await PublishMessageAsync(CreateChangeTypeMessage(changeType, doc), delay).AnyContext();
+                        await PublishChangeTypeMessageAsync(changeType, doc, delay).AnyContext();
                     }
 
                     return;
                 }
                 var allDeleted = documents.All(d => d.Original != null && ((ISupportSoftDeletes)d.Original).IsDeleted == false && ((ISupportSoftDeletes)d.Value).IsDeleted);
                 foreach (var doc in documents.Select(d => d.Value)) {
-                    await PublishMessageAsync(CreateChangeTypeMessage(allDeleted ? ChangeType.Removed : changeType, doc), delay).AnyContext();
+                    await PublishChangeTypeMessageAsync(allDeleted ? ChangeType.Removed : changeType, doc, delay).AnyContext();
                 }
             } else {
                 if (!supportsSoftDeletes) {
                     foreach (var d in documents)
-                        await PublishMessageAsync(CreateChangeTypeMessage(changeType, d.Value), delay).AnyContext();
+                        await PublishChangeTypeMessageAsync(changeType, d.Value, delay).AnyContext();
                     return;
                 }
 
@@ -392,18 +392,22 @@ namespace Foundatio.Elasticsearch.Repositories {
                             docChangeType = ChangeType.Removed;
                     }
 
-                    await PublishMessageAsync(CreateChangeTypeMessage(docChangeType, d.Value), delay).AnyContext();
+                    await PublishChangeTypeMessageAsync(docChangeType, d.Value, delay).AnyContext();
                 }
             }
         }
 
-        protected virtual object CreateChangeTypeMessage(ChangeType changeType, T document, IDictionary<string, object> data = null) {
-            return new EntityChanged {
+        protected Task PublishChangeTypeMessageAsync(ChangeType changeType, T document, TimeSpan delay) {
+            return PublishChangeTypeMessageAsync(changeType, document, null, delay);
+        }
+
+        protected virtual Task PublishChangeTypeMessageAsync(ChangeType changeType, T document, IDictionary<string, object> data = null, TimeSpan? delay = null) {
+            return PublishMessageAsync(new EntityChanged {
                 ChangeType = changeType,
                 Id = document?.Id,
                 Type = EntityType,
                 Data = new DataDictionary(data ?? new Dictionary<string, object>())
-            };
+            }, delay);
         }
         
         protected async Task PublishMessageAsync<TMessageType>(TMessageType message, TimeSpan? delay = null) where TMessageType : class {
