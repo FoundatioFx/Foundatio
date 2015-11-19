@@ -30,7 +30,7 @@ namespace Foundatio.Storage {
     public static class FileStorageExtensions {
         public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
             string json = JsonConvert.SerializeObject(data);
-            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json)), cancellationToken);
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json ?? String.Empty)), cancellationToken);
         }
         
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -69,7 +69,7 @@ namespace Foundatio.Storage {
         }
 
         public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
-            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents)));
+            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
         }
     }
 }
