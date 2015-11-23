@@ -11,7 +11,7 @@
     <description>Pluggable foundation blocks for building distributed apps.</description>
     <tags>Queue Messaging Message Bus Locking Lock Distributed File Storage Blob Jobs Metrics Stats Azure Redis StatsD Repository</tags>
     <dependencies>
-      <dependency id="Foundatio" version="$version$" />
+      <dependency id="Foundatio" version="[$version$]" />
     </dependencies>
   </metadata>
 </package>
