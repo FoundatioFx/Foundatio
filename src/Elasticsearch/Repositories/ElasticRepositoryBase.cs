@@ -180,6 +180,8 @@ namespace Foundatio.Elasticsearch.Repositories {
                         .Message("Error occurred while bulk updating")
                         .Exception(bulkResult.ConnectionStatus.OriginalException ?? bulkResult.RequestInformation.OriginalException)
                         .Property("Error", bulkResult.ServerError)
+                        .Property("Query", query)
+                        .Property("Update", update)
                         .Write();
                     return 0;
                 }
