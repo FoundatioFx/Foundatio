@@ -126,7 +126,7 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
             employee.Name = Guid.NewGuid().ToString();
             employee = await _repository.SaveAsync(employee);
             Assert.Equal(createdUtc, employee.CreatedUtc);
-            Assert.True(updatedUtc < employee.UpdatedUtc);
+            Assert.True(updatedUtc < employee.UpdatedUtc, $"Previous UpdatedUtc: {updatedUtc} Current UpdatedUtc: {employee.UpdatedUtc}");
         }
 
         [Fact]
