@@ -343,10 +343,16 @@ namespace Foundatio.Elasticsearch.Repositories {
         }
         
         public Task InvalidateCacheAsync(T document) {
+            if (!IsCacheEnabled)
+                return TaskHelper.Completed();
+
             return InvalidateCacheAsync(new[] { document });
         }
 
         public Task InvalidateCacheAsync(ICollection<T> documents) {
+            if (!IsCacheEnabled)
+                return TaskHelper.Completed();
+
             return InvalidateCacheAsync(documents.Select(d => new ModifiedDocument<T>(d, null)).ToList());
         }
 
