@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
@@ -195,11 +196,37 @@ namespace Foundatio.Elasticsearch.Tests.Repositories {
         public async Task GetFromCacheAsync() {
             await RemoveDataAsync();
 
+            var employees = new List<Employee> { EmployeeGenerator.Default, EmployeeGenerator.Generate() };
+
+            Assert.Equal(0, _cache.Count);
+            await _repository.AddAsync(employees);
+            Assert.Equal(0, _cache.Count);
+            Assert.Equal(0, _cache.Hits);
+            
+            var cachedResult = await _repository.GetByIdsAsync(employees.Select(e => e.Id).ToArray(), useCache: true);
+            Assert.NotNull(cachedResult);
+            Assert.Equal(2, _cache.Count);
+            Assert.Equal(0, _cache.Hits);
+
+            cachedResult = await _repository.GetByIdsAsync(employees.Select(e => e.Id).ToArray(), useCache: true);
+            Assert.NotNull(cachedResult);
+            Assert.Equal(2, _cache.Count);
+            Assert.Equal(2, _cache.Hits);
+
+            await _repository.GetByIdAsync(employees.First().Id, useCache: true);
+            Assert.Equal(2, _cache.Count);
+            Assert.Equal(3, _cache.Hits);
+        }
+
+        [Fact]
+        public async Task GetByIdsFromCacheAsync() {
+            await RemoveDataAsync();
+
             Assert.Equal(0, _cache.Count);
             var employee = await _repository.AddAsync(EmployeeGenerator.Default);
             Assert.Equal(0, _cache.Count);
             Assert.Equal(0, _cache.Hits);
-            
+
             var cachedResult = await _repository.GetByIdAsync(employee.Id, useCache: true);
             Assert.NotNull(cachedResult);
             Assert.Equal(1, _cache.Count);
