@@ -179,6 +179,7 @@ namespace Foundatio.Elasticsearch.Repositories {
                     Logger.Error()
                         .Message("Error occurred while bulk updating")
                         .Exception(bulkResult.ConnectionStatus.OriginalException ?? bulkResult.RequestInformation.OriginalException)
+                        .Property("ItemsWithErrors", bulkResult.ItemsWithErrors)
                         .Property("Error", bulkResult.ServerError)
                         .Property("Query", query)
                         .Property("Update", update)
