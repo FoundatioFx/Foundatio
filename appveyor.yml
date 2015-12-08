@@ -29,9 +29,9 @@ build:
   publish_nuget_symbols: true
 
 before_test:
-  - cinst redis-64
-  - redis-server --service-install
-  - redis-server --service-start
+  - nuget install redis-64 -excludeversion
+  - redis-64\tools\redis-server.exe --service-install
+  - redis-64\tools\redis-server.exe --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
   - ps: .\Build\Start-ElasticSearch.ps1
   #- ps: .\Build\enable-rdp.ps1
