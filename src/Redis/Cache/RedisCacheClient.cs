@@ -20,7 +20,7 @@ namespace Foundatio.Caching {
         }
         
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            if (keys == null || !keys.Any()) {
+            if (keys == null) {
                 var endpoints = _connectionMultiplexer.GetEndPoints(true);
                 if (endpoints.Length == 0)
                     return 0;

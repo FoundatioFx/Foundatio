@@ -57,6 +57,9 @@ namespace Foundatio.Elasticsearch.Repositories {
                 throw new ArgumentNullException(nameof(id));
 
             var document = await GetByIdAsync(id, true).AnyContext();
+            if (document == null)
+                return;
+
             await RemoveAsync(new[] { document }, sendNotification).AnyContext();
         }
 
@@ -218,6 +221,7 @@ namespace Foundatio.Elasticsearch.Repositories {
 
             if (DocumentsAdding != null)
                 await DocumentsAdding.InvokeAsync(this, new DocumentsEventArgs<T>(documents, this)).AnyContext();
+
             await OnDocumentsChangingAsync(ChangeType.Added, documents).AnyContext();
         }
 
@@ -243,16 +247,17 @@ namespace Foundatio.Elasticsearch.Repositories {
             var modifiedDocs = originalDocuments.FullOuterJoin(
                 documents, cf => cf.Id, cf => cf.Id,
                 (original, modified, id) => new { Id = id, Original = original, Modified = modified }).Select(m => new ModifiedDocument<T>( m.Modified, m.Original)).ToList();
-
-            var addingDocs = modifiedDocs.Where(m => m.Original == null).Select(m => m.Value).ToList();
+            
             var savingDocs = modifiedDocs.Where(m => m.Original != null).ToList();
-
-            await InvalidateCacheAsync(savingDocs).AnyContext();
-            await InvalidateCacheAsync(addingDocs).AnyContext();
+            if (savingDocs.Count > 0)
+                await InvalidateCacheAsync(savingDocs).AnyContext();
 
             // if we couldn't find an original document, then it must be new.
-            if (addingDocs.Count > 0)
+            var addingDocs = modifiedDocs.Where(m => m.Original == null).Select(m => m.Value).ToList();
+            if (addingDocs.Count > 0) {
+                await InvalidateCacheAsync(addingDocs).AnyContext();
                 await OnDocumentsAddingAsync(addingDocs).AnyContext();
+            }
 
             if (savingDocs.Count == 0)
                 return;
@@ -269,14 +274,13 @@ namespace Foundatio.Elasticsearch.Repositories {
             var modifiedDocs = originalDocuments.FullOuterJoin(
                 documents, cf => cf.Id, cf => cf.Id,
                 (original, modified, id) => new { Id = id, Original = original, Modified = modified }).Select(m => new ModifiedDocument<T>(m.Modified, m.Original)).ToList();
-
-            var addedDocs = modifiedDocs.Where(m => m.Original == null).Select(m => m.Value).ToList();
-            var savedDocs = modifiedDocs.Where(m => m.Original != null).ToList();
-
+            
             // if we couldn't find an original document, then it must be new.
+            var addedDocs = modifiedDocs.Where(m => m.Original == null).Select(m => m.Value).ToList();
             if (addedDocs.Count > 0)
                 await OnDocumentsAddedAsync(addedDocs, sendNotifications).AnyContext();
 
+            var savedDocs = modifiedDocs.Where(m => m.Original != null).ToList();
             if (savedDocs.Count == 0)
                 return;
 
