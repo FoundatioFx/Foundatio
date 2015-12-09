@@ -85,7 +85,54 @@ namespace Foundatio.Tests.Locks {
                 Assert.NotNull(testLock);
             }
         }
-        
+
+        public virtual async Task LockOneAtATime() {
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
+
+            using (locker) {
+                int successCount = 0;
+                var configTask1 = Task.Run(() => {
+                    if (DoLockedWork(locker).GetAwaiter().GetResult())
+                        Interlocked.Increment(ref successCount);
+                });
+                var configTask2 = Task.Run(() => {
+                    if (DoLockedWork(locker).GetAwaiter().GetResult())
+                        Interlocked.Increment(ref successCount);
+                });
+                var configTask3 = Task.Run(() => {
+                    if (DoLockedWork(locker).GetAwaiter().GetResult())
+                        Interlocked.Increment(ref successCount);
+                });
+                var configTask4 = Task.Run(() => {
+                    if (DoLockedWork(locker).GetAwaiter().GetResult())
+                        Interlocked.Increment(ref successCount);
+                });
+
+                await Task.WhenAll(configTask1, configTask2, configTask3, configTask4);
+                Assert.Equal(1, successCount);
+
+                await Task.Run(() => {
+                    if (DoLockedWork(locker).GetAwaiter().GetResult())
+                        Interlocked.Increment(ref successCount);
+                });
+                Assert.Equal(2, successCount);
+            }
+        }
+
+        private async Task<bool> DoLockedWork(ILockProvider locker) {
+            using (
+                var l = await locker.AcquireAsync("DoLockedWork", TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext()) {
+                if (l == null)
+                    return false;
+
+                Thread.Sleep(200);
+
+                return true;
+            }
+        }
+
         public virtual async Task WillThrottleCalls() {
             var period = TimeSpan.FromSeconds(1);
             var locker = GetThrottlingLockProvider(5, period);

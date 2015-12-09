@@ -34,5 +34,10 @@ namespace Foundatio.Redis.Tests.Locks {
         public override Task WillThrottleCalls() {
             return base.WillThrottleCalls();
         }
+
+        [Fact]
+        public override Task LockOneAtATime() {
+            return base.LockOneAtATime();
+        }
     }
 }

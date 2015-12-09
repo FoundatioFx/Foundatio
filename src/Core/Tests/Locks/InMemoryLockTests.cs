@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
@@ -26,6 +27,11 @@ namespace Foundatio.Tests.Locks {
         [Fact]
         public override Task LockWillTimeout() {
             return base.LockWillTimeout();
+        }
+
+        [Fact]
+        public override Task LockOneAtATime() {
+            return base.LockOneAtATime();
         }
 
         [Fact]
