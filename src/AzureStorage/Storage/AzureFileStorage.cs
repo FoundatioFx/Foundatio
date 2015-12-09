@@ -97,9 +97,10 @@ namespace Foundatio.Storage {
             BlobContinuationToken continuationToken = null;
             var blobs = new List<CloudBlockBlob>();
             do {
-                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, null, continuationToken, null, null, cancellationToken).AnyContext();
-                
+                var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, limit, continuationToken, null, null, cancellationToken).AnyContext();
                 continuationToken = listingResult.ContinuationToken;
+
+                // TODO: Implement paging
                 blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
             }
             while (continuationToken != null && blobs.Count < limit);
