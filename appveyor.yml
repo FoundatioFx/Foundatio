@@ -8,6 +8,7 @@ environment:
 
 install:
   - ps: $env:GIT_HASH = $env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
+  - choco install gitlink
 
 assembly_info:
   patch: true
@@ -27,6 +28,9 @@ build:
   verbosity: minimal
   publish_nuget: true
   publish_nuget_symbols: true
+
+after_build:
+  - GitLink .\
 
 before_test:
   - nuget install redis-64 -excludeversion
