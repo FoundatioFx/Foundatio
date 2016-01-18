@@ -12,7 +12,7 @@
     <tags>Queue Messaging Message Bus Locking Lock Distributed File Storage Blob Jobs Metrics Stats Azure Redis StatsD</tags>
   </metadata>
   <files>
-    <file src="bin\Release\Foundatio.*" target="lib\net45" />
+    <file src="bin\Release\Foundatio.pdb" target="lib\net45" />
     <file src="..\JobRunner\bin\Release\Job.*" target="tools" />
     <file src="..\JobRunner\bin\Release\CommandLine.*" target="tools\bin" />
     <file src="..\JobRunner\bin\Release\Foundatio.*" target="tools\bin" />

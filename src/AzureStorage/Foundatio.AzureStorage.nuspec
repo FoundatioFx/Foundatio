@@ -15,6 +15,6 @@
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\Release\Foundatio.AzureStorage.*" target="lib\net45" />
+    <file src="bin\Release\Foundatio.AzureStorage.pdb" target="lib\net45" />
   </files>
 </package>

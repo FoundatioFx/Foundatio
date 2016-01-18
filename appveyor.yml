@@ -27,7 +27,6 @@ build:
   project: Foundatio.sln
   verbosity: minimal
   publish_nuget: true
-  publish_nuget_symbols: true
 
 after_build:
   - GitLink .\
