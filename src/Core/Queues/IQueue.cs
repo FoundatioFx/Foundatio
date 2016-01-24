@@ -21,10 +21,16 @@ namespace Foundatio.Queues {
 
         Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
 
+        [Obsolete("Use QueueEntry<T> overload")]
         Task CompleteAsync(string id);
 
+        Task CompleteAsync(QueueEntry<T> queueEntry);
+
+        [Obsolete("Use QueueEntry<T> overload")]
         Task AbandonAsync(string id);
-        
+
+        Task AbandonAsync(QueueEntry<T> queueEntry);
+
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
 
         Task<QueueStats> GetQueueStatsAsync();

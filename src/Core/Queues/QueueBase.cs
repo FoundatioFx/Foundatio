@@ -36,7 +36,11 @@ namespace Foundatio.Queues {
 
         public abstract Task CompleteAsync(string id);
 
+        public virtual Task CompleteAsync(QueueEntry<T> queueEntry) => CompleteAsync(queueEntry.Id);
+
         public abstract Task AbandonAsync(string id);
+
+        public virtual Task AbandonAsync(QueueEntry<T> queueEntry) => AbandonAsync(queueEntry.Id);
 
         public abstract Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
 
