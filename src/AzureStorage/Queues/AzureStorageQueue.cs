@@ -22,8 +22,9 @@ namespace Foundatio.AzureStorage.Queues {
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
+        private readonly TimeSpan _dequeueInterval = TimeSpan.FromSeconds(1);
 
-        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null, IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudQueueClient();
 
@@ -36,7 +37,8 @@ namespace Foundatio.AzureStorage.Queues {
 
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
-
+            if (dequeueInterval.HasValue)
+                _dequeueInterval = dequeueInterval.Value;
             if (retryPolicy != null) 
                 client.DefaultRequestOptions.RetryPolicy = retryPolicy;
 
@@ -58,14 +60,19 @@ namespace Foundatio.AzureStorage.Queues {
         }
 
         public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = new CancellationToken()) {
+            // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            CloudQueueMessage message = null;
+            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
 
-            try {
-                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
+            while (message == null && !cancellationToken.IsCancellationRequested) {
+                try {
+                    await Task.Delay(_dequeueInterval, cancellationToken);
+                }
+                catch (TaskCanceledException) { }
+
+                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
             }
-            catch (TaskCanceledException) { }
 
             if (message == null)
                 return null;
@@ -95,8 +102,11 @@ namespace Foundatio.AzureStorage.Queues {
                 await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
                 await _poisonQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
             }
-            // else wait until visibility expires
-
+            else {
+                // Make the item visible immediately
+                await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, TimeSpan.Zero, MessageUpdateFields.Visibility).AnyContext();
+            }
+            
             await OnAbandonedAsync(queueEntry.Id).AnyContext();
         }
         public override Task AbandonAsync(string id) {
@@ -158,9 +168,9 @@ namespace Foundatio.AzureStorage.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
-                        Interlocked.Increment(ref _workerErrorCount);
                         Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
-                        await queueEntry.AbandonAsync();
+                        await queueEntry.AbandonAsync().AnyContext();
+                        Interlocked.Increment(ref _workerErrorCount);
                     }
                 }
 #if DEBUG
