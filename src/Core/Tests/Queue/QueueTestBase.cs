@@ -193,10 +193,10 @@ namespace Foundatio.Tests.Queue {
 
                 sw.Restart();
                 workItem = await queue.DequeueAsync(timeToWait);
+                Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
-                Assert.NotNull(workItem);
             }
         }
 

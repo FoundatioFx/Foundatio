@@ -12,6 +12,7 @@ using Microsoft.WindowsAzure.Storage.RetryPolicies;
 
 namespace Foundatio.AzureStorage.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
+        private readonly string _queueName;
         private readonly CloudQueue _queueReference;
         private readonly CloudQueue _poisonQueueReference;
         private long _enqueuedCount;
@@ -28,6 +29,7 @@ namespace Foundatio.AzureStorage.Queues {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudQueueClient();
 
+            _queueName = queueName;
             _queueReference = client.GetQueueReference(queueName);
             _poisonQueueReference = client.GetQueueReference(String.Concat(queueName, "-poison"));
             
@@ -65,9 +67,9 @@ namespace Foundatio.AzureStorage.Queues {
 
             var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
 
-            while (message == null && !cancellationToken.IsCancellationRequested) {
+            while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await Task.Delay(_dequeueInterval, cancellationToken);
+                    await Task.Delay(_dequeueInterval, linkedCancellationToken);
                 }
                 catch (TaskCanceledException) { }
 
@@ -135,8 +137,10 @@ namespace Foundatio.AzureStorage.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
-            await _queueReference.DeleteIfExistsAsync().AnyContext();
-            await _queueReference.CreateIfNotExistsAsync().AnyContext();
+            // ServiceBusQueue seems to recreate so we're doing the same here.
+            // This should probably be renamed to ClearQueueAsync()?
+            await _queueReference.ClearAsync().AnyContext();
+            await _poisonQueueReference.ClearAsync().AnyContext();
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -177,6 +181,14 @@ namespace Foundatio.AzureStorage.Queues {
                 Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested).Write();
 #endif
             }, linkedCancellationToken);
+        }
+
+        public override void Dispose() {
+            Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
+
+            _queueDisposedCancellationTokenSource?.Cancel();
+
+            base.Dispose();
         }
 
         private string MessageToIdString(CloudQueueMessage message) => String.Concat(message.Id, ":", message.PopReceipt);
