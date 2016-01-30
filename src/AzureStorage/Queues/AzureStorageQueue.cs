@@ -56,16 +56,17 @@ namespace Foundatio.AzureStorage.Queues {
             var message = new CloudQueueMessage(await _serializer.SerializeAsync(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
 
-            await OnEnqueuedAsync(data, message.Id).AnyContext();
+            var entry = new QueueEntry<T>(message.Id, data, this, DateTime.UtcNow, 0);
+            await OnEnqueuedAsync(entry).AnyContext();
             
             return message.Id;
         }
 
-        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = new CancellationToken()) {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
+            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
@@ -73,7 +74,7 @@ namespace Foundatio.AzureStorage.Queues {
                 }
                 catch (TaskCanceledException) { }
 
-                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
+                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
             }
 
             if (message == null)
@@ -86,17 +87,14 @@ namespace Foundatio.AzureStorage.Queues {
             return entry;
         }
 
-        public override async Task CompleteAsync(QueueEntry<T> queueEntry) {
+        public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             Interlocked.Increment(ref _completedCount);
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
-            await OnCompletedAsync(queueEntry.Id).AnyContext();
-        }
-        public override Task CompleteAsync(string id) {
-            throw new NotSupportedException();
+            await OnCompletedAsync(queueEntry).AnyContext();
         }
 
-        public override async Task AbandonAsync(QueueEntry<T> queueEntry) {
+        public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             Interlocked.Increment(ref _abandonedCount);
 
@@ -109,14 +107,11 @@ namespace Foundatio.AzureStorage.Queues {
                 await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, TimeSpan.Zero, MessageUpdateFields.Visibility).AnyContext();
             }
             
-            await OnAbandonedAsync(queueEntry.Id).AnyContext();
-        }
-        public override Task AbandonAsync(string id) {
-            throw new NotSupportedException();
+            await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
         public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = new CancellationToken()) {
-            throw new NotImplementedException("Azure Storage Queues do not support retreiving the entire queue");
+            throw new NotImplementedException("Azure Storage Queues do not support retrieving the entire queue");
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
@@ -149,7 +144,7 @@ namespace Foundatio.AzureStorage.Queues {
             _workerErrorCount = 0;
         }
 
-        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
+        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
@@ -157,7 +152,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             Task.Run(async () => {
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    QueueEntry<T> queueEntry = null;
+                    IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueAsync(cancellationToken).AnyContext();
                     }
@@ -212,7 +207,7 @@ namespace Foundatio.AzureStorage.Queues {
             return new CloudQueueMessage(messageId, popReceipt);
         }
 
-        private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(QueueEntry<T> queueEntry) {
+        private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = queueEntry as AzureStorageQueueEntry<T>;
 
             if (azureQueueEntry == null) {

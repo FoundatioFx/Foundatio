@@ -93,13 +93,14 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
             await _queueClient.SendAsync(message).AnyContext();
-
-            await OnEnqueuedAsync(data, message.MessageId).AnyContext();
+            
+            var entry = new QueueEntry<T>(message.MessageId, data, this, DateTime.UtcNow, 0);
+            await OnEnqueuedAsync(entry).AnyContext();
 
             return message.MessageId;
         }
         
-        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
             
@@ -122,7 +123,7 @@ namespace Foundatio.Queues {
             });
         }
         
-        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             // TODO: use the cancellation token.
             using (var msg = await _queueClient.ReceiveAsync().AnyContext()) {
                 if (msg == null)
@@ -136,16 +137,16 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override async Task CompleteAsync(string id) {
+        public override async Task CompleteAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(id)).AnyContext();
-            await OnCompletedAsync(id).AnyContext();
+            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
+            await OnCompletedAsync(entry).AnyContext();
         }
         
-        public override async Task AbandonAsync(string id) {
+        public override async Task AbandonAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(id)).AnyContext();
-            await OnAbandonedAsync(id).AnyContext();
+            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
+            await OnAbandonedAsync(entry).AnyContext();
         }
         
         public override void Dispose() {

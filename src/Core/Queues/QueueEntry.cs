@@ -4,7 +4,7 @@ using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IDisposable where T : class {
+    public class QueueEntry<T> : IDisposable, IQueueEntry<T>, IQueueEntryMetadata where T : class {
         private readonly IQueue<T> _queue;
         private bool _isCompleted;
 
@@ -22,6 +22,8 @@ namespace Foundatio.Queues {
         public DateTime EnqueuedTimeUtc { get; }
         public DateTime DequeuedTimeUtc { get; }
         public int Attempts { get; set; }
+        public TimeSpan ProcessingTime { get; set; }
+        public DataDictionary Data { get; } = new DataDictionary();
 
         public Task CompleteAsync() {
             if (_isCompleted)
@@ -39,27 +41,13 @@ namespace Foundatio.Queues {
             if (!_isCompleted)
                 await AbandonAsync().AnyContext();
         }
-
-        public QueueEntryMetadata ToMetadata() {
-            return new QueueEntryMetadata {
-                Id = Id,
-                EnqueuedTimeUtc = EnqueuedTimeUtc,
-                DequeuedTimeUtc = DequeuedTimeUtc,
-                Attempts = Attempts
-            };
-        }
     }
-    
-    public class QueueEntryMetadata {
-        public QueueEntryMetadata() {
-            Data = new DataDictionary();
-        }
 
-        public string Id { get; set; }
-        public DateTime EnqueuedTimeUtc { get; set; }
-        public DateTime DequeuedTimeUtc { get; set; }
-        public int Attempts { get; set; }
-        public TimeSpan ProcessingTime { get; set; }
-        public DataDictionary Data { get; set; } 
+    public interface IQueueEntryMetadata {
+        DateTime EnqueuedTimeUtc { get; }
+        DateTime DequeuedTimeUtc { get; }
+        int Attempts { get; }
+        TimeSpan ProcessingTime { get; }
+        DataDictionary Data { get; }
     }
 }

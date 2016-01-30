@@ -503,7 +503,7 @@ namespace Foundatio.Tests.Queue {
             Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
         }
 
-        protected async Task DoWorkAsync(QueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
+        protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
             Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 
