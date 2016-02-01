@@ -76,7 +76,7 @@ namespace Foundatio.Queues {
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
         
         protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry) {
-            var metadata = entry as IQueueEntryMetadata;
+            var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = DateTime.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
@@ -89,7 +89,7 @@ namespace Foundatio.Queues {
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry) {
-            var metadata = entry as IQueueEntryMetadata;
+            var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = DateTime.UtcNow.Subtract(metadata.DequeuedTimeUtc);
             

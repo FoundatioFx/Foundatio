@@ -154,7 +154,7 @@ namespace Foundatio.Queues {
                 return null;
 
             info.Attempts++;
-            info.TimeDequeued = DateTime.UtcNow;
+            info.DequeuedTimeUtc = DateTime.UtcNow;
 
             if (!_dequeued.TryAdd(info.Id, info))
                 throw new ApplicationException("Unable to add item to the dequeued list.");
@@ -163,7 +163,7 @@ namespace Foundatio.Queues {
 #if DEBUG
             Logger.Trace().Message("Dequeue: Got Item").Write();
 #endif
-            var entry = new QueueEntry<T>(info.Id, info.Data.Copy(), this, info.TimeEnqueued, info.Attempts);
+            var entry = new QueueEntry<T>(info.Id, info.Value.Copy(), this, info.EnqueuedTimeUtc, info.Attempts);
             await OnDequeuedAsync(entry).AnyContext();
             ScheduleNextMaintenance(DateTime.UtcNow.Add(_workItemTimeout));
 

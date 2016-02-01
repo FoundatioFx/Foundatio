@@ -44,8 +44,7 @@ namespace Foundatio.Queues {
             await base.OnEnqueued(sender, enqueuedEventArgs).AnyContext();
             await ReportQueueCountAsync().AnyContext();
 
-            var metadata = enqueuedEventArgs.Entry as IQueueEntryMetadata;
-            string customMetricName = GetCustomMetricName(metadata);
+            string customMetricName = GetCustomMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(customMetricName))
                 await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "enqueued")).AnyContext();
 
@@ -57,7 +56,7 @@ namespace Foundatio.Queues {
             await ReportQueueCountAsync().AnyContext();
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
-            string customMetricName = GetCustomMetricName(metadata);
+            string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
             if (metadata != null && !String.IsNullOrEmpty(customMetricName))
                 metadata.Data[CustomMetricNameKey] = customMetricName;
 

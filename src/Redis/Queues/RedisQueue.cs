@@ -277,16 +277,10 @@ namespace Foundatio.Queues {
             await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
 
             try {
-                var payload = await _cache.GetAsync<T>(GetPayloadKey(value)).AnyContext();
-                if (payload.IsNull) {
-                    Logger.Error().Message("Error getting queue payload: {0}", value).Write();
-                    await _db.ListRemoveAsync(WorkListName, value).AnyContext();
+                var entry = await GetQueueEntry(value).AnyContext();
+                if (entry == null)
                     return null;
-                }
 
-                var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(value), 0).AnyContext();
-                var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(value), -1).AnyContext();
-                var entry = new QueueEntry<T>(value, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 await OnDequeuedAsync(entry).AnyContext();
 #if DEBUG
@@ -297,6 +291,20 @@ namespace Foundatio.Queues {
                 Logger.Error().Exception(ex).Message("Error getting queue payload: {0}", value).Write();
                 throw;
             }
+        }
+
+        private async Task<QueueEntry<T>> GetQueueEntry(string workId) {
+            var payload = await _cache.GetAsync<T>(GetPayloadKey(workId)).AnyContext();
+            if (payload.IsNull) {
+                Logger.Error().Message("Error getting queue payload: {0}", workId).Write();
+                await _db.ListRemoveAsync(WorkListName, workId).AnyContext();
+                return null;
+            }
+
+            var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0).AnyContext();
+            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), -1).AnyContext();
+
+            return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
         }
 
         private async Task<RedisValue> GetRedisValueAsync(CancellationToken linkedCancellationToken) {
@@ -473,7 +481,6 @@ namespace Foundatio.Queues {
                 var workIds = await _db.ListRangeAsync(WorkListName).AnyContext();
                 foreach (var workId in workIds) {
                     var dequeuedTimeTicks = await _cache.GetAsync<long>(GetDequeuedTimeKey(workId)).AnyContext();
-                    var attempts = await _cache.GetAsync<long>(GetAttemptsKey(workId)).AnyContext();
 
                     // dequeue time should be set, use current time
                     if (!dequeuedTimeTicks.HasValue) {
@@ -490,7 +497,9 @@ namespace Foundatio.Queues {
 #if DEBUG
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
 #endif
-                    await AbandonAsync(workId).AnyContext();
+
+                    var entry = await GetQueueEntry(workId).AnyContext();
+                    await AbandonAsync(entry).AnyContext();
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {

@@ -18,9 +18,9 @@ namespace Foundatio.Queues {
         }
 
         public string Id { get; }
-        public T Value { get; private set; }
-        public DateTime EnqueuedTimeUtc { get; }
-        public DateTime DequeuedTimeUtc { get; }
+        public T Value { get; set; }
+        public DateTime EnqueuedTimeUtc { get; set; }
+        public DateTime DequeuedTimeUtc { get; set; }
         public int Attempts { get; set; }
         public TimeSpan ProcessingTime { get; set; }
         public DataDictionary Data { get; } = new DataDictionary();
