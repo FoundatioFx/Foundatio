@@ -105,7 +105,11 @@ namespace Foundatio.Jobs {
             if (initialDelay.HasValue && initialDelay.Value > TimeSpan.Zero)
                 await Task.Delay(initialDelay.Value, cancellationToken).AnyContext();
 
-            return await CreateJobInstance(jobType).RunAsync(cancellationToken).AnyContext();
+            var jobInstance = CreateJobInstance(jobType);
+            if (jobInstance == null)
+                return JobResult.FailedWithMessage("Could not create job instance: " + jobType);
+
+            return await jobInstance.RunAsync(cancellationToken).AnyContext();
         }
 
         public static async Task<int> RunAsync(JobRunOptions options, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -117,8 +121,10 @@ namespace Foundatio.Jobs {
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             if (options.RunContinuous)
                 await RunContinuousAsync(options.JobType, options.Interval, options.InitialDelay, options.IterationLimit, options.InstanceCount, linkedCancellationToken).AnyContext();
-            else
-                return (await RunAsync(options.JobType, options.InitialDelay, linkedCancellationToken).AnyContext()).IsSuccess ? 0 : -1;
+            else {
+                var result = await RunAsync(options.JobType, options.InitialDelay, linkedCancellationToken).AnyContext();
+                return result.IsSuccess ? 0 : -1;
+            }
 
             return 0;
         }
