@@ -24,7 +24,7 @@ build:
   verbosity: minimal
   publish_nuget: true
 
-after_build:
+before_package:
   - GitLink .\
 
 before_test:
