@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
@@ -15,7 +16,7 @@ namespace Foundatio.Jobs {
             _handlers = handlers;
             AutoComplete = true;
         }
-
+        
         protected async override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {
             var workItemDataType = Type.GetType(context.QueueEntry.Value.Type);
             if (workItemDataType == null)
@@ -56,13 +57,22 @@ namespace Foundatio.Jobs {
                 });
 
                 try {
+                    if (handler.EnableLogging)
+                        Logger.Info().Message("Processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+
                     await handler.HandleItemAsync(new WorkItemContext(context, workItemData, JobId, lockValue, progressCallback)).AnyContext();
                 } catch (Exception ex) {
                     await context.QueueEntry.AbandonAsync().AnyContext();
+                    if (handler.EnableLogging)
+                        Logger.Error().Message("Error processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+
                     return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
                 }
 
                 await context.QueueEntry.CompleteAsync().AnyContext();
+                if (handler.EnableLogging)
+                    Logger.Info().Message("Completed {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+
                 if (context.QueueEntry.Value.SendProgressReports)
                     await _messageBus.PublishAsync(new WorkItemStatus {
                         WorkItemId = context.QueueEntry.Value.WorkItemId,
