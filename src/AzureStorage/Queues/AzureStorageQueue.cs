@@ -14,7 +14,7 @@ namespace Foundatio.AzureStorage.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly CloudQueue _queueReference;
-        private readonly CloudQueue _poisonQueueReference;
+        private readonly CloudQueue _deadletterQueueReference;
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
@@ -31,7 +31,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             _queueName = queueName;
             _queueReference = client.GetQueueReference(queueName);
-            _poisonQueueReference = client.GetQueueReference(String.Concat(queueName, "-poison"));
+            _deadletterQueueReference = client.GetQueueReference(String.Concat(queueName, "-deadletter"));
             
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
@@ -45,7 +45,7 @@ namespace Foundatio.AzureStorage.Queues {
                 client.DefaultRequestOptions.RetryPolicy = retryPolicy;
 
             _queueReference.CreateIfNotExists();
-            _poisonQueueReference.CreateIfNotExists();
+            _deadletterQueueReference.CreateIfNotExists();
         }
 
         public override async Task<string> EnqueueAsync(T data) {
@@ -100,7 +100,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             if (azureQueueEntry.Attempts > _retries) {
                 await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
-                await _poisonQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
+                await _deadletterQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
             }
             else {
                 // Make the item visible immediately
@@ -116,12 +116,12 @@ namespace Foundatio.AzureStorage.Queues {
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
             await _queueReference.FetchAttributesAsync();
-            await _poisonQueueReference.FetchAttributesAsync();
+            await _deadletterQueueReference.FetchAttributesAsync();
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
                 Working = -1,
-                Deadletter = _poisonQueueReference.ApproximateMessageCount.GetValueOrDefault(),
+                Deadletter = _deadletterQueueReference.ApproximateMessageCount.GetValueOrDefault(),
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
                 Completed = _completedCount,
@@ -135,7 +135,7 @@ namespace Foundatio.AzureStorage.Queues {
             // ServiceBusQueue seems to recreate so we're doing the same here.
             // This should probably be renamed to ClearQueueAsync()?
             await _queueReference.ClearAsync().AnyContext();
-            await _poisonQueueReference.ClearAsync().AnyContext();
+            await _deadletterQueueReference.ClearAsync().AnyContext();
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
