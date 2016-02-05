@@ -4,13 +4,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.Queues;
 using Foundatio.Serializer;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
 
-namespace Foundatio.AzureStorage.Queues {
+namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly CloudQueue _queueReference;

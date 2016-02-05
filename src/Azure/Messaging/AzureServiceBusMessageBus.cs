@@ -8,7 +8,7 @@ using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Messaging {
-    public class ServiceBusMessageBus : MessageBusBase, IMessageBus {
+    public class AzureServiceBusMessageBus : MessageBusBase, IMessageBus {
         private readonly string _topicName;
         private readonly ISerializer _serializer;
         private readonly string _subscriptionName;
@@ -16,7 +16,7 @@ namespace Foundatio.Messaging {
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
         
-        public ServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
+        public AzureServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
             _topicName = topicName;
             _serializer = serializer ?? new JsonNetSerializer();
             _subscriptionName = "MessageBus";

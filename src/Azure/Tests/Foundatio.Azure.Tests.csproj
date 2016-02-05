@@ -111,10 +111,10 @@
     <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
       <Link>Utility\CaptureCollectionFixture.cs</Link>
     </Compile>
-    <Compile Include="Messaging\ServiceBusMessageBusTests.cs" />
+    <Compile Include="Messaging\AzureServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\AzureStorageQueueTests.cs" />
-    <Compile Include="Queues\ServiceBusQueueTests.cs" />
+    <Compile Include="Queues\AzureServiceBusQueueTests.cs" />
     <Compile Include="Storage\AzureStorageTests.cs" />
   </ItemGroup>
   <ItemGroup>
