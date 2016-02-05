@@ -52,7 +52,7 @@ namespace Foundatio.Jobs {
         }
 
         public bool AutoRenewLockOnProgress { get; set; }
-        public bool EnableLogging { get; set; }
+        public bool EnableLogging { get; set; } = true;
         public abstract Task HandleItemAsync(WorkItemContext context);
 
         public abstract string GetKey();
@@ -67,7 +67,7 @@ namespace Foundatio.Jobs {
             return Task.FromResult(Disposable.EmptyLock);
         }
 
-        public bool EnableLogging { get; set; }
+        public bool EnableLogging { get; set; } = true;
         public bool AutoRenewLockOnProgress { get; set; }
         public abstract Task HandleItemAsync(WorkItemContext context);
         
@@ -83,7 +83,7 @@ namespace Foundatio.Jobs {
             _handler = handler;
         }
 
-        public bool EnableLogging { get; set; }
+        public bool EnableLogging { get; set; } = true;
 
         public bool AutoRenewLockOnProgress { get; set; }
 

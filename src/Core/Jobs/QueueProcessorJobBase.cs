@@ -19,7 +19,7 @@ namespace Foundatio.Jobs {
 
         protected bool AutoComplete { get; set; }
 
-        protected bool EnableLogging { get; set; }
+        protected bool EnableLogging { get; set; } = true;
 
         protected sealed override Task<ILock> GetJobLockAsync() {
             return base.GetJobLockAsync();
