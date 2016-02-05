@@ -1,4 +1,5 @@
-﻿using Foundatio.Tests.Utility;
+﻿using System;
+using Foundatio.Tests.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Redis.Tests {
@@ -6,7 +7,7 @@ namespace Foundatio.Redis.Tests {
         private static ConnectionMultiplexer _muxer;
 
         public static ConnectionMultiplexer GetMuxer() {
-            if (ConnectionStrings.Get("RedisConnectionString") == null)
+            if (String.IsNullOrEmpty(ConnectionStrings.Get("RedisConnectionString")))
                 return null;
 
             if (_muxer == null)

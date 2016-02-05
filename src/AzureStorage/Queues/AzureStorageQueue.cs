@@ -65,7 +65,8 @@ namespace Foundatio.Queues {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
+            // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
+            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
@@ -73,7 +74,8 @@ namespace Foundatio.Queues {
                 }
                 catch (TaskCanceledException) { }
 
-                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
+                // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
+                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
             }
 
             if (message == null)
@@ -184,28 +186,7 @@ namespace Foundatio.Queues {
 
             base.Dispose();
         }
-
-        private string MessageToIdString(CloudQueueMessage message) => String.Concat(message.Id, ":", message.PopReceipt);
-
-        private CloudQueueMessage IdStringToMessage(string id) {
-            var parts = id.Split(':');
-
-            const string exceptionMessage = "Expected string in format { id}:{ popReceipt}";
-            
-            if (parts.Length < 2) {
-                throw new ArgumentException(exceptionMessage, nameof(id));
-            }
-
-            if (parts.Length > 2) {
-                throw new ArgumentException(String.Concat(exceptionMessage, ". Multiple ':' found"));
-            }
-
-            string messageId = parts[0];
-            string popReceipt = parts[1];
-
-            return new CloudQueueMessage(messageId, popReceipt);
-        }
-
+        
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = queueEntry as AzureStorageQueueEntry<T>;
 
