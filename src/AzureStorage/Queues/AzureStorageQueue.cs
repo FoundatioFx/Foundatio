@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
@@ -86,6 +87,10 @@ namespace Foundatio.Queues {
             var entry = new AzureStorageQueueEntry<T>(message, data, this);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
+        }
+
+        public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            return TaskHelper.Completed();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {

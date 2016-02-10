@@ -9,7 +9,6 @@ namespace Foundatio.Queues {
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
         private readonly string _metricsPrefix;
         private readonly IMetricsClient _metricsClient;
-        private const string CustomMetricNameKey = "CustomMetricName";
         private DateTime _nextQueueCountTime = DateTime.MinValue;
         private readonly AsyncLock _countLock = new AsyncLock();
 
@@ -57,8 +56,6 @@ namespace Foundatio.Queues {
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
-            if (metadata != null && !String.IsNullOrEmpty(customMetricName))
-                metadata.Data[CustomMetricNameKey] = customMetricName;
 
             if (!String.IsNullOrEmpty(customMetricName))
                 await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "dequeued")).AnyContext();
@@ -84,7 +81,7 @@ namespace Foundatio.Queues {
             if (metadata == null)
                 return;
 
-            string customMetricName = GetCustomMetricName(metadata);
+            string customMetricName = GetCustomMetricName(completedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(customMetricName))
                 await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "completed")).AnyContext();
             await _metricsClient.CounterAsync(GetFullMetricName("completed")).AnyContext();
@@ -103,17 +100,13 @@ namespace Foundatio.Queues {
             if (metadata == null)
                 return;
 
-            string customMetricName = GetCustomMetricName(metadata);
+            string customMetricName = GetCustomMetricName(abandonedEventArgs.Entry.Value);
             string counter = GetFullMetricName(customMetricName, "abandoned");
             await _metricsClient.CounterAsync(counter).AnyContext();
 
             string timer = GetFullMetricName(customMetricName, "abandontime");
             var time = (long)metadata.ProcessingTime.TotalMilliseconds;
             await _metricsClient.TimerAsync(timer, time).AnyContext();
-        }
-
-        protected string GetCustomMetricName(IQueueEntryMetadata metadata) {
-            return metadata?.Data?.GetValueOrDefault<string>(CustomMetricNameKey);
         }
 
         protected string GetCustomMetricName(T data) {
