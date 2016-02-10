@@ -1,7 +1,7 @@
-﻿using Foundatio.Queues;
+﻿using System;
 using Microsoft.WindowsAzure.Storage.Queue;
 
-namespace Foundatio.AzureStorage.Queues {
+namespace Foundatio.Queues {
     internal class AzureStorageQueueEntry<T> : QueueEntry<T> where T : class {
         internal CloudQueueMessage UnderlyingMessage { get; }
 

@@ -10,6 +10,7 @@ using Foundatio.Logging;
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
         protected readonly IQueue<T> _queue;
+        protected readonly string _queueEntryName = typeof(T).Name;
 
         public QueueProcessorJobBase(IQueue<T> queue) {
             _queue = queue;
@@ -17,6 +18,8 @@ namespace Foundatio.Jobs {
         }
 
         protected bool AutoComplete { get; set; }
+
+        protected bool EnableLogging { get; set; } = true;
 
         protected sealed override Task<ILock> GetJobLockAsync() {
             return base.GetJobLockAsync();
@@ -44,23 +47,35 @@ namespace Foundatio.Jobs {
             using (var lockValue = await GetQueueEntryLockAsync(queueEntry, context.CancellationToken).AnyContext()) {
                 if (lockValue == null)
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
-#if DEBUG
-                Logger.Trace().Message($"Processing queue entry '{queueEntry.Id}'.").Write();
-#endif
+
+                if (EnableLogging)
+                    Logger.Info().Message("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+
                 try {
                     var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, context.CancellationToken)).AnyContext();
 
                     if (!AutoComplete)
                         return result;
 
-                    if (result.IsSuccess)
+                    if (result.IsSuccess) {
                         await queueEntry.CompleteAsync().AnyContext();
-                    else
+
+                        if (EnableLogging)
+                            Logger.Info().Message("Completed {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                    } else {
                         await queueEntry.AbandonAsync().AnyContext();
 
+                        if (EnableLogging)
+                            Logger.Warn().Message("Abandoned {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                    }
+
                     return result;
-                } catch {
+                } catch (Exception ex) {
                     await queueEntry.AbandonAsync().AnyContext();
+
+                    if (EnableLogging)
+                        Logger.Error().Exception(ex).Message("Error processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+
                     throw;
                 }
             }

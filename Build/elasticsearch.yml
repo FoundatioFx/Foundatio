@@ -1,8 +1,0 @@
-cluster.name: foundatio
-node.name: foundatio-es01
-index.number_of_shards: 10
-index.merge.scheduler.max_thread_count: 1
-index.translog.flush_threshold_size: 1gb
-bootstrap.mlockall: true
-script.disable_dynamic: false
-discovery.zen.ping.multicast.enabled: false

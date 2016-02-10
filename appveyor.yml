@@ -2,10 +2,6 @@ version: 3.0.{build}
 os: Visual Studio 2015
 clone_depth: 2
 
-environment:
-  JAVA_HOME: C:\Program Files (x86)\Java\jdk1.8.0
-  ES_VERSION: 1.7.3
-
 install:
   - ps: $env:GIT_HASH = $env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - choco install gitlink
@@ -28,7 +24,7 @@ build:
   verbosity: minimal
   publish_nuget: true
 
-after_build:
+before_package:
   - GitLink .\
 
 before_test:
@@ -36,7 +32,6 @@ before_test:
   - redis-64\tools\redis-server.exe --service-install
   - redis-64\tools\redis-server.exe --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
-  - ps: .\Build\Start-ElasticSearch.ps1
   #- ps: .\Build\enable-rdp.ps1
 
 deploy:
@@ -47,7 +42,7 @@ deploy:
 
 notifications:
   - provider: Slack
+    channel: '#notifications'
     auth_token:
       secure: PigIGGo7UUDwdb0KGM/s7OfpAng/OMJx7q33jKfzudFBiXi1EBEd0DRmkbCc7CiX
-    channel: notifications
  

@@ -4,17 +4,17 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.Queues;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
 
-namespace Foundatio.AzureStorage.Queues {
+namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly CloudQueue _queueReference;
-        private readonly CloudQueue _poisonQueueReference;
+        private readonly CloudQueue _deadletterQueueReference;
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
@@ -31,7 +31,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             _queueName = queueName;
             _queueReference = client.GetQueueReference(queueName);
-            _poisonQueueReference = client.GetQueueReference(String.Concat(queueName, "-poison"));
+            _deadletterQueueReference = client.GetQueueReference(String.Concat(queueName, "-deadletter"));
             
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
@@ -45,7 +45,7 @@ namespace Foundatio.AzureStorage.Queues {
                 client.DefaultRequestOptions.RetryPolicy = retryPolicy;
 
             _queueReference.CreateIfNotExists();
-            _poisonQueueReference.CreateIfNotExists();
+            _deadletterQueueReference.CreateIfNotExists();
         }
 
         public override async Task<string> EnqueueAsync(T data) {
@@ -66,7 +66,8 @@ namespace Foundatio.AzureStorage.Queues {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
+            // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
+            var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
@@ -74,7 +75,8 @@ namespace Foundatio.AzureStorage.Queues {
                 }
                 catch (TaskCanceledException) { }
 
-                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null, linkedCancellationToken).AnyContext();
+                // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
+                message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
             }
 
             if (message == null)
@@ -85,6 +87,10 @@ namespace Foundatio.AzureStorage.Queues {
             var entry = new AzureStorageQueueEntry<T>(message, data, this);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
+        }
+
+        public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            return TaskHelper.Completed();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
@@ -100,7 +106,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             if (azureQueueEntry.Attempts > _retries) {
                 await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
-                await _poisonQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
+                await _deadletterQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
             }
             else {
                 // Make the item visible immediately
@@ -116,12 +122,12 @@ namespace Foundatio.AzureStorage.Queues {
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
             await _queueReference.FetchAttributesAsync();
-            await _poisonQueueReference.FetchAttributesAsync();
+            await _deadletterQueueReference.FetchAttributesAsync();
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
                 Working = -1,
-                Deadletter = _poisonQueueReference.ApproximateMessageCount.GetValueOrDefault(),
+                Deadletter = _deadletterQueueReference.ApproximateMessageCount.GetValueOrDefault(),
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
                 Completed = _completedCount,
@@ -135,7 +141,7 @@ namespace Foundatio.AzureStorage.Queues {
             // ServiceBusQueue seems to recreate so we're doing the same here.
             // This should probably be renamed to ClearQueueAsync()?
             await _queueReference.ClearAsync().AnyContext();
-            await _poisonQueueReference.ClearAsync().AnyContext();
+            await _deadletterQueueReference.ClearAsync().AnyContext();
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -185,28 +191,7 @@ namespace Foundatio.AzureStorage.Queues {
 
             base.Dispose();
         }
-
-        private string MessageToIdString(CloudQueueMessage message) => String.Concat(message.Id, ":", message.PopReceipt);
-
-        private CloudQueueMessage IdStringToMessage(string id) {
-            var parts = id.Split(':');
-
-            const string exceptionMessage = "Expected string in format { id}:{ popReceipt}";
-            
-            if (parts.Length < 2) {
-                throw new ArgumentException(exceptionMessage, nameof(id));
-            }
-
-            if (parts.Length > 2) {
-                throw new ArgumentException(String.Concat(exceptionMessage, ". Multiple ':' found"));
-            }
-
-            string messageId = parts[0];
-            string popReceipt = parts[1];
-
-            return new CloudQueueMessage(messageId, popReceipt);
-        }
-
+        
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = queueEntry as AzureStorageQueueEntry<T>;
 

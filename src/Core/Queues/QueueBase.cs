@@ -29,6 +29,8 @@ namespace Foundatio.Queues {
         
         public abstract Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
 
+        public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
+
         public abstract Task CompleteAsync(IQueueEntry<T> queueEntry);
 
         public abstract Task AbandonAsync(IQueueEntry<T> queueEntry);

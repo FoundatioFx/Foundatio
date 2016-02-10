@@ -8,13 +8,13 @@ using Microsoft.ServiceBus;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
-    public class ServiceBusQueueTests : QueueTestBase {
+    public class AzureServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        public ServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public AzureServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
+            if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
                 return null;
 
             if (!retryDelay.HasValue)
@@ -24,7 +24,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 ? retryDelay.Value + retryDelay.Value
                 : TimeSpan.FromSeconds(1);
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
-            return new ServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"),
+            return new AzureServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"),
                 QueueName, retries, workItemTimeout, false, retryPolicy);
         }
 

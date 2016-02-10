@@ -1,4 +1,5 @@
 using System;
+using Foundatio.Logging;
 
 namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {
@@ -16,7 +17,12 @@ namespace Foundatio.ServiceProviders {
                 }
             }
 
-            return _serviceProvider.GetService(serviceType);
+            try {
+                return _serviceProvider.GetService(serviceType);
+            } catch (Exception ex) {
+                Logger.Error().Exception(ex).Message("Error getting service: " + ex.Message).Write();
+                throw;
+            }
         }
     }
 }

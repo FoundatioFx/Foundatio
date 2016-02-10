@@ -5,11 +5,12 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Queues {
-    public class ServiceBusQueue<T> : QueueBase<T> where T : class {
+    public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
@@ -22,7 +23,7 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
-        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
@@ -135,6 +136,10 @@ namespace Foundatio.Queues {
                 await OnDequeuedAsync(entry).AnyContext();
                 return entry;
             }
+        }
+
+        public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            return TaskHelper.Completed();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {

@@ -293,6 +293,10 @@ namespace Foundatio.Queues {
             }
         }
 
+        public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            return TaskHelper.Completed();
+        }
+
         private async Task<QueueEntry<T>> GetQueueEntry(string workId) {
             var payload = await _cache.GetAsync<T>(GetPayloadKey(workId)).AnyContext();
             if (payload.IsNull) {

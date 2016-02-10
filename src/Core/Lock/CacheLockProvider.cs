@@ -138,6 +138,7 @@ namespace Foundatio.Lock {
             Logger.Trace().Message("RenewAsync: {0}", name).Write();
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);
+
             await _cacheClient.SetExpirationAsync(name, lockExtension.Value).AnyContext();
         }
 

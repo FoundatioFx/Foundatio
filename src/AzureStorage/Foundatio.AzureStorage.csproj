@@ -47,8 +47,8 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.WindowsAzure.Configuration, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\packages\Microsoft.WindowsAzure.ConfigurationManager.3.1.0\lib\net40\Microsoft.WindowsAzure.Configuration.dll</HintPath>
+      <HintPath>..\..\packages\Microsoft.WindowsAzure.ConfigurationManager.3.2.0\lib\net40\Microsoft.WindowsAzure.Configuration.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.WindowsAzure.Storage, Version=6.2.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\..\packages\WindowsAzure.Storage.6.2.0\lib\net40\Microsoft.WindowsAzure.Storage.dll</HintPath>
@@ -85,6 +85,9 @@
   <ItemGroup>
     <Compile Include="..\Core\Extensions\TaskExtensions.cs">
       <Link>Extensions\TaskExtensions.cs</Link>
+    </Compile>
+    <Compile Include="..\Core\Utility\TaskHelper.cs">
+      <Link>Utility\TaskHelper.cs</Link>
     </Compile>
     <Compile Include="Extensions\StorageExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
