@@ -62,7 +62,7 @@ namespace Foundatio.Queues {
             return message.Id;
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 

@@ -238,7 +238,7 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
 #if DEBUG
             Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
 #endif

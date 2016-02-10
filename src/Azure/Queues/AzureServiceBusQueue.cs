@@ -123,19 +123,24 @@ namespace Foundatio.Queues {
                 }
             });
         }
-        
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            // TODO: use the cancellation token.
-            using (var msg = await _queueClient.ReceiveAsync().AnyContext()) {
+
+        public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
                 if (msg == null)
                     return null;
-                
+
                 var data = msg.GetBody<T>();
                 Interlocked.Increment(ref _dequeuedCount);
                 var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
                 await OnDequeuedAsync(entry).AnyContext();
                 return entry;
             }
+        }
+
+        public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+            Logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
+
+            return DequeueAsync(null);
         }
 
         public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {

@@ -27,7 +27,10 @@ namespace Foundatio.Queues {
 
         public abstract Task<string> EnqueueAsync(T data);
         
-        public abstract Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
+        public abstract Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
+
+        public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
+            => this.DequeueAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30)).ToCancellationToken());
 
         public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
 
