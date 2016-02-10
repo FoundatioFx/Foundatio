@@ -12,6 +12,7 @@ namespace Foundatio.Queues {
         AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
         AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
         AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
+        AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
         AsyncEvent<CompletedEventArgs<T>> Completed { get; }
         AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
@@ -71,6 +72,11 @@ namespace Foundatio.Queues {
     }
 
     public class DequeuedEventArgs<T> : EventArgs where T : class {
+        public IQueue<T> Queue { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
+    }
+
+    public class LockRenewedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }

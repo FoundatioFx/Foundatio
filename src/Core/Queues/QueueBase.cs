@@ -75,6 +75,15 @@ namespace Foundatio.Queues {
             }) ?? TaskHelper.Completed()).AnyContext();
         }
 
+        public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
+
+        protected virtual async Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            await (LockRenewed?.InvokeAsync(this, new LockRenewedEventArgs<T> {
+                Queue = this,
+                Entry = entry
+            }) ?? TaskHelper.Completed()).AnyContext();
+        }
+
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
         
         protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry) {

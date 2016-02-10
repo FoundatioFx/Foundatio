@@ -18,6 +18,7 @@ namespace Foundatio.Queues {
             _disposables.Add(_queue.Enqueuing.AddHandler(OnEnqueuing));
             _disposables.Add(_queue.Enqueued.AddHandler(OnEnqueued));
             _disposables.Add(_queue.Dequeued.AddHandler(OnDequeued));
+            _disposables.Add(_queue.LockRenewed.AddHandler(OnLockRenewed));
             _disposables.Add(_queue.Completed.AddHandler(OnCompleted));
             _disposables.Add(_queue.Abandoned.AddHandler(OnAbandoned));
         }
@@ -31,6 +32,10 @@ namespace Foundatio.Queues {
         }
 
         protected virtual Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+            return TaskHelper.Completed();
+        }
+
+        protected virtual Task OnLockRenewed(object sender, LockRenewedEventArgs<T> dequeuedEventArgs) {
             return TaskHelper.Completed();
         }
 
