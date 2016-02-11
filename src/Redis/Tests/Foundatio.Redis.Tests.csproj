@@ -90,6 +90,7 @@
     <Compile Include="Jobs\RedisJobQueueTests.cs" />
     <Compile Include="Locks\RedisLockTests.cs" />
     <Compile Include="Messaging\RedisMessageBusTests.cs" />
+    <Compile Include="Metrics\RedisMetricsTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\RedisQueueTests.cs" />
     <Compile Include="SharedConnection.cs" />
