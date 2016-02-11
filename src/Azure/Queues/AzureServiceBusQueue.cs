@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -135,6 +136,10 @@ namespace Foundatio.Queues {
                 await OnDequeuedAsync(entry).AnyContext();
                 return entry;
             }
+        }
+
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await OnLockRenewedAsync(entry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {

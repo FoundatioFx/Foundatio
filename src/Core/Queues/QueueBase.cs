@@ -29,6 +29,8 @@ namespace Foundatio.Queues {
         
         public abstract Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
 
+        public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
+
         public abstract Task CompleteAsync(IQueueEntry<T> queueEntry);
 
         public abstract Task AbandonAsync(IQueueEntry<T> queueEntry);
@@ -68,6 +70,15 @@ namespace Foundatio.Queues {
 
         protected virtual async Task OnDequeuedAsync(IQueueEntry<T> entry) {
             await (Dequeued?.InvokeAsync(this, new DequeuedEventArgs<T> {
+                Queue = this,
+                Entry = entry
+            }) ?? TaskHelper.Completed()).AnyContext();
+        }
+
+        public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
+
+        protected virtual async Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            await (LockRenewed?.InvokeAsync(this, new LockRenewedEventArgs<T> {
                 Queue = this,
                 Entry = entry
             }) ?? TaskHelper.Completed()).AnyContext();

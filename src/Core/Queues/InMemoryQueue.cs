@@ -170,6 +170,10 @@ namespace Foundatio.Queues {
             return entry;
         }
 
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await OnLockRenewedAsync(entry).AnyContext();
+        }
+
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
 #if DEBUG
             Logger.Trace().Message("Queue {0} complete item: {1}", typeof(T).Name, entry.Id).Write();
@@ -255,7 +259,7 @@ namespace Foundatio.Queues {
             DateTime minAbandonAt = DateTime.MaxValue;
 
             try {
-                foreach (var entry in _dequeued.Cast<QueueEntry<T>>().ToList()) {
+                foreach (var entry in _dequeued.Values.ToList()) {
                     var abandonAt = entry.DequeuedTimeUtc.Add(_workItemTimeout);
                     if (abandonAt < utcNow) {
 #if DEBUG
@@ -269,7 +273,7 @@ namespace Foundatio.Queues {
             } catch (Exception ex) {
                 Logger.Error()
                     .Exception(ex)
-                    .Message("Error trying to find abandoned queue items.")
+                    .Message("DoMaintenance Error: " + ex.Message)
                     .Write();
             }
 

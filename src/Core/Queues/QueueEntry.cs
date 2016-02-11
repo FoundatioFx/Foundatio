@@ -25,6 +25,10 @@ namespace Foundatio.Queues {
         public TimeSpan ProcessingTime { get; set; }
         public DataDictionary Data { get; } = new DataDictionary();
 
+        public Task RenewLockAsync() {
+            return _queue.RenewLockAsync(this);
+        }
+
         public Task CompleteAsync() {
             if (_isCompleted)
                 return TaskHelper.Completed();
