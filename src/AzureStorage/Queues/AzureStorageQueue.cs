@@ -92,6 +92,7 @@ namespace Foundatio.Queues {
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _workItemTimeout, MessageUpdateFields.Visibility).AnyContext();
+            await OnLockRenewedAsync(queueEntry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {

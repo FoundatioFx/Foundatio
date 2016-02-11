@@ -122,18 +122,20 @@ namespace Foundatio.Queues {
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
             using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
-                return await HandleDequeueAsync(msg);
+                return await HandleDequeueAsync(msg).AnyContext();
             }
         }
 
         public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
             Logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
 
-            return DequeueAsync(null);
+            return DequeueAsync();
         }
 
-        public override Task RenewLockAsync(IQueueEntry<T> entry)
-            => _queueClient.RenewMessageLockAsync(new Guid(entry.Id));
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await _queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
+            await OnLockRenewedAsync(entry).AnyContext();
+        }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _completedCount);
