@@ -59,11 +59,12 @@ var value = await cache.GetAsync<int>("test");
 
 ### [Queues](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Queues)
 
-Queues offer First In, First Out (FIFO) message delivery. We provide three different queue implementations that derive from the [`IQueue` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Queues/IQueue.cs):
+Queues offer First In, First Out (FIFO) message delivery. We provide four different queue implementations that derive from the [`IQueue` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Queues/IQueue.cs):
 
 1. [InMemoryQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Queues/InMemoryQueue.cs): An in memory queue implementation. This queue implementation is only valid for the lifetime of the process.
 2. [RedisQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Queues/RedisQueue.cs): An Redis queue implementation.
-3. [ServiceBusQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Queues/ServiceBusQueue.cs): An Azure Service Bus Queue implementation.
+3. [AzureServiceBusQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
+4. [AzureStorageQueue](https://github.com/exceptionless/Foundatio/blob/master/src/AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
 
 #### Sample
 
@@ -110,7 +111,7 @@ Allows you to publish and subscribe to messages flowing through your application
 
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
-3. [ServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Messaging/ServiceBusMessageBus.cs): An Azure Service Bus implementation.
+3. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Azure/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample
 
