@@ -88,6 +88,11 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.CanRunWorkItemWithMetrics();
         }
 
+        [Fact]
+        public override Task CanRenewLock() {
+            return base.CanRenewLock();
+        }
+
         // NOTE: Not using this test because you can set specific delay times for servicebus
         public override Task CanDelayRetry() {
             return base.CanDelayRetry();

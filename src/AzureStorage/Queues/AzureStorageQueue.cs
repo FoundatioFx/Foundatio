@@ -62,7 +62,7 @@ namespace Foundatio.Queues {
             return message.Id;
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
@@ -89,8 +89,10 @@ namespace Foundatio.Queues {
             return entry;
         }
 
-        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            await OnLockRenewedAsync(entry).AnyContext();
+        public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
+            await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _workItemTimeout, MessageUpdateFields.Visibility).AnyContext();
+            await OnLockRenewedAsync(queueEntry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {

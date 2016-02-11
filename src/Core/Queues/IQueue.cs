@@ -20,7 +20,9 @@ namespace Foundatio.Queues {
 
         Task<string> EnqueueAsync(T data);
 
-        Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
+        Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
+
+        Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
 
         Task RenewLockAsync(IQueueEntry<T> queueEntry);
 
@@ -42,10 +44,6 @@ namespace Foundatio.Queues {
     public static class QueueExtensions {
         public static void StartWorking<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             queue.StartWorking((entry, token) => handler(entry), autoComplete, cancellationToken);
-        }
-
-        public static Task<IQueueEntry<T>> DequeueAsync<T>(this IQueue<T> queue, TimeSpan? timeout = null) where T : class {
-            return queue.DequeueAsync(timeout.ToCancellationToken(TimeSpan.FromSeconds(30)));
         }
     }
 
