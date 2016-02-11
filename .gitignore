@@ -180,3 +180,4 @@ UpgradeLog*.htm
 
 # Microsoft Fakes
 FakesAssemblies/
+.vs/config/applicationhost.config

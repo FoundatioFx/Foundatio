@@ -12,6 +12,7 @@ namespace Foundatio.Queues {
         AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
         AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
         AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
+        AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
         AsyncEvent<CompletedEventArgs<T>> Completed { get; }
         AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
@@ -19,30 +20,30 @@ namespace Foundatio.Queues {
 
         Task<string> EnqueueAsync(T data);
 
-        Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken));
+        Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
 
-        Task CompleteAsync(string id);
+        Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
 
-        Task AbandonAsync(string id);
-        
+        Task RenewLockAsync(IQueueEntry<T> queueEntry);
+
+        Task CompleteAsync(IQueueEntry<T> queueEntry);
+
+        Task AbandonAsync(IQueueEntry<T> queueEntry);
+
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
 
         Task<QueueStats> GetQueueStatsAsync();
 
         Task DeleteQueueAsync();
 
-        void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
 
         string QueueId { get; }
     }
     
     public static class QueueExtensions {
-        public static void StartWorking<T>(this IQueue<T> queue, Func<QueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public static void StartWorking<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             queue.StartWorking((entry, token) => handler(entry), autoComplete, cancellationToken);
-        }
-
-        public static Task<QueueEntry<T>> DequeueAsync<T>(this IQueue<T> queue, TimeSpan? timeout = null) where T : class {
-            return queue.DequeueAsync(timeout.ToCancellationToken(TimeSpan.FromSeconds(30)));
         }
     }
 
@@ -65,23 +66,26 @@ namespace Foundatio.Queues {
 
     public class EnqueuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public QueueEntryMetadata Metadata { get; set; }
-        public T Data { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
     }
 
     public class DequeuedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public T Data { get; set; }
-        public QueueEntryMetadata Metadata { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
+    }
+
+    public class LockRenewedEventArgs<T> : EventArgs where T : class {
+        public IQueue<T> Queue { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
     }
 
     public class CompletedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public QueueEntryMetadata Metadata { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
     }
 
     public class AbandonedEventArgs<T> : EventArgs where T : class {
         public IQueue<T> Queue { get; set; }
-        public QueueEntryMetadata Metadata { get; set; }
+        public IQueueEntry<T> Entry { get; set; }
     }
 }

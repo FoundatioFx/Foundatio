@@ -1,4 +1,4 @@
-version: 3.0.{build}
+version: 4.0.{build}
 os: Visual Studio 2015
 clone_depth: 2
 
@@ -9,7 +9,7 @@ install:
 assembly_info:
   patch: true
   file: AssemblyInfo.*
-  assembly_version: "3.0.0.0"
+  assembly_version: "4.0.0.0"
   assembly_file_version: "{version}.0"
   assembly_informational_version: "{version} $(GIT_HASH)"
 
@@ -25,14 +25,13 @@ build:
   publish_nuget: true
 
 before_package:
-  - GitLink .\
+  - ps: if ((-not $env:APPVEYOR_PULL_REQUEST_NUMBER) -and ($env:APPVEYOR_REPO_BRANCH -eq 'master')) { & "GitLink .\" }
 
 before_test:
   - nuget install redis-64 -excludeversion
   - redis-64\tools\redis-server.exe --service-install
   - redis-64\tools\redis-server.exe --service-start
   - ps: '& "${Env:ProgramFiles(x86)}\Microsoft SDKs\Azure\Storage Emulator\AzureStorageEmulator.exe" start'
-  #- ps: .\Build\enable-rdp.ps1
 
 deploy:
   - provider: Environment

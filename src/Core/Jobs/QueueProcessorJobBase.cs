@@ -28,7 +28,7 @@ namespace Foundatio.Jobs {
         protected override async Task<JobResult> RunInternalAsync(JobRunContext context) {
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
 
-            QueueEntry<T> queueEntry;
+            IQueueEntry<T> queueEntry;
             try {
                 queueEntry = await _queue.DequeueAsync(linkedCancellationToken.Token).AnyContext();
             } catch (Exception ex) {
@@ -81,7 +81,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected virtual Task<ILock> GetQueueEntryLockAsync(QueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.FromResult(Disposable.EmptyLock);
         }
         
@@ -99,13 +99,13 @@ namespace Foundatio.Jobs {
     }
     
     public class JobQueueEntryContext<T> where T : class {
-        public JobQueueEntryContext(QueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) {
+        public JobQueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) {
             QueueEntry = queueEntry;
             QueueEntryLock = queueEntryLock;
             CancellationToken = cancellationToken;
         }
 
-        public QueueEntry<T> QueueEntry { get; private set; }
+        public IQueueEntry<T> QueueEntry { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
         public ILock QueueEntryLock { get; private set; }
     }

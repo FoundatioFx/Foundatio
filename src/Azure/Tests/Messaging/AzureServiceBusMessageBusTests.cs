@@ -7,19 +7,19 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Messaging {
-    public class ServiceBusMessageBusTests : MessageBusTestBase {
+    public class AzureServiceBusMessageBusTests : MessageBusTestBase {
         private static IMessageBus _messageBus;
 
-        public ServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public AzureServiceBusMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
         protected override IMessageBus GetMessageBus() {
             if (_messageBus != null)
                 return _messageBus;
 
-            if (ConnectionStrings.Get("ServiceBusConnectionString") == null)
+            if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
                 return null;
 
-            _messageBus = new ServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"));
+            _messageBus = new AzureServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"));
             
             return _messageBus;
         }

@@ -115,6 +115,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\InMemoryQueue.cs" />
     <Compile Include="Queues\IQueue.cs" />
+    <Compile Include="Queues\IQueueEntry.cs" />
     <Compile Include="Queues\MetricsQueueBehavior.cs" />
     <Compile Include="Queues\QueueBase.cs" />
     <Compile Include="Queues\QueueBehaviour.cs" />

@@ -192,14 +192,15 @@ namespace Foundatio.Queues {
             await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
 
             Interlocked.Increment(ref _enqueuedCount);
-            await OnEnqueuedAsync(data, id).AnyContext();
+            var entry = new QueueEntry<T>(id, data, this, DateTime.UtcNow, 0);
+            await OnEnqueuedAsync(entry).AnyContext();
 #if DEBUG
             Logger.Trace().Message($"Enqueue done").Write();
 #endif
             return id;
         }
 
-        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
@@ -213,7 +214,7 @@ namespace Foundatio.Queues {
 #if DEBUG
                     Logger.Trace().Message($"WorkerLoop Pass {_queueName}").Write();
 #endif
-                    QueueEntry<T> queueEntry = null;
+                    IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
                     } catch (TimeoutException) { }
@@ -237,7 +238,7 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
 #if DEBUG
             Logger.Trace().Message($"Queue {_queueName} dequeuing item...").Write();
 #endif
@@ -276,16 +277,10 @@ namespace Foundatio.Queues {
             await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
 
             try {
-                var payload = await _cache.GetAsync<T>(GetPayloadKey(value)).AnyContext();
-                if (payload.IsNull) {
-                    Logger.Error().Message("Error getting queue payload: {0}", value).Write();
-                    await _db.ListRemoveAsync(WorkListName, value).AnyContext();
+                var entry = await GetQueueEntry(value).AnyContext();
+                if (entry == null)
                     return null;
-                }
 
-                var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(value), 0).AnyContext();
-                var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(value), -1).AnyContext();
-                var entry = new QueueEntry<T>(value, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
                 Interlocked.Increment(ref _dequeuedCount);
                 await OnDequeuedAsync(entry).AnyContext();
 #if DEBUG
@@ -298,6 +293,24 @@ namespace Foundatio.Queues {
             }
         }
 
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await OnLockRenewedAsync(entry).AnyContext();
+        }
+
+        private async Task<QueueEntry<T>> GetQueueEntry(string workId) {
+            var payload = await _cache.GetAsync<T>(GetPayloadKey(workId)).AnyContext();
+            if (payload.IsNull) {
+                Logger.Error().Message("Error getting queue payload: {0}", workId).Write();
+                await _db.ListRemoveAsync(WorkListName, workId).AnyContext();
+                return null;
+            }
+
+            var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0).AnyContext();
+            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), -1).AnyContext();
+
+            return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
+        }
+
         private async Task<RedisValue> GetRedisValueAsync(CancellationToken linkedCancellationToken) {
             try {
                 return await Run.WithRetriesAsync(() => _db.ListRightPopLeftPushAsync(QueueListName, WorkListName), 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken).AnyContext();
@@ -306,89 +319,89 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override async Task CompleteAsync(string id) {
+        public override async Task CompleteAsync(IQueueEntry<T> entry) {
 #if DEBUG
-            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, id).Write();
+            Logger.Debug().Message("Queue {0} complete item: {1}", _queueName, entry.Id).Write();
 #endif
             var tasks = new List<Task>();
             var batch = _db.CreateBatch();
-            tasks.Add(batch.ListRemoveAsync(WorkListName, id));
-            tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
-            tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
-            tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
-            tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
-            tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
+            tasks.Add(batch.ListRemoveAsync(WorkListName, entry.Id));
+            tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(entry.Id)));
+            tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(entry.Id)));
+            tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)));
+            tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
+            tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
             batch.Execute();
 
             await Task.WhenAll(tasks.ToArray()).AnyContext();
 
             Interlocked.Increment(ref _completedCount);
-            await OnCompletedAsync(id).AnyContext();
+            await OnCompletedAsync(entry).AnyContext();
 #if DEBUG
-            Logger.Trace().Message("Complete done: {0}", id).Write();
+            Logger.Trace().Message("Complete done: {0}", entry.Id).Write();
 #endif
         }
 
-        public override async Task AbandonAsync(string id) {
+        public override async Task AbandonAsync(IQueueEntry<T> entry) {
 #if DEBUG
-            Logger.Debug().Message($"Queue {_queueName}:{QueueId} abandon item: {id}").Write();
+            Logger.Debug().Message($"Queue {_queueName}:{QueueId} abandon item: {entry.Id}").Write();
 #endif
-            var attemptsCachedValue = await _cache.GetAsync<int>(GetAttemptsKey(id)).AnyContext();
+            var attemptsCachedValue = await _cache.GetAsync<int>(GetAttemptsKey(entry.Id)).AnyContext();
             int attempts = 1;
             if (attemptsCachedValue.HasValue)
                 attempts = attemptsCachedValue.Value + 1;
             
             var retryDelay = GetRetryDelay(attempts);
 #if DEBUG
-            Logger.Trace().Message($"Item: {id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}").Write();
+            Logger.Trace().Message($"Item: {entry.Id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}").Write();
 #endif
             if (attempts > _retries) {
 #if DEBUG
-                Logger.Trace().Message($"Exceeded retry limit moving to deadletter: {id}").Write();
+                Logger.Trace().Message($"Exceeded retry limit moving to deadletter: {entry.Id}").Write();
 #endif
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, id);
-                tx.ListLeftPushAsync(DeadListName, id);
-                tx.KeyExpireAsync(GetPayloadKey(id), _deadLetterTtl);
+                tx.ListRemoveAsync(WorkListName, entry.Id);
+                tx.ListLeftPushAsync(DeadListName, entry.Id);
+                tx.KeyExpireAsync(GetPayloadKey(entry.Id), _deadLetterTtl);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to wait list: {id}");
+                    throw new Exception($"Unable to move item to wait list: {entry.Id}");
 
-                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
 #if DEBUG
-                Logger.Trace().Message($"Adding item to wait list for future retry: {id}").Write();
+                Logger.Trace().Message($"Adding item to wait list for future retry: {entry.Id}").Write();
 #endif
-                await _cache.SetAsync(GetWaitTimeKey(id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
-                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                await _cache.SetAsync(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
 
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, id);
-                tx.ListLeftPushAsync(WaitListName, id);
+                tx.ListRemoveAsync(WorkListName, entry.Id);
+                tx.ListLeftPushAsync(WaitListName, entry.Id);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to wait list: {id}");
+                    throw new Exception($"Unable to move item to wait list: {entry.Id}");
             } else {
 #if DEBUG
-                Logger.Trace().Message($"Adding item back to queue for retry: {id}").Write();
+                Logger.Trace().Message($"Adding item back to queue for retry: {entry.Id}").Write();
 #endif
-                await _cache.IncrementAsync(GetAttemptsKey(id), 1, GetAttemptsTtl()).AnyContext();
+                await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
 
                 var tx = _db.CreateTransaction();
-                tx.ListRemoveAsync(WorkListName, id);
-                tx.ListLeftPushAsync(QueueListName, id);
+                tx.ListRemoveAsync(WorkListName, entry.Id);
+                tx.ListLeftPushAsync(QueueListName, entry.Id);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to queue list: {id}");
+                    throw new Exception($"Unable to move item to queue list: {entry.Id}");
                 
                 // This should pulse the monitor.
-                await _subscriber.PublishAsync(GetTopicName(), id).AnyContext();
+                await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
-            await OnAbandonedAsync(id).AnyContext();
+            await OnAbandonedAsync(entry).AnyContext();
 #if DEBUG
-            Logger.Trace().Message($"Abandon complete: {id}").Write();
+            Logger.Trace().Message($"Abandon complete: {entry.Id}").Write();
 #endif
         }
 
@@ -488,7 +501,9 @@ namespace Foundatio.Queues {
 #if DEBUG
                     Logger.Trace().Message("Auto abandon item {0}", workId).Write();
 #endif
-                    await AbandonAsync(workId).AnyContext();
+
+                    var entry = await GetQueueEntry(workId).AnyContext();
+                    await AbandonAsync(entry).AnyContext();
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
