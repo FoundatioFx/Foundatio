@@ -41,10 +41,25 @@ namespace Foundatio.Queues {
                 _namespaceManager.CreateQueue(_queueDescription);
             } else {
                 _queueDescription = _namespaceManager.GetQueue(_queueName);
-                _queueDescription.MaxDeliveryCount = retries + 1;
-                _queueDescription.LockDuration = _workItemTimeout;
-            }
 
+                bool changes = false;
+
+                int newMaxDeliveryCount = retries + 1;
+                if (_queueDescription.MaxDeliveryCount != newMaxDeliveryCount) {
+                    _queueDescription.MaxDeliveryCount = newMaxDeliveryCount;
+                    changes = true;
+                }
+
+                if (_queueDescription.LockDuration != _workItemTimeout) {
+                    _queueDescription.LockDuration = _workItemTimeout;
+                    changes = true;
+                }
+
+                if (changes) {
+                    _namespaceManager.UpdateQueue(_queueDescription);
+                }
+            }
+            
             _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
             if (retryPolicy != null)
                 _queueClient.RetryPolicy = retryPolicy;
