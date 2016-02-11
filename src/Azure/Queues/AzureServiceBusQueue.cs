@@ -5,11 +5,12 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Queues {
-    public class ServiceBusQueue<T> : QueueBase<T> where T : class {
+    public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private readonly QueueClient _queueClient;
@@ -22,7 +23,7 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
-        public ServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
@@ -40,10 +41,25 @@ namespace Foundatio.Queues {
                 _namespaceManager.CreateQueue(_queueDescription);
             } else {
                 _queueDescription = _namespaceManager.GetQueue(_queueName);
-                _queueDescription.MaxDeliveryCount = retries + 1;
-                _queueDescription.LockDuration = _workItemTimeout;
-            }
 
+                bool changes = false;
+
+                int newMaxDeliveryCount = retries + 1;
+                if (_queueDescription.MaxDeliveryCount != newMaxDeliveryCount) {
+                    _queueDescription.MaxDeliveryCount = newMaxDeliveryCount;
+                    changes = true;
+                }
+
+                if (_queueDescription.LockDuration != _workItemTimeout) {
+                    _queueDescription.LockDuration = _workItemTimeout;
+                    changes = true;
+                }
+
+                if (changes) {
+                    _namespaceManager.UpdateQueue(_queueDescription);
+                }
+            }
+            
             _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
             if (retryPolicy != null)
                 _queueClient.RetryPolicy = retryPolicy;
@@ -93,23 +109,20 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
             await _queueClient.SendAsync(message).AnyContext();
-
-            await OnEnqueuedAsync(data, message.MessageId).AnyContext();
+            
+            var entry = new QueueEntry<T>(message.MessageId, data, this, DateTime.UtcNow, 0);
+            await OnEnqueuedAsync(entry).AnyContext();
 
             return message.MessageId;
         }
         
-        public override void StartWorking(Func<QueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
             
-            // TODO: use the cancellation token.
+            _queueClient.OnMessageAsync(async msg => {
+                var workItem = await HandleDequeueAsync(msg);
 
-            _queueClient.OnMessageAsync(async message => {
-                Interlocked.Increment(ref _dequeuedCount);
-                var data = message.GetBody<T>();
-
-                var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
                 try {
                     await handler(workItem, cancellationToken).AnyContext();
                     if (autoComplete)
@@ -121,36 +134,50 @@ namespace Foundatio.Queues {
                 }
             });
         }
-        
-        public override async Task<QueueEntry<T>> DequeueAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            // TODO: use the cancellation token.
-            using (var msg = await _queueClient.ReceiveAsync().AnyContext()) {
-                if (msg == null)
-                    return null;
-                
-                var data = msg.GetBody<T>();
-                Interlocked.Increment(ref _dequeuedCount);
-                var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
-                await OnDequeuedAsync(entry).AnyContext();
-                return entry;
+
+        public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
+                return await HandleDequeueAsync(msg).AnyContext();
             }
         }
 
-        public override async Task CompleteAsync(string id) {
+        public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+            Logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
+
+            return DequeueAsync();
+        }
+
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await _queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
+            await OnLockRenewedAsync(entry).AnyContext();
+        }
+
+        public override async Task CompleteAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(id)).AnyContext();
-            await OnCompletedAsync(id).AnyContext();
+            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
+            await OnCompletedAsync(entry).AnyContext();
         }
         
-        public override async Task AbandonAsync(string id) {
+        public override async Task AbandonAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(id)).AnyContext();
-            await OnAbandonedAsync(id).AnyContext();
+            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
+            await OnAbandonedAsync(entry).AnyContext();
         }
         
         public override void Dispose() {
             _queueClient.Close();
             base.Dispose();
         }
+
+        private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {
+            if (msg == null)
+                return null;
+
+            var data = msg.GetBody<T>();
+            Interlocked.Increment(ref _dequeuedCount);
+            var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
+            await OnDequeuedAsync(entry).AnyContext();
+            return entry;
+        } 
     }
 }

@@ -193,10 +193,10 @@ namespace Foundatio.Tests.Queue {
 
                 sw.Restart();
                 workItem = await queue.DequeueAsync(timeToWait);
+                Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 sw.Stop();
                 Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
-                Assert.NotNull(workItem);
             }
         }
 
@@ -361,7 +361,9 @@ namespace Foundatio.Tests.Queue {
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
-                await Task.Delay(10);
+                // Delay again as the resetEvent will only trigger once the handler
+                // has completed, not the call to CompleteAsync()
+                await Task.Delay(50);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
@@ -503,7 +505,41 @@ namespace Foundatio.Tests.Queue {
             Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
         }
 
-        protected async Task DoWorkAsync(QueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
+        public virtual async Task CanRenewLock() {
+            // Need large value to reproduce this test
+            var workItemTimeout = TimeSpan.FromSeconds(1);
+            // Slightly shorter than the timeout to ensure we haven't lost the lock
+            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds*.75d);
+
+            var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
+            if (queue == null)
+                return;
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+
+                await Task.Delay(renewWait);
+
+                await workItem.RenewLockAsync();
+
+                await Task.Delay(renewWait);
+                
+                // We shouldn't get another item here if RenewLock works.
+                var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.Null(nullWorkItem);
+                await workItem.CompleteAsync();
+                Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+            }
+        }
+
+        protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
             Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 

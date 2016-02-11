@@ -111,13 +111,16 @@
     <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
       <Link>Utility\CaptureCollectionFixture.cs</Link>
     </Compile>
-    <Compile Include="Messaging\ServiceBusMessageBusTests.cs" />
+    <Compile Include="Messaging\AzureServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Queues\ServiceBusQueueTests.cs" />
+    <Compile Include="Queues\AzureStorageQueueTests.cs" />
+    <Compile Include="Queues\AzureServiceBusQueueTests.cs" />
     <Compile Include="Storage\AzureStorageTests.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
+    <None Include="app.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
