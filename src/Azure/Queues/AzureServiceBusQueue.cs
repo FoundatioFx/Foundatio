@@ -105,13 +105,9 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
             
-            // TODO: use the cancellation token.
+            _queueClient.OnMessageAsync(async msg => {
+                var workItem = await HandleDequeueAsync(msg);
 
-            _queueClient.OnMessageAsync(async message => {
-                Interlocked.Increment(ref _dequeuedCount);
-                var data = message.GetBody<T>();
-
-                var workItem = new QueueEntry<T>(message.LockToken.ToString(), data, this, message.EnqueuedTimeUtc, message.DeliveryCount);
                 try {
                     await handler(workItem, cancellationToken).AnyContext();
                     if (autoComplete)
@@ -126,14 +122,7 @@ namespace Foundatio.Queues {
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
             using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
-                if (msg == null)
-                    return null;
-
-                var data = msg.GetBody<T>();
-                Interlocked.Increment(ref _dequeuedCount);
-                var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
-                await OnDequeuedAsync(entry).AnyContext();
-                return entry;
+                return await HandleDequeueAsync(msg);
             }
         }
 
@@ -143,9 +132,8 @@ namespace Foundatio.Queues {
             return DequeueAsync(null);
         }
 
-        public override Task RenewLockAsync(IQueueEntry<T> queueEntry) {
-            return TaskHelper.Completed();
-        }
+        public override Task RenewLockAsync(IQueueEntry<T> entry)
+            => _queueClient.RenewMessageLockAsync(new Guid(entry.Id));
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             Interlocked.Increment(ref _completedCount);
@@ -163,5 +151,16 @@ namespace Foundatio.Queues {
             _queueClient.Close();
             base.Dispose();
         }
+
+        private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {
+            if (msg == null)
+                return null;
+
+            var data = msg.GetBody<T>();
+            Interlocked.Increment(ref _dequeuedCount);
+            var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
+            await OnDequeuedAsync(entry).AnyContext();
+            return entry;
+        } 
     }
 }

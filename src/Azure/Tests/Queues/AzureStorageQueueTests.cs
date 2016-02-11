@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
@@ -88,6 +89,11 @@ namespace Foundatio.Azure.Tests.Queue {
         [Fact]
         public override Task CanRunWorkItemWithMetrics() {
             return base.CanRunWorkItemWithMetrics();
+        }
+        
+        [Fact]
+        public override Task CanRenewLock() {
+            return base.CanRenewLock();
         }
 
         // NOTE: Not using this test because you can set specific delay times for storage queue
