@@ -74,6 +74,7 @@
     <Compile Include="Cache\RedisHybridCacheClient.cs" />
     <Compile Include="Cache\RedisCacheClient.cs" />
     <Compile Include="Messaging\RedisMessageBus.cs" />
+    <Compile Include="Metrics\MetricKey.cs" />
     <Compile Include="Metrics\RedisMetricsClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\RedisQueue.cs" />

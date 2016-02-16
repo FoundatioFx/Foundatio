@@ -156,7 +156,7 @@ namespace Foundatio.Metrics {
             return TaskHelper.Completed();
         }
 
-        public Task TimerAsync(string statName, long milliseconds) {
+        public Task TimerAsync(string statName, int milliseconds) {
             _timings.AddOrUpdate(statName, key => new TimingStats(milliseconds), (key, stats) => {
                 stats.Set(milliseconds);
                 return stats;

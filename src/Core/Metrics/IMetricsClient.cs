@@ -5,7 +5,7 @@ namespace Foundatio.Metrics {
     public interface IMetricsClient : IDisposable {
         Task CounterAsync(string statName, int value = 1);
         Task GaugeAsync(string statName, double value);
-        Task TimerAsync(string statName, long milliseconds);
+        Task TimerAsync(string statName, int milliseconds);
     }
 
     public static class MetricsClientExtensions {
