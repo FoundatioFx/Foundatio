@@ -111,6 +111,8 @@
     <Compile Include="Metrics\IHaveMetricName.cs" />
     <Compile Include="Metrics\IHaveMetricStats.cs" />
     <Compile Include="Metrics\IMetricsClientStats.cs" />
+    <Compile Include="Metrics\MetricKey.cs" />
+    <Compile Include="Metrics\CacheBucketMetricsClientBase.cs" />
     <Compile Include="Metrics\MetricTimer.cs" />
     <Compile Include="Metrics\IMetricsClient.cs" />
     <Compile Include="Metrics\InMemoryMetricsClient.cs" />

@@ -21,18 +21,18 @@ namespace Foundatio.Metrics {
                 _prefix = prefix.EndsWith(".") ? prefix : String.Concat(prefix, ".");
         }
 
-        public Task CounterAsync(string statName, int value = 1) {
-            Send(BuildMetric("c", statName, value.ToString(CultureInfo.InvariantCulture)));
+        public Task CounterAsync(string name, int value = 1) {
+            Send(BuildMetric("c", name, value.ToString(CultureInfo.InvariantCulture)));
             return TaskHelper.Completed();
         }
 
-        public Task GaugeAsync(string statName, double value) {
-            Send(BuildMetric("g", statName, value.ToString(CultureInfo.InvariantCulture)));
+        public Task GaugeAsync(string name, double value) {
+            Send(BuildMetric("g", name, value.ToString(CultureInfo.InvariantCulture)));
             return TaskHelper.Completed();
         }
 
-        public Task TimerAsync(string statName, int milliseconds) {
-            Send(BuildMetric("ms", statName, milliseconds.ToString(CultureInfo.InvariantCulture)));
+        public Task TimerAsync(string name, int milliseconds) {
+            Send(BuildMetric("ms", name, milliseconds.ToString(CultureInfo.InvariantCulture)));
             return TaskHelper.Completed();
         }
 

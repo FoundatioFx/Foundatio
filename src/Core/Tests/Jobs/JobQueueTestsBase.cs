@@ -24,7 +24,6 @@ namespace Foundatio.Tests.Jobs {
             await queue.DeleteQueueAsync();
             queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
-            metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
             var enqueueTask = Run.InParallel(workItemCount, async index => {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,
@@ -36,8 +35,6 @@ namespace Foundatio.Tests.Jobs {
             await Task.Delay(10);
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
-            metrics.DisplayStats(_writer);
-
             var stats = await queue.GetQueueStatsAsync();
             Assert.Equal(0, stats.Queued);
             Assert.Equal(workItemCount, stats.Enqueued);
@@ -47,8 +44,7 @@ namespace Foundatio.Tests.Jobs {
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
             const int workItemCount = 100;
-            var metrics = new InMemoryMetricsClient();
-            metrics.StartDisplayingStats(TimeSpan.FromSeconds(1), _writer);
+            var metrics = new InMemoryMetricsClient(false);
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
@@ -83,8 +79,8 @@ namespace Foundatio.Tests.Jobs {
                 queueStats.Add(stats);
             }
 
-            metrics.DisplayStats(_writer);
-            Assert.Equal(metrics.GetCount("completed"), queueStats.Sum(s => s.Completed));
+            var counter = await metrics.GetCounterStatsAsync("completed");
+            Assert.Equal(queueStats.Sum(s => s.Completed), counter.Count);
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
          }
     }

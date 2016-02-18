@@ -37,8 +37,8 @@ namespace Foundatio.Caching {
             return Task.FromResult(true);
         }
 
-        public Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
-            return Task.FromResult(0L);
+        public Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+            return Task.FromResult(amount);
         }
 
         public Task<bool> ExistsAsync(string key) {
@@ -51,6 +51,14 @@ namespace Foundatio.Caching {
 
         public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
             return Task.FromResult(0);
+        }
+
+        public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(value);
+        }
+
+        public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(value);
         }
 
         public void Dispose() {}

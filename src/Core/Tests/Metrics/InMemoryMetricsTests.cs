@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
-using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -13,44 +12,40 @@ namespace Foundatio.Tests.Metrics {
 
         [Fact]
         public async Task CanIncrementCounter() {
-            var metrics = new InMemoryMetricsClient();
+            var metrics = new InMemoryMetricsClient(false);
 
             await metrics.CounterAsync("c1");
-            Assert.Equal(1, metrics.GetCount("c1"));
+            Assert.Equal(1, await metrics.GetCounterCountAsync("c1"));
 
             await metrics.CounterAsync("c1", 5);
-            Assert.Equal(6, metrics.GetCount("c1"));
-
-            var counter = metrics.Counters["c1"];
-            Assert.True(counter.Rate > 400);
+            Assert.Equal(6, await metrics.GetCounterCountAsync("c1"));
 
             await metrics.GaugeAsync("g1", 2.534);
-            Assert.Equal(2.534, metrics.GetGaugeValue("g1"));
+            Assert.Equal(2.534, await metrics.GetLastGaugeValueAsync("g1"));
 
             await metrics.TimerAsync("t1", 50788);
-            var stats = metrics.GetMetricStats();
-            Assert.Equal(1, stats.Timings.Count);
+            var timer = await metrics.GetTimerStatsAsync("t1");
+            Assert.Equal(1, timer.Count);
 
-            metrics.DisplayStats(_writer);
+            await metrics.DisplayCounterAsync("c1", _writer);
         }
 
 #pragma warning disable 4014
         [Fact]
         public async Task CanWaitForCounter() {
-            var metrics = new InMemoryMetricsClient();
-            metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(50), _writer);
+            var metrics = new InMemoryMetricsClient(false);
             Task.Run(async () => {
                 await Task.Delay(50);
-                await metrics.CounterAsync("Test");
-                await metrics.CounterAsync("Test");
+                await metrics.CounterAsync("Test").AnyContext();
+                await metrics.CounterAsync("Test").AnyContext();
             });
 
-            var success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
+            var success = await metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
             Task.Run(async () => {
                 await Task.Delay(50);
-                await metrics.CounterAsync("Test");
+                await metrics.CounterAsync("Test").AnyContext();
             });
 
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
@@ -78,19 +73,8 @@ namespace Foundatio.Tests.Metrics {
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
-            metrics.DisplayStats(_writer);
+            await metrics.DisplayCounterAsync("Test", _writer);
         }
 #pragma warning restore 4014
-
-        [Fact]
-        public async Task CanDisplayStatsMultithreaded() {
-            var metrics = new InMemoryMetricsClient();
-            metrics.StartDisplayingStats(TimeSpan.FromMilliseconds(10), _writer);
-
-            await Run.InParallel(100, async i => {
-                await metrics.CounterAsync("Test");
-                await Task.Delay(50);
-            });
-        }
     }
 }

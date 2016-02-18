@@ -6,18 +6,18 @@ using Metrics;
 
 namespace Foundatio.Metrics {
     public class MetricsNETClient : IMetricsClient {
-        public Task CounterAsync(string statName, int value = 1) {
-            Metric.Counter(statName, Unit.None).Increment();
+        public Task CounterAsync(string name, int value = 1) {
+            Metric.Counter(name, Unit.None).Increment();
             return TaskHelper.Completed();
         }
 
-        public Task GaugeAsync(string statName, double value) {
-            Metric.Gauge(statName, () => value, Unit.None);
+        public Task GaugeAsync(string name, double value) {
+            Metric.Gauge(name, () => value, Unit.None);
             return TaskHelper.Completed();
         }
 
-        public Task TimerAsync(string statName, int milliseconds) {
-            Metric.Timer(statName, Unit.Calls, SamplingType.SlidingWindow, TimeUnit.Milliseconds).Record(milliseconds, TimeUnit.Milliseconds);
+        public Task TimerAsync(string name, int milliseconds) {
+            Metric.Timer(name, Unit.Calls, SamplingType.SlidingWindow, TimeUnit.Milliseconds).Record(milliseconds, TimeUnit.Milliseconds);
             return TaskHelper.Completed();
         }
 

@@ -144,6 +144,76 @@ namespace Foundatio.Caching {
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
+        public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (expiresIn?.Ticks < 0) {
+                await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
+                return -1;
+            }
+
+            double difference = value;
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+                long? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<long?>();
+                } catch (Exception ex) {
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
+                }
+
+                if (currentValue.HasValue && currentValue.Value < value) {
+                    difference = value - currentValue.Value;
+                    entry.Value = value;
+                } else
+                    difference = 0;
+
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
+                return entry;
+            });
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            return difference;
+        }
+
+        public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (expiresIn?.Ticks < 0) {
+                await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
+                return -1;
+            }
+
+            double difference = value;
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+                long? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<long?>();
+                } catch (Exception ex) {
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
+                }
+
+                if (currentValue.HasValue && currentValue.Value > value) {
+                    difference = currentValue.Value - value;
+                    entry.Value = value;
+                } else
+                    difference = 0;
+
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
+                return entry;
+            });
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            return difference;
+        }
+
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (entry.ExpiresAt < DateTime.UtcNow) {
 #if DEBUG
@@ -210,7 +280,7 @@ namespace Foundatio.Caching {
             return SetAsync(key, value, expiresIn);
         }
 
-        public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+        public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
@@ -219,9 +289,9 @@ namespace Foundatio.Caching {
             
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
-                long? currentValue = null;
+                double? currentValue = null;
                 try {
-                    currentValue = entry.GetValue<long?>();
+                    currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
                     Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
                 }
@@ -240,7 +310,7 @@ namespace Foundatio.Caching {
             if (expiresIn.HasValue)
                 ScheduleNextMaintenance(expiresAt);
 
-            return result.GetValue<long>();
+            return result.GetValue<double>();
         }
         
         public Task<bool> ExistsAsync(string key) {
@@ -321,7 +391,7 @@ namespace Foundatio.Caching {
 #endif
 
             public CacheEntry(object value, DateTime expiresAt, bool shouldClone = true) {
-                _shouldClone = shouldClone;
+                _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
                 Value = value;
                 ExpiresAt = expiresAt;
                 LastModifiedTicks = DateTime.UtcNow.Ticks;
@@ -362,6 +432,19 @@ namespace Foundatio.Caching {
                     return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
 
                 return (T)val;
+            }
+
+            private bool TypeRequiresCloning(Type t) {
+                if (t == null)
+                    return true;
+
+                if (t == typeof(Int16) || t == typeof(Int32) || t == typeof(Int64) ||
+                    t == typeof(bool) || t == typeof(double) || t == typeof(string) ||
+                    t == typeof(Int16?) || t == typeof(Int32?) || t == typeof(Int64?) ||
+                    t == typeof(bool?) || t == typeof(double?))
+                    return false;
+
+                return !t.IsValueType;
             }
         }
     }

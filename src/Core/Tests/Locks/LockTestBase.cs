@@ -134,8 +134,9 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task WillThrottleCalls() {
+            const int allowedLocks = 25;
             var period = TimeSpan.FromSeconds(1);
-            var locker = GetThrottlingLockProvider(5, period);
+            var locker = GetThrottlingLockProvider(allowedLocks, period);
             if (locker == null)
                 return;
 
@@ -146,7 +147,7 @@ namespace Foundatio.Tests.Locks {
             await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now);
 
             var sw = Stopwatch.StartNew();
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < allowedLocks; i++) {
                 var l = await locker.AcquireAsync(lockName);
                 Assert.NotNull(l);
             }

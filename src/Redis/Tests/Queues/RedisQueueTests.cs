@@ -332,7 +332,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
                 }
-                metrics.DisplayStats(_writer);
+                await metrics.DisplayCounterAsync("work", _writer);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.True(stats.Dequeued >= workItemCount);
@@ -371,7 +371,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 }
-                metrics.DisplayStats(_writer);
+                await metrics.DisplayCounterAsync("work", _writer);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -411,7 +411,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromMinutes(1));
-                metrics.DisplayStats(_writer);
+                await metrics.DisplayCounterAsync("work", _writer);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);

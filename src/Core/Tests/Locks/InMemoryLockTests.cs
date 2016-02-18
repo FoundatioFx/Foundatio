@@ -15,6 +15,10 @@ namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase {
         public InMemoryLockTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
 
+        protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
+            return new ThrottlingLockProvider(new InMemoryCacheClient(), maxHits, period);
+        }
+
         protected override ILockProvider GetLockProvider() {
             return new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
         }
@@ -56,6 +60,11 @@ namespace Foundatio.Tests.Locks {
                 await monitor.WaitAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 25, 100);
+        }
+
+        [Fact]
+        public override Task WillThrottleCalls() {
+            return base.WillThrottleCalls();
         }
     }
 }

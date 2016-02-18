@@ -1,6 +1,6 @@
 using System;
 
-namespace Foundatio.Redis.Metrics {
+namespace Foundatio.Metrics {
     public struct MetricKey : IEquatable<MetricKey> {
         public MetricKey(long minute, string name) {
             Minute = minute;

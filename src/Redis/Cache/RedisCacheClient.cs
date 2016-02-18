@@ -136,14 +136,14 @@ namespace Foundatio.Caching {
             return InternalSetAsync(key, value, expiresIn);
         }
 
-        public async Task<long> SetIfHigherAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
             var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
-            return (long)result;
+            return (double)result;
         }
 
-        public async Task<long> SetIfLowerAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
             var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
-            return (long)result;
+            return (double)result;
         }
 
         private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
@@ -181,7 +181,7 @@ namespace Foundatio.Caching {
             return InternalSetAsync(key, value, expiresIn, When.Exists);
         }
 
-        public async Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+        public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 return -1;
