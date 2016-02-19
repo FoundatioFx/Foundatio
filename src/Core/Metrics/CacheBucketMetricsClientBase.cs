@@ -92,7 +92,6 @@ namespace Foundatio.Metrics {
 
         private bool _sendingMetrics = false;
         private async Task SendMetricsAsync() {
-            Logger.Info().Message("Heeyyyyyy").Write();
             if (_sendingMetrics)
                 return;
 
