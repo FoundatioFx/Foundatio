@@ -132,8 +132,8 @@ namespace Foundatio.Caching {
 #if DEBUG
                 Logger.Trace().Message($"Adding keys {values.Keys} to local cache.").Write();
 #endif
-                await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = values.Keys.ToArray()}).AnyContext();
                 await _localCache.SetAllAsync(values, expiresIn).AnyContext();
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
             }
 
             return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
@@ -148,7 +148,7 @@ namespace Foundatio.Caching {
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 
-        public Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null) {
+        public Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
             return _distributedCache.IncrementAsync(key, amount, expiresIn);
         }
         
@@ -161,9 +161,18 @@ namespace Foundatio.Caching {
         }
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
             await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+        }
+
+        public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            await _localCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+            return await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        }
+
+        public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            return _distributedCache.SetIfLowerAsync(key, value, expiresIn);
         }
 
         private bool TypeRequiresSerialization(Type t) {

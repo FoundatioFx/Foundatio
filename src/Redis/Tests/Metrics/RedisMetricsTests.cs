@@ -16,26 +16,39 @@ namespace Foundatio.Redis.Tests.Metrics {
             FlushAll();
 
             await metrics.CounterAsync("c1");
-            Assert.Equal(1, await metrics.GetCountAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow));
+            await metrics.FlushAsync();
+            var counter = await metrics.GetCounterStatsAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(1, counter.Count);
 
             await metrics.CounterAsync("c1", 5);
-            Assert.Equal(6, await metrics.GetCountAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow));
-
-            await metrics.GaugeAsync("g1", 2.534);
-            Assert.Equal(2.534, await metrics.GetGaugeValueAsync("g1"));
+            await metrics.FlushAsync();
+            counter = await metrics.GetCounterStatsAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(6, counter.Count);
 
             await metrics.GaugeAsync("g1", 5.34);
-            Assert.Equal(5.34, await metrics.GetGaugeValueAsync("g1"));
+            await metrics.FlushAsync();
+            var gauge = await metrics.GetGaugeStatsAsync("g1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(5.34, gauge.Last);
+            Assert.Equal(5.34, gauge.Max);
+
+            await metrics.GaugeAsync("g1", 2.534);
+            await metrics.FlushAsync();
+            gauge = await metrics.GetGaugeStatsAsync("g1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(2.534, gauge.Last);
+            Assert.Equal(5.34, gauge.Max);
 
             await metrics.TimerAsync("t1", 50788);
-            var stats = await metrics.GetTimerAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(1, stats.Count);
+            await metrics.FlushAsync();
+            var timer = await metrics.GetTimerStatsAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(1, timer.Count);
+            Assert.Equal(50788, timer.TotalDuration);
 
             await metrics.TimerAsync("t1", 98);
             await metrics.TimerAsync("t1", 102);
-            stats = await metrics.GetTimerAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(3, stats.Count);
-            Assert.Equal(50788 + 98 + 102, stats.TotalDuration);
+            await metrics.FlushAsync();
+            timer = await metrics.GetTimerStatsAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
+            Assert.Equal(3, timer.Count);
+            Assert.Equal(50788 + 98 + 102, timer.TotalDuration);
         }
 
         private void FlushAll() {

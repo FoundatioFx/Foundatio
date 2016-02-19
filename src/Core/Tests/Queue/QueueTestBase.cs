@@ -112,10 +112,9 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
 
-                metrics.DisplayStats(_writer);
-
                 Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
-                Assert.InRange(metrics.Timings["simpleworkitem.queuetime"].Average, 0, 25);
+                var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
+                Assert.InRange(timing.AverageDuration, 0, 25);
             }
         }
 
@@ -253,7 +252,7 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
-            var metrics = new InMemoryMetricsClient();
+            var metrics = new InMemoryMetricsClient(false);
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
 
             using (queue) {
@@ -265,12 +264,10 @@ namespace Foundatio.Tests.Queue {
                     throw new ApplicationException();
                 });
                 
-                metrics.DisplayStats(_writer);
                 var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 }), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken());
                 await Task.Delay(10);
-                metrics.DisplayStats(_writer);
                 Assert.True(success);
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -476,7 +473,7 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CanRunWorkItemWithMetrics() {
             var eventRaised = new ManualResetEvent(false);
 
-            var metricsClient = new InMemoryMetricsClient();
+            var metricsClient = new InMemoryMetricsClient(false);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
             queue.Completed.AddHandler((sender, e) => {
@@ -490,19 +487,16 @@ namespace Foundatio.Tests.Queue {
             var item = await queue.DequeueAsync();
             await item.CompleteAsync();
 
-            metricsClient.DisplayStats(_writer);
-
             Assert.True(eventRaised.WaitOne(TimeSpan.FromMinutes(1)));
 
-            Assert.Equal(6, metricsClient.Counters.Count);
-            Assert.Equal(4, metricsClient.Timings.Count);
+            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
+            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
+            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.completed"));
 
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.enqueued"]?.RecentValue);
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.dequeued"]?.RecentValue);
-            Assert.Equal(1, metricsClient.Counters["metric.workitemdata.simple.completed"]?.RecentValue);
-
-            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.queuetime"]?.Count);
-            Assert.True(0 < metricsClient.Timings["metric.workitemdata.simple.processtime"]?.Count);
+            var queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
+            Assert.True(0 < queueTiming.Count);
+            var processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
+            Assert.True(0 < processTiming.Count);
         }
 
         public virtual async Task CanRenewLock() {

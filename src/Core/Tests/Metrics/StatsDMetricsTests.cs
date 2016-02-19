@@ -97,11 +97,11 @@ namespace Foundatio.Tests.Metrics {
                     await StartListeningAsync(iterations - index);
 
                 if (index % (iterations / 20) == 0)
-                    metrics.DisplayStats(_writer);
+                    await metrics.DisplayCounterAsync("counter", _writer);
             }
 
             sw.Stop();
-            metrics.DisplayStats(_writer);
+            await metrics.DisplayCounterAsync("counter", _writer);
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);

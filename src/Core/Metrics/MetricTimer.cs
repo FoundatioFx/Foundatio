@@ -21,7 +21,7 @@ namespace Foundatio.Metrics {
 
             _disposed = true;
             _stopWatch.Stop();
-            await _client.TimerAsync(_name, _stopWatch.ElapsedMilliseconds).AnyContext();
+            await _client.TimerAsync(_name, (int)_stopWatch.ElapsedMilliseconds).AnyContext();
         }
     }
 }

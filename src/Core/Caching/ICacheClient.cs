@@ -14,10 +14,12 @@ namespace Foundatio.Caching {
         Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null);
         Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null);
         Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
-        Task<long> IncrementAsync(string key, int amount = 1, TimeSpan? expiresIn = null);
+        Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null);
         Task<bool> ExistsAsync(string key);
         Task<TimeSpan?> GetExpirationAsync(string key);
         Task SetExpirationAsync(string key, TimeSpan expiresIn);
+        Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null);
+        Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null);
     }
 
     public static class CacheClientExtensions {
@@ -33,13 +35,18 @@ namespace Foundatio.Caching {
         public static async Task<bool> RemoveAsync(this ICacheClient client, string key) {
             return await client.RemoveAllAsync(new[] { key }).AnyContext() == 1;
         }
-        
+
+        public static async Task<long> IncrementAsync(this ICacheClient client, string key, int amount = 1, TimeSpan? expiresIn = null) {
+            var result = await client.IncrementAsync(key, amount, expiresIn).AnyContext();
+            return (long)result;
+        }
+
         public static Task<long> IncrementAsync(this ICacheClient client, string key, int amount = 1, DateTime? expiresAtUtc = null) {
-            return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(DateTime.UtcNow));
+            return IncrementAsync(client, key, amount, expiresAtUtc?.Subtract(DateTime.UtcNow));
         }
 
         public static Task<long> DecrementAsync(this ICacheClient client, string key, int amount = 1, TimeSpan? expiresIn = null) {
-            return client.IncrementAsync(key, -amount, expiresIn);
+            return IncrementAsync(client, key, amount, expiresIn);
         }
 
         public static Task<long> DecrementAsync(this ICacheClient client, string key, int amount = 1, DateTime? expiresAtUtc = null) {

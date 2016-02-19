@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
@@ -95,9 +96,10 @@ namespace Foundatio.Tests.Jobs {
             var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
             
             var sw = Stopwatch.StartNew();
-            await Task.WhenAll(jobs.Select(async job => await TaskExtensions.AnyContext(job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()))));
+            await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
             sw.Stop();
             Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
+            Logger.Info().Message(jobs.Sum(j => j.RunCount).ToString()).Write();
             Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
         }
 
@@ -132,14 +134,20 @@ namespace Foundatio.Tests.Jobs {
             Assert.True(jobInstance is HelloWorldJob);
         }
 
-        [Fact]
+        [Fact(Skip = "Meant to be run manually.")]
         public async Task JobLoopPerf() {
             const int iterations = 10000;
 
             var metrics = new InMemoryMetricsClient();
             var job = new SampleJob(metrics);
+            var sw = Stopwatch.StartNew();
             await job.RunContinuousAsync(null, iterations);
-            metrics.DisplayStats(_writer);
+            sw.Stop();
+            await metrics.FlushAsync();
+            await metrics.DisplayCounterAsync("runs", _writer);
+            await metrics.DisplayCounterAsync("errors", _writer);
+            await metrics.DisplayCounterAsync("failed", _writer);
+            await metrics.DisplayCounterAsync("completed", _writer);
         }
     }
 }

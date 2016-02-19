@@ -295,6 +295,7 @@ namespace Foundatio.Tests.Caching {
 
             await cacheClient.RemoveAllAsync();
 
+            var start = DateTime.UtcNow;
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
@@ -305,7 +306,8 @@ namespace Foundatio.Tests.Caching {
                 Assert.True((await cacheClient.GetAsync<bool>("flag")).Value);
                 await metrics.CounterAsync("work");
             }
-            metrics.DisplayStats(_writer);
+
+            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         public virtual async Task MeasureSerializerSimpleThroughput() {
@@ -315,6 +317,7 @@ namespace Foundatio.Tests.Caching {
 
             await cacheClient.RemoveAllAsync();
 
+            var start = DateTime.UtcNow;
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
@@ -329,7 +332,7 @@ namespace Foundatio.Tests.Caching {
                 await metrics.CounterAsync("work");
             }
 
-            metrics.DisplayStats(_writer);
+            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         public virtual async Task MeasureSerializerComplexThroughput() {
@@ -339,6 +342,7 @@ namespace Foundatio.Tests.Caching {
 
             await cacheClient.RemoveAllAsync();
 
+            var start = DateTime.UtcNow;
             const int itemCount = 10000;
             var metrics = new InMemoryMetricsClient();
             for (int i = 0; i < itemCount; i++) {
@@ -376,7 +380,7 @@ namespace Foundatio.Tests.Caching {
                 await metrics.CounterAsync("work");
             }
 
-            metrics.DisplayStats(_writer);
+            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}

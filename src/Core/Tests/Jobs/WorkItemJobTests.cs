@@ -122,7 +122,6 @@ namespace Foundatio.Tests.Jobs {
             } catch (TaskCanceledException) {}
 
             Logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
-            metrics.DisplayStats(_writer);
             
             Assert.Equal(workItemCount, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
