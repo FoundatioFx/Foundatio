@@ -175,7 +175,7 @@ namespace Foundatio.Metrics {
                 return true;
 
             // TODO: Should we update this to use monitors?
-            long currentCount;
+            long currentCount = 0;
             var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
