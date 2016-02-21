@@ -16,7 +16,7 @@ namespace Foundatio.Tests.Utility {
 
         static CaptureFixture() {
 #if DEBUG
-            Logger.SetMinimumLogLevel(LogLevel.Info);
+            Logger.SetMinimumLogLevel(LogLevel.Information);
 #else
             Logger.SetMinimumLogLevel(LogLevel.Warn);
 #endif

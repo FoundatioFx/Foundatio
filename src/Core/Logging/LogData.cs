@@ -8,15 +8,7 @@ namespace Foundatio.Logging {
     /// A class holding log data before being written.
     /// </summary>
     public sealed class LogData {
-        private IDictionary<String, Object> _properties;
-
-        /// <summary>
-        /// Gets or sets the logger name.
-        /// </summary>
-        /// <value>
-        /// The logger name.
-        /// </value>
-        public string Logger { get; set; }
+        private IDictionary<string, object> _properties;
 
         /// <summary>
         /// Gets or sets the trace level.
@@ -25,6 +17,14 @@ namespace Foundatio.Logging {
         /// The trace level.
         /// </value>
         public LogLevel LogLevel { get; set; }
+
+        /// <summary>
+        /// Gets or sets the event id.
+        /// </summary>
+        /// <value>
+        /// The event id.
+        /// </value>
+        public EventId EventId { get; set; }
 
         /// <summary>
         /// Gets or sets the message.

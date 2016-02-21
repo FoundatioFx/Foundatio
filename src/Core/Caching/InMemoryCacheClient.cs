@@ -14,8 +14,10 @@ namespace Foundatio.Caching {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private long _hits;
         private long _misses;
+        private readonly ILogger _logger;
 
-        public InMemoryCacheClient() {
+        public InMemoryCacheClient(ILoggerFactory loggerFactory) {
+            _logger = loggerFactory.CreateLogger<InMemoryCacheClient>();
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             InitializeMaintenance();
@@ -40,8 +42,7 @@ namespace Foundatio.Caching {
 
         public ICollection<string> Keys {
             get {
-                return
-                    _memory.ToArray()
+                return _memory.ToArray()
                         .OrderBy(kvp => kvp.Value.LastAccessTicks)
                         .ThenBy(kvp => kvp.Value.InstanceNumber)
                         .Select(kvp => kvp.Key)
@@ -63,9 +64,10 @@ namespace Foundatio.Caching {
             foreach (var key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
-#if DEBUG
-                Logger.Trace().Message($"RemoveAllAsync: Removing key {key}").Write();
-#endif
+
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("RemoveAllAsync: Removing key {0}", key);
+
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
                     removed++;
@@ -85,10 +87,7 @@ namespace Foundatio.Caching {
                         keysToRemove.Add(current.Key);
                 }
             } catch (Exception ex) {
-                Logger.Error()
-                    .Exception(ex)
-                    .Message("Error trying to remove items from cache with this {0} prefix", prefix)
-                    .Write();
+                _logger.LogError(0, ex, "Error trying to remove items from cache with this {0} prefix", prefix);
             }
 
             return RemoveAllAsync(keysToRemove);
@@ -103,7 +102,7 @@ namespace Foundatio.Caching {
 
             if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
 #if DEBUG
-                Logger.Trace().Message($"TryGetAsync: Removing expired key {key}").Write();
+                _logger.LogTrace($"TryGetAsync: Removing expired key {key}");
 #endif
                 _memory.TryRemove(key, out cacheEntry);
                 await OnItemExpiredAsync(key).AnyContext();
@@ -120,7 +119,7 @@ namespace Foundatio.Caching {
                 Logger.Error()
                     .Exception(ex)
                     .Message($"Unable to deserialize value \"{cacheEntry.Value}\" to type {typeof(T).FullName}")
-                    .Write();
+                    ;
                 return CacheValue<T>.NoValue;
             }
         }
@@ -158,7 +157,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -193,7 +192,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -217,7 +216,7 @@ namespace Foundatio.Caching {
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (entry.ExpiresAt < DateTime.UtcNow) {
 #if DEBUG
-                Logger.Trace().Message($"SetInternalAsync: Removing expired key {key}").Write();
+                _logger.LogTrace($"SetInternalAsync: Removing expired key {key}");
 #endif
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
@@ -233,12 +232,12 @@ namespace Foundatio.Caching {
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
                 }
 #if DEBUG
-                Logger.Trace().Message($"Added cache key: {key}").Write();
+                _logger.LogTrace($"Added cache key: {key}");
 #endif
             } else {
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
 #if DEBUG
-                Logger.Trace().Message($"Set cache key: {key}").Write();
+                _logger.LogTrace($"Set cache key: {key}");
 #endif
             }
 
@@ -252,7 +251,7 @@ namespace Foundatio.Caching {
                         .First()
                         .Key;
 #if DEBUG
-                Logger.Trace().Message($"SetInternalAsync: Removing key {key}").Write();
+                _logger.LogTrace($"SetInternalAsync: Removing key {key}");
 #endif
                 CacheEntry cacheEntry;
                 _memory.TryRemove(oldest, out cacheEntry);
@@ -293,7 +292,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.").Write();
+                    Logger.Error().Exception(ex).Message($"Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue)
@@ -325,7 +324,7 @@ namespace Foundatio.Caching {
             if (value.ExpiresAt >= DateTime.UtcNow)
                 return value.ExpiresAt.Subtract(DateTime.UtcNow);
 #if DEBUG
-            Logger.Trace().Message($"GetExpirationAsync: Removing expired key {key}").Write();
+            _logger.LogTrace($"GetExpirationAsync: Removing expired key {key}");
 #endif
             _memory.TryRemove(key, out value);
             await OnItemExpiredAsync(key).AnyContext();
@@ -368,12 +367,12 @@ namespace Foundatio.Caching {
                 Logger.Error()
                     .Exception(ex)
                     .Message("Error trying to find expired cache items.")
-                    .Write();
+                    ;
             }
 
             foreach (var key in expiredKeys) {
 #if DEBUG
-                Logger.Trace().Message("Removing expired key: key={0}", key).Write();
+                _logger.LogTrace("Removing expired key: key={0}", key);
 #endif
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();

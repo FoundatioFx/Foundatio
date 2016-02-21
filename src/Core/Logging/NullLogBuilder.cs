@@ -3,19 +3,11 @@ using System.Runtime.CompilerServices;
 
 namespace Foundatio.Logging {
     public sealed class NullLogBuilder : ILogBuilder {
-        private LogData _data = new LogData();
+        public static ILogBuilder Instance = new NullLogBuilder();
 
-        public LogData LogData => _data;
+        public LogData LogData => null;
 
         public ILogBuilder Level(LogLevel logLevel) {
-            return this;
-        }
-
-        public ILogBuilder Logger(string logger) {
-            return this;
-        }
-
-        public ILogBuilder Logger<TLogger>() {
             return this;
         }
 

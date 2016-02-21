@@ -22,20 +22,6 @@ namespace Foundatio.Logging {
         ILogBuilder Level(LogLevel logLevel);
 
         /// <summary>
-        /// Sets the logger for the logging event.
-        /// </summary>
-        /// <param name="logger">The name of the logger.</param>
-        /// <returns></returns>
-        ILogBuilder Logger(string logger);
-
-        /// <summary>
-        /// Sets the logger name using the generic type.
-        /// </summary>
-        /// <typeparam name="TLogger">The type of the logger.</typeparam>
-        /// <returns></returns>
-        ILogBuilder Logger<TLogger>();
-
-        /// <summary>
         /// Sets the log message on the logging event.
         /// </summary>
         /// <param name="message">The log message for the logging event.</param>

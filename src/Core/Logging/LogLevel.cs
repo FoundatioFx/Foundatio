@@ -12,16 +12,16 @@ namespace Foundatio.Logging {
         Debug = 1,
 
         /// <summary>Info log level.</summary>
-        Info = 2,
+        Information = 2,
 
         /// <summary>Warn log level.</summary>
-        Warn = 3,
+        Warning = 3,
 
         /// <summary>Error log level.</summary>
         Error = 4,
 
-        /// <summary>Fatal log level.</summary>
-        Fatal = 5,
+        /// <summary>Critical log level.</summary>
+        Critical = 5,
 
         /// <summary>None log level.</summary>
         None = 100,
