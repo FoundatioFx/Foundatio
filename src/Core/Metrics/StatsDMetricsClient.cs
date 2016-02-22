@@ -17,7 +17,7 @@ namespace Foundatio.Metrics {
         private readonly ILogger _logger;
 
         public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<StatsDMetricsClient>();
+            _logger = loggerFactory?.CreateLogger<StatsDMetricsClient>() ?? NullLogger.Instance;
             _endPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
 
             if (!String.IsNullOrEmpty(prefix))

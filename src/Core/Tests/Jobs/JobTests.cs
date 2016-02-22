@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobs() {
-            var job = new HelloWorldJob(LoggerFactory);
+            var job = new HelloWorldJob();
             Assert.Equal(0, job.RunCount);
             await job.RunAsync();
             Assert.Equal(1, job.RunCount);
@@ -46,7 +46,7 @@ namespace Foundatio.Tests.Jobs {
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
-            var jobInstance = new JobRunner(LoggerFactory).CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
+            var jobInstance = new JobRunner().CreateJobInstance(typeof(HelloWorldJob).AssemblyQualifiedName);
             Assert.NotNull(jobInstance);
             Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
             Assert.Equal(JobResult.Success, await jobInstance.RunAsync());

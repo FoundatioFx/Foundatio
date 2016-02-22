@@ -101,7 +101,7 @@ namespace Foundatio.Logging {
         /// A <see cref="System.String" /> that represents this instance.
         /// </returns>
         public override string ToString() {
-            return ToString(true, true);
+            return ToString(false, false);
         }
 
         public string ToString(bool includeFileInfo, bool includeException) {

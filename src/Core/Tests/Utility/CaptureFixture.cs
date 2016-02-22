@@ -64,7 +64,8 @@ namespace Foundatio.Tests.Utility {
             };
 
             _loggerFactory.TestOutputHelper.WriteLine(logEntry.GetMessage());
-            _loggerFactory.LogEntries.Add(logEntry);
+            lock (_loggerFactory.LogEntries)
+                _loggerFactory.LogEntries.Add(logEntry);
         }
 
         public bool IsEnabled(LogLevel logLevel) {

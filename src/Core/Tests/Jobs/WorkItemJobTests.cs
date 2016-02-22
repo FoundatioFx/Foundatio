@@ -60,9 +60,9 @@ namespace Foundatio.Tests.Jobs {
             queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
-            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
-            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry);
             int errors = 0;
 
             var jobIds = new ConcurrentDictionary<string, int>();
@@ -72,7 +72,8 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
 
                 var jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-                _logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
+                if (jobData.Index % 100 == 0)
+                    _logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
 
                 for (int i = 0; i < 10; i++)
                     await ctx.ReportProgressAsync(10 * i);
@@ -92,7 +93,9 @@ namespace Foundatio.Tests.Jobs {
             var completedItems = new List<string>();
             object completedItemsLock = new object();
             messageBus.Subscribe<WorkItemStatus>(status => {
-                _logger.Trace().Message($"Progress: {status.Progress}").Write();
+                if (status.Progress == 100)
+                    _logger.Trace().Message($"Progress: {status.Progress}").Write();
+
                 if (status.Progress < 100)
                     return;
 

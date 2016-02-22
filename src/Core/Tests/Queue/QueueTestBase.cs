@@ -95,7 +95,7 @@ namespace Foundatio.Tests.Queue {
 
                 Task.Run(async () => {
                     for (int index = 0; index < iterations; index++) {
-                        await Task.Delay(RandomData.GetInt(100, 300));
+                        await Task.Delay(RandomData.GetInt(10, 50));
                         await queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello"
                         });
@@ -112,7 +112,7 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
 
-                Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
+                Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 50);
                 var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
                 Assert.InRange(timing.AverageDuration, 0, 25);
             }

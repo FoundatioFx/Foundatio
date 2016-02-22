@@ -15,7 +15,7 @@ namespace Foundatio.Jobs {
 
         public JobBase(ILoggerFactory loggerFactory) {
             _jobName = TypeNameHelper.GetTypeDisplayName(GetType());
-            _logger = loggerFactory.CreateLogger(_jobName);
+            _logger = loggerFactory?.CreateLogger(_jobName) ?? NullLogger.Instance;
             JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 

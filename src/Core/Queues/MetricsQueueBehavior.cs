@@ -15,7 +15,7 @@ namespace Foundatio.Queues {
         private readonly ILogger _logger;
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<MetricsQueueBehavior<T>>();
+            _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger.Instance;
             _metricsClient = metrics;
 
             if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))

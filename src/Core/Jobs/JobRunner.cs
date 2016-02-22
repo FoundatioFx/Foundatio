@@ -36,7 +36,7 @@ namespace Foundatio.Jobs {
 
         public JobRunner(ILoggerFactory loggerFactory = null) {
             _loggerFactory = loggerFactory;
-            _logger = loggerFactory.CreateLogger<JobRunner>();
+            _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger.Instance;
         }
 
         public int RunInConsole(JobRunOptions options, Action<IServiceProvider> afterBootstrap = null) {

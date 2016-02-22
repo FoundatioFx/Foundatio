@@ -19,7 +19,7 @@ namespace Foundatio.Caching {
         private long _invalidateCacheCalls;
 
         public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
-            _logger = loggerFactory.CreateLogger<HybridCacheClient>();
+            _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger.Instance;
             _distributedCache = distributedCacheClient;
             _localCache = new InMemoryCacheClient(loggerFactory);
             _localCache.MaxItems = 100;
