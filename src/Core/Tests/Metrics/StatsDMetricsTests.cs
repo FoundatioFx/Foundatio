@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Metrics {
         private readonly UdpListener _listener;
         private Thread _listenerThread;
 
-        public StatsDMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
+        public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
@@ -131,9 +131,8 @@ namespace Foundatio.Tests.Metrics {
             _listenerThread.Abort();
         }
 
-        public new void Dispose() {
+        public void Dispose() {
             _listener.Dispose();
-            base.Dispose();
         }
     }
 }

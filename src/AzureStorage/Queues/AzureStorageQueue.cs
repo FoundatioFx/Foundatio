@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
@@ -175,19 +174,18 @@ namespace Foundatio.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
-                        Logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        _logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
                         await queueEntry.AbandonAsync().AnyContext();
                         Interlocked.Increment(ref _workerErrorCount);
                     }
                 }
-#if DEBUG
-                Logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested).Write();
-#endif
+
+                _logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested).Write();
             }, linkedCancellationToken);
         }
 
         public override void Dispose() {
-            Logger.Trace().Message("Queue {0} dispose", _queueName).Write();
+            _logger.Trace().Message("Queue {0} dispose", _queueName).Write();
 
             _queueDisposedCancellationTokenSource?.Cancel();
 

@@ -2,13 +2,12 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Tests.Caching;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
-        public RedisCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public RedisCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
             return new RedisCacheClient(SharedConnection.GetMuxer());

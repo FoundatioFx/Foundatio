@@ -1,94 +1,103 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using Foundatio.Logging;
-using Xunit;
+using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
-using Xunit.Sdk;
 
 namespace Foundatio.Tests.Utility {
-    public class CaptureFixture : IDisposable {
-        private List<TraceListener> _oldListeners;
-        private TextWriter _oldOut;
-        private TextWriter _oldError;
-        private TextWriter _outputWriter;
+    public abstract class CaptureTests {
+        protected readonly ILogger _logger;
+        protected readonly TextWriter _writer;
 
-        static CaptureFixture() {
-#if DEBUG
-            Logger.SetMinimumLogLevel(LogLevel.Information);
-#else
-            Logger.SetMinimumLogLevel(LogLevel.Warn);
-#endif
-
-            Logger.RegisterWriter(l => Trace.WriteLine(l.ToString(false, false)));
+        protected CaptureTests(ITestOutputHelper output) {
+            LoggerFactory = new TestLoggerFactory(output);
+            LoggerFactory.MinimumLevel = LogLevel.Debug;
+            _logger = LoggerFactory.CreateLogger(GetType());
+            _writer = new TestOutputWriter(output);
         }
 
-        public void Capture(ITestOutputHelper output) {
-            _outputWriter = new TestOutputWriter(output);
-            _oldOut = Console.Out;
-            _oldError = Console.Error;
-            _oldListeners = new List<TraceListener>();
+        protected ILoggerFactory LoggerFactory { get; }
+    }
 
-            try {
-                foreach (TraceListener oldListener in Trace.Listeners)
-                    _oldListeners.Add(oldListener);
-
-                Trace.Listeners.Clear();
-                Trace.Listeners.Add(new AssertTraceListener());
-                Trace.Listeners.Add(new TextWriterTraceListener(_outputWriter));
-
-                Console.SetOut(_outputWriter);
-                Console.SetError(_outputWriter);
-            } catch {}
+    public class TestLoggerFactory : ILoggerFactory {
+        public TestLoggerFactory(ITestOutputHelper output) {
+            TestOutputHelper = output;
         }
 
-        public void Dispose() {
-            _outputWriter?.Dispose();
+        public LogLevel MinimumLevel { get; set; }
+        public IList<LogEntry> LogEntries { get; } = new List<LogEntry>(); 
+        public ITestOutputHelper TestOutputHelper { get; }
 
-            if (_oldOut != null)
-                Console.SetOut(_oldOut);
-
-            if (_oldError != null)
-                Console.SetError(_oldError);
-
-            Logger.RegisterWriter(l => { });
-
-            try {
-                if (_oldListeners != null) {
-                    Trace.Listeners.Clear();
-                    Trace.Listeners.AddRange(_oldListeners.ToArray());
-                }
-            } catch (Exception) {}
+        public ILogger CreateLogger(string categoryName) {
+            return new TestLogger(categoryName, this);
         }
 
-        private class AssertTraceListener : TraceListener {
-            public override void Fail(string message, string detailMessage) {
-                throw new TrueException(String.Concat(message, ": ", detailMessage), null);
-            }
+        public void AddProvider(ILoggerProvider provider) {}
 
-            public override void Write(string message) {}
+        public void Dispose() {}
+    }
 
-            public override void WriteLine(string message) {}
+    public class TestLogger : ILogger {
+        private readonly TestLoggerFactory _loggerFactory;
+        private readonly string _name;
+        private readonly Stack<object> _scope = new Stack<object>();
+
+        public TestLogger(string name, TestLoggerFactory loggerFactory) {
+            _loggerFactory = loggerFactory;
+            _name = name;
+        }
+
+        public void Log(LogLevel logLevel, int eventId, object state, Exception exception, Func<object, Exception, string> formatter) {
+            if (!IsEnabled(logLevel))
+                return;
+
+            var logEntry = new LogEntry {
+                LogLevel = logLevel,
+                EventId = eventId,
+                State = state,
+                Exception = exception,
+                Formatter = formatter,
+                LoggerName = _name,
+                Scope = _scope.ToArray()
+            };
+
+            _loggerFactory.TestOutputHelper.WriteLine(logEntry.GetMessage());
+            _loggerFactory.LogEntries.Add(logEntry);
+        }
+
+        public bool IsEnabled(LogLevel logLevel) {
+            return logLevel >= _loggerFactory.MinimumLevel;
+        }
+
+        public IDisposable BeginScopeImpl(object state) {
+            _scope.Push(state);
+            return new DisposableAction(() => _scope.Pop());
         }
     }
 
-    [Collection("Capture")]
-    public abstract class CaptureTests : IDisposable {
-        private readonly CaptureFixture _fixture;
-        protected readonly ITestOutputHelper _output;
-        protected readonly TestOutputWriter _writer;
+    public class LogEntry {
+        public LogLevel LogLevel { get; set; }
 
-        protected CaptureTests(CaptureFixture fixture, ITestOutputHelper output) {
-            _fixture = fixture;
-            _output = output;
-            _writer = new TestOutputWriter(_output);
+        public int EventId { get; set; }
 
-            fixture.Capture(_output);
+        public object State { get; set; }
+
+        public Exception Exception { get; set; }
+
+        public Func<object, Exception, string> Formatter { get; set; }
+
+        public object[] Scope { get; set; }
+
+        public string LoggerName { get; set; }
+
+        public string GetMessage() {
+            return Formatter(State, Exception);
         }
 
-        public void Dispose() {
-            _fixture?.Dispose();
+        public override string ToString() {
+            return String.Concat("[", LoggerName, ":", LogLevel.ToString(), "] ", GetMessage());
         }
     }
 }

@@ -16,7 +16,7 @@ namespace Foundatio.JobRunner {
             if (!ca.Quiet)
                 OutputHeader();
 
-            return Jobs.JobRunner.RunInConsole(new JobRunOptions {
+            return new Jobs.JobRunner().RunInConsole(new JobRunOptions {
                 JobTypeName = ca.JobType,
                 ServiceProviderTypeName = ca.ServiceProviderType,
                 InstanceCount = ca.InstanceCount,

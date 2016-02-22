@@ -383,7 +383,7 @@ namespace Foundatio.Tests.Caching {
             var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
-        protected CacheClientTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {}
     }
 
     public class SimpleModel {

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 

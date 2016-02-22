@@ -9,7 +9,6 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
-using Foundatio.Tests.Utility;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
@@ -17,11 +16,11 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
-        public RedisQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public RedisQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout, retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance);
-            Logger.Debug().Message($"Queue Id: {queue.QueueId}").Write();
+            _logger.Debug().Message($"Queue Id: {queue.QueueId}").Write();
             return queue;
         }
 
@@ -118,7 +117,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(3, CountAllKeys());
 
-                _output.WriteLine("-----");
+                _writer.WriteLine("-----");
 
                 var workItem = await queue.DequeueAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -128,7 +127,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(4, CountAllKeys());
 
-                _output.WriteLine("-----");
+                _writer.WriteLine("-----");
 
                 await workItem.CompleteAsync();
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -448,7 +447,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 try {
                     var keys = server.Keys().ToArray();
                     foreach (var key in keys)
-                        _output.WriteLine(key);
+                        _writer.WriteLine(key);
                     count += keys.Length;
                 } catch (Exception) { }
             }

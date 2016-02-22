@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class WithDependencyJob : JobBase {
-        public WithDependencyJob(MyDependency dependency) {
+        public WithDependencyJob(MyDependency dependency, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             Dependency = dependency;
         }
 

@@ -3,11 +3,12 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class ThrottledJob : JobBase {
-        public ThrottledJob(ICacheClient client) {
-            _locker = new ThrottlingLockProvider(client, 1, TimeSpan.FromMilliseconds(100));
+        public ThrottledJob(ICacheClient client, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+            _locker = new ThrottlingLockProvider(client, 1, TimeSpan.FromMilliseconds(100), loggerFactory);
         }
 
         private readonly ILockProvider _locker;

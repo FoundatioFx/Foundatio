@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
     public class InMemoryMetricsTests : CaptureTests {
-        public InMemoryMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public InMemoryMetricsTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
         public async Task CanIncrementCounter() {

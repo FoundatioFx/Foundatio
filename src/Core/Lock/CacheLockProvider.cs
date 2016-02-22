@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Caching;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
 using System.Threading;
@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
@@ -16,8 +17,10 @@ namespace Foundatio.Lock {
         private readonly ConcurrentDictionary<string, AsyncMonitor> _monitors = new ConcurrentDictionary<string, AsyncMonitor>();
         private static readonly object _lockObject = new object();
         private bool _isSubscribed;
+        protected readonly ILogger _logger;
 
-        public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus) {
+        public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
+            _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
         }
@@ -31,15 +34,14 @@ namespace Foundatio.Lock {
                     return;
 
                 _isSubscribed = true;
-                Logger.Trace().Message("Subscribing to cache lock released.").Write();
+                _logger.Trace().Message("Subscribing to cache lock released.").Write();
                 _messageBus.Subscribe<CacheLockReleased>(OnLockReleasedAsync);
             }
         }
 
         private async Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
-#if DEBUG
-            Logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
-#endif
+            _logger.Trace().Message($"Got lock released message: {msg.Name}").Write();
+
             AsyncMonitor monitor;
             if (!_monitors.TryGetValue(msg.Name, out monitor))
                 return;
@@ -49,9 +51,8 @@ namespace Foundatio.Lock {
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-#if DEBUG
-            Logger.Trace().Message($"AcquireAsync: {name}").Write();
-#endif
+            _logger.Trace().Message($"AcquireAsync: {name}").Write();
+
             EnsureTopicSubscription();
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
@@ -67,59 +68,51 @@ namespace Foundatio.Lock {
 
                 if (gotLock) {
                     allowLock = true;
-#if DEBUG
-                    Logger.Trace().Message($"Acquired lock: {name}").Write();
-#endif
+                    _logger.Trace().Message($"Acquired lock: {name}").Write();
+
                     break;
                 }
 
-#if DEBUG
-                Logger.Trace().Message($"Failed to acquire lock: {name}").Write();
-#endif
+                _logger.Trace().Message($"Failed to acquire lock: {name}").Write();
                 if (cancellationToken.IsCancellationRequested) {
-                    Logger.Trace().Message("Cancellation Requested").Write();
+                    _logger.Trace().Message("Cancellation Requested").Write();
                     break;
                 }
 
                 var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.Zero);
                 var delayAmount = keyExpiration.Subtract(DateTime.UtcNow).Max(TimeSpan.FromMilliseconds(50));
-#if DEBUG
-                Logger.Trace().Message("Delay amount: {0} Delay until: {1}", delayAmount, DateTime.UtcNow.Add(delayAmount).ToString("mm:ss.fff")).Write();
-#endif
+
+                _logger.Trace().Message("Delay amount: {0} Delay until: {1}", delayAmount, DateTime.UtcNow.Add(delayAmount).ToString("mm:ss.fff")).Write();
+
                 var delayCancellationTokenSource = new CancellationTokenSource(delayAmount);
                 var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token).Token;
 
                 var monitor = _monitors.GetOrAdd(name, new AsyncMonitor());
-#if DEBUG
                 var sw = Stopwatch.StartNew();
-#endif
+
                 try {
                     using (await monitor.EnterAsync(linkedCancellationToken))
                         await monitor.WaitAsync(linkedCancellationToken).AnyContext();
                 } catch (TaskCanceledException) {
                     if (delayCancellationTokenSource.IsCancellationRequested) {
-#if DEBUG
-                        Logger.Trace().Message("Retrying: Delay exceeded").Write();
-#endif
+                        _logger.Trace().Message("Retrying: Delay exceeded").Write();
                         continue;
                     }
                 } finally {
-#if DEBUG
                     sw.Stop();
-                    Logger.Trace().Message($"Lock {name} waited {sw.ElapsedMilliseconds}ms").Write();
-#endif
+                    _logger.Trace().Message($"Lock {name} waited {sw.ElapsedMilliseconds}ms").Write();
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
             if (cancellationToken.IsCancellationRequested)
-                Logger.Trace().Message("Cancellation requested.").Write();
+                _logger.Trace().Message("Cancellation requested.").Write();
 
             if (!allowLock)
                 return null;
-#if DEBUG
-            Logger.Trace().Message($"Returning lock: {name}").Write();
-#endif
-            return new DisposableLock(name, this);
+
+            _logger.Trace().Message($"Returning lock: {name}").Write();
+
+            return new DisposableLock(name, this, _logger);
         }
 
         public async Task<bool> IsLockedAsync(string name) {
@@ -127,15 +120,14 @@ namespace Foundatio.Lock {
         }
 
         public async Task ReleaseAsync(string name) {
-#if DEBUG
-            Logger.Trace().Message($"ReleaseAsync: {name}").Write();
-#endif
+            _logger.Trace().Message($"ReleaseAsync: {name}").Write();
+
             await _cacheClient.RemoveAsync(name).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }
 
         public async Task RenewAsync(String name, TimeSpan? lockExtension = null) {
-            Logger.Trace().Message("RenewAsync: {0}", name).Write();
+            _logger.Trace().Message("RenewAsync: {0}", name).Write();
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);
 

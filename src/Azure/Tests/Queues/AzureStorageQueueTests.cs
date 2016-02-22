@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
@@ -12,7 +11,7 @@ namespace Foundatio.Azure.Tests.Queue {
     public class AzureStorageQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        public AzureStorageQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+        public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (String.IsNullOrEmpty(ConnectionStrings.Get("StorageConnectionString")))

@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Metrics {
     public class RedisMetricsTests : CaptureTests {
-        public RedisMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+        public RedisMetricsTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
         public async Task CanIncrementCounter() {
@@ -77,7 +77,7 @@ namespace Foundatio.Redis.Tests.Metrics {
                 try {
                     var keys = server.Keys().ToArray();
                     foreach (var key in keys)
-                        _output.WriteLine(key);
+                        _writer.WriteLine(key);
                     count += keys.Length;
                 } catch (Exception) { }
             }

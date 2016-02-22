@@ -4,8 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Messaging;
 using Foundatio.Logging;
+using Foundatio.Messaging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching {
     public class HybridCacheClient : ICacheClient {
@@ -26,7 +27,7 @@ namespace Foundatio.Caching {
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
             _localCache.ItemExpired.AddHandler(async (sender, args) => {
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key } }).AnyContext();
-                _logger.LogTrace("Item expired event: key={0}", args.Key);
+                _logger.Trace().Message("Item expired event: key={0}", args.Key).Write();
             });
         }
 
@@ -43,7 +44,7 @@ namespace Foundatio.Caching {
             if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
                 return;
 
-            _logger.LogTrace("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { }));
+            _logger.Trace().Message("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { })).Write();
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll) {
                 await _localCache.RemoveAllAsync().AnyContext();
@@ -53,7 +54,7 @@ namespace Foundatio.Caching {
 
                 await _localCache.RemoveAllAsync(message.Keys.Where(k => !k.EndsWith("*"))).AnyContext();
             } else {
-                _logger.LogWarning("Unknown invalidate cache message");
+                _logger.Warn().Message("Unknown invalidate cache message").Write();
             }
         }
         
@@ -76,17 +77,17 @@ namespace Foundatio.Caching {
             if (requiresSerialization) {
                 cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
                 if (cacheValue.HasValue) {
-                    _logger.LogTrace("Local cache hit: {0}", key);
+                    _logger.Trace().Message("Local cache hit: {0}", key).Write();
                     Interlocked.Increment(ref _localCacheHits);
                     return cacheValue;
                 }
             }
 
-            _logger.LogTrace("Local cache miss: {0}", key);
+            _logger.Trace().Message("Local cache miss: {0}", key).Write();
             cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
             if (requiresSerialization && cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-                _logger.LogTrace($"Setting Local cache key: {key} with expiration: {expiration}");
+                _logger.Trace().Message("Setting Local cache key: {0} with expiration: {1}", key, expiration).Write();
 
                 await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
@@ -108,7 +109,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (TypeRequiresSerialization(typeof(T))) {
-                _logger.LogTrace("Adding key {0} to local cache.", key);
+                _logger.Trace().Message("Adding key {0} to local cache.", key).Write();
 
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -122,7 +123,7 @@ namespace Foundatio.Caching {
                 return 0;
 
             if (TypeRequiresSerialization(typeof(T))) {
-                _logger.LogTrace("Adding keys {0} to local cache.", values.Keys);
+                _logger.Trace().Message("Adding keys {0} to local cache.", values.Keys).Write();
 
                 await _localCache.SetAllAsync(values, expiresIn).AnyContext();
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();

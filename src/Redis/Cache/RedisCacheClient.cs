@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using Foundatio.Serializer;
 using StackExchange.Redis;
 
@@ -11,12 +12,14 @@ namespace Foundatio.Caching {
     public sealed class RedisCacheClient : ICacheClient, IHaveSerializer {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly ISerializer _serializer;
+        private readonly ILogger _logger;
         private readonly LoadedLuaScript _setIfHigherScript;
         private readonly LoadedLuaScript _setIfLowerScript;
         private readonly LoadedLuaScript _incrByAndExpireScript;
         private readonly LoadedLuaScript _delByWildcardScript;
 
-        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null) {
+        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
+            _logger = loggerFactory.CreateLogger<RedisCacheClient>();
             _connectionMultiplexer = connectionMultiplexer;
             _serializer = serializer ?? new JsonNetSerializer();
             
@@ -101,7 +104,7 @@ namespace Foundatio.Caching {
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                Logger.Error()
+                _logger.Error()
                     .Exception(ex)
                     .Message($"Unable to deserialize value \"{redisValue}\" to type {typeof (T).FullName}")
                     .Write();
@@ -122,9 +125,8 @@ namespace Foundatio.Caching {
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
-#if DEBUG
-                Logger.Trace().Message($"Removing expired key: {key}").Write();
-#endif
+                _logger.Trace().Message($"Removing expired key: {key}").Write();
+
                 await this.RemoveAsync(key).AnyContext();
                 return false;
             }

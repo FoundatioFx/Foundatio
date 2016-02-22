@@ -3,17 +3,17 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : CaptureTests {
-        protected MessageBusTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IMessageBus GetMessageBus() {
             return null;
@@ -27,10 +27,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Logger.Trace().Message("Got message").Write();
+                    _logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    Logger.Trace().Message("Set event").Write();
+                    _logger.Trace().Message("Set event").Write();
                 });
 
                 await Task.Delay(100);
@@ -70,10 +70,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Logger.Trace().Message("Got message").Write();
+                    _logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    Logger.Trace().Message("Set event").Write();
+                    _logger.Trace().Message("Set event").Write();
                 });
 
                 await Task.Delay(100);
@@ -96,10 +96,10 @@ namespace Foundatio.Tests.Messaging {
                 var countdown = new AsyncCountdownEvent(numConcurrentMessages);
 
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Logger.Trace().Message("Got message").Write();
+                    _logger.Trace().Message("Got message").Write();
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
-                    Logger.Trace().Message("Set event").Write();
+                    _logger.Trace().Message("Set event").Write();
                 });
 
                 var sw = Stopwatch.StartNew();
@@ -108,7 +108,7 @@ namespace Foundatio.Tests.Messaging {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello"
                     }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
-                    Logger.Trace().Message("Published one...").Write();
+                    _logger.Trace().Message("Published one...").Write();
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
@@ -275,7 +275,7 @@ namespace Foundatio.Tests.Messaging {
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    Logger.Trace().Message("SimpleAMessage received").Write();
+                    _logger.Trace().Message("SimpleAMessage received").Write();
                     Interlocked.Increment(ref messageCount);
                     cancellationTokenSource.Cancel();
                     countdown.Signal();

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Logging {
     /// <summary>
@@ -53,19 +54,8 @@ namespace Foundatio.Logging {
         /// </summary>
         /// <param name="eventId">The id of the logging event.</param>
         /// <returns></returns>
-        public ILogBuilder EventId(EventId eventId) {
+        public ILogBuilder EventId(int eventId) {
             _data.EventId = eventId;
-            return this;
-        }
-
-        /// <summary>
-        /// Sets the id of the logging event.
-        /// </summary>
-        /// <param name="id">The id of the logging event.</param>
-        /// <param name="name">The name of the logging event.</param>
-        /// <returns></returns>
-        public ILogBuilder EventId(int id, string name = null) {
-            _data.EventId = new EventId(id, name);
             return this;
         }
 
@@ -207,7 +197,7 @@ namespace Foundatio.Logging {
             _logger.Log(LogData.LogLevel, 0, LogData, LogData.Exception, _messageFormatter);
         }
 
-        private static readonly Func<LogData, Exception, string> _messageFormatter = (state, error) => state.ToString();
+        private static readonly Func<object, Exception, string> _messageFormatter = (state, error) => state.ToString();
 
         /// <summary>
         /// Writes the log event to the underlying logger if the condition delegate is true.

@@ -11,7 +11,7 @@ namespace Foundatio.Azure.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
         private readonly static string QueueName = Guid.NewGuid().ToString("N");
 
-        public AzureServiceBusQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))

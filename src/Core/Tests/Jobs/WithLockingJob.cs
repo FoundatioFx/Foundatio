@@ -4,12 +4,18 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
+using Microsoft.Extensions.Logging;
 using Foundatio.Messaging;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs {
     public class WithLockingJob : JobBase {
-        private readonly ILockProvider _locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
+        private readonly ILockProvider _locker;
+
+        public WithLockingJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+            _locker = new CacheLockProvider(new InMemoryCacheClient(loggerFactory), new InMemoryMessageBus(loggerFactory), loggerFactory);
+        }
+
         public int RunCount { get; set; }
 
         protected override Task<ILock> GetJobLockAsync(){

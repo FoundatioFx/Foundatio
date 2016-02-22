@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -129,7 +128,7 @@ namespace Foundatio.Queues {
                         await workItem.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
                     Interlocked.Increment(ref _workerErrorCount);
-                    Logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
+                    _logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
                     await workItem.AbandonAsync().AnyContext();
                 }
             });
@@ -142,7 +141,7 @@ namespace Foundatio.Queues {
         }
 
         public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            Logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
+            _logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
 
             return DequeueAsync();
         }

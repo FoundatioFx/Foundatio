@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public abstract class JobQueueTestsBase: CaptureTests {
-        public JobQueueTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+        public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
         
@@ -31,7 +31,7 @@ namespace Foundatio.Tests.Jobs {
                 });
             });
 
-            var job = new SampleQueueJob(queue, metrics);
+            var job = new SampleQueueJob(queue, metrics, LoggerFactory);
             await Task.Delay(10);
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -65,7 +65,7 @@ namespace Foundatio.Tests.Jobs {
             var cancellationTokenSource = new CancellationTokenSource();
             await Run.InParallel(jobCount, async index => {
                 var queue = queues[index - 1];
-                var job = new SampleQueueJob(queue, metrics);
+                var job = new SampleQueueJob(queue, metrics, LoggerFactory);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 cancellationTokenSource.Cancel();
             });
@@ -75,7 +75,7 @@ namespace Foundatio.Tests.Jobs {
             var queueStats = new List<QueueStats>();
             for (int i = 0; i < queues.Count; i++) {
                 var stats = await queues[i].GetQueueStatsAsync();
-                Logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                _logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
                 queueStats.Add(stats);
             }
 

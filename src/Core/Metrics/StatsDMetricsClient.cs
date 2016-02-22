@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
@@ -13,8 +14,10 @@ namespace Foundatio.Metrics {
         private Socket _socket;
         private readonly IPEndPoint _endPoint;
         private readonly string _prefix;
+        private readonly ILogger _logger;
 
-        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null) {
+        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null, ILoggerFactory loggerFactory = null) {
+            _logger = loggerFactory.CreateLogger<StatsDMetricsClient>();
             _endPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
 
             if (!String.IsNullOrEmpty(prefix))
@@ -50,7 +53,7 @@ namespace Foundatio.Metrics {
                 EnsureSocket();
                 _socket?.SendTo(data, _endPoint);
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
+                _logger.Error().Exception(ex).Message("An error occurred while sending the metrics: {0}", ex.Message).Write();
                 ResetUdpClient();
             }
         }
@@ -76,7 +79,7 @@ namespace Foundatio.Metrics {
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("An error occurred while calling Close() on the socket.").Write();
+                    _logger.Error().Exception(ex).Message("An error occurred while calling Close() on the socket.").Write();
                 } finally {
                     _socket = null;
                 }

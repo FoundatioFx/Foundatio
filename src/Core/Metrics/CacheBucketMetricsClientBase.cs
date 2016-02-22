@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 
@@ -23,8 +24,10 @@ namespace Foundatio.Metrics {
         private readonly Timer _timer;
         private readonly bool _buffered;
         private readonly ICacheClient _cache;
+        protected readonly ILogger _logger;
 
-        public CacheBucketMetricsClientBase(ICacheClient cache, bool buffered = true, string prefix = null) {
+        public CacheBucketMetricsClientBase(ICacheClient cache, bool buffered = true, string prefix = null, ILoggerFactory loggerFactory = null) {
+            _logger = loggerFactory.CreateLogger(GetType());
             _cache = cache;
             _buffered = buffered;
             _prefix = !String.IsNullOrEmpty(prefix) ? (!prefix.EndsWith(":") ? prefix + ":" : prefix) : String.Empty;
@@ -163,9 +166,9 @@ namespace Foundatio.Metrics {
             DateTime start = DateTime.UtcNow;
             long startingCount = await this.GetCounterCountAsync(statName, start, start).AnyContext();
             long expectedCount = startingCount + count;
-#if DEBUG
-            Logger.Trace().Message($"Wait: count={count} current={startingCount}").Write();
-#endif
+
+            _logger.Trace().Message($"Wait: count={count} current={startingCount}").Write();
+
             if (work != null)
                 await work().AnyContext();
 
@@ -180,16 +183,16 @@ namespace Foundatio.Metrics {
                 try {
                     await resetEvent.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
-#if DEBUG
+
                 currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
-                Logger.Trace().Message($"Got signal: count={currentCount} expected={expectedCount}").Write();
-#endif
+                _logger.Trace().Message($"Got signal: count={currentCount} expected={expectedCount}").Write();
+
                 resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && currentCount < expectedCount);
-#if DEBUG
+
             currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
-            Logger.Trace().Message($"Done waiting: count={currentCount} expected={expectedCount} success={!cancellationToken.IsCancellationRequested}").Write();
-#endif
+            _logger.Trace().Message($"Done waiting: count={currentCount} expected={expectedCount} success={!cancellationToken.IsCancellationRequested}").Write();
+
             return !cancellationToken.IsCancellationRequested;
         }
 

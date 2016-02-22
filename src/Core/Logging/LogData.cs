@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Logging {
     /// <summary>
@@ -24,7 +25,7 @@ namespace Foundatio.Logging {
         /// <value>
         /// The event id.
         /// </value>
-        public EventId EventId { get; set; }
+        public int EventId { get; set; }
 
         /// <summary>
         /// Gets or sets the message.
@@ -105,7 +106,7 @@ namespace Foundatio.Logging {
 
         public string ToString(bool includeFileInfo, bool includeException) {
             var message = new StringBuilder();
-            message.Append("[").Append(DateTime.UtcNow.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append(Logger).Append("] ");
+            message.Append("[").Append(DateTime.UtcNow.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append("] ");
 
             if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName)) {
                 message.Append("[").Append(Path.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");

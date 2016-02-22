@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 
@@ -13,7 +14,7 @@ namespace Foundatio.Queues {
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
 
-        public QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors) {
+        public QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             QueueId = Guid.NewGuid().ToString("N");
             _serializer = serializer ?? new JsonNetSerializer();
             behaviors.ForEach(AttachBehavior);
@@ -118,7 +119,7 @@ namespace Foundatio.Queues {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public override void Dispose() {
-            Logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
+            _logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
 
             base.Dispose();
 

@@ -16,14 +16,14 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : CaptureTests {
-        public WorkItemJobTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public WorkItemJobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
         public async Task CanRunWorkItem() {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
 
             handlerRegistry.Register<MyWorkItem>(async ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
@@ -41,7 +41,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                Logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
@@ -60,9 +60,9 @@ namespace Foundatio.Tests.Jobs {
             queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry);
-            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry);
-            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
             int errors = 0;
 
             var jobIds = new ConcurrentDictionary<string, int>();
@@ -72,7 +72,7 @@ namespace Foundatio.Tests.Jobs {
                 Assert.Equal("Test", jobData.SomeData);
 
                 var jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-                Logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
+                _logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
 
                 for (int i = 0; i < 10; i++)
                     await ctx.ReportProgressAsync(10 * i);
@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
             var completedItems = new List<string>();
             object completedItemsLock = new object();
             messageBus.Subscribe<WorkItemStatus>(status => {
-                Logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace().Message($"Progress: {status.Progress}").Write();
                 if (status.Progress < 100)
                     return;
 
@@ -121,7 +121,7 @@ namespace Foundatio.Tests.Jobs {
                 await Task.Delay(100);
             } catch (TaskCanceledException) {}
 
-            Logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
+            _logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
             
             Assert.Equal(workItemCount, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
@@ -134,7 +134,7 @@ namespace Foundatio.Tests.Jobs {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                Logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
@@ -159,7 +159,7 @@ namespace Foundatio.Tests.Jobs {
             var queue = new InMemoryQueue<WorkItemData>(retries: 2, retryDelay: TimeSpan.FromMilliseconds(500));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
 
             handlerRegistry.Register<MyWorkItem>(ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
@@ -173,7 +173,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                Logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace().Message($"Progress: {status.Progress}").Write();
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });

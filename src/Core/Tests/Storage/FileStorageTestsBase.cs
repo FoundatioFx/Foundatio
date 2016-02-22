@@ -5,16 +5,17 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
-using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase : CaptureTests {
-        protected FileStorageTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IFileStorage GetStorage() {
             return null;
@@ -179,7 +180,7 @@ namespace Foundatio.Tests.Storage {
     }
 
     public static class StorageExtensions {
-        public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path) {
+        public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path, ILogger logger = null) {
             PostInfo eventPostInfo = null;
             try {
                 eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
@@ -189,24 +190,24 @@ namespace Foundatio.Tests.Storage {
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
+                logger.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
                 return null;
             }
 
             return eventPostInfo;
         }
 
-        public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path) {
+        public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path, ILogger logger = null) {
             try {
                 return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
+                logger.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
             }
 
             return false;
         }
 
-        public static async Task<bool> CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true) {
+        public static async Task<bool> CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null) {
             // don't move files that are already in the archive
             if (path.StartsWith("archive"))
                 return true;
@@ -222,7 +223,7 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error archiving event post data \"{0}\".", path).Write();
+                logger.Error().Exception(ex).Message("Error archiving event post data \"{0}\".", path).Write();
                 return false;
             }
 

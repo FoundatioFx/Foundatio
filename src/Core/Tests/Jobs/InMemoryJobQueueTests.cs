@@ -1,13 +1,12 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class InMemoryJobQueueTests : JobQueueTestsBase {
-        public InMemoryJobQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public InMemoryJobQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay) {
             return new InMemoryQueue<SampleQueueWorkItem>(retries, retryDelay);

@@ -10,10 +10,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Foundatio.Azure.Tests</RootNamespace>
     <AssemblyName>Foundatio.Azure.Tests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -47,6 +48,10 @@
     </Reference>
     <Reference Include="Microsoft.Data.Services.Client, Version=5.7.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\Microsoft.Data.Services.Client.5.7.0\lib\net40\Microsoft.Data.Services.Client.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.Extensions.Logging.Abstractions.1.0.0-rc1-final\lib\net451\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.ServiceBus, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
@@ -108,9 +113,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
-      <Link>Utility\CaptureCollectionFixture.cs</Link>
-    </Compile>
     <Compile Include="Messaging\AzureServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\AzureStorageQueueTests.cs" />
