@@ -216,7 +216,7 @@ namespace Foundatio.Metrics {
                 });
             }
 
-            return new CounterStatSummary(stats, start.Value, end.Value);
+            return new CounterStatSummary(name, stats, start.Value, end.Value);
         }
 
         public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null) {

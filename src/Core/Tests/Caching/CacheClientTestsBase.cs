@@ -12,7 +12,7 @@ using Foundatio.Utility;
 using Newtonsoft.Json;
 
 namespace Foundatio.Tests.Caching {
-    public abstract class CacheClientTestsBase : CaptureTests {
+    public abstract class CacheClientTestsBase : TestBase {
         protected virtual ICacheClient GetCacheClient() {
             return null;
         }

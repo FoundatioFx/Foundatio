@@ -18,7 +18,7 @@ using Xunit.Abstractions;
 #pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue {
-    public abstract class QueueTestBase : CaptureTests {
+    public abstract class QueueTestBase : TestBase {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {

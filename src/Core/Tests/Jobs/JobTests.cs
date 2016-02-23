@@ -11,11 +11,12 @@ using Foundatio.Metrics;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests : CaptureTests {
+    public class JobTests : TestBase {
         public JobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
@@ -144,10 +145,10 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(null, iterations);
             sw.Stop();
             await metrics.FlushAsync();
-            await metrics.DisplayCounterAsync("runs", _writer);
-            await metrics.DisplayCounterAsync("errors", _writer);
-            await metrics.DisplayCounterAsync("failed", _writer);
-            await metrics.DisplayCounterAsync("completed", _writer);
+            _logger.LogVerbose((await metrics.GetCounterStatsAsync("runs")).ToString());
+            _logger.LogVerbose((await metrics.GetCounterStatsAsync("errors")).ToString());
+            _logger.LogVerbose((await metrics.GetCounterStatsAsync("failed")).ToString());
+            _logger.LogVerbose((await metrics.GetCounterStatsAsync("completed")).ToString());
         }
     }
 }

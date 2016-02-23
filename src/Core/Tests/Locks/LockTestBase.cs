@@ -7,11 +7,12 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
-    public abstract class LockTestBase : CaptureTests {
+    public abstract class LockTestBase : TestBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) { }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -153,20 +154,20 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            _writer.WriteLine(sw.Elapsed.ToString());
+            _logger.LogInformation(sw.Elapsed.ToString());
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
-            _writer.WriteLine(sw.Elapsed.ToString());
+            _logger.LogInformation(sw.Elapsed.ToString());
             
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
-            _writer.WriteLine(sw.Elapsed.ToString());
+            _logger.LogInformation(sw.Elapsed.ToString());
         }
     }
 }

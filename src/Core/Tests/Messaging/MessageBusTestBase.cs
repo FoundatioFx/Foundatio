@@ -12,7 +12,7 @@ using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
-    public abstract class MessageBusTestBase : CaptureTests {
+    public abstract class MessageBusTestBase : TestBase {
         protected MessageBusTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IMessageBus GetMessageBus() {

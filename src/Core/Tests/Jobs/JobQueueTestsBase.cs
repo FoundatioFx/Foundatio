@@ -12,7 +12,7 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public abstract class JobQueueTestsBase: CaptureTests {
+    public abstract class JobQueueTestsBase: TestBase {
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);

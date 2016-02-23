@@ -117,7 +117,7 @@
     <Compile Include="Storage\FileStorageTestsBase.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />
     <Compile Include="Storage\InMemoryFileStorageTests.cs" />
-    <Compile Include="Utility\CaptureFixture.cs" />
+    <Compile Include="Utility\TestBase.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
     <Compile Include="Utility\RandomData.cs" />

@@ -94,6 +94,13 @@ namespace Foundatio.Logging {
             set { _properties = value; }
         }
 
+        public string GetMessage() {
+            if (Parameters != null && Parameters.Length > 0)
+                return String.Format(FormatProvider, Message, Parameters);
+
+            return Message;
+        }
+
         /// <summary>
         /// Returns a <see cref="System.String" /> that represents this instance.
         /// </summary>
@@ -106,16 +113,19 @@ namespace Foundatio.Logging {
 
         public string ToString(bool includeFileInfo, bool includeException) {
             var message = new StringBuilder();
-            message.Append("[").Append(DateTime.UtcNow.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append("] ");
 
-            if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName)) {
-                message.Append("[").Append(Path.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
-            }
+            if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName))
+                message
+                    .Append("[")
+                    .Append(Path.GetFileName(FilePath))
+                    .Append(" ")
+                    .Append(MemberName)
+                    .Append("()")
+                    .Append(" Ln: ")
+                    .Append(LineNumber)
+                    .Append("] ");
 
-            if (Parameters != null && Parameters.Length > 0)
-                message.AppendFormat(FormatProvider, Message, Parameters);
-            else
-                message.Append(Message);
+            message.Append(GetMessage());
 
             if (includeException && Exception != null)
                 message.Append(" ").Append(Exception);

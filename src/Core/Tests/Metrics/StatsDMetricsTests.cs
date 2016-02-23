@@ -7,11 +7,12 @@ using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class StatsDMetricsTests : CaptureTests, IDisposable {
+    public class StatsDMetricsTests : TestBase, IDisposable {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
@@ -97,11 +98,11 @@ namespace Foundatio.Tests.Metrics {
                     await StartListeningAsync(iterations - index);
 
                 if (index % (iterations / 20) == 0)
-                    await metrics.DisplayCounterAsync("counter", _writer);
+                    _logger.LogVerbose((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            await metrics.DisplayCounterAsync("counter", _writer);
+            _logger.LogVerbose((await metrics.GetCounterStatsAsync("counter")).ToString());
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);

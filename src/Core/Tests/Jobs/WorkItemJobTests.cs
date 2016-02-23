@@ -15,7 +15,7 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class WorkItemJobTests : CaptureTests {
+    public class WorkItemJobTests : TestBase {
         public WorkItemJobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
