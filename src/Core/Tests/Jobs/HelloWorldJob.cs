@@ -3,13 +3,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class HelloWorldJob : JobBase {
         private readonly string _id;
 
-        public HelloWorldJob(ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public HelloWorldJob() : base(null) {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 

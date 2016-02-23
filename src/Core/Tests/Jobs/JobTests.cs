@@ -68,7 +68,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            var job = new HelloWorldJob(LoggerFactory);
+            var job = new HelloWorldJob();
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
             Assert.Equal(1, job.RunCount);
 

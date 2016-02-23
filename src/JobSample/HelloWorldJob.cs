@@ -2,13 +2,12 @@
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.JobSample.Jobs {
     public class HelloWorldJob : JobBase {
         private readonly IAmADependency _dep;
 
-        public HelloWorldJob(IAmADependency dep, ILoggerFactory loggerFactory) : base(loggerFactory) {
+        public HelloWorldJob(IAmADependency dep) : base(null) {
             _dep = dep;
         }
 
