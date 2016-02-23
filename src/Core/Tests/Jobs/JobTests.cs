@@ -91,15 +91,16 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunThrottledJobs() {
-            var client = new InMemoryCacheClient();
-            var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory) });
-            
-            var sw = Stopwatch.StartNew();
-            await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
-            sw.Stop();
-            Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
-            _logger.Info().Message(jobs.Sum(j => j.RunCount).ToString()).Write();
-            Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
+            using (var client = new InMemoryCacheClient()) {
+                var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory) });
+
+                var sw = Stopwatch.StartNew();
+                await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
+                sw.Stop();
+                Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
+                _logger.Info().Message(jobs.Sum(j => j.RunCount).ToString()).Write();
+                Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
+            }
         }
 
         [Fact]
