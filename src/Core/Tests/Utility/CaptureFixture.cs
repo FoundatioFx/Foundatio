@@ -63,7 +63,10 @@ namespace Foundatio.Tests.Utility {
                 Scope = _scope.ToArray()
             };
 
-            _loggerFactory.TestOutputHelper.WriteLine(logEntry.GetMessage());
+            try {
+                _loggerFactory.TestOutputHelper.WriteLine(logEntry.GetMessage());
+            } catch (Exception) { }
+
             lock (_loggerFactory.LogEntries)
                 _loggerFactory.LogEntries.Add(logEntry);
         }
