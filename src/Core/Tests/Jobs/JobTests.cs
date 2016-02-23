@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunThrottledJobs() {
             var client = new InMemoryCacheClient();
-            var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
+            var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory) });
             
             var sw = Stopwatch.StartNew();
             await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
