@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Metrics {
 #pragma warning disable 4014
         [Fact]
         public async Task CanWaitForCounter() {
-            var metrics = new InMemoryMetricsClient(false);
+            var metrics = new InMemoryMetricsClient(false, loggerFactory: LoggerFactory);
             Task.Run(async () => {
                 await Task.Delay(50);
                 await metrics.CounterAsync("Test").AnyContext();
