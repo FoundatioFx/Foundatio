@@ -12,11 +12,8 @@ using Nito.AsyncEx;
 
 namespace Foundatio.Metrics {
     public abstract class CacheBucketMetricsClientBase : IMetricsClient, IMetricsClientStats {
-        private readonly Dictionary<MetricKey, int> _pendingCounters = new Dictionary<MetricKey, int>();
-        private readonly Dictionary<MetricKey, GaugeStat> _pendingGauges = new Dictionary<MetricKey, GaugeStat>();
-        private readonly Dictionary<MetricKey, TimingStat> _pendingTimings = new Dictionary<MetricKey, TimingStat>();
+        private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>(); 
         private readonly ConcurrentDictionary<string, AsyncManualResetEvent> _counterEvents = new ConcurrentDictionary<string, AsyncManualResetEvent>();
-        private readonly object _lock = new object();
         private readonly string _prefix;
         private readonly long _dateBase = new DateTime(2015, 1, 1, 0, 0, 0, 0).Ticks;
         private readonly TimeSpan _defaultExpiration = TimeSpan.FromDays(1);
@@ -30,128 +27,127 @@ namespace Foundatio.Metrics {
             _cache = cache;
             _buffered = buffered;
             _prefix = !String.IsNullOrEmpty(prefix) ? (!prefix.EndsWith(":") ? prefix + ":" : prefix) : String.Empty;
+
             if (buffered)
-                _timer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+                _timer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
 
         public Task CounterAsync(string name, int value = 1) {
-            lock (_lock) {
-                var key = new MetricKey(GetMinutesSinceBase(), name);
-                if (_pendingCounters.ContainsKey(key))
-                    _pendingCounters[key] += value;
-                else
-                    _pendingCounters.Add(key, value);
+            if (!_buffered)
+                return SubmitCounterAsync(name, GetMinutesSinceBase(), value);
 
-                return !_buffered ? FlushAsync() : TaskHelper.Completed();
-            }
+            _queue.Enqueue(new MetricEntry { Name = name, Minute = GetMinutesSinceBase(), Type = MetricType.Counter, Counter = value });
+
+            return TaskHelper.Completed();
         }
 
         public Task GaugeAsync(string name, double value) {
-            lock (_lock) {
-                var key = new MetricKey(GetMinutesSinceBase(), name);
-                if (_pendingGauges.ContainsKey(key)) {
-                    var v = _pendingGauges[key];
-                    v.Last = value;
-                    if (v.Max < value)
-                        v.Max = value;
-                } else
-                    _pendingGauges.Add(key, new GaugeStat { Last = value, Max = value });
+            if (!_buffered)
+                return SubmitGaugeAsync(name, GetMinutesSinceBase(), value);
 
-                return !_buffered ? FlushAsync() : TaskHelper.Completed();
-            }
+            _queue.Enqueue(new MetricEntry { Name = name, Minute = GetMinutesSinceBase(), Type = MetricType.Gauge, Gauge = value });
+
+            return TaskHelper.Completed();
         }
 
         public Task TimerAsync(string name, int milliseconds) {
-            lock (_lock) {
-                var key = new MetricKey(GetMinutesSinceBase(), name);
-                if (_pendingTimings.ContainsKey(key)) {
-                    var v = _pendingTimings[key];
-                    v.Count++;
-                    v.TotalDuration += milliseconds;
-                    if (v.MaxDuration < milliseconds)
-                        v.MaxDuration = milliseconds;
-                    if (v.MinDuration > milliseconds)
-                        v.MinDuration = milliseconds;
-                } else
-                    _pendingTimings.Add(key, new TimingStat {
-                        Count = 1,
-                        TotalDuration = milliseconds,
-                        MaxDuration = milliseconds,
-                        MinDuration = milliseconds
-                    });
+            if (!_buffered)
+                return SubmitTimingAsync(name, GetMinutesSinceBase(), milliseconds);
 
-                return !_buffered ? FlushAsync() : TaskHelper.Completed();
-            }
-        }
+            _queue.Enqueue(new MetricEntry { Name = name, Minute = GetMinutesSinceBase(), Type = MetricType.Timing, Timing = milliseconds });
 
-        public Task FlushAsync() {
-            return SendMetricsAsync();
+            return TaskHelper.Completed();
         }
 
         private void OnMetricsTimer(object state) {
-            SendMetricsAsync().GetAwaiter().GetResult();
+            FlushAsync().GetAwaiter().GetResult();
         }
 
         private bool _sendingMetrics = false;
-        private async Task SendMetricsAsync() {
-            if (_sendingMetrics)
-                return;
-
-            if (_pendingCounters.Count == 0 && _pendingGauges.Count == 0 && _pendingTimings.Count == 0)
+        public async Task FlushAsync() {
+            if (_sendingMetrics || _queue.Count == 0)
                 return;
 
             try {
-                List<KeyValuePair<MetricKey, int>> pendingCounters = null;
-                List<KeyValuePair<MetricKey, GaugeStat>> pendingGauges = null;
-                List<KeyValuePair<MetricKey, TimingStat>> pendingTimings = null;
-                lock (_lock) {
-                    if (_sendingMetrics)
-                        return;
+                const int maxBatchSize = 250;
+                _sendingMetrics = true;
 
-                    _sendingMetrics = true;
-                    pendingCounters = _pendingCounters.ToList();
-                    _pendingCounters.Clear();
+                var entries = new List<MetricEntry>();
+                MetricEntry entry;
+                while (entries.Count < maxBatchSize && _queue.TryDequeue(out entry))
+                    entries.Add(entry);
 
-                    pendingGauges = _pendingGauges.ToList();
-                    _pendingGauges.Clear();
+                if (entries.Count == 0)
+                    return;
 
-                    pendingTimings = _pendingTimings.ToList();
-                    _pendingTimings.Clear();
-                }
+                // counters
 
-                foreach (var kvp in pendingCounters) {
-                    string key = GetBucketKey(MetricNames.Counter, kvp.Key.Name, kvp.Key.Minute);
-                    await _cache.IncrementAsync(key, kvp.Value, _defaultExpiration).AnyContext();
+                var counters = entries.Where(e => e.Type == MetricType.Counter)
+                    .GroupBy(e => new MetricKey(e.Minute, e.Name))
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Sum(c => c.Counter) });
 
-                    AsyncManualResetEvent waitHandle;
-                    _counterEvents.TryGetValue(kvp.Key.Name, out waitHandle);
-                    waitHandle?.Set();
-                }
+                foreach (var counter in counters)
+                    await SubmitCounterAsync(counter.Name, counter.Minute, counter.Count).AnyContext();
 
-                foreach (var kvp in pendingGauges) {
-                    string lastKey = GetBucketKey(MetricNames.Gauge, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Last);
-                    await _cache.SetAsync(lastKey, kvp.Value.Last, _defaultExpiration).AnyContext();
+                // gauges
 
-                    string maxKey = GetBucketKey(MetricNames.Gauge, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Max);
-                    await _cache.SetIfHigherAsync(maxKey, kvp.Value.Max, _defaultExpiration).AnyContext();
-                }
+                var gauges = entries.Where(e => e.Type == MetricType.Gauge)
+                    .GroupBy(e => new MetricKey(e.Minute, e.Name))
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Last = e.Last().Gauge, Max = e.Max(c => c.Gauge) });
 
-                foreach (var kvp in pendingTimings) {
-                    string countKey = GetBucketKey(MetricNames.Timing, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Count);
-                    await _cache.IncrementAsync(countKey, kvp.Value.Count, _defaultExpiration).AnyContext();
+                foreach (var gauge in gauges)
+                    await SubmitGaugeAsync(gauge.Name, gauge.Minute, gauge.Last, gauge.Max).AnyContext();
 
-                    string totalDurationKey = GetBucketKey(MetricNames.Timing, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Total);
-                    await _cache.IncrementAsync(totalDurationKey, (int)kvp.Value.TotalDuration, _defaultExpiration).AnyContext();
+                // timings
 
-                    string maxKey = GetBucketKey(MetricNames.Timing, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Max);
-                    await _cache.SetIfHigherAsync(maxKey, kvp.Value.MaxDuration, _defaultExpiration).AnyContext();
+                var timings = entries.Where(e => e.Type == MetricType.Timing)
+                    .GroupBy(e => new MetricKey(e.Minute, e.Name))
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) });
 
-                    string minKey = GetBucketKey(MetricNames.Timing, kvp.Key.Name, kvp.Key.Minute, 1, MetricNames.Min);
-                    await _cache.SetIfLowerAsync(minKey, kvp.Value.MinDuration, _defaultExpiration).AnyContext();
-                }
+                foreach (var timing in timings)
+                    await SubmitTimingAsync(timing.Name, timing.Minute, timing.Count, timing.Total, timing.Max, timing.Min).AnyContext();
             } finally {
                 _sendingMetrics = false;
             }
+        }
+
+        private async Task SubmitCounterAsync(string name, long minute, int value) {
+            string key = GetBucketKey(MetricNames.Counter, name, minute);
+            await _cache.IncrementAsync(key, value, _defaultExpiration).AnyContext();
+
+            AsyncManualResetEvent waitHandle;
+            _counterEvents.TryGetValue(name, out waitHandle);
+            waitHandle?.Set();
+        }
+
+        private Task SubmitGaugeAsync(string name, long minute, double value) {
+            return SubmitGaugeAsync(name, minute, value, value);
+        }
+
+        private async Task SubmitGaugeAsync(string name, long minute, double last, double max) {
+            string lastKey = GetBucketKey(MetricNames.Gauge, name, minute, 1, MetricNames.Last);
+            await _cache.SetAsync(lastKey, last, _defaultExpiration).AnyContext();
+
+            string maxKey = GetBucketKey(MetricNames.Gauge, name, minute, 1, MetricNames.Max);
+            await _cache.SetIfHigherAsync(maxKey, max, _defaultExpiration).AnyContext();
+        }
+
+        public Task SubmitTimingAsync(string name, long minute, int duration) {
+            return SubmitTimingAsync(name, minute, 1, duration, duration, duration);
+        }
+
+        public async Task SubmitTimingAsync(string name, long minute, int count, int totalDuration, int maxDuration, int minDuration) {
+            string countKey = GetBucketKey(MetricNames.Timing, name, minute, 1, MetricNames.Count);
+            await _cache.IncrementAsync(countKey, count, _defaultExpiration).AnyContext();
+
+            string totalDurationKey = GetBucketKey(MetricNames.Timing, name, minute, 1, MetricNames.Total);
+            await _cache.IncrementAsync(totalDurationKey, totalDuration, _defaultExpiration).AnyContext();
+
+            string maxKey = GetBucketKey(MetricNames.Timing, name, minute, 1, MetricNames.Max);
+            await _cache.SetIfHigherAsync(maxKey, maxDuration, _defaultExpiration).AnyContext();
+
+            string minKey = GetBucketKey(MetricNames.Timing, name, minute, 1, MetricNames.Min);
+            await _cache.SetIfLowerAsync(minKey, minDuration, _defaultExpiration).AnyContext();
         }
 
         public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
@@ -327,6 +323,21 @@ namespace Foundatio.Metrics {
         public void Dispose() {
             _timer?.Dispose();
             FlushAsync().GetAwaiter().GetResult();
+        }
+
+        private class MetricEntry {
+            public string Name { get; set; }
+            public long Minute { get; set; }
+            public MetricType Type { get; set; }
+            public int Counter { get; set; }
+            public double Gauge { get; set; }
+            public int Timing { get; set; }
+        }
+
+        private enum MetricType {
+            Counter,
+            Gauge,
+            Timing
         }
 
         private class MetricBucket {

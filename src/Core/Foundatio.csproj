@@ -109,13 +109,13 @@
     <Compile Include="Metrics\CounterStat.cs" />
     <Compile Include="Metrics\GaugeStat.cs" />
     <Compile Include="Metrics\IHaveMetricName.cs" />
-    <Compile Include="Metrics\IHaveMetricStats.cs" />
     <Compile Include="Metrics\IMetricsClientStats.cs" />
     <Compile Include="Metrics\MetricKey.cs" />
     <Compile Include="Metrics\CacheBucketMetricsClientBase.cs" />
     <Compile Include="Metrics\MetricTimer.cs" />
     <Compile Include="Metrics\IMetricsClient.cs" />
     <Compile Include="Metrics\InMemoryMetricsClient.cs" />
+    <Compile Include="Metrics\NullMetricsClient.cs" />
     <Compile Include="Metrics\StatsDMetricsClient.cs" />
     <Compile Include="Metrics\TimingStat.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

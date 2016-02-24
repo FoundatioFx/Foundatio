@@ -20,10 +20,8 @@ namespace Foundatio.Tests.Jobs {
         
         public virtual async Task CanRunQueueJob() {
             const int workItemCount = 100;
-            var metrics = new InMemoryMetricsClient();
             var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
             await queue.DeleteQueueAsync();
-            queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             var enqueueTask = Run.InParallel(workItemCount, async index => {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
@@ -32,7 +30,7 @@ namespace Foundatio.Tests.Jobs {
                 });
             });
 
-            var job = new SampleQueueJob(queue, metrics, LoggerFactory);
+            var job = new SampleQueueJob(queue, null, LoggerFactory);
             await Task.Delay(10);
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -45,13 +43,14 @@ namespace Foundatio.Tests.Jobs {
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
             const int workItemCount = 100;
-            var metrics = new InMemoryMetricsClient(false);
+
+            var metrics = new InMemoryMetricsClient(true, loggerFactory: LoggerFactory);
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
                 var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
                 await q.DeleteQueueAsync();
-                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
+                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", LoggerFactory));
                 queues.Add(q);
             }
 
@@ -79,6 +78,8 @@ namespace Foundatio.Tests.Jobs {
                 _logger.Info("Queue#{i}: Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                 queueStats.Add(stats);
             }
+
+            await metrics.FlushAsync();
 
             var counter = await metrics.GetCounterStatsAsync("completed");
             Assert.Equal(queueStats.Sum(s => s.Completed), counter.Count);

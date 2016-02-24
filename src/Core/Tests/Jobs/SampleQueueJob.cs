@@ -12,7 +12,7 @@ namespace Foundatio.Tests.Jobs {
         private readonly IMetricsClient _metrics;
 
         public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics,ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
-            _metrics = metrics;
+            _metrics = metrics ?? NullMetricsClient.Instance;
         }
         
         protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {

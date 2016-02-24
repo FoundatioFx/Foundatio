@@ -13,7 +13,7 @@ namespace Foundatio.Tests.Metrics {
 
         [Fact]
         public async Task CanIncrementCounter() {
-            var metrics = new InMemoryMetricsClient(false);
+            var metrics = new InMemoryMetricsClient(false, loggerFactory: LoggerFactory);
 
             await metrics.CounterAsync("c1");
             Assert.Equal(1, await metrics.GetCounterCountAsync("c1"));
@@ -29,6 +29,18 @@ namespace Foundatio.Tests.Metrics {
             Assert.Equal(1, timer.Count);
 
             _logger.Info((await metrics.GetCounterStatsAsync("c1")).ToString());
+        }
+
+        [Fact]
+        public async Task CanSendBufferedMetrics() {
+            var metrics = new InMemoryMetricsClient(loggerFactory: LoggerFactory);
+
+            Parallel.For(0, 100, i => metrics.CounterAsync("c1").GetAwaiter().GetResult());
+
+            await metrics.FlushAsync();
+
+            var counter = await metrics.GetCounterStatsAsync("c1");
+            Assert.Equal(100, counter.Count);
         }
 
 #pragma warning disable 4014
