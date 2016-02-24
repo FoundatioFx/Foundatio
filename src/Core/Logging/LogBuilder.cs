@@ -233,6 +233,5 @@ namespace Foundatio.Logging {
 
             Write(callerMemberName, callerFilePath, callerLineNumber);
         }
-
     }
 }

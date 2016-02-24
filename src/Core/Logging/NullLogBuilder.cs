@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Foundatio.Logging {
     public sealed class NullLogBuilder : ILogBuilder {
-        public static ILogBuilder Instance = new NullLogBuilder();
+        public static readonly ILogBuilder Instance = new NullLogBuilder();
 
         public LogData LogData => null;
 
