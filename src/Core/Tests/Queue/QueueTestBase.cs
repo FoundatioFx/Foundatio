@@ -274,6 +274,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.True(success);
 
                 var stats = await queue.GetQueueStatsAsync();
+                _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                 Assert.Equal(0, stats.Completed);
                 Assert.Equal(1, stats.Errors);
                 Assert.Equal(1, stats.Deadletter);
