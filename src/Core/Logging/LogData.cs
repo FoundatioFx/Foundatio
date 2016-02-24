@@ -28,6 +28,14 @@ namespace Foundatio.Logging {
         public int EventId { get; set; }
 
         /// <summary>
+        /// Gets or sets the message formatter <see langword="delegate"/>.
+        /// </summary>
+        /// <value>
+        /// The message formatter <see langword="delegate"/>.
+        /// </value>
+        public Func<string> MessageFormatter { get; set; }
+
+        /// <summary>
         /// Gets or sets the message.
         /// </summary>
         /// <value>
@@ -112,7 +120,9 @@ namespace Foundatio.Logging {
                 message.Append("[").Append(Path.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
             }
 
-            if (Parameters != null && Parameters.Length > 0)
+            if (MessageFormatter != null)
+                message.Append(MessageFormatter());
+            else if (Parameters != null && Parameters.Length > 0)
                 message.AppendFormat(FormatProvider, Message, Parameters);
             else
                 message.Append(Message);

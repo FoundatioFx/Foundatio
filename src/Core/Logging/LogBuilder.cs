@@ -68,6 +68,16 @@ namespace Foundatio.Logging {
             _data.Message = message;
             return this;
         }
+        
+        /// <summary>
+        /// Sets the log message on the logging event.
+        /// </summary>
+        /// <param name="messageFormatter">The message formatter <see langword="delegate"/>.</param>
+        /// <returns></returns>
+        public ILogBuilder Message(Func<string> messageFormatter) {
+            _data.MessageFormatter = messageFormatter;
+            return this;
+        }
 
         /// <summary>
         /// Sets the log message and parameters for formating on the logging event.
