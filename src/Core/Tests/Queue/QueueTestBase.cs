@@ -253,8 +253,11 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
-            var metrics = new InMemoryMetricsClient(false);
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+
+            var metrics = new InMemoryMetricsClient(false, loggerFactory: Log);
+            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
             using (queue) {
                 await queue.DeleteQueueAsync();
@@ -267,11 +270,11 @@ namespace Foundatio.Tests.Queue {
                 
                 var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken());
-                await Task.Delay(10);
+                }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
                 Assert.True(success);
 
                 var stats = await queue.GetQueueStatsAsync();
+                _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                 Assert.Equal(0, stats.Completed);
                 Assert.Equal(1, stats.Errors);
                 Assert.Equal(1, stats.Deadletter);

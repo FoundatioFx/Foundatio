@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Caching {
         public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new HybridCacheClient(_distributedCache, _messageBus, LoggerFactory);
+            return new HybridCacheClient(_distributedCache, _messageBus, Log);
         }
 
         [Fact]

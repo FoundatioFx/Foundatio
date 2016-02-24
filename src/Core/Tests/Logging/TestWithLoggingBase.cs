@@ -7,10 +7,10 @@ namespace Foundatio.Tests.Logging {
         protected readonly ILogger _logger;
 
         protected TestWithLoggingBase(ITestOutputHelper output) {
-            LoggerFactory = new TestLoggerFactory(output);
-            _logger = LoggerFactory.CreateLogger(GetType());
+            Log = new TestLoggerFactory(output);
+            _logger = Log.CreateLogger(GetType());
         }
 
-        protected TestLoggerFactory LoggerFactory { get; }
+        protected TestLoggerFactory Log { get; }
     }
 }

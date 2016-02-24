@@ -65,26 +65,35 @@ namespace Foundatio.Metrics {
 
         private bool _sendingMetrics = false;
         public async Task FlushAsync() {
-            if (_sendingMetrics || _queue.Count == 0)
+            if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
+            _logger.Trace("Flushing metrics: count={count}", _queue.Count);
+
             try {
-                const int maxBatchSize = 250;
                 _sendingMetrics = true;
 
+                var startTime = DateTime.UtcNow;
                 var entries = new List<MetricEntry>();
                 MetricEntry entry;
-                while (entries.Count < maxBatchSize && _queue.TryDequeue(out entry))
+                while (_queue.TryDequeue(out entry)) {
                     entries.Add(entry);
+                    if (entry.EnqueuedDate > startTime)
+                        break;
+                }
 
                 if (entries.Count == 0)
                     return;
+
+                _logger.Trace("Dequeued {count} metrics", entries.Count);
 
                 // counters
 
                 var counters = entries.Where(e => e.Type == MetricType.Counter)
                     .GroupBy(e => new MetricKey(e.Minute, e.Name))
-                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Sum(c => c.Counter) });
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Sum(c => c.Counter) }).ToList();
+
+                _logger.Trace("Aggregated {count} counters", counters.Count);
 
                 foreach (var counter in counters)
                     await SubmitCounterAsync(counter.Name, counter.Minute, counter.Count).AnyContext();
@@ -93,7 +102,9 @@ namespace Foundatio.Metrics {
 
                 var gauges = entries.Where(e => e.Type == MetricType.Gauge)
                     .GroupBy(e => new MetricKey(e.Minute, e.Name))
-                    .Select(e => new { e.Key.Name, e.Key.Minute, Last = e.Last().Gauge, Max = e.Max(c => c.Gauge) });
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Last = e.Last().Gauge, Max = e.Max(c => c.Gauge) }).ToList();
+
+                _logger.Trace("Aggregated {count} gauges", gauges.Count);
 
                 foreach (var gauge in gauges)
                     await SubmitGaugeAsync(gauge.Name, gauge.Minute, gauge.Last, gauge.Max).AnyContext();
@@ -102,7 +113,9 @@ namespace Foundatio.Metrics {
 
                 var timings = entries.Where(e => e.Type == MetricType.Timing)
                     .GroupBy(e => new MetricKey(e.Minute, e.Name))
-                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) });
+                    .Select(e => new { e.Key.Name, e.Key.Minute, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) }).ToList();
+
+                _logger.Trace("Aggregated {count} timings", timings.Count);
 
                 foreach (var timing in timings)
                     await SubmitTimingAsync(timing.Name, timing.Minute, timing.Count, timing.Total, timing.Max, timing.Min).AnyContext();
@@ -326,6 +339,7 @@ namespace Foundatio.Metrics {
         }
 
         private class MetricEntry {
+            public DateTime EnqueuedDate { get; } = DateTime.UtcNow;
             public string Name { get; set; }
             public long Minute { get; set; }
             public MetricType Type { get; set; }

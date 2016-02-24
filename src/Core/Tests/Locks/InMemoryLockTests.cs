@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new InMemoryCacheClient(LoggerFactory), new InMemoryMessageBus(LoggerFactory), LoggerFactory);
+            return new CacheLockProvider(new InMemoryCacheClient(Log), new InMemoryMessageBus(Log), Log);
         }
 
         [Fact]
@@ -36,7 +36,7 @@ namespace Foundatio.Tests.Locks {
             return base.LockOneAtATime();
         }
 
-        [Fact]
+        [Fact(Skip = "Was an experiment")]
         public async Task WillPulseMonitor() {
             var monitor = new AsyncMonitor();
             var sw = Stopwatch.StartNew();

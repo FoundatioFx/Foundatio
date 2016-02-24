@@ -24,7 +24,7 @@ namespace Foundatio.Tests.Jobs {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
             handlerRegistry.Register<MyWorkItem>(async ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
@@ -138,7 +138,7 @@ namespace Foundatio.Tests.Jobs {
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
             handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
 
@@ -163,7 +163,7 @@ namespace Foundatio.Tests.Jobs {
             var queue = new InMemoryQueue<WorkItemData>(retries: 2, retryDelay: TimeSpan.FromMilliseconds(500));
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
-            var job = new WorkItemJob(queue, messageBus, handlerRegistry, LoggerFactory);
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
             handlerRegistry.Register<MyWorkItem>(ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();

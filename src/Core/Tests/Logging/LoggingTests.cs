@@ -11,13 +11,13 @@ namespace Foundatio.Tests.Logging {
 
         [Fact]
         public void CanLog() {
-            var logger = LoggerFactory.CreateLogger<LoggingTests>();
+            var logger = Log.CreateLogger<LoggingTests>();
             using (logger.BeginPropertyScope("prop1", "val1"))
             using (logger.BeginPropertyScope("prop2", "val2")) {
-                logger.Trace("Hey {Stuff}!", "Eric");
+                logger.Info("Hey {Stuff}!", "Eric");
             }
 
-            var entry = LoggerFactory.LogEntries.First();
+            var entry = Log.LogEntries.First();
             Assert.Equal(2, entry.Scopes.Length);
             var scope1 = entry.Scopes[0];
             Assert.True(scope1 is KeyValuePair<string, string>);
