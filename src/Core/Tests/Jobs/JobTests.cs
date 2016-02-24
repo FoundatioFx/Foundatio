@@ -9,13 +9,13 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.ServiceProviders;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests : CaptureTests {
+    public class JobTests : TestWithLoggingBase {
         public JobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
@@ -68,7 +68,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            var job = new HelloWorldJob(LoggerFactory);
+            var job = new HelloWorldJob();
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
             Assert.Equal(1, job.RunCount);
 
@@ -91,15 +91,16 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunThrottledJobs() {
-            var client = new InMemoryCacheClient();
-            var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client), new ThrottledJob(client), new ThrottledJob(client) });
-            
-            var sw = Stopwatch.StartNew();
-            await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
-            sw.Stop();
-            Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
-            _logger.Info().Message(jobs.Sum(j => j.RunCount).ToString()).Write();
-            Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
+            using (var client = new InMemoryCacheClient()) {
+                var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory) });
+
+                var sw = Stopwatch.StartNew();
+                await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
+                sw.Stop();
+                Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
+                _logger.Info(jobs.Sum(j => j.RunCount).ToString());
+                Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
+            }
         }
 
         [Fact]
@@ -143,10 +144,10 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(null, iterations);
             sw.Stop();
             await metrics.FlushAsync();
-            await metrics.DisplayCounterAsync("runs", _writer);
-            await metrics.DisplayCounterAsync("errors", _writer);
-            await metrics.DisplayCounterAsync("failed", _writer);
-            await metrics.DisplayCounterAsync("completed", _writer);
+            _logger.Trace((await metrics.GetCounterStatsAsync("runs")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("errors")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("failed")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("completed")).ToString());
         }
     }
 }

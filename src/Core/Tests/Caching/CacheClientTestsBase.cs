@@ -5,14 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Metrics;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
 
 namespace Foundatio.Tests.Caching {
-    public abstract class CacheClientTestsBase : CaptureTests {
+    public abstract class CacheClientTestsBase : TestWithLoggingBase {
         protected virtual ICacheClient GetCacheClient() {
             return null;
         }

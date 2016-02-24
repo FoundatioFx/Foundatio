@@ -6,7 +6,6 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
-using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
@@ -94,7 +93,7 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
-            _logger.Trace().Message("Warm the log...").Write();
+            _logger.Trace("Warm the log...");
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 
@@ -103,32 +102,32 @@ namespace Foundatio.Tests.Caching {
 
             var countdownEvent = new AsyncCountdownEvent(2);
             firstCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
-                _logger.LogVerbose("First expired: {0}", args.Key);
+                _logger.Trace("First expired: {0}", args.Key);
                 countdownEvent.Signal();
             });
             secondCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
-                _logger.LogVerbose("Second expired: {0}", args.Key);
+                _logger.Trace("Second expired: {0}", args.Key);
                 countdownEvent.Signal();
             });
 
             var cacheKey = "willexpireremote";
-            _logger.LogVerbose("First Set");
+            _logger.Trace("First Set");
             await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
-            _logger.LogVerbose("Done First Set");
+            _logger.Trace("Done First Set");
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            _logger.LogVerbose("First Get");
+            _logger.Trace("First Get");
             Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            _logger.LogVerbose("Second Get");
+            _logger.Trace("Second Get");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            _logger.LogVerbose("Second Get from local cache");
+            _logger.Trace("Second Get from local cache");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, secondCache.LocalCacheHits);
 

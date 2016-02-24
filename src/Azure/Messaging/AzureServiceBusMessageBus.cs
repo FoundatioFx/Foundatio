@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Microsoft.Extensions.Logging;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -34,14 +33,14 @@ namespace Foundatio.Messaging {
         }
 
         private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
-            _logger.Trace().Message($"OnMessage: {brokeredMessage.MessageId}").Write();
+            _logger.Trace("OnMessage: {messageId}", brokeredMessage.MessageId);
             var message = brokeredMessage.GetBody<MessageBusData>();
 
             Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
-                _logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
                 return;
             }
 

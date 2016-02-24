@@ -10,12 +10,13 @@ using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.ServiceProviders;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class WorkItemJobTests : CaptureTests {
+    public class WorkItemJobTests : TestWithLoggingBase {
         public WorkItemJobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
@@ -41,7 +42,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                _logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace("Progress: {progress}", status.Progress);
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
@@ -73,7 +74,7 @@ namespace Foundatio.Tests.Jobs {
 
                 var jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
                 if (jobData.Index % 100 == 0)
-                    _logger.Trace().Message($"Job {ctx.JobId} processing work item #: {jobWorkTotal}").Write();
+                    _logger.Trace("Job {jobId} processing work item #: {jobWorkTotal}", ctx.JobId, jobWorkTotal);
 
                 for (int i = 0; i < 10; i++)
                     await ctx.ReportProgressAsync(10 * i);
@@ -94,7 +95,7 @@ namespace Foundatio.Tests.Jobs {
             object completedItemsLock = new object();
             messageBus.Subscribe<WorkItemStatus>(status => {
                 if (status.Progress == 100)
-                    _logger.Trace().Message($"Progress: {status.Progress}").Write();
+                    _logger.Trace("Progress: {progress}", status.Progress);
 
                 if (status.Progress < 100)
                     return;
@@ -124,7 +125,7 @@ namespace Foundatio.Tests.Jobs {
                 await Task.Delay(100);
             } catch (TaskCanceledException) {}
 
-            _logger.Info().Message($"Completed: {completedItems.Count} Errors: {errors}").Write();
+            _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
             
             Assert.Equal(workItemCount, completedItems.Count + errors);
             Assert.Equal(3, jobIds.Count);
@@ -147,7 +148,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                _logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace("Progress: {progress}", status.Progress);
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });
@@ -176,7 +177,7 @@ namespace Foundatio.Tests.Jobs {
 
             int statusCount = 0;
             messageBus.Subscribe<WorkItemStatus>(status => {
-                _logger.Trace().Message($"Progress: {status.Progress}").Write();
+                _logger.Trace("Progress: {progress}", status.Progress);
                 Assert.Equal(jobId, status.WorkItemId);
                 statusCount++;
             });

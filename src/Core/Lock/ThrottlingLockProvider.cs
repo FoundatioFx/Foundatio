@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Lock {
@@ -27,7 +26,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Trace().Message($"AcquireLockAsync: {name}").Write();
+            _logger.Trace("AcquireLockAsync: {name}", name);
 			            
             bool allowLock = false;
             byte errors = 0;
@@ -36,10 +35,10 @@ namespace Foundatio.Lock {
                 string cacheKey = GetCacheKey(name, DateTime.UtcNow);
 
                 try {
-                    _logger.Trace().Message("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey).Write();
+                    _logger.Trace("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
-                    _logger.Trace().Message("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod).Write();
+                    _logger.Trace("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod);
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, DateTime.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
                         
@@ -49,28 +48,28 @@ namespace Foundatio.Lock {
                             break;
                         }
 
-                        _logger.Trace().Message("Max hits exceeded after increment for {0}.", name).Write();
+                        _logger.Trace("Max hits exceeded after increment for {0}.", name);
                     } else {
-                        _logger.Trace().Message("Max hits exceeded for {0}.", name).Write();
+                        _logger.Trace("Max hits exceeded for {0}.", name);
                     }
                     
                     if (cancellationToken.IsCancellationRequested) {
-                        _logger.Trace().Message("Cancellation Requested.").Write();
+                        _logger.Trace("Cancellation Requested.");
                         break;
                     }
 
                     var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                     if (sleepUntil > DateTime.UtcNow) {
-                        _logger.Trace().Message("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow).Write();
+                        _logger.Trace("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow);
                         await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
                     } else {
-                        _logger.Trace().Message("Default sleep.").Write();
+                        _logger.Trace("Default sleep.");
                         await Task.Delay(50, cancellationToken).AnyContext();
                     }
                 } catch (TaskCanceledException) {
                     return null;
                 } catch (Exception ex) {
-                    _logger.Error().Message("Error acquiring throttled lock: name={0} message={1}", name, ex.Message).Exception(ex).Write();
+                    _logger.Error(ex, "Error acquiring throttled lock: name={0} message={1}", name, ex.Message);
                     errors++;
                     if (errors >= 3)
                         break;
@@ -80,13 +79,13 @@ namespace Foundatio.Lock {
             } while (!cancellationToken.IsCancellationRequested);
 
             if (cancellationToken.IsCancellationRequested) {
-                _logger.Trace().Message("Cancellation requested.").Write();
+                _logger.Trace("Cancellation requested.");
             }
 
             if (!allowLock)
                 return null;
 
-            _logger.Trace().Message("Allowing lock: {0}", name).Write();
+            _logger.Trace("Allowing lock: {0}", name);
             return new DisposableLock(name, this, _logger);
         }
 
@@ -98,12 +97,12 @@ namespace Foundatio.Lock {
         }
 
         public Task ReleaseAsync(string name) {
-            _logger.Trace().Message("ReleaseAsync: {0}", name).Write();
+            _logger.Trace("ReleaseAsync: {0}", name);
 
             return TaskHelper.Completed();
         }
         public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
-            _logger.Trace().Message("RenewAsync: {0}", name).Write();
+            _logger.Trace("RenewAsync: {0}", name);
 
             return TaskHelper.Completed();
         }

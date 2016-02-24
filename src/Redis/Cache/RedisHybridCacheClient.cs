@@ -1,5 +1,5 @@
 ﻿using System;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using StackExchange.Redis;

@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {

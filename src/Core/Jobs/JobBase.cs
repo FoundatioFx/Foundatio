@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Logging.Abstractions.Internal;
 using Foundatio.Utility;
 
@@ -27,7 +26,7 @@ namespace Foundatio.Jobs {
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             using (_logger.BeginScope(_jobName)) {
-                _logger.Trace().Message("Job run \"{0}\" starting...", _jobName).Write();
+                _logger.Trace("Job run \"{0}\" starting...", _jobName);
 
                 using (var lockValue = await GetJobLockAsync().AnyContext()) {
                     if (lockValue == null)
@@ -36,13 +35,13 @@ namespace Foundatio.Jobs {
                     var result = await TryRunAsync(new JobRunContext(lockValue, cancellationToken)).AnyContext();
                     if (result != null) {
                         if (!result.IsSuccess)
-                            _logger.Error().Message("Job run \"{0}\" failed: {1}", GetType().Name, result.Message).Exception(result.Error).Write();
+                            _logger.Error(result.Error, "Job run \"{0}\" failed: {1}", GetType().Name, result.Message);
                         else if (!String.IsNullOrEmpty(result.Message))
-                            _logger.Info().Message("Job run \"{0}\" succeeded: {1}", GetType().Name, result.Message).Write();
+                            _logger.Info("Job run \"{0}\" succeeded: {1}", GetType().Name, result.Message);
                         else
-                            _logger.Trace().Message("Job run \"{0}\" succeeded.", GetType().Name).Write();
+                            _logger.Trace("Job run \"{0}\" succeeded.", GetType().Name);
                     } else {
-                        _logger.Error().Message("Null job run result for \"{0}\".", GetType().Name).Write();
+                        _logger.Error("Null job run result for \"{0}\".", GetType().Name);
                     }
 
                     return result;
@@ -64,7 +63,7 @@ namespace Foundatio.Jobs {
             int iterations = 0;
 
             using (_logger.BeginScope(_jobName)) {
-                _logger.Info().Message("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
+                _logger.Info("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName);
 
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                     try {
@@ -86,14 +85,14 @@ namespace Foundatio.Jobs {
                         if (!await continuationCallback().AnyContext())
                             break;
                     } catch (Exception ex) {
-                        _logger.Error().Message("Error in continuation callback: {0}", ex.Message).Exception(ex).Write();
+                        _logger.Error(ex, "Error in continuation callback: {0}", ex.Message);
                     }
                 }
 
-                _logger.Info().Message("Stopping continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName).Write();
+                _logger.Info("Stopping continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName);
 
                 if (cancellationToken.IsCancellationRequested)
-                    _logger.Trace().Message("Job cancellation requested.").Write();
+                    _logger.Trace("Job cancellation requested.");
 
                 await Task.Delay(1).AnyContext(); // allow events to process
             }

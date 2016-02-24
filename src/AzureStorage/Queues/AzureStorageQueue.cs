@@ -24,7 +24,9 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly TimeSpan _dequeueInterval = TimeSpan.FromSeconds(1);
 
-        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null, IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null,
+            IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
+            : base(serializer, behaviors, loggerFactory) {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudQueueClient();
 
@@ -174,18 +176,18 @@ namespace Foundatio.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
-                        _logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        _logger.Error(ex, "Worker error: {0}", ex.Message);
                         await queueEntry.AbandonAsync().AnyContext();
                         Interlocked.Increment(ref _workerErrorCount);
                     }
                 }
 
-                _logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested).Write();
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
         public override void Dispose() {
-            _logger.Trace().Message("Queue {0} dispose", _queueName).Write();
+            _logger.Trace("Queue {0} dispose", _queueName);
 
             _queueDisposedCancellationTokenSource?.Cancel();
 

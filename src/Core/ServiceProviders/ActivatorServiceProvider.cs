@@ -6,7 +6,11 @@ namespace Foundatio.ServiceProviders {
             if (serviceType == null || serviceType.IsInterface || serviceType.IsAbstract)
                 return null;
 
-            return Activator.CreateInstance(serviceType);
+            try {
+                return Activator.CreateInstance(serviceType);
+            } catch (Exception ex) {
+                throw new ApplicationException($"Error getting service type {serviceType.FullName}: {ex.Message}", ex);
+            }
         }
     }
 }

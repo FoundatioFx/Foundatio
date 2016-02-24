@@ -22,7 +22,7 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
-        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
@@ -128,7 +128,7 @@ namespace Foundatio.Queues {
                         await workItem.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
                     Interlocked.Increment(ref _workerErrorCount);
-                    _logger.Error().Exception(ex).Message("Error sending work item to worker: {0}", ex.Message).Write();
+                    _logger.Error(ex, "Error sending work item to worker: {0}", ex.Message);
                     await workItem.AbandonAsync().AnyContext();
                 }
             });
@@ -141,7 +141,7 @@ namespace Foundatio.Queues {
         }
 
         public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            _logger.Warn().Message("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.").Write();
+            _logger.Warn("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.");
 
             return DequeueAsync();
         }

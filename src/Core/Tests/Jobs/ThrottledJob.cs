@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class ThrottledJob : JobBase {

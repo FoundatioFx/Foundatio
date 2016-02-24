@@ -5,14 +5,14 @@ using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class SampleQueueJob : QueueProcessorJobBase<SampleQueueWorkItem> {
         private readonly IMetricsClient _metrics;
 
         public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics,ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
-            _metrics = metrics;
+            _metrics = metrics ?? NullMetricsClient.Instance;
         }
         
         protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {

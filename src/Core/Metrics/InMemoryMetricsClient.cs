@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Caching;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : CacheBucketMetricsClientBase {

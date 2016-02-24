@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Metrics;
 using Nito.AsyncEx;
 
@@ -16,7 +15,7 @@ namespace Foundatio.Queues {
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger.Instance;
-            _metricsClient = metrics;
+            _metricsClient = metrics ?? NullMetricsClient.Instance;
 
             if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
                 metricsPrefix += ".";
@@ -35,7 +34,7 @@ namespace Foundatio.Queues {
 
                 _nextQueueCountTime = DateTime.UtcNow.AddMilliseconds(500);
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
-                _logger.Trace().Message("Reporting queue count").Write();
+                _logger.Trace("Reporting queue count");
 
                 await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
             }

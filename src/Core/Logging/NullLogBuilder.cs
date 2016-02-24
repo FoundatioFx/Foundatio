@@ -1,14 +1,18 @@
 using System;
 using System.Runtime.CompilerServices;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Logging {
     public sealed class NullLogBuilder : ILogBuilder {
-        public static ILogBuilder Instance = new NullLogBuilder();
+        public static readonly ILogBuilder Instance = new NullLogBuilder();
 
         public LogData LogData => null;
 
         public ILogBuilder Level(LogLevel logLevel) {
+            return this;
+        }
+
+        public ILogBuilder Message(Func<string> messageFormatter)
+        {
             return this;
         }
 

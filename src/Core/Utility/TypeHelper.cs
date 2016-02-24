@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class TypeHelper {
@@ -14,12 +13,12 @@ namespace Foundatio.Utility {
             
             var type = Type.GetType(fullTypeName);
             if (type == null) {
-                logger.Error().Message("Unable to resolve type: \"{0}\".", fullTypeName).Write();
+                logger.Error("Unable to resolve type: \"{0}\".", fullTypeName);
                 return null;
             }
 
             if (expectedBase != null && !expectedBase.IsAssignableFrom(type)) {
-                logger.Error().Message("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName).Write();
+                logger.Error("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName);
                 return null;
             }
 

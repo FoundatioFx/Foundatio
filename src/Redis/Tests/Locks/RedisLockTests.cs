@@ -16,7 +16,7 @@ namespace Foundatio.Redis.Tests.Locks {
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber()));
+            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber()), LoggerFactory);
         }
 
         [Fact]
