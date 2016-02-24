@@ -30,7 +30,7 @@ namespace Foundatio.Tests.Jobs {
                 });
             });
 
-            var job = new SampleQueueJob(queue, null, LoggerFactory);
+            var job = new SampleQueueJob(queue, null, Log);
             await Task.Delay(10);
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -44,16 +44,16 @@ namespace Foundatio.Tests.Jobs {
             const int jobCount = 5;
             const int workItemCount = 100;
 
-            LoggerFactory.SetLogLevel<SampleQueueJob>(LogLevel.Error);
-            LoggerFactory.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+            Log.SetLogLevel<SampleQueueJob>(LogLevel.Error);
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
 
-            var metrics = new InMemoryMetricsClient(true, loggerFactory: LoggerFactory);
+            var metrics = new InMemoryMetricsClient(true, loggerFactory: Log);
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
                 var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
                 await q.DeleteQueueAsync();
-                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", LoggerFactory));
+                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", Log));
                 queues.Add(q);
             }
 
@@ -68,7 +68,7 @@ namespace Foundatio.Tests.Jobs {
             var cancellationTokenSource = new CancellationTokenSource();
             await Run.InParallel(jobCount, async index => {
                 var queue = queues[index - 1];
-                var job = new SampleQueueJob(queue, metrics, LoggerFactory);
+                var job = new SampleQueueJob(queue, metrics, Log);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 cancellationTokenSource.Cancel();
             });

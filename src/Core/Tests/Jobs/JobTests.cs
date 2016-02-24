@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanCancelJob() {
             var token = TimeSpan.FromSeconds(1).ToCancellationToken();
-            var result = await new JobRunner(LoggerFactory).RunAsync(new JobRunOptions {
+            var result = await new JobRunner(Log).RunAsync(new JobRunOptions {
                 JobTypeName = typeof(HelloWorldJob).AssemblyQualifiedName,
                 InstanceCount = 1,
                 Interval = null,
@@ -57,12 +57,12 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
-            await new JobRunner(LoggerFactory).RunContinuousAsync(typeof(HelloWorldJob), null, null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken());
+            await new JobRunner(Log).RunContinuousAsync(typeof(HelloWorldJob), null, null, 5, 1, TimeSpan.FromSeconds(1).ToCancellationToken());
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
             
-            await new JobRunner(LoggerFactory).RunContinuousAsync(typeof(HelloWorldJob), null, null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken());
+            await new JobRunner(Log).RunContinuousAsync(typeof(HelloWorldJob), null, null, 100, 5, TimeSpan.FromSeconds(5).ToCancellationToken());
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
@@ -72,12 +72,12 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
             Assert.Equal(1, job.RunCount);
 
-            await new JobRunner(LoggerFactory).RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken(), interval: TimeSpan.FromMilliseconds(1));
+            await new JobRunner(Log).RunContinuousAsync(typeof(HelloWorldJob), instanceCount: 5, iterationLimit: 10000, cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken(), interval: TimeSpan.FromMilliseconds(1));
         }
 
         [Fact]
         public async Task CanRunJobsWithLocks() {
-            var job = new WithLockingJob(LoggerFactory);
+            var job = new WithLockingJob(Log);
             Assert.Equal(0, job.RunCount);
             await job.RunAsync();
             Assert.Equal(1, job.RunCount);
@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunThrottledJobs() {
             using (var client = new InMemoryCacheClient()) {
-                var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory), new ThrottledJob(client, LoggerFactory) });
+                var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
 
                 var sw = Stopwatch.StartNew();
                 await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
@@ -139,7 +139,7 @@ namespace Foundatio.Tests.Jobs {
             const int iterations = 10000;
 
             var metrics = new InMemoryMetricsClient();
-            var job = new SampleJob(metrics, LoggerFactory);
+            var job = new SampleJob(metrics, Log);
             var sw = Stopwatch.StartNew();
             await job.RunContinuousAsync(null, iterations);
             sw.Stop();

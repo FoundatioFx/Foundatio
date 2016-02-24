@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new InMemoryCacheClient(LoggerFactory), new InMemoryMessageBus(LoggerFactory), LoggerFactory);
+            return new CacheLockProvider(new InMemoryCacheClient(Log), new InMemoryMessageBus(Log), Log);
         }
 
         [Fact]
