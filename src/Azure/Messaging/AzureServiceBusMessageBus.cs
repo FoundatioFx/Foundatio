@@ -16,7 +16,7 @@ namespace Foundatio.Messaging {
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
         
-        public AzureServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null) {
+        public AzureServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _topicName = topicName;
             _serializer = serializer ?? new JsonNetSerializer();
             _subscriptionName = "MessageBus";
@@ -33,16 +33,14 @@ namespace Foundatio.Messaging {
         }
 
         private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
-#if DEBUG
-            Logger.Trace().Message($"OnMessage: {brokeredMessage.MessageId}").Write();
-#endif
+            _logger.Trace("OnMessage: {messageId}", brokeredMessage.MessageId);
             var message = brokeredMessage.GetBody<MessageBusData>();
 
             Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
                 return;
             }
 

@@ -10,6 +10,7 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Nito.AsyncEx;
@@ -18,8 +19,8 @@ using Xunit.Abstractions;
 #pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue {
-    public abstract class QueueTestBase : CaptureTests {
-        protected QueueTestBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+    public abstract class QueueTestBase : TestWithLoggingBase {
+        protected QueueTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
@@ -95,15 +96,15 @@ namespace Foundatio.Tests.Queue {
 
                 Task.Run(async () => {
                     for (int index = 0; index < iterations; index++) {
-                        await Task.Delay(RandomData.GetInt(100, 300));
+                        await Task.Delay(RandomData.GetInt(10, 50));
                         await queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello"
                         });
                     }
-                    Logger.Trace().Message("Done enqueuing.").Write();
+                    _logger.Trace("Done enqueuing.");
                 });
 
-                Logger.Trace().Message("Starting dequeue loop.").Write();
+                _logger.Trace("Starting dequeue loop.");
                 var sw = Stopwatch.StartNew();
                 for (int index = 0; index < iterations; index++) {
                     var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
@@ -112,7 +113,7 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
 
-                Assert.InRange(sw.ElapsedMilliseconds, iterations * 100, iterations * 325);
+                Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 50);
                 var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
                 Assert.InRange(timing.AverageDuration, 0, 25);
             }
@@ -163,7 +164,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 sw.Stop();
-                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(50));
             }
@@ -182,7 +183,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(timeToWait);
                 sw.Stop();
-                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
@@ -195,7 +196,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 sw.Stop();
-                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
+                _logger.Trace("Time {0}", sw.Elapsed);
             }
         }
 
@@ -296,7 +297,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
-                Logger.Trace().Message("Time {0}", sw.Elapsed).Write();
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
@@ -374,7 +375,7 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             using (queue) {
-                Logger.Trace().Message("Queue Id: {0}", queue.QueueId).Write();
+                _logger.Trace("Queue Id: {0}", queue.QueueId);
                     await queue.DeleteQueueAsync();
 
                 const int workItemCount = 50;
@@ -385,7 +386,7 @@ namespace Foundatio.Tests.Queue {
 
                 for (int i = 0; i < workerCount; i++) {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    Logger.Trace().Message("Queue Id: {0}, I: {1}", q.QueueId, i).Write();
+                    _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
                     q.StartWorking(async w => await DoWorkAsync(w, countdown, info));
                     workers.Add(q);
                 }
@@ -395,18 +396,18 @@ namespace Foundatio.Tests.Queue {
                         Data = "Hello",
                         Id = i
                         });
-                    Logger.Trace().Message("Enqueued Index: {0} Id: {1}", i, id).Write();
+                    _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
                 });
 
                 await countdown.WaitAsync();
                 await Task.Delay(50);
-                Logger.Trace().Message("Completed: {0} Abandoned: {1} Error: {2}",
+                _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}",
                     info.CompletedCount,
                     info.AbandonCount,
-                    info.ErrorCount).Write();
+                    info.ErrorCount);
 
 
-                Logger.Info().Message($"Work Info Stats: Completed: {info.CompletedCount} Abandoned: {info.AbandonCount} Error: {info.ErrorCount}").Write();
+                _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
                 
                 // In memory queue doesn't share state.
@@ -424,7 +425,7 @@ namespace Foundatio.Tests.Queue {
                     var workerStats = new List<QueueStats>();
                     for (int i = 0; i < workers.Count; i++) {
                         var stats = await workers[i].GetQueueStatsAsync();
-                        Logger.Info().Message($"Worker#{i} Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                        _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                         workerStats.Add(stats);
                     }
 

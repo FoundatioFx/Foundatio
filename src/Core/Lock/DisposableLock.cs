@@ -7,26 +7,24 @@ namespace Foundatio.Lock {
     internal class DisposableLock : ILock {
         private readonly ILockProvider _lockProvider;
         private readonly string _name;
+        private readonly ILogger _logger;
 
-        public DisposableLock(string name, ILockProvider lockProvider) {
+        public DisposableLock(string name, ILockProvider lockProvider, ILogger logger) {
+            _logger = logger;
             _name = name;
             _lockProvider = lockProvider;
         }
 
         public async void Dispose() {
-#if DEBUG
-            Logger.Trace().Message($"Disposing lock: {_name}").Write();
-#endif
+            _logger.Trace("Disposing lock: {0}", _name);
             await _lockProvider.ReleaseAsync(_name).AnyContext();
-#if DEBUG
-            Logger.Trace().Message($"Disposed lock: {_name}").Write();
-#endif
+            _logger.Trace("Disposed lock: {0}", _name);
         }
 
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
-            Logger.Trace().Message($"Renewing lock: {_name}").Write();
+            _logger.Trace("Renewing lock: {0}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
-            Logger.Trace().Message($"Renewing lock: {_name}").Write();
+            _logger.Trace("Renewing lock: {0}", _name);
         }
     }
 }

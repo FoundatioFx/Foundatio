@@ -10,10 +10,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Foundatio.Azure.Tests</RootNamespace>
     <AssemblyName>Foundatio.Azure.Tests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -108,9 +109,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
-      <Link>Utility\CaptureCollectionFixture.cs</Link>
-    </Compile>
     <Compile Include="Messaging\AzureServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\AzureStorageQueueTests.cs" />

@@ -4,28 +4,29 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Messaging;
 using Foundatio.Logging;
+using Foundatio.Messaging;
 
 namespace Foundatio.Caching {
     public class HybridCacheClient : ICacheClient {
         private readonly string _cacheId = Guid.NewGuid().ToString("N");
         private readonly ICacheClient _distributedCache;
-        private readonly InMemoryCacheClient _localCache = new InMemoryCacheClient();
+        private readonly InMemoryCacheClient _localCache;
         private readonly IMessageBus _messageBus;
+        private readonly ILogger _logger;
         private long _localCacheHits;
         private long _invalidateCacheCalls;
 
-        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus) {
+        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
+            _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger.Instance;
             _distributedCache = distributedCacheClient;
+            _localCache = new InMemoryCacheClient(loggerFactory);
             _localCache.MaxItems = 100;
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
             _localCache.ItemExpired.AddHandler(async (sender, args) => {
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key } }).AnyContext();
-#if DEBUG
-                Logger.Trace().Message("Item expired event: key={0}", args.Key).Write();
-#endif
+                _logger.Trace("Item expired event: key={0}", args.Key);
             });
         }
 
@@ -42,9 +43,7 @@ namespace Foundatio.Caching {
             if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
                 return;
 
-#if DEBUG
-            Logger.Trace().Message("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { })).Write();
-#endif
+            _logger.Trace("Invalidating local cache from remote: id={0} keys={1}", message.CacheId, String.Join(",", message.Keys ?? new string[] { }));
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll) {
                 await _localCache.RemoveAllAsync().AnyContext();
@@ -54,7 +53,7 @@ namespace Foundatio.Caching {
 
                 await _localCache.RemoveAllAsync(message.Keys.Where(k => !k.EndsWith("*"))).AnyContext();
             } else {
-                Logger.Warn().Message("Unknown invalidate cache message").Write();
+                _logger.Warn("Unknown invalidate cache message");
             }
         }
         
@@ -77,23 +76,18 @@ namespace Foundatio.Caching {
             if (requiresSerialization) {
                 cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
                 if (cacheValue.HasValue) {
-#if DEBUG
-                    Logger.Trace().Message("Local cache hit: {0}", key).Write();
-#endif
+                    _logger.Trace("Local cache hit: {0}", key);
                     Interlocked.Increment(ref _localCacheHits);
                     return cacheValue;
                 }
             }
 
-#if DEBUG
-            Logger.Trace().Message("Local cache miss: {0}", key).Write();
-#endif
+            _logger.Trace("Local cache miss: {0}", key);
             cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
             if (requiresSerialization && cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-#if DEBUG
-                Logger.Trace().Message($"Setting Local cache key: {key} with expiration: {expiration}").Write();
-#endif
+                _logger.Trace("Setting Local cache key: {0} with expiration: {1}", key, expiration);
+
                 await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
             }
@@ -114,9 +108,8 @@ namespace Foundatio.Caching {
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (TypeRequiresSerialization(typeof(T))) {
-#if DEBUG
-                Logger.Trace().Message($"Adding key {key} to local cache.").Write();
-#endif
+                _logger.Trace("Adding key {0} to local cache.", key);
+
                 await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
             }
@@ -129,9 +122,8 @@ namespace Foundatio.Caching {
                 return 0;
 
             if (TypeRequiresSerialization(typeof(T))) {
-#if DEBUG
-                Logger.Trace().Message($"Adding keys {values.Keys} to local cache.").Write();
-#endif
+                _logger.Trace("Adding keys {0} to local cache.", values.Keys);
+
                 await _localCache.SetAllAsync(values, expiresIn).AnyContext();
                 await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
             }

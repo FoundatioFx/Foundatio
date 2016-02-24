@@ -3,16 +3,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
-using Foundatio.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {
         protected readonly IQueue<T> _queue;
         protected readonly string _queueEntryName = typeof(T).Name;
 
-        public QueueProcessorJobBase(IQueue<T> queue) {
+        public QueueProcessorJobBase(IQueue<T> queue, ILoggerFactory loggerFactory) : base(loggerFactory) {
             _queue = queue;
             AutoComplete = true;
         }
@@ -39,7 +39,7 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             if (context.CancellationToken.IsCancellationRequested) {
-                Logger.Info().Message($"Job was cancelled. Abandoning queue item: {queueEntry.Id}").Write();
+                _logger.Info("Job was cancelled. Abandoning queue item: {queueEntryId}", queueEntry.Id);
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.Cancelled;
             }
@@ -49,7 +49,7 @@ namespace Foundatio.Jobs {
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
 
                 if (EnableLogging)
-                    Logger.Info().Message("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                    _logger.Info("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
 
                 try {
                     var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, context.CancellationToken)).AnyContext();
@@ -61,12 +61,12 @@ namespace Foundatio.Jobs {
                         await queueEntry.CompleteAsync().AnyContext();
 
                         if (EnableLogging)
-                            Logger.Info().Message("Completed {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                            _logger.Info("Completed {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
                     } else {
                         await queueEntry.AbandonAsync().AnyContext();
 
                         if (EnableLogging)
-                            Logger.Warn().Message("Abandoned {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                            _logger.Warn("Abandoned {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
                     }
 
                     return result;
@@ -74,7 +74,7 @@ namespace Foundatio.Jobs {
                     await queueEntry.AbandonAsync().AnyContext();
 
                     if (EnableLogging)
-                        Logger.Error().Exception(ex).Message("Error processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id).Write();
+                        _logger.Error(ex, "Error processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
 
                     throw;
                 }
@@ -88,9 +88,9 @@ namespace Foundatio.Jobs {
         public async Task RunUntilEmptyAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             await RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
-#if DEBUG
-                Logger.Trace().Message($"RunUntilEmpty continuation: queue: {stats.Queued} working={stats.Working}").Write();
-#endif
+
+                _logger.Trace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
+
                 return stats.Queued + stats.Working > 0;
             }).AnyContext();
         }

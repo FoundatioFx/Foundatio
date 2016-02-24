@@ -7,7 +7,7 @@ namespace Foundatio.JobSample.Jobs {
     public class HelloWorldJob : JobBase {
         private readonly IAmADependency _dep;
 
-        public HelloWorldJob(IAmADependency dep) {
+        public HelloWorldJob(IAmADependency dep) : base(null) {
             _dep = dep;
         }
 

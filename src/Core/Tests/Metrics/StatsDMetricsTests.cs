@@ -4,20 +4,22 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Metrics;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class StatsDMetricsTests : CaptureTests, IDisposable {
+    public class StatsDMetricsTests : TestWithLoggingBase, IDisposable {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
         private Thread _listenerThread;
 
-        public StatsDMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {
+        public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
@@ -97,11 +99,11 @@ namespace Foundatio.Tests.Metrics {
                     await StartListeningAsync(iterations - index);
 
                 if (index % (iterations / 20) == 0)
-                    await metrics.DisplayCounterAsync("counter", _writer);
+                    _logger.Trace((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            await metrics.DisplayCounterAsync("counter", _writer);
+            _logger.Trace((await metrics.GetCounterStatsAsync("counter")).ToString());
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
@@ -131,9 +133,8 @@ namespace Foundatio.Tests.Metrics {
             _listenerThread.Abort();
         }
 
-        public new void Dispose() {
+        public void Dispose() {
             _listener.Dispose();
-            base.Dispose();
         }
     }
 }

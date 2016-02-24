@@ -8,15 +8,7 @@ namespace Foundatio.Logging {
     /// A class holding log data before being written.
     /// </summary>
     public sealed class LogData {
-        private IDictionary<String, Object> _properties;
-
-        /// <summary>
-        /// Gets or sets the logger name.
-        /// </summary>
-        /// <value>
-        /// The logger name.
-        /// </value>
-        public string Logger { get; set; }
+        private IDictionary<string, object> _properties;
 
         /// <summary>
         /// Gets or sets the trace level.
@@ -25,6 +17,14 @@ namespace Foundatio.Logging {
         /// The trace level.
         /// </value>
         public LogLevel LogLevel { get; set; }
+
+        /// <summary>
+        /// Gets or sets the event id.
+        /// </summary>
+        /// <value>
+        /// The event id.
+        /// </value>
+        public int EventId { get; set; }
 
         /// <summary>
         /// Gets or sets the message.
@@ -93,6 +93,13 @@ namespace Foundatio.Logging {
             set { _properties = value; }
         }
 
+        public string GetMessage() {
+            if (Parameters != null && Parameters.Length > 0)
+                return String.Format(FormatProvider, Message, Parameters);
+
+            return Message;
+        }
+
         /// <summary>
         /// Returns a <see cref="System.String" /> that represents this instance.
         /// </summary>
@@ -100,21 +107,24 @@ namespace Foundatio.Logging {
         /// A <see cref="System.String" /> that represents this instance.
         /// </returns>
         public override string ToString() {
-            return ToString(true, true);
+            return ToString(false, false);
         }
 
         public string ToString(bool includeFileInfo, bool includeException) {
             var message = new StringBuilder();
-            message.Append("[").Append(DateTime.UtcNow.ToString("HH:mm:ss.fff")).Append(" ").Append(LogLevel.ToString()[0]).Append(" ").Append(Logger).Append("] ");
 
-            if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName)) {
-                message.Append("[").Append(Path.GetFileName(FilePath)).Append(" ").Append(MemberName).Append("()").Append(" Ln: ").Append(LineNumber).Append("] ");
-            }
+            if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName))
+                message
+                    .Append("[")
+                    .Append(Path.GetFileName(FilePath))
+                    .Append(" ")
+                    .Append(MemberName)
+                    .Append("()")
+                    .Append(" Ln: ")
+                    .Append(LineNumber)
+                    .Append("] ");
 
-            if (Parameters != null && Parameters.Length > 0)
-                message.AppendFormat(FormatProvider, Message, Parameters);
-            else
-                message.Append(Message);
+            message.Append(GetMessage());
 
             if (includeException && Exception != null)
                 message.Append(" ").Append(Exception);

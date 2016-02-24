@@ -10,10 +10,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Foundatio.Redis.Tests</RootNamespace>
     <AssemblyName>Foundatio.Redis.Tests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -82,9 +83,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\Core\Tests\Utility\CaptureCollectionFixture.cs">
-      <Link>Utility\CaptureCollectionFixture.cs</Link>
-    </Compile>
     <Compile Include="Caching\RedisHybridCacheClientTests.cs" />
     <Compile Include="Caching\RedisCacheClientTests.cs" />
     <Compile Include="Jobs\RedisJobQueueTests.cs" />

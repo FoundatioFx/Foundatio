@@ -2,16 +2,15 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
-        public InMemoryCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new InMemoryCacheClient();
+            return new InMemoryCacheClient(Log);
         }
 
         [Fact]

@@ -4,10 +4,11 @@ using Exceptionless;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Queues;
+using Foundatio.Logging;
 
 namespace Foundatio.JobSample.Jobs {
     public class PingQueueJob : QueueProcessorJobBase<PingRequest> {
-        public PingQueueJob(IQueue<PingRequest> queue) : base(queue) {
+        public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
             AutoComplete = false;
         }
 

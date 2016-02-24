@@ -4,9 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
-using Foundatio.Messaging;
 using Foundatio.Logging;
-using Foundatio.Tests.Utility;
+using Foundatio.Messaging;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
@@ -16,10 +15,10 @@ namespace Foundatio.Tests.Caching {
         private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
         private readonly IMessageBus _messageBus = new InMemoryMessageBus();
 
-        public HybridCacheClientTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new HybridCacheClient(_distributedCache, _messageBus);
+            return new HybridCacheClient(_distributedCache, _messageBus, Log);
         }
 
         [Fact]
@@ -94,7 +93,7 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
-            Logger.Trace().Message("Warm the log...").Write();
+            _logger.Trace("Warm the log...");
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
 
@@ -103,32 +102,32 @@ namespace Foundatio.Tests.Caching {
 
             var countdownEvent = new AsyncCountdownEvent(2);
             firstCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
-                _writer.WriteLine("First expired: " + args.Key);
+                _logger.Trace("First expired: {0}", args.Key);
                 countdownEvent.Signal();
             });
             secondCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
-                _writer.WriteLine("Second expired: " + args.Key);
+                _logger.Trace("Second expired: {0}", args.Key);
                 countdownEvent.Signal();
             });
 
             var cacheKey = "willexpireremote";
-            _writer.WriteLine("First Set");
+            _logger.Trace("First Set");
             await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
-            _writer.WriteLine("Done First Set");
+            _logger.Trace("Done First Set");
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             Assert.Equal(0, firstCache.LocalCacheHits);
 
-            _writer.WriteLine("First Get");
+            _logger.Trace("First Get");
             Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
 
-            _writer.WriteLine("Second Get");
+            _logger.Trace("Second Get");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(0, secondCache.LocalCacheHits);
             Assert.Equal(1, secondCache.LocalCache.Count);
 
-            _writer.WriteLine("Second Get from local cache");
+            _logger.Trace("Second Get from local cache");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, secondCache.LocalCacheHits);
 

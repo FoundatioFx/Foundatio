@@ -310,19 +310,6 @@ await metrics.GaugeAsync("g1", 2.534);
 await metrics.TimerAsync("t1", 50788);
 ```
 
-### [Logging](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Logging)
-
-We provide a [fluent logging api](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Logging/Logger.cs) that can be used to log messages throughout your application. This is really great because it allows you to log to different sources like NLog and change it at a later date without updating your whole application to use the latest and greatest logging framework on the market.
-
-By default the logger will not write to anything, but you can configure what to write to by calling `Logger.RegisterWriter(Action<LogData> writer)`. 
-
-#### Sample
-
-```csharp
-Logger.Info().Message("Application starting up").Write();
-Logger.Error().Exception(ex).Message("Writing a captured exception out to the log.").Write();
-```
-
 ## Sample Application
 We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
 

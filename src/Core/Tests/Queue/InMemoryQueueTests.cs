@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Queues;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -11,7 +10,7 @@ namespace Foundatio.Tests.Queue {
     public class InMemoryQueueTests : QueueTestBase {
         private IQueue<SimpleWorkItem> _queue;
 
-        public InMemoryQueueTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public InMemoryQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
@@ -25,30 +24,30 @@ namespace Foundatio.Tests.Queue {
             var q = new InMemoryQueue<SimpleWorkItem>();
             q.Enqueuing.AddHandler(async (sender, args) => {
                 await Task.Delay(250);
-                Logger.Info().Message("First Enqueuing.").Write();
+                _logger.Info("First Enqueuing.");
             });
             q.Enqueuing.AddHandler(async(sender, args) => {
                 await Task.Delay(250);
-                Logger.Info().Message("Second Enqueuing.").Write();
+                _logger.Info("Second Enqueuing.");
             });
             var e1 = q.Enqueued.AddHandler(async (sender, args) => {
                 await Task.Delay(250);
-                Logger.Info().Message("First.").Write();
+                _logger.Info("First.");
             });
             q.Enqueued.AddHandler(async(sender, args) => {
                 await Task.Delay(250);
-                Logger.Info().Message("Second.").Write();
+                _logger.Info("Second.");
             });
             var sw = Stopwatch.StartNew();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _writer.WriteLine(sw.Elapsed.ToString());
+            _logger.Trace(sw.Elapsed.ToString());
 
             e1.Dispose();
             sw.Restart();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _writer.WriteLine(sw.Elapsed.ToString());
+            _logger.Trace(sw.Elapsed.ToString());
         }
 
         [Fact]

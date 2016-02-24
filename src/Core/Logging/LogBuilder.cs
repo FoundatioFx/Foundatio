@@ -11,23 +11,22 @@ namespace Foundatio.Logging {
     [DebuggerStepThrough]
     public sealed class LogBuilder : ILogBuilder {
         private readonly LogData _data;
-        private readonly Action<LogData> _writer;
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LogBuilder" /> class.
         /// </summary>
         /// <param name="logLevel">The starting trace level.</param>
-        /// <param name="writer">The delegate to write logs to.</param>
+        /// <param name="logger">The delegate to write logs to.</param>
         /// <exception cref="System.ArgumentNullException">writer</exception>
-        public LogBuilder(LogLevel logLevel, Action<LogData> writer) {
-            if (writer == null)
-                throw new ArgumentNullException(nameof(writer));
+        public LogBuilder(LogLevel logLevel, ILogger logger) {
+            if (logger == null)
+                throw new ArgumentNullException(nameof(logger));
 
-            _writer = writer;
+            _logger = logger;
             _data = new LogData {
                 LogLevel = logLevel,
-                FormatProvider = CultureInfo.InvariantCulture,
-                Logger = typeof(Logger).FullName
+                FormatProvider = CultureInfo.InvariantCulture
             };
         }
 
@@ -50,22 +49,12 @@ namespace Foundatio.Logging {
         }
 
         /// <summary>
-        /// Sets the logger for the logging event.
+        /// Sets the id of the logging event.
         /// </summary>
-        /// <param name="logger">The name of the logger.</param>
+        /// <param name="eventId">The id of the logging event.</param>
         /// <returns></returns>
-        public ILogBuilder Logger(string logger) {
-            _data.Logger = logger;
-            return this;
-        }
-
-        /// <summary>
-        /// Sets the logger name using the generic type.
-        /// </summary>
-        /// <typeparam name="TLogger">The type of the logger.</typeparam>
-        /// <returns></returns>
-        public ILogBuilder Logger<TLogger>() {
-            _data.Logger = typeof(TLogger).FullName;
+        public ILogBuilder EventId(int eventId) {
+            _data.EventId = eventId;
             return this;
         }
 
@@ -204,9 +193,10 @@ namespace Foundatio.Logging {
             if (callerLineNumber != 0)
                 _data.LineNumber = callerLineNumber;
 
-            _writer(_data);
+            _logger.Log(LogData.LogLevel, 0, LogData, LogData.Exception, _messageFormatter);
         }
 
+        private static readonly Func<object, Exception, string> _messageFormatter = (state, error) => state.ToString();
 
         /// <summary>
         /// Writes the log event to the underlying logger if the condition delegate is true.
@@ -243,6 +233,5 @@ namespace Foundatio.Logging {
 
             Write(callerMemberName, callerFilePath, callerLineNumber);
         }
-
     }
 }

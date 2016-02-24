@@ -6,23 +6,22 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public abstract class JobQueueTestsBase: CaptureTests {
-        public JobQueueTestsBase(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+    public abstract class JobQueueTestsBase: TestWithLoggingBase {
+        public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
         
         public virtual async Task CanRunQueueJob() {
             const int workItemCount = 100;
-            var metrics = new InMemoryMetricsClient();
             var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
             await queue.DeleteQueueAsync();
-            queue.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
 
             var enqueueTask = Run.InParallel(workItemCount, async index => {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
@@ -31,7 +30,7 @@ namespace Foundatio.Tests.Jobs {
                 });
             });
 
-            var job = new SampleQueueJob(queue, metrics);
+            var job = new SampleQueueJob(queue, null, Log);
             await Task.Delay(10);
             await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -44,13 +43,17 @@ namespace Foundatio.Tests.Jobs {
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
             const int workItemCount = 100;
-            var metrics = new InMemoryMetricsClient(false);
+
+            Log.SetLogLevel<SampleQueueJob>(LogLevel.Error);
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+
+            var metrics = new InMemoryMetricsClient(true, loggerFactory: Log);
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
                 var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
                 await q.DeleteQueueAsync();
-                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test"));
+                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", Log));
                 queues.Add(q);
             }
 
@@ -65,7 +68,7 @@ namespace Foundatio.Tests.Jobs {
             var cancellationTokenSource = new CancellationTokenSource();
             await Run.InParallel(jobCount, async index => {
                 var queue = queues[index - 1];
-                var job = new SampleQueueJob(queue, metrics);
+                var job = new SampleQueueJob(queue, metrics, Log);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 cancellationTokenSource.Cancel();
             });
@@ -75,9 +78,11 @@ namespace Foundatio.Tests.Jobs {
             var queueStats = new List<QueueStats>();
             for (int i = 0; i < queues.Count; i++) {
                 var stats = await queues[i].GetQueueStatsAsync();
-                Logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                _logger.Info("Queue#{i}: Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                 queueStats.Add(stats);
             }
+
+            await metrics.FlushAsync();
 
             var counter = await metrics.GetCounterStatsAsync("completed");
             Assert.Equal(queueStats.Sum(s => s.Completed), counter.Count);

@@ -10,16 +10,22 @@ namespace Foundatio.Metrics {
     }
 
     public class CounterStatSummary {
-        public CounterStatSummary(ICollection<CounterStat> stats, DateTime start, DateTime end) {
+        public CounterStatSummary(string name, ICollection<CounterStat> stats, DateTime start, DateTime end) {
+            Name = name;
             Stats.AddRange(stats);
             Count = Stats.Sum(s => s.Count);
             StartTime = start;
             EndTime = end;
         }
 
+        public string Name { get; private set; }
         public DateTime StartTime { get; private set; }
         public DateTime EndTime { get; private set; }
         public ICollection<CounterStat> Stats { get; } = new List<CounterStat>();
         public long Count { get; private set; }
+
+        public override string ToString() {
+            return $"Counter: {Name} Value: {Count}";
+        }
     }
 }

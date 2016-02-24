@@ -1,12 +1,11 @@
 using System.Threading.Tasks;
 using Foundatio.Messaging;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public class InMemoryMessageBusTests : MessageBusTestBase {
-        public InMemoryMessageBusTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
             return new InMemoryMessageBus();

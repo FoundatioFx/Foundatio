@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Storage {
     public class AzureStorageTests : FileStorageTestsBase {
-        public AzureStorageTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) {}
+        public AzureStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
             if (String.IsNullOrEmpty(ConnectionStrings.Get("AzureStorageConnectionString")))

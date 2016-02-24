@@ -1,5 +1,4 @@
 using System;
-using Foundatio.Logging;
 
 namespace Foundatio.ServiceProviders {
     public class ActivatorServiceProvider : IServiceProvider {
@@ -10,8 +9,7 @@ namespace Foundatio.ServiceProviders {
             try {
                 return Activator.CreateInstance(serviceType);
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("An error occurred while creating instance of type \"{0}\": {1}", serviceType.FullName, ex.Message).Write();
-                throw;
+                throw new ApplicationException($"Error getting service type {serviceType.FullName}: {ex.Message}", ex);
             }
         }
     }

@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Redis.Metrics;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Metrics {
-    public class RedisMetricsTests : CaptureTests {
-        public RedisMetricsTests(CaptureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+    public class RedisMetricsTests : TestWithLoggingBase {
+        public RedisMetricsTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
         public async Task CanIncrementCounter() {
@@ -77,7 +78,7 @@ namespace Foundatio.Redis.Tests.Metrics {
                 try {
                     var keys = server.Keys().ToArray();
                     foreach (var key in keys)
-                        _output.WriteLine(key);
+                        _logger.Info(key);
                     count += keys.Length;
                 } catch (Exception) { }
             }

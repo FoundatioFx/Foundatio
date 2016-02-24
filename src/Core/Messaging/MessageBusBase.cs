@@ -13,7 +13,7 @@ namespace Foundatio.Messaging {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
         
-        public MessageBusBase() {
+        public MessageBusBase(ILoggerFactory loggerFactory) : base(loggerFactory) {
             InitializeMaintenance();
         }
 
@@ -31,22 +31,22 @@ namespace Foundatio.Messaging {
                 try {
                     await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                 } catch (Exception ex) {
-                    Logger.Error().Exception(ex).Message("Error sending message to subscriber: {0}", ex.Message).Write();
+                    _logger.Error(ex, "Error sending message to subscriber: {0}", ex.Message);
                 }
 
                 if (subscriber.CancellationToken.IsCancellationRequested) {
                     Subscriber sub;
                     if (_subscribers.TryRemove(subscriber.Id, out sub)) {
-                        Logger.Trace().Message($"Removed cancelled subscriber: {subscriber.Id}").Write();
+                        _logger.Trace("Removed cancelled subscriber: {subscriberId}", subscriber.Id);
                     } else {
-                        Logger.Trace().Message($"Unable to remove cancelled subscriber: {subscriber.Id}").Write();
+                        _logger.Trace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
                     }
                 }
             }
         }
 
         public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            Logger.Trace().Message("Adding subscriber for {0}.", typeof(T).FullName).Write();
+            _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
@@ -59,7 +59,7 @@ namespace Foundatio.Messaging {
             };
 
             if (!_subscribers.TryAdd(subscriber.Id, subscriber))
-                Logger.Error().Message($"Unable to add subscriber {subscriber.Id}").Write();
+                _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
         }
         
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
@@ -96,9 +96,8 @@ namespace Foundatio.Messaging {
                 DelayedMessage message;
                 if (!_delayedMessages.TryRemove(messageId, out message))
                     continue;
-#if DEBUG
-                Logger.Trace().Message("DoMaintenance Send Delayed: {0}", message.MessageType).Write();
-#endif
+
+                _logger.Trace("DoMaintenance Send Delayed: {0}", message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
 

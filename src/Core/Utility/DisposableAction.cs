@@ -1,17 +1,17 @@
-using System;
+﻿using System;
 
-namespace Foundatio.Logging {
+namespace Foundatio.Utility {
     /// <summary>
     /// A class that will call an <see cref="Action"/> when Disposed.
     /// </summary>
-    public sealed class DisposeAction : IDisposable {
+    public sealed class DisposableAction : IDisposable {
         private readonly Action _exitAction;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DisposeAction"/> class.
+        /// Initializes a new instance of the <see cref="DisposableAction"/> class.
         /// </summary>
         /// <param name="exitAction">The exit action.</param>
-        public DisposeAction(Action exitAction) {
+        public DisposableAction(Action exitAction) {
             _exitAction = exitAction;
         }
 

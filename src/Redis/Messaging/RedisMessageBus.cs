@@ -2,8 +2,8 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Serializer;
 using Foundatio.Logging;
+using Foundatio.Serializer;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -14,7 +14,7 @@ namespace Foundatio.Messaging {
         private static readonly object _lockObject = new object();
         private bool _isSubscribed;
 
-        public RedisMessageBus(ISubscriber subscriber, string topic = null, ISerializer serializer = null) {
+        public RedisMessageBus(ISubscriber subscriber, string topic = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _subscriber = subscriber;
             _topic = topic ?? "messages";
             _serializer = serializer ?? new JsonNetSerializer();
@@ -29,22 +29,21 @@ namespace Foundatio.Messaging {
                     return;
 
                 _isSubscribed = true;
-                Logger.Trace().Message("Subscribing to topic: {0}", _topic).Write();
+                _logger.Trace("Subscribing to topic: {0}", _topic);
                 _subscriber.Subscribe(_topic, OnMessage);
             }
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
-#if DEBUG
-            Logger.Trace().Message($"OnMessage: {channel}").Write();
-#endif
+            _logger.Trace("OnMessage: {channel}", channel);
+
             var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
 
             Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
-                Logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
                 return;
             }
 
@@ -56,9 +55,8 @@ namespace Foundatio.Messaging {
             if (message == null)
                 return;
 
-#if DEBUG
-            Logger.Trace().Message($"Message Publish: {messageType.FullName}").Write();
-#endif
+            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
+
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;

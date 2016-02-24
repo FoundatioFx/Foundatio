@@ -2,10 +2,13 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase, IMessageBus {
+        public InMemoryMessageBus(ILoggerFactory loggerFactory = null) : base(loggerFactory) {}
+
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (message == null)
                 return TaskHelper.Completed();
