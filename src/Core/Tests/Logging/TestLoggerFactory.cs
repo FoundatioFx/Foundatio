@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Foundatio.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Utility {
+namespace Foundatio.Tests.Logging {
     public class TestLoggerFactory : ILoggerFactory {
         private readonly Dictionary<string, LogLevel> _logLevels = new Dictionary<string, LogLevel>();
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();

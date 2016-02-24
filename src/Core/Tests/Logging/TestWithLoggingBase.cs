@@ -2,11 +2,11 @@
 using Foundatio.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Utility {
-    public abstract class TestBase {
+namespace Foundatio.Tests.Logging {
+    public abstract class TestWithLoggingBase {
         protected readonly ILogger _logger;
 
-        protected TestBase(ITestOutputHelper output) {
+        protected TestWithLoggingBase(ITestOutputHelper output) {
             LoggerFactory = new TestLoggerFactory(output);
             _logger = LoggerFactory.CreateLogger(GetType());
         }

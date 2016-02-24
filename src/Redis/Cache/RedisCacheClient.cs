@@ -103,10 +103,7 @@ namespace Foundatio.Caching {
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                _logger.Error()
-                    .Exception(ex)
-                    .Message($"Unable to deserialize value \"{redisValue}\" to type {typeof (T).FullName}")
-                    .Write();
+                _logger.Error(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
                 return CacheValue<T>.NoValue;
             }
         }
@@ -124,7 +121,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
-                _logger.Trace().Message($"Removing expired key: {key}").Write();
+                _logger.Trace("Removing expired key: {key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
                 return false;

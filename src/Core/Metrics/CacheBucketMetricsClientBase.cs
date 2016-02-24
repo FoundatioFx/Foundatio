@@ -166,7 +166,7 @@ namespace Foundatio.Metrics {
             long startingCount = await this.GetCounterCountAsync(statName, start, start).AnyContext();
             long expectedCount = startingCount + count;
 
-            _logger.Trace().Message($"Wait: count={count} current={startingCount}").Write();
+            _logger.Trace("Wait: count={count} current={startingCount}", count, startingCount);
 
             if (work != null)
                 await work().AnyContext();
@@ -184,13 +184,13 @@ namespace Foundatio.Metrics {
                 } catch (OperationCanceledException) { }
 
                 currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
-                _logger.Trace().Message($"Got signal: count={currentCount} expected={expectedCount}").Write();
+                _logger.Trace("Got signal: count={currentCount} expected={expectedCount}", currentCount, expectedCount);
 
                 resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && currentCount < expectedCount);
 
             currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
-            _logger.Trace().Message($"Done waiting: count={currentCount} expected={expectedCount} success={!cancellationToken.IsCancellationRequested}").Write();
+            _logger.Trace("Done waiting: count={currentCount} expected={expectedCount} success={isCancellationRequested}", currentCount, expectedCount, !cancellationToken.IsCancellationRequested);
 
             return !cancellationToken.IsCancellationRequested;
         }

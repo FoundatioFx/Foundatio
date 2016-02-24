@@ -16,15 +16,15 @@ namespace Foundatio.Lock {
         }
 
         public async void Dispose() {
-            _logger.Trace().Message("Disposing lock: {0}", _name).Write();
+            _logger.Trace("Disposing lock: {0}", _name);
             await _lockProvider.ReleaseAsync(_name).AnyContext();
-            _logger.Trace().Message("Disposed lock: {0}", _name).Write();
+            _logger.Trace("Disposed lock: {0}", _name);
         }
 
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
-            _logger.Trace().Message("Renewing lock: {0}", _name).Write();
+            _logger.Trace("Renewing lock: {0}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
-            _logger.Trace().Message("Renewing lock: {0}", _name).Write();
+            _logger.Trace("Renewing lock: {0}", _name);
         }
     }
 }

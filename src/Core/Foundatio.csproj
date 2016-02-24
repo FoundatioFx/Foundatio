@@ -90,6 +90,8 @@
     <Compile Include="Logging\ILogBuilder.cs" />
     <Compile Include="Logging\ILogger.cs" />
     <Compile Include="Logging\ILoggerFactory.cs" />
+    <Compile Include="Logging\Internal\FormattedLogValues.cs" />
+    <Compile Include="Logging\Internal\LogValuesFormatter.cs" />
     <Compile Include="Logging\Internal\TypeNameHelper.cs" />
     <Compile Include="Logging\LogBuilder.cs" />
     <Compile Include="Logging\LogData.cs" />

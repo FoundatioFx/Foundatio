@@ -6,13 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Metrics;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class StatsDMetricsTests : TestBase, IDisposable {
+    public class StatsDMetricsTests : TestWithLoggingBase, IDisposable {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
@@ -98,11 +99,11 @@ namespace Foundatio.Tests.Metrics {
                     await StartListeningAsync(iterations - index);
 
                 if (index % (iterations / 20) == 0)
-                    _logger.Trace().Message((await metrics.GetCounterStatsAsync("counter")).ToString()).Write();
+                    _logger.Trace((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            _logger.Trace().Message((await metrics.GetCounterStatsAsync("counter")).ToString()).Write();
+            _logger.Trace((await metrics.GetCounterStatsAsync("counter")).ToString());
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);

@@ -58,7 +58,7 @@ namespace Foundatio.Jobs {
                     if (ServiceProvider.Current is IBootstrappedServiceProvider)
                         ((IBootstrappedServiceProvider)ServiceProvider.Current).Bootstrap();
 
-                    _logger.Info().Message("Starting job...").Write();
+                    _logger.Info("Starting job...");
 
                     afterBootstrap?.Invoke(ServiceProvider.Current);
 
@@ -69,7 +69,7 @@ namespace Foundatio.Jobs {
                 }
             } catch (FileNotFoundException e) {
                 Console.Error.WriteLine("{0} ({1})", e.GetMessage(), e.FileName);
-                _logger.Error().Message($"{e.GetMessage()} ({e.FileName})").Write();
+                _logger.Error("{Message} ({FileName})", e.GetMessage(), e.FileName);
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -77,7 +77,7 @@ namespace Foundatio.Jobs {
 
             } catch (Exception e) {
                 Console.Error.WriteLine(e.ToString());
-                _logger.Error().Exception(e).Message($"Job \"{jobName}\" error: {e.GetMessage()}").Write();
+                _logger.Error(e, "Job \"{jobName}\" error: {Message}", jobName, e.GetMessage());
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -158,13 +158,13 @@ namespace Foundatio.Jobs {
 
         public JobBase CreateJobInstance(Type jobType) {
             if (!typeof(JobBase).IsAssignableFrom(jobType)) {
-                _logger.Error().Message("Job Type must derive from Job.").Write();
+                _logger.Error("Job Type must derive from Job.");
                 return null;
             }
 
             var job = ServiceProvider.Current.GetService(jobType) as JobBase;
             if (job == null) {
-                _logger.Error().Message("Unable to create job instance.").Write();
+                _logger.Error("Unable to create job instance.");
                 return null;
             }
 
@@ -177,7 +177,7 @@ namespace Foundatio.Jobs {
         private void WatchForShutdown() {
             ShutdownEventCatcher.Shutdown += args => {
                 _cancellationTokenSource.Cancel();
-                _logger.Info().Message("Job shutdown event signaled: {0}", args.Reason).Write();
+                _logger.Info("Job shutdown event signaled: {0}", args.Reason);
             };
 
             _webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
@@ -195,7 +195,7 @@ namespace Foundatio.Jobs {
         private void OnFileChanged(object sender, FileSystemEventArgs e) {
             if (e.FullPath.IndexOf(Path.GetFileName(_webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) >= 0) {
                 _cancellationTokenSource.Cancel();
-                _logger.Info().Message("Job shutdown signaled.").Write();
+                _logger.Info("Job shutdown signaled.");
             }
         }
     }

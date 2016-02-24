@@ -5,13 +5,14 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Foundatio.Utility;
+using Microsoft.SqlServer.Server;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
-    public abstract class LockTestBase : TestBase {
+    public abstract class LockTestBase : TestWithLoggingBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) { }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -45,14 +46,14 @@ namespace Foundatio.Tests.Locks {
                     var sw = Stopwatch.StartNew();
                     using (var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1))) {
                         sw.Stop();
-                        _logger.Trace().Message($"Lock {i}: start").Write();
+                        _logger.Trace("Lock {i}: start", i);
                         string message = lock1 != null ? "Acquired" : "Unable to acquire";
-                        _logger.Trace().Message($"Lock {i}: {message} in {sw.ElapsedMilliseconds}ms").Write();
+                        _logger.Trace("Lock {i}: {message} in {ms}ms", i, message, sw.ElapsedMilliseconds);
 
                         Assert.NotNull(lock1);
                         Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
                         Interlocked.Increment(ref counter);
-                        _logger.Trace().Message($"Lock {i}: end").Write();
+                        _logger.Trace("Lock {i}: end", i);
                     }
                 });
 
@@ -66,22 +67,22 @@ namespace Foundatio.Tests.Locks {
                 return;
 
             using (locker) {
-                _logger.Info().Message("Releasing lock").Write();
+                _logger.Info("Releasing lock");
                 await locker.ReleaseAsync("test");
                 
-                _logger.Info().Message("Acquiring lock #1").Write();
+                _logger.Info("Acquiring lock #1");
                 var testLock = await locker.AcquireAsync("test", lockTimeout: TimeSpan.FromMilliseconds(150));
-                _logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
+                _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
                 Assert.NotNull(testLock);
 
-                _logger.Info().Message("Acquiring lock #2").Write();
+                _logger.Info("Acquiring lock #2");
                 testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
-                _logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
+                _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
                 Assert.Null(testLock);
 
-                _logger.Info().Message("Acquiring lock #3").Write();
+                _logger.Info("Acquiring lock #3");
                 testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
-                _logger.Info().Message(testLock != null ? "Acquired lock" : "Unable to acquire lock").Write();
+                _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
                 Assert.NotNull(testLock);
             }
         }
@@ -153,20 +154,20 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            _logger.Info().Message(sw.Elapsed.ToString()).Write();
+            _logger.Info(sw.Elapsed.ToString());
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
-            _logger.Info().Message(sw.Elapsed.ToString()).Write();
+            _logger.Info(sw.Elapsed.ToString());
             
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
-            _logger.Info().Message(sw.Elapsed.ToString()).Write();
+            _logger.Info(sw.Elapsed.ToString());
         }
     }
 }

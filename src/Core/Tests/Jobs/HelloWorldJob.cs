@@ -19,7 +19,7 @@ namespace Foundatio.Tests.Jobs {
             RunCount++;
             Interlocked.Increment(ref GlobalRunCount);
 
-            _logger.Trace().Message("HelloWorld Running: instance={0} runs={1} global={2}", _id, RunCount, GlobalRunCount).Write();
+            _logger.Trace("HelloWorld Running: instance={0} runs={1} global={2}", _id, RunCount, GlobalRunCount);
 
             return Task.FromResult(JobResult.Success);
         }

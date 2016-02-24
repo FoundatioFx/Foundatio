@@ -29,13 +29,13 @@ namespace Foundatio.Messaging {
                     return;
 
                 _isSubscribed = true;
-                _logger.Trace().Message("Subscribing to topic: {0}", _topic).Write();
+                _logger.Trace("Subscribing to topic: {0}", _topic);
                 _subscriber.Subscribe(_topic, OnMessage);
             }
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
-            _logger.Trace().Message($"OnMessage: {channel}").Write();
+            _logger.Trace("OnMessage: {channel}", channel);
 
             var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
 
@@ -43,7 +43,7 @@ namespace Foundatio.Messaging {
             try {
                 messageType = Type.GetType(message.Type);
             } catch (Exception ex) {
-                _logger.Error().Exception(ex).Message("Error getting message body type: {0}", ex.Message).Write();
+                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
                 return;
             }
 
@@ -55,7 +55,7 @@ namespace Foundatio.Messaging {
             if (message == null)
                 return;
 
-            _logger.Trace().Message($"Message Publish: {messageType.FullName}").Write();
+            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();

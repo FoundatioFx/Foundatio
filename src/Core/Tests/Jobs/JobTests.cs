@@ -9,13 +9,13 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.ServiceProviders;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class JobTests : TestBase {
+    public class JobTests : TestWithLoggingBase {
         public JobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
@@ -98,7 +98,7 @@ namespace Foundatio.Tests.Jobs {
                 await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()).AnyContext()));
                 sw.Stop();
                 Assert.InRange(jobs.Sum(j => j.RunCount), 6, 14);
-                _logger.Info().Message(jobs.Sum(j => j.RunCount).ToString()).Write();
+                _logger.Info(jobs.Sum(j => j.RunCount).ToString());
                 Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
             }
         }
@@ -144,10 +144,10 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(null, iterations);
             sw.Stop();
             await metrics.FlushAsync();
-            _logger.Trace().Message((await metrics.GetCounterStatsAsync("runs")).ToString()).Write();
-            _logger.Trace().Message((await metrics.GetCounterStatsAsync("errors")).ToString()).Write();
-            _logger.Trace().Message((await metrics.GetCounterStatsAsync("failed")).ToString()).Write();
-            _logger.Trace().Message((await metrics.GetCounterStatsAsync("completed")).ToString()).Write();
+            _logger.Trace((await metrics.GetCounterStatsAsync("runs")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("errors")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("failed")).ToString());
+            _logger.Trace((await metrics.GetCounterStatsAsync("completed")).ToString());
         }
     }
 }

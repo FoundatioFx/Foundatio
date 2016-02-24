@@ -19,7 +19,7 @@ namespace Foundatio.Utility {
         }
 
         protected void ScheduleNextMaintenance(DateTime value) {
-            _logger.Trace().Message($"ScheduleNextMaintenance: value={value}").Write();
+            _logger.Trace("ScheduleNextMaintenance: value={value}", value);
 
             if (value == DateTime.MaxValue)
                 return;
@@ -32,13 +32,13 @@ namespace Foundatio.Utility {
 
             int delay = Math.Max((int)value.Subtract(DateTime.UtcNow).TotalMilliseconds, 0);
             _nextMaintenance = value;
-            _logger.Trace().Message($"Scheduling maintenance: delay={delay}").Write();
+            _logger.Trace("Scheduling maintenance: delay={delay}", delay);
 
             _maintenanceTimer.Change(delay, Timeout.Infinite);
         }
 
         private async Task DoMaintenanceInternalAsync() {
-            _logger.Trace().Message("DoMaintenanceAsync").Write();
+            _logger.Trace("DoMaintenanceAsync");
             ScheduleNextMaintenance(await DoMaintenanceAsync().AnyContext());
         }
 

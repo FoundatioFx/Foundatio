@@ -7,13 +7,14 @@ using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Storage;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Utility;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
-    public abstract class FileStorageTestsBase : TestBase {
+    public abstract class FileStorageTestsBase : TestWithLoggingBase {
         protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IFileStorage GetStorage() {
@@ -189,7 +190,7 @@ namespace Foundatio.Tests.Storage {
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                logger.Error().Exception(ex).Message("Error retrieving event post data \"{0}\".", path).Write();
+                logger.Error(ex, "Error retrieving event post data \"{0}\".", path);
                 return null;
             }
 
@@ -200,7 +201,7 @@ namespace Foundatio.Tests.Storage {
             try {
                 return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
-                logger.Error().Exception(ex).Message("Error deleting work marker \"{0}\".", path + ".x").Write();
+                logger.Error(ex, "Error deleting work marker \"{0}\".", path + ".x");
             }
 
             return false;
@@ -222,7 +223,7 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                logger.Error().Exception(ex).Message("Error archiving event post data \"{0}\".", path).Write();
+                logger.Error(ex, "Error archiving event post data \"{0}\".", path);
                 return false;
             }
 

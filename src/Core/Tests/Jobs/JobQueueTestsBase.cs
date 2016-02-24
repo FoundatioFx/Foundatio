@@ -6,13 +6,14 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public abstract class JobQueueTestsBase: TestBase {
+    public abstract class JobQueueTestsBase: TestWithLoggingBase {
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
@@ -75,7 +76,7 @@ namespace Foundatio.Tests.Jobs {
             var queueStats = new List<QueueStats>();
             for (int i = 0; i < queues.Count; i++) {
                 var stats = await queues[i].GetQueueStatsAsync();
-                _logger.Info().Message($"Queue#{i}: Working: {stats.Working} Completed: {stats.Completed} Abandoned: {stats.Abandoned} Error: {stats.Errors} Deadletter: {stats.Deadletter}").Write();
+                _logger.Info("Queue#{i}: Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                 queueStats.Add(stats);
             }
 

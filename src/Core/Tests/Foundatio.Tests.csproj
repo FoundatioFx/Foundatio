@@ -101,6 +101,7 @@
     <Compile Include="Jobs\JobQueueTestsBase.cs" />
     <Compile Include="Locks\InMemoryLockTests.cs" />
     <Compile Include="Locks\LockTestBase.cs" />
+    <Compile Include="Logging\LoggingTests.cs" />
     <Compile Include="Messaging\InMemoryMessageBusTests.cs" />
     <Compile Include="Messaging\MessageBusTestBase.cs" />
     <Compile Include="Messaging\Samples.cs" />
@@ -113,14 +114,13 @@
     <Compile Include="Storage\FileStorageTestsBase.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />
     <Compile Include="Storage\InMemoryFileStorageTests.cs" />
-    <Compile Include="Utility\LogEntry.cs" />
-    <Compile Include="Utility\TestBase.cs" />
+    <Compile Include="Logging\LogEntry.cs" />
+    <Compile Include="Logging\TestWithLoggingBase.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
     <Compile Include="Utility\RandomData.cs" />
-    <Compile Include="Utility\TestLogger.cs" />
-    <Compile Include="Utility\TestLoggerFactory.cs" />
-    <Compile Include="Utility\TestOutputWriter.cs" />
+    <Compile Include="Logging\TestLogger.cs" />
+    <Compile Include="Logging\TestLoggerFactory.cs" />
     <Compile Include="Utility\UdpListener.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -135,6 +135,7 @@
   <ItemGroup>
     <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>

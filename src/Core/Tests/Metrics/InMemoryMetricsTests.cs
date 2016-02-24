@@ -3,12 +3,12 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Metrics;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public class InMemoryMetricsTests : TestBase {
+    public class InMemoryMetricsTests : TestWithLoggingBase {
         public InMemoryMetricsTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
@@ -28,7 +28,7 @@ namespace Foundatio.Tests.Metrics {
             var timer = await metrics.GetTimerStatsAsync("t1");
             Assert.Equal(1, timer.Count);
 
-            _logger.Info().Message((await metrics.GetCounterStatsAsync("c1")).ToString()).Write();
+            _logger.Info((await metrics.GetCounterStatsAsync("c1")).ToString());
         }
 
 #pragma warning disable 4014
@@ -74,7 +74,7 @@ namespace Foundatio.Tests.Metrics {
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
-            _logger.Info().Message((await metrics.GetCounterStatsAsync("Test")).ToString()).Write();
+            _logger.Info((await metrics.GetCounterStatsAsync("Test")).ToString());
         }
 #pragma warning restore 4014
     }

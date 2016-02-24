@@ -6,13 +6,14 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
+using Foundatio.Tests.Logging;
 using Xunit;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
-    public abstract class MessageBusTestBase : TestBase {
+    public abstract class MessageBusTestBase : TestWithLoggingBase {
         protected MessageBusTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IMessageBus GetMessageBus() {
@@ -27,10 +28,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    _logger.Trace().Message("Got message").Write();
+                    _logger.Trace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    _logger.Trace().Message("Set event").Write();
+                    _logger.Trace("Set event");
                 });
 
                 await Task.Delay(100);
@@ -70,10 +71,10 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    _logger.Trace().Message("Got message").Write();
+                    _logger.Trace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    _logger.Trace().Message("Set event").Write();
+                    _logger.Trace("Set event");
                 });
 
                 await Task.Delay(100);
@@ -97,11 +98,11 @@ namespace Foundatio.Tests.Messaging {
 
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     if (msg.Count % 500 == 0)
-                        _logger.Trace().Message("Got 500 messages").Write();
+                        _logger.Trace("Got 500 messages");
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                     if (msg.Count % 500 == 0)
-                        _logger.Trace().Message("Set 500 events").Write();
+                        _logger.Trace("Set 500 events");
                 });
 
                 var sw = Stopwatch.StartNew();
@@ -112,7 +113,7 @@ namespace Foundatio.Tests.Messaging {
                         Count = i
                     }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 300)));
                     if (i % 500 == 0)
-                        _logger.Trace().Message("Published 500 messages...").Write();
+                        _logger.Trace("Published 500 messages...");
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
@@ -279,7 +280,7 @@ namespace Foundatio.Tests.Messaging {
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    _logger.Trace().Message("SimpleAMessage received").Write();
+                    _logger.Trace("SimpleAMessage received");
                     Interlocked.Increment(ref messageCount);
                     cancellationTokenSource.Cancel();
                     countdown.Signal();

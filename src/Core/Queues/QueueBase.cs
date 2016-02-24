@@ -118,7 +118,7 @@ namespace Foundatio.Queues {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public override void Dispose() {
-            _logger.Trace().Message("Queue {0} dispose", typeof(T).Name).Write();
+            _logger.Trace("Queue {0} dispose", typeof(T).Name);
 
             base.Dispose();
 

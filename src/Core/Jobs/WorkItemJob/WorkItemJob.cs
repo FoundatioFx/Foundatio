@@ -59,20 +59,20 @@ namespace Foundatio.Jobs {
 
                 try {
                     if (handler.EnableLogging)
-                        _logger.Info().Message("Processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+                        _logger.Info("Processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id);
 
                     await handler.HandleItemAsync(new WorkItemContext(context, workItemData, JobId, lockValue, progressCallback)).AnyContext();
                 } catch (Exception ex) {
                     await context.QueueEntry.AbandonAsync().AnyContext();
                     if (handler.EnableLogging)
-                        _logger.Error().Message("Error processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+                        _logger.Error("Error processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id);
 
                     return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
                 }
 
                 await context.QueueEntry.CompleteAsync().AnyContext();
                 if (handler.EnableLogging)
-                    _logger.Info().Message("Completed {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id).Write();
+                    _logger.Info("Completed {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id);
 
                 if (context.QueueEntry.Value.SendProgressReports)
                     await _messageBus.PublishAsync(new WorkItemStatus {

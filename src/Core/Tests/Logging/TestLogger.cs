@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Foundatio.Logging;
 using Foundatio.Utility;
 
-namespace Foundatio.Tests.Utility {
+namespace Foundatio.Tests.Logging {
     public class TestLogger : ILogger {
         private readonly TestLoggerFactory _loggerFactory;
         private readonly string _categoryName;
@@ -24,9 +24,9 @@ namespace Foundatio.Tests.Utility {
                 EventId = eventId,
                 State = state,
                 Exception = exception,
-                Formatter = (s, ex) => formatter(state, exception),
+                Message = formatter(state, exception),
                 CategoryName = _categoryName,
-                Scope = _scope.ToArray()
+                Scopes = _scope.ToArray()
             };
 
             _loggerFactory.AddLogEntry(logEntry);

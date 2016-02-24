@@ -174,18 +174,18 @@ namespace Foundatio.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
-                        _logger.Error().Exception(ex).Message("Worker error: {0}", ex.Message).Write();
+                        _logger.Error(ex, "Worker error: {0}", ex.Message);
                         await queueEntry.AbandonAsync().AnyContext();
                         Interlocked.Increment(ref _workerErrorCount);
                     }
                 }
 
-                _logger.Trace().Message("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested).Write();
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
         public override void Dispose() {
-            _logger.Trace().Message("Queue {0} dispose", _queueName).Write();
+            _logger.Trace("Queue {0} dispose", _queueName);
 
             _queueDisposedCancellationTokenSource?.Cancel();
 
