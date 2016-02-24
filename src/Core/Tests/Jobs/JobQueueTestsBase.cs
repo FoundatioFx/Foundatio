@@ -44,6 +44,9 @@ namespace Foundatio.Tests.Jobs {
             const int jobCount = 5;
             const int workItemCount = 100;
 
+            LoggerFactory.SetLogLevel<SampleQueueJob>(LogLevel.Error);
+            LoggerFactory.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+
             var metrics = new InMemoryMetricsClient(true, loggerFactory: LoggerFactory);
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();

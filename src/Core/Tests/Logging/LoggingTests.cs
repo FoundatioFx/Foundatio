@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Logging {
             var logger = LoggerFactory.CreateLogger<LoggingTests>();
             using (logger.BeginPropertyScope("prop1", "val1"))
             using (logger.BeginPropertyScope("prop2", "val2")) {
-                logger.Trace("Hey {Stuff}!", "Eric");
+                logger.Info("Hey {Stuff}!", "Eric");
             }
 
             var entry = LoggerFactory.LogEntries.First();
