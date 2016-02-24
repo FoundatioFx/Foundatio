@@ -24,6 +24,13 @@ namespace Foundatio.Logging {
         /// <summary>
         /// Sets the log message on the logging event.
         /// </summary>
+        /// <param name="messageFormatter">The message formatter <see langword="delegate"/>.</param>
+        /// <returns></returns>
+        ILogBuilder Message(Func<string> messageFormatter);
+
+        /// <summary>
+        /// Sets the log message on the logging event.
+        /// </summary>
         /// <param name="message">The log message for the logging event.</param>
         /// <returns></returns>
         ILogBuilder Message(string message);

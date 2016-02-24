@@ -11,6 +11,11 @@ namespace Foundatio.Logging {
             return this;
         }
 
+        public ILogBuilder Message(Func<string> messageFormatter)
+        {
+            return this;
+        }
+
         public ILogBuilder Message(string message) {
             return this;
         }

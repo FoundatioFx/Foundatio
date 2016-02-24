@@ -27,6 +27,14 @@ namespace Foundatio.Logging {
         public int EventId { get; set; }
 
         /// <summary>
+        /// Gets or sets the message formatter <see langword="delegate"/>.
+        /// </summary>
+        /// <value>
+        /// The message formatter <see langword="delegate"/>.
+        /// </value>
+        public Func<string> MessageFormatter { get; set; }
+
+        /// <summary>
         /// Gets or sets the message.
         /// </summary>
         /// <value>
