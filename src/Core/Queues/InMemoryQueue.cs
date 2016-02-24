@@ -30,7 +30,7 @@ namespace Foundatio.Queues {
         private int _workerItemTimeoutCount;
         private readonly CancellationTokenSource _disposeTokenSource;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
             _retries = retries;
             if (retryDelay.HasValue)
                 _retryDelay = retryDelay.Value;

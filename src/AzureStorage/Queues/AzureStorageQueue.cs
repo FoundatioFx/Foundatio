@@ -24,7 +24,9 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly TimeSpan _dequeueInterval = TimeSpan.FromSeconds(1);
 
-        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null, IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null) : base(serializer, behaviors) {
+        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null,
+            IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
+            : base(serializer, behaviors, loggerFactory) {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudQueueClient();
 

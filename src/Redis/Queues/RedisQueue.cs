@@ -42,8 +42,8 @@ namespace Foundatio.Queues {
         private bool _isSubscribed;
 
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null,
-            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null)
-            : base(serializer, behaviors) {
+            TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
+            : base(serializer, behaviors, loggerFactory) {
             _connectionMultiplexer = connection;
             _cache = new RedisCacheClient(connection, _serializer);
             _queueName = queueName ?? typeof(T).Name;
