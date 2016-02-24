@@ -253,8 +253,11 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
-            var metrics = new InMemoryMetricsClient(false);
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+
+            var metrics = new InMemoryMetricsClient(false, loggerFactory: Log);
+            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
             using (queue) {
                 await queue.DeleteQueueAsync();

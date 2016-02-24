@@ -26,7 +26,8 @@ namespace Foundatio.Azure.Tests.Queue {
                 retries,
                 workItemTimeout,
                 TimeSpan.FromMilliseconds(50),
-                new ExponentialRetry(retryDelay.Value, retries + 1)
+                new ExponentialRetry(retryDelay.Value, retries + 1),
+                loggerFactory: Log
             );
         }
         

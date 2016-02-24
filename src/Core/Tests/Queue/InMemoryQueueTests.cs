@@ -14,14 +14,14 @@ namespace Foundatio.Tests.Queue {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
-                _queue = new InMemoryQueue<SimpleWorkItem>(retries, retryDelay, workItemTimeout: workItemTimeout);
+                _queue = new InMemoryQueue<SimpleWorkItem>(retries, retryDelay, workItemTimeout: workItemTimeout, loggerFactory: Log);
 
             return _queue;
         }
 
         [Fact]
         public async Task TestAsyncEvents() {
-            var q = new InMemoryQueue<SimpleWorkItem>();
+            var q = new InMemoryQueue<SimpleWorkItem>(loggerFactory: Log);
             q.Enqueuing.AddHandler(async (sender, args) => {
                 await Task.Delay(250);
                 _logger.Info("First Enqueuing.");

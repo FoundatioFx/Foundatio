@@ -36,7 +36,7 @@ namespace Foundatio.Tests.Locks {
             return base.LockOneAtATime();
         }
 
-        [Fact]
+        [Fact(Skip = "Was an experiment")]
         public async Task WillPulseMonitor() {
             var monitor = new AsyncMonitor();
             var sw = Stopwatch.StartNew();

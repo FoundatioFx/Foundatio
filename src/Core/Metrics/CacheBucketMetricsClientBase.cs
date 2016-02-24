@@ -65,7 +65,7 @@ namespace Foundatio.Metrics {
 
         private bool _sendingMetrics = false;
         public async Task FlushAsync() {
-            if (_sendingMetrics || _queue.Count == 0)
+            if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
             _logger.Trace("Flushing metrics: count={count}", _queue.Count);
