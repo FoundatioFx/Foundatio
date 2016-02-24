@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Redis.Metrics;
 using Foundatio.Tests.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -78,7 +78,7 @@ namespace Foundatio.Redis.Tests.Metrics {
                 try {
                     var keys = server.Keys().ToArray();
                     foreach (var key in keys)
-                        _logger.LogInformation(key);
+                        _logger.Info().Message(key).Write();
                     count += keys.Length;
                 } catch (Exception) { }
             }

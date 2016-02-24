@@ -1,20 +1,19 @@
 using System;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Logging {
     public static class LoggerExtensions {
+        public static ILogBuilder Trace(this ILogger logger) {
+            if (!logger.IsEnabled(LogLevel.Trace))
+                return NullLogBuilder.Instance;
+
+            return new LogBuilder(LogLevel.Trace, logger);
+        }
+
         public static ILogBuilder Debug(this ILogger logger) {
             if (!logger.IsEnabled(LogLevel.Debug))
                 return NullLogBuilder.Instance;
 
             return new LogBuilder(LogLevel.Debug, logger);
-        }
-
-        public static ILogBuilder Trace(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Verbose))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Verbose, logger);
         }
 
         public static ILogBuilder Info(this ILogger logger) {
@@ -43,6 +42,10 @@ namespace Foundatio.Logging {
                 return NullLogBuilder.Instance;
 
             return new LogBuilder(LogLevel.Critical, logger);
+        }
+
+        public static IDisposable BeginScope(this ILogger logger, string scope) {
+            return logger.BeginScope(s => s, scope);
         }
     }
 }

@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using Foundatio.Logging;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
@@ -11,11 +10,10 @@ namespace Foundatio.Tests.Utility {
 
         protected TestBase(ITestOutputHelper output) {
             LoggerFactory = new TestLoggerFactory(output);
-            LoggerFactory.MinimumLevel = LogLevel.Debug;
             _logger = LoggerFactory.CreateLogger(GetType());
         }
 
-        protected ILoggerFactory LoggerFactory { get; }
+        protected TestLoggerFactory LoggerFactory { get; }
     }
 
     public class TestLoggerFactory : ILoggerFactory {
@@ -53,8 +51,9 @@ namespace Foundatio.Tests.Utility {
         public bool ShouldWriteToTestOutput { get; set; } = true;
 
         public bool IsEnabled(string category, LogLevel logLevel) {
-            if (_logLevels.ContainsKey(category))
-                return logLevel >= _logLevels[category];
+            LogLevel categoryLevel;
+            if (_logLevels.TryGetValue(category, out categoryLevel))
+                return logLevel >= categoryLevel;
 
             return logLevel >= MinimumLevel;
         }
@@ -62,8 +61,6 @@ namespace Foundatio.Tests.Utility {
         public void SetLogLevel(string category, LogLevel minLogLevel) {
             _logLevels[category] = minLogLevel;
         }
-
-        public void AddProvider(ILoggerProvider provider) {}
 
         public void Dispose() {}
     }
@@ -78,7 +75,7 @@ namespace Foundatio.Tests.Utility {
             _categoryName = categoryName;
         }
 
-        public void Log(LogLevel logLevel, int eventId, object state, Exception exception, Func<object, Exception, string> formatter) {
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) {
             if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
                 return;
 
@@ -88,7 +85,7 @@ namespace Foundatio.Tests.Utility {
                 EventId = eventId,
                 State = state,
                 Exception = exception,
-                Formatter = formatter,
+                Formatter = (s, ex) => formatter(state, exception),
                 CategoryName = _categoryName,
                 Scope = _scope.ToArray()
             };
@@ -100,8 +97,8 @@ namespace Foundatio.Tests.Utility {
             return logLevel >= _loggerFactory.MinimumLevel;
         }
 
-        public IDisposable BeginScopeImpl(object state) {
-            _scope.Push(state);
+        public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) {
+            _scope.Push(scopeFactory(state));
             return new DisposableAction(() => _scope.Pop());
         }
     }
@@ -111,7 +108,7 @@ namespace Foundatio.Tests.Utility {
         public string CategoryName { get; set; }
         public LogLevel LogLevel { get; set; }
         public object[] Scope { get; set; }
-        public int EventId { get; set; }
+        public EventId EventId { get; set; }
         public object State { get; set; }
         public Exception Exception { get; set; }
 

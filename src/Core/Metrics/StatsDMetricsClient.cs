@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.Metrics {

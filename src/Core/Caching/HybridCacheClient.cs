@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching {
     public class HybridCacheClient : ICacheClient {

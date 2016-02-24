@@ -5,7 +5,7 @@ using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class SampleQueueJob : QueueProcessorJobBase<SampleQueueWorkItem> {

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Serializer;
 using StackExchange.Redis;
 

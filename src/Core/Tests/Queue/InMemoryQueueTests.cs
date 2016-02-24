@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Queues;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -42,13 +41,13 @@ namespace Foundatio.Tests.Queue {
             var sw = Stopwatch.StartNew();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _logger.LogVerbose(sw.Elapsed.ToString());
+            _logger.Trace().Message(sw.Elapsed.ToString()).Write();
 
             e1.Dispose();
             sw.Restart();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _logger.LogVerbose(sw.Elapsed.ToString());
+            _logger.Trace().Message(sw.Elapsed.ToString()).Write();
         }
 
         [Fact]

@@ -4,7 +4,7 @@ using Exceptionless;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Queues;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.JobSample.Jobs {
     public class PingQueueJob : QueueProcessorJobBase<PingRequest> {

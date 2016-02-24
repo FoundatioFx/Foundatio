@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
     public class WithDependencyJob : JobBase {

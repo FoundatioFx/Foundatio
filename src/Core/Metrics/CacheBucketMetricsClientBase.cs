@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 

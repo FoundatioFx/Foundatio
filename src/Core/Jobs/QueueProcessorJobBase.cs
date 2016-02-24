@@ -6,7 +6,6 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class QueueProcessorJobBase<T> : JobBase, IQueueProcessorJob where T : class {

@@ -9,7 +9,6 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
-using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
@@ -118,7 +117,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(3, CountAllKeys());
 
-                _logger.LogInformation("-----");
+                _logger.Info().Message("-----").Write();
 
                 var workItem = await queue.DequeueAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -128,7 +127,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(4, CountAllKeys());
 
-                _logger.LogInformation("-----");
+                _logger.Info().Message("-----").Write();
 
                 await workItem.CompleteAsync();
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -332,7 +331,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
                 }
-                _logger.LogVerbose((await metrics.GetCounterStatsAsync("work")).ToString());
+                _logger.Trace().Message((await metrics.GetCounterStatsAsync("work")).ToString()).Write();
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.True(stats.Dequeued >= workItemCount);
@@ -371,7 +370,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 }
-                _logger.LogVerbose((await metrics.GetCounterStatsAsync("work")).ToString());
+                _logger.Trace().Message((await metrics.GetCounterStatsAsync("work")).ToString()).Write();
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -411,7 +410,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromMinutes(1));
-                _logger.LogVerbose((await metrics.GetCounterStatsAsync("work")).ToString());
+                _logger.Trace().Message((await metrics.GetCounterStatsAsync("work")).ToString()).Write();
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -448,7 +447,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 try {
                     var keys = server.Keys().ToArray();
                     foreach (var key in keys)
-                        _logger.LogInformation(key);
+                        _logger.Info().Message(key).Write();
                     count += keys.Length;
                 } catch (Exception) { }
             }

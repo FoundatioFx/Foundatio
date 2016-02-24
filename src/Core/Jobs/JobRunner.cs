@@ -8,7 +8,6 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public class JobRunOptions {

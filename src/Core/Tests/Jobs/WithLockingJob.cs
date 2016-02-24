@@ -4,7 +4,7 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Xunit;
 

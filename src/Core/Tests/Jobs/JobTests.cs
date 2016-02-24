@@ -11,7 +11,6 @@ using Foundatio.Metrics;
 using Foundatio.ServiceProviders;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -145,10 +144,10 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(null, iterations);
             sw.Stop();
             await metrics.FlushAsync();
-            _logger.LogVerbose((await metrics.GetCounterStatsAsync("runs")).ToString());
-            _logger.LogVerbose((await metrics.GetCounterStatsAsync("errors")).ToString());
-            _logger.LogVerbose((await metrics.GetCounterStatsAsync("failed")).ToString());
-            _logger.LogVerbose((await metrics.GetCounterStatsAsync("completed")).ToString());
+            _logger.Trace().Message((await metrics.GetCounterStatsAsync("runs")).ToString()).Write();
+            _logger.Trace().Message((await metrics.GetCounterStatsAsync("errors")).ToString()).Write();
+            _logger.Trace().Message((await metrics.GetCounterStatsAsync("failed")).ToString()).Write();
+            _logger.Trace().Message((await metrics.GetCounterStatsAsync("completed")).ToString()).Write();
         }
     }
 }

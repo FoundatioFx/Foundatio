@@ -10,7 +10,6 @@ using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {

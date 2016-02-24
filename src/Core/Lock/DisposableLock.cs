@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock {
     internal class DisposableLock : ILock {

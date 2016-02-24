@@ -7,7 +7,6 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -154,20 +153,20 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            _logger.LogInformation(sw.Elapsed.ToString());
+            _logger.Info().Message(sw.Elapsed.ToString()).Write();
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
-            _logger.LogInformation(sw.Elapsed.ToString());
+            _logger.Info().Message(sw.Elapsed.ToString()).Write();
             
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
-            _logger.LogInformation(sw.Elapsed.ToString());
+            _logger.Info().Message(sw.Elapsed.ToString()).Write();
         }
     }
 }

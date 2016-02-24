@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Caching;
-using Microsoft.Extensions.Logging;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
 using System.Threading;
@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {

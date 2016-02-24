@@ -4,10 +4,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -98,11 +98,11 @@ namespace Foundatio.Tests.Metrics {
                     await StartListeningAsync(iterations - index);
 
                 if (index % (iterations / 20) == 0)
-                    _logger.LogVerbose((await metrics.GetCounterStatsAsync("counter")).ToString());
+                    _logger.Trace().Message((await metrics.GetCounterStatsAsync("counter")).ToString()).Write();
             }
 
             sw.Stop();
-            _logger.LogVerbose((await metrics.GetCounterStatsAsync("counter")).ToString());
+            _logger.Trace().Message((await metrics.GetCounterStatsAsync("counter")).ToString()).Write();
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
