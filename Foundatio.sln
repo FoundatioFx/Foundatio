@@ -36,6 +36,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MetricsNET", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Logging.Xunit", "src\xUnit\Foundatio.Logging.Xunit.csproj", "{D9E01FA4-170A-465A-A6E6-6A452485871A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Logging.NLog", "src\NLog\Foundatio.Logging.NLog.csproj", "{3353BA05-2366-4813-8712-782D7B39F49C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,6 +88,10 @@ Global
 		{D9E01FA4-170A-465A-A6E6-6A452485871A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D9E01FA4-170A-465A-A6E6-6A452485871A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D9E01FA4-170A-465A-A6E6-6A452485871A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3353BA05-2366-4813-8712-782D7B39F49C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3353BA05-2366-4813-8712-782D7B39F49C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3353BA05-2366-4813-8712-782D7B39F49C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3353BA05-2366-4813-8712-782D7B39F49C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
