@@ -18,6 +18,11 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
+        public override Task CanRunQueueJobWithLockFail() {
+            return base.CanRunQueueJobWithLockFail();
+        }
+
+        [Fact]
         public override Task CanRunQueueJob() {
             return base.CanRunQueueJob();
         }

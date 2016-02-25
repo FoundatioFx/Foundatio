@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
+using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
@@ -39,7 +41,35 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal(workItemCount, stats.Enqueued);
             Assert.Equal(workItemCount, stats.Dequeued);
         }
-        
+
+        public virtual async Task CanRunQueueJobWithLockFail() {
+            const int workItemCount = 10;
+            const int allowedLockCount = 5;
+            var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero);
+            await queue.DeleteQueueAsync();
+
+            Log.MinimumLevel = LogLevel.Trace;
+
+            var enqueueTask = Run.InParallel(workItemCount, async index => {
+                await queue.EnqueueAsync(new SampleQueueWorkItem {
+                    Created = DateTime.Now,
+                    Path = "somepath" + index
+                });
+            });
+
+            var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(), allowedLockCount, TimeSpan.FromDays(1), Log);
+            var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
+            await Task.Delay(10);
+            await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
+
+            var stats = await queue.GetQueueStatsAsync();
+            Assert.Equal(0, stats.Queued);
+            Assert.Equal(workItemCount, stats.Enqueued);
+            Assert.Equal(allowedLockCount, stats.Completed);
+            Assert.Equal(allowedLockCount * 4, stats.Abandoned);
+            Assert.Equal(allowedLockCount, stats.Deadletter);
+        }
+
         public virtual async Task CanRunMultipleQueueJobs() {
             const int jobCount = 5;
             const int workItemCount = 100;

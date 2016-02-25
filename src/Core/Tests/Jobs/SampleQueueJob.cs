@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Utility;
@@ -11,10 +13,10 @@ namespace Foundatio.Tests.Jobs {
     public class SampleQueueJob : QueueProcessorJobBase<SampleQueueWorkItem> {
         private readonly IMetricsClient _metrics;
 
-        public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics,ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
+        public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
             _metrics = metrics ?? NullMetricsClient.Instance;
         }
-        
+
         protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {
             await _metrics.CounterAsync("dequeued").AnyContext();
 
@@ -28,6 +30,28 @@ namespace Foundatio.Tests.Jobs {
                 return JobResult.FailedWithMessage("Abandoned");
             }
             
+            await _metrics.CounterAsync("completed").AnyContext();
+            return JobResult.Success;
+        }
+    }
+
+    public class SampleQueueJobWithLocking : QueueProcessorJobBase<SampleQueueWorkItem> {
+        private readonly IMetricsClient _metrics;
+        private readonly ILockProvider _lockProvider;
+
+        public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILockProvider lockProvider, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
+            _metrics = metrics ?? NullMetricsClient.Instance;
+            _lockProvider = lockProvider;
+        }
+
+        protected override async Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = new CancellationToken()) {
+            if (_lockProvider != null)
+                return await _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero).AnyContext();
+
+            return await base.GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
+        }
+
+        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {
             await _metrics.CounterAsync("completed").AnyContext();
             return JobResult.Success;
         }
