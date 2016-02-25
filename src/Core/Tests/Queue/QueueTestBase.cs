@@ -268,11 +268,13 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
                 });
-                
+
+                await Task.Delay(1);
                 var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
                 Assert.True(success);
+                await Task.Delay(1);
 
                 var stats = await queue.GetQueueStatsAsync();
                 _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
@@ -448,6 +450,8 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(150), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
+
+            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
             using (queue) {
                 await queue.DeleteQueueAsync();
