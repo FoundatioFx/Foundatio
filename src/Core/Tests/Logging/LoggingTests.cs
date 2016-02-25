@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Foundatio.Logging;
+using Foundatio.Logging.Xunit;
 using Xunit;
 using Xunit.Abstractions;
 

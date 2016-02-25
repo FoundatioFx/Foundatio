@@ -2,8 +2,8 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Logging;
+using Foundatio.Logging.Xunit;
 using Foundatio.Redis.Metrics;
-using Foundatio.Tests.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

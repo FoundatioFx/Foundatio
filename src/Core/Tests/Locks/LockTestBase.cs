@@ -5,9 +5,8 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
-using Foundatio.Tests.Logging;
+using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
-using Microsoft.SqlServer.Server;
 using Xunit;
 using Xunit.Abstractions;
 

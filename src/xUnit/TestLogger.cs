@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Logging;
 using Foundatio.Utility;
 
-namespace Foundatio.Tests.Logging {
+namespace Foundatio.Logging.Xunit {
     public class TestLogger : ILogger {
         private readonly TestLoggerFactory _loggerFactory;
         private readonly string _categoryName;

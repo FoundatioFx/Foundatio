@@ -134,6 +134,10 @@
       <Project>{23002ba4-8663-460b-8d67-3aa941b0322a}</Project>
       <Name>Foundatio.Tests</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\xUnit\Foundatio.Logging.Xunit.csproj">
+      <Project>{d9e01fa4-170a-465a-a6e6-6a452485871a}</Project>
+      <Name>Foundatio.Logging.Xunit</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Foundatio.AzureServiceBus.csproj">
       <Project>{075bc817-a72d-45b4-8473-7635591146d5}</Project>
       <Name>Foundatio.AzureServiceBus</Name>

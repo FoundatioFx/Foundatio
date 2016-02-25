@@ -2,8 +2,8 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
-using Foundatio.Tests.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

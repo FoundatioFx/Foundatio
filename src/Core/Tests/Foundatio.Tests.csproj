@@ -114,19 +114,19 @@
     <Compile Include="Storage\FileStorageTestsBase.cs" />
     <Compile Include="Storage\FolderFileStorageTests.cs" />
     <Compile Include="Storage\InMemoryFileStorageTests.cs" />
-    <Compile Include="Logging\LogEntry.cs" />
-    <Compile Include="Logging\TestWithLoggingBase.cs" />
     <Compile Include="Utility\NonSeekableStream.cs" />
     <Compile Include="Utility\ConnectionStrings.cs" />
     <Compile Include="Utility\RandomData.cs" />
-    <Compile Include="Logging\TestLogger.cs" />
-    <Compile Include="Logging\TestLoggerFactory.cs" />
     <Compile Include="Utility\UdpListener.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\xUnit\Foundatio.Logging.Xunit.csproj">
+      <Project>{d9e01fa4-170a-465a-a6e6-6a452485871a}</Project>
+      <Name>Foundatio.Logging.Xunit</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Foundatio.csproj">
       <Project>{f5b6c2b5-485f-4a4b-8e00-d5f77676cd6e}</Project>
       <Name>Foundatio</Name>

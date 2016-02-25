@@ -1,8 +1,7 @@
 ﻿using System;
-using Foundatio.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Logging {
+namespace Foundatio.Logging.Xunit {
     public abstract class TestWithLoggingBase {
         protected readonly ILogger _logger;
 

@@ -1,7 +1,7 @@
 ﻿using System;
 using Foundatio.Logging;
 
-namespace Foundatio.Tests.Logging {
+namespace Foundatio.Logging.Xunit {
     public class LogEntry {
         public DateTime Date { get; set; }
         public string CategoryName { get; set; }

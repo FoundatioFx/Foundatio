@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Logging;
 using Foundatio.Logging.Abstractions.Internal;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Logging {
+namespace Foundatio.Logging.Xunit {
     public class TestLoggerFactory : ILoggerFactory {
         private readonly Dictionary<string, LogLevel> _logLevels = new Dictionary<string, LogLevel>();
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
@@ -18,7 +17,7 @@ namespace Foundatio.Tests.Logging {
         public IReadOnlyList<LogEntry> LogEntries => _logEntries;
         public int MaxLogEntries = 1000;
 
-        public void AddLogEntry(LogEntry logEntry) {
+        internal void AddLogEntry(LogEntry logEntry) {
             if (_logEntries.Count >= MaxLogEntries)
                 return;
 
