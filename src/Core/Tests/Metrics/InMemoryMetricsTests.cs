@@ -53,6 +53,7 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             });
 
+            await Task.Delay(1);
             var success = await metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
@@ -61,9 +62,11 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test").AnyContext();
             });
 
+            await Task.Delay(1);
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
+            await Task.Delay(1);
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100));
             Assert.False(success);
 
@@ -72,9 +75,11 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test", 2);
             });
 
+            await Task.Delay(1);
             success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
+            await Task.Delay(1);
             success = await metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test"), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
             Assert.True(success);
 
@@ -83,6 +88,7 @@ namespace Foundatio.Tests.Metrics {
                 await metrics.CounterAsync("Test");
             });
 
+            await Task.Delay(1);
             success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
             Assert.True(success);
 
