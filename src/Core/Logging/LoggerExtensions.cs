@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Foundatio.Logging.Internal;
 
 namespace Foundatio.Logging {
@@ -68,6 +67,16 @@ namespace Foundatio.Logging {
             logger.Log(LogLevel.Debug, 0, new FormattedLogValues(message, args), null, _messageFormatter);
         }
 
+        public static void Debug(this ILogger logger, Func<string> formatter) {
+            if (logger == null) {
+                throw new ArgumentNullException(nameof(logger));
+            }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
+
+            logger.Log<object>(LogLevel.Debug, 0, null, null, (state, exception) => formatter());
+        }
+
         //------------------------------------------TRACE------------------------------------------//
 
         /// <summary>
@@ -128,6 +137,16 @@ namespace Foundatio.Logging {
             }
 
             logger.Log(LogLevel.Trace, 0, new FormattedLogValues(message, args), null, _messageFormatter);
+        }
+
+        public static void Trace(this ILogger logger, Func<string> formatter) {
+            if (logger == null) {
+                throw new ArgumentNullException(nameof(logger));
+            }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
+
+            logger.Log<object>(LogLevel.Trace, 0, null, null, (state, exception) => formatter());
         }
 
         //------------------------------------------INFORMATION------------------------------------------//
@@ -192,6 +211,16 @@ namespace Foundatio.Logging {
             logger.Log(LogLevel.Information, 0, new FormattedLogValues(message, args), null, _messageFormatter);
         }
 
+        public static void Info(this ILogger logger, Func<string> formatter) {
+            if (logger == null) {
+                throw new ArgumentNullException(nameof(logger));
+            }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
+
+            logger.Log<object>(LogLevel.Information, 0, null, null, (state, exception) => formatter());
+        }
+
         //------------------------------------------WARNING------------------------------------------//
 
         /// <summary>
@@ -252,6 +281,16 @@ namespace Foundatio.Logging {
             }
 
             logger.Log(LogLevel.Warning, 0, new FormattedLogValues(message, args), null, _messageFormatter);
+        }
+
+        public static void Warn(this ILogger logger, Func<string> formatter) {
+            if (logger == null) {
+                throw new ArgumentNullException(nameof(logger));
+            }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
+
+            logger.Log<object>(LogLevel.Warning, 0, null, null, (state, exception) => formatter());
         }
 
         //------------------------------------------ERROR------------------------------------------//
@@ -316,6 +355,16 @@ namespace Foundatio.Logging {
             logger.Log(LogLevel.Error, 0, new FormattedLogValues(message, args), null, _messageFormatter);
         }
 
+        public static void Error(this ILogger logger, Func<string> formatter) {
+            if (logger == null) {
+                throw new ArgumentNullException(nameof(logger));
+            }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
+
+            logger.Log<object>(LogLevel.Error, 0, null, null, (state, exception) => formatter());
+        }
+
         //------------------------------------------CRITICAL------------------------------------------//
 
         /// <summary>
@@ -378,96 +427,20 @@ namespace Foundatio.Logging {
             logger.Log(LogLevel.Critical, 0, new FormattedLogValues(message, args), null, _messageFormatter);
         }
 
-        //------------------------------------------Scope------------------------------------------//
-
-        /// <summary>
-        /// Formats the message and creates a scope.
-        /// </summary>
-        /// <param name="logger">The <see cref="ILogger"/> to create the scope in.</param>
-        /// <param name="messageFormat">Format string of the scope message.</param>
-        /// <param name="args">An object array that contains zero or more objects to format.</param>
-        /// <returns>A disposable scope object. Can be null.</returns>
-        public static IDisposable BeginScope(
-            this ILogger logger,
-            string messageFormat,
-            params object[] args) {
+        public static void Critical(this ILogger logger, Func<string> formatter) {
             if (logger == null) {
                 throw new ArgumentNullException(nameof(logger));
             }
+            if (formatter == null)
+                throw new ArgumentNullException(nameof(formatter));
 
-            if (messageFormat == null) {
-                throw new ArgumentNullException(nameof(messageFormat));
-            }
-
-            return logger.BeginScope(s => s.ToString(), new FormattedLogValues(messageFormat, args));
-        }
-
-        /// <summary>
-        /// Creates a scoped log property.
-        /// </summary>
-        /// <param name="logger">The <see cref="ILogger"/> to create the scope in.</param>
-        /// <param name="name">The name of the scope property.</param>
-        /// <param name="value">The value of the scope property.</param>
-        /// <returns>A disposable scope object. Can be null.</returns>
-        public static IDisposable BeginPropertyScope(
-            this ILogger logger,
-            string name,
-            string value) {
-            if (logger == null) {
-                throw new ArgumentNullException(nameof(logger));
-            }
-
-            return logger.BeginScope(s => s, new KeyValuePair<string, string>(name, value));
+            logger.Log<object>(LogLevel.Critical, 0, null, null, (state, exception) => formatter());
         }
 
         //------------------------------------------HELPERS------------------------------------------//
 
         private static string MessageFormatter(object state, Exception error) {
             return state.ToString();
-        }
-
-        //------------------------------------------BUILDERS------------------------------------------//
-
-        public static ILogBuilder Trace(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Trace))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Trace, logger);
-        }
-
-        public static ILogBuilder Debug(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Debug))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Debug, logger);
-        }
-
-        public static ILogBuilder Info(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Information))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Information, logger);
-        }
-
-        public static ILogBuilder Warn(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Warning))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Warning, logger);
-        }
-
-        public static ILogBuilder Error(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Error))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Error, logger);
-        }
-
-        public static ILogBuilder Critical(this ILogger logger) {
-            if (!logger.IsEnabled(LogLevel.Critical))
-                return NullLogBuilder.Instance;
-
-            return new LogBuilder(LogLevel.Critical, logger);
         }
     }
 }

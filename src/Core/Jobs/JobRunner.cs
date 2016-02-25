@@ -50,7 +50,8 @@ namespace Foundatio.Jobs {
 
                 jobName = options.JobType.Name;
 
-                using (_logger.BeginScope(jobName)) {
+                using (_logger.BeginScope(s => s.Property("Job", jobName))) {
+
                     if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))
                         ServiceProvider.SetServiceProvider(options.ServiceProviderType ?? options.JobType);
 
@@ -69,7 +70,7 @@ namespace Foundatio.Jobs {
                 }
             } catch (FileNotFoundException e) {
                 Console.Error.WriteLine("{0} ({1})", e.GetMessage(), e.FileName);
-                _logger.Error("{Message} ({FileName})", e.GetMessage(), e.FileName);
+                _logger.Error(() => $"{e.GetMessage()} ({ e.FileName})");
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
