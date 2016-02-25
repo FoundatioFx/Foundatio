@@ -254,7 +254,8 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
-            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
+            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Trace);
+            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
             var metrics = new InMemoryMetricsClient(false, loggerFactory: Log);
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
