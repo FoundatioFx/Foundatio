@@ -1,4 +1,4 @@
-version: 4.0.{build}-beta
+version: 4.0.{build}
 os: Visual Studio 2015
 clone_depth: 2
 
