@@ -14,8 +14,11 @@ namespace Foundatio.JobSample {
 
             return new JobRunner(loggerFactory).RunInConsole<PingQueueJob>(serviceProvider => {
                 var container = serviceProvider as Container;
-                container?.RegisterSingleton<ILoggerFactory>(loggerFactory);
-                container?.Register(typeof(ILogger<>), typeof(Logger<>));
+                if (container == null)
+                    return;
+
+                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.Register(typeof(ILogger<>), typeof(Logger<>));
 
                 container.AddStartupAction<EnqueuePings>();
 
