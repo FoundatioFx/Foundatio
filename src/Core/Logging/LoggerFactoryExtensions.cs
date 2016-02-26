@@ -3,8 +3,8 @@ using Foundatio.Logging.Abstractions.Internal;
 
 namespace Foundatio.Logging {
     public static class LoggerFactoryExtensions {
-        public static ILogger CreateLogger<T>(this ILoggerFactory loggerFactory) {
-            return loggerFactory?.CreateLogger(typeof(T)) ?? NullLogger.Instance;
+        public static ILogger<T> CreateLogger<T>(this ILoggerFactory loggerFactory) {
+            return loggerFactory != null ? new Logger<T>(loggerFactory) : NullLogger<T>.Instance;
         }
 
         public static ILogger CreateLogger(this ILoggerFactory loggerFactory, Type type) {

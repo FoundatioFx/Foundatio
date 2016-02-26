@@ -9,7 +9,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.JobSample.Jobs {
     public class FoundatioBootstrapper : BootstrappedServiceProviderBase {
-        public override IServiceProvider Bootstrap() {
+        protected override IServiceProvider BootstrapInternal() {
             var container = new Container();
             container.Options.AllowOverridingRegistrations = true;
 

@@ -2,21 +2,26 @@ using System;
 
 namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {
-        private static IServiceProvider _serviceProvider;
-        
-        public abstract IServiceProvider Bootstrap();
+        public IServiceProvider ServiceProvider { get; private set; }
 
-        private static readonly object _lock = new object();
+        public void Bootstrap() {
+            lock (_lock) {
+                if (ServiceProvider == null)
+                    ServiceProvider = BootstrapInternal();
+            }
+        }
+
+        protected abstract IServiceProvider BootstrapInternal();
+
+        private readonly object _lock = new object();
 
         public object GetService(Type serviceType) {
-            if (_serviceProvider == null) {
-                lock (_lock) {
-                    if (_serviceProvider == null)
-                        _serviceProvider = Bootstrap();
-                }
-            }
+            if (ServiceProvider != null)
+                return ServiceProvider.GetService(serviceType);
 
-            return _serviceProvider.GetService(serviceType);
+            Bootstrap();
+
+            return ServiceProvider?.GetService(serviceType);
         }
     }
 }

@@ -15,7 +15,7 @@ namespace Foundatio.Tests.Jobs {
     }
 
     public class MyBootstrappedServiceProvider : BootstrappedServiceProviderBase {
-        public override IServiceProvider Bootstrap() {
+        protected override IServiceProvider BootstrapInternal() {
             // create container, do registrations and return the service provider instance.
             return new MyServiceProvider();
         }

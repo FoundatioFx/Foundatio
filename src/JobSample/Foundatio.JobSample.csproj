@@ -5,7 +5,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{CA7CD628-686F-4821-879B-5A8158C3EBB1}</ProjectGuid>
-    <OutputType>Library</OutputType>
+    <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Foundatio.JobSample</RootNamespace>
     <AssemblyName>Foundatio.JobSample</AssemblyName>
@@ -33,7 +33,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup>
-    <StartupObject />
+    <StartupObject>Foundatio.JobSample.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Exceptionless.RandomData, Version=1.0.17.0, Culture=neutral, processorArchitecture=MSIL">
@@ -75,9 +75,13 @@
     <Compile Include="Bootstrapper.cs" />
     <Compile Include="PingQueueJob.cs" />
     <Compile Include="HelloWorldJob.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="NLog.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

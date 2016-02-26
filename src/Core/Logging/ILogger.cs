@@ -6,4 +6,6 @@ namespace Foundatio.Logging {
         bool IsEnabled(LogLevel logLevel);
         IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state);
     }
+
+    public interface ILogger<T> : ILogger {}
 }

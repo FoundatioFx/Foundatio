@@ -51,17 +51,19 @@ namespace Foundatio.Jobs {
                 jobName = options.JobType.Name;
 
                 using (_logger.BeginScope(s => s.Property("Job", jobName))) {
-
                     if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))
                         ServiceProvider.SetServiceProvider(options.ServiceProviderType ?? options.JobType);
 
+                    IServiceProvider serviceProvider = ServiceProvider.Current;
                     // force bootstrap now so logging will be configured
-                    if (ServiceProvider.Current is IBootstrappedServiceProvider)
+                    if (ServiceProvider.Current is IBootstrappedServiceProvider) {
                         ((IBootstrappedServiceProvider)ServiceProvider.Current).Bootstrap();
+                        serviceProvider = ((IBootstrappedServiceProvider)ServiceProvider.Current).ServiceProvider;
+                    }
 
                     _logger.Info("Starting job...");
 
-                    afterBootstrap?.Invoke(ServiceProvider.Current);
+                    afterBootstrap?.Invoke(serviceProvider);
 
                     result = RunAsync(options).Result;
 

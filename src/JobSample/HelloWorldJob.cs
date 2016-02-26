@@ -2,12 +2,13 @@
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
+using Foundatio.Logging;
 
 namespace Foundatio.JobSample.Jobs {
     public class HelloWorldJob : JobBase {
         private readonly IAmADependency _dep;
 
-        public HelloWorldJob(IAmADependency dep) : base(null) {
+        public HelloWorldJob(IAmADependency dep, ILoggerFactory loggerFactory) : base(loggerFactory) {
             _dep = dep;
         }
 
@@ -16,7 +17,7 @@ namespace Foundatio.JobSample.Jobs {
         protected override async Task<JobResult> RunInternalAsync(JobRunContext context) {
             RunCount++;
 
-            Console.WriteLine("Hello World!");
+            _logger.Info("Hello World!");
             await Task.Delay(100, context.CancellationToken).AnyContext();
 
             return JobResult.Success;

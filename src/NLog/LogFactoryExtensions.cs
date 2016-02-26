@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Reflection;
 using NLog;
 using NLog.Config;
@@ -23,7 +24,7 @@ namespace Foundatio.Logging.NLog {
         /// Apply NLog configuration from XML config.
         /// </summary>
         /// <param name="fileName">absolute path  NLog configuration file.</param>
-        private static void ConfigureNLog(string fileName) {
+        public static void ConfigureNLog(string fileName) {
             LogManager.Configuration = new XmlLoggingConfiguration(fileName, true);
         }
     }
