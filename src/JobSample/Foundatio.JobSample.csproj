@@ -74,9 +74,9 @@
     </Compile>
     <Compile Include="Bootstrapper.cs" />
     <Compile Include="PingQueueJob.cs" />
-    <Compile Include="HelloWorldJob.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Extensions\StartupActions.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="NLog.config">

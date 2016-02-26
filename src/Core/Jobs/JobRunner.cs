@@ -11,21 +11,15 @@ using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
     public class JobRunOptions {
-        public JobRunOptions() {
-            IterationLimit = -1;
-            InstanceCount = 1;
-            RunContinuous = true;
-        }
-
         public string JobTypeName { get; set; }
         public Type JobType { get; set; }
         public string ServiceProviderTypeName { get; set; }
         public Type ServiceProviderType { get; set; }
-        public bool RunContinuous { get; set; }
+        public bool RunContinuous { get; set; } = true;
         public TimeSpan? Interval { get; set; }
         public TimeSpan? InitialDelay { get; set; }
-        public int IterationLimit { get; set; }
-        public int InstanceCount { get; set; }
+        public int IterationLimit { get; set; } = -1;
+        public int InstanceCount { get; set; } = 1;
         public bool? NoServiceProvider { get; set; }
     }
 
@@ -36,6 +30,10 @@ namespace Foundatio.Jobs {
         public JobRunner(ILoggerFactory loggerFactory = null) {
             _loggerFactory = loggerFactory;
             _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger.Instance;
+        }
+
+        public int RunInConsole<TJobType>(Action<IServiceProvider> afterBootstrap = null) {
+            return RunInConsole(new JobRunOptions { JobType = typeof(TJobType) }, afterBootstrap);
         }
 
         public int RunInConsole(JobRunOptions options, Action<IServiceProvider> afterBootstrap = null) {

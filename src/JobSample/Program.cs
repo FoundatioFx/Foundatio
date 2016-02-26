@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.JobSample.Jobs;
 using Foundatio.Logging;
@@ -11,13 +12,14 @@ namespace Foundatio.JobSample {
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddNLog();
 
-            return new JobRunner(loggerFactory).RunInConsole(new JobRunOptions {
-                JobType = typeof(HelloWorldJob),
-                Interval = TimeSpan.Zero,
-                RunContinuous = true
-            }, serviceProvider => {
-                ((Container)serviceProvider).RegisterSingleton<ILoggerFactory>(loggerFactory);
-                ((Container)serviceProvider).Register(typeof(ILogger<>), typeof(Logger<>));
+            return new JobRunner(loggerFactory).RunInConsole<PingQueueJob>(serviceProvider => {
+                var container = serviceProvider as Container;
+                container?.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container?.Register(typeof(ILogger<>), typeof(Logger<>));
+
+                container.AddStartupAction<EnqueuePings>();
+
+                Task.Run(() => container.RunStartupActionsAsync().GetAwaiter().GetResult());
             });
         }
     }
