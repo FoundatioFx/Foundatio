@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Logging.Abstractions.Internal;
 using Xunit.Abstractions;
 
 namespace Foundatio.Logging.Xunit {
@@ -36,6 +35,8 @@ namespace Foundatio.Logging.Xunit {
             return new TestLogger(categoryName, this);
         }
 
+        public void AddProvider(ILoggerProvider loggerProvider) {}
+
         public bool ShouldWriteToTestOutput { get; set; } = true;
 
         public bool IsEnabled(string category, LogLevel logLevel) {
@@ -48,10 +49,6 @@ namespace Foundatio.Logging.Xunit {
 
         public void SetLogLevel(string category, LogLevel minLogLevel) {
             _logLevels[category] = minLogLevel;
-        }
-
-        public void SetLogLevel<T>(LogLevel minLogLevel) {
-            _logLevels[TypeNameHelper.GetTypeDisplayName(typeof(T))] = minLogLevel;
         }
 
         public void Dispose() {}

@@ -1,7 +1,11 @@
 ﻿using System;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Runtime.Remoting.Messaging;
+using Foundatio.Utility;
 
 namespace Foundatio.Logging.NLog {
-    public class NLogLogger : ILogger {
+    internal class NLogLogger : ILogger {
         private readonly global::NLog.Logger _logger;
 
         public NLogLogger(global::NLog.Logger logger) {
@@ -20,7 +24,15 @@ namespace Foundatio.Logging.NLog {
 
             var eventInfo = global::NLog.LogEventInfo.Create(nLogLogLevel, _logger.Name, message);
             eventInfo.Exception = exception;
-            eventInfo.Properties["EventId"] = eventId;
+            if (eventId.Id != 0)
+                eventInfo.Properties["EventId"] = eventId;
+
+            // TODO: Check for dictionary and add more properties
+
+            foreach (var scope in CurrentScopeStack.ToArray()) {
+                // TODO: Check scopes for dictionary and add more properties
+            }
+
             _logger.Log(eventInfo);
         }
 
@@ -58,8 +70,32 @@ namespace Foundatio.Logging.NLog {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
 
-            // TODO: not working with async
-            return global::NLog.NestedDiagnosticsContext.Push(state.ToString());
+            return Push(scopeFactory(state));
+        }
+
+        private static readonly string _name = Guid.NewGuid().ToString("N");
+
+        private sealed class Wrapper : MarshalByRefObject {
+            public ImmutableStack<object> Value { get; set; }
+        }
+
+        private static ImmutableStack<object> CurrentScopeStack {
+            get {
+                var ret = CallContext.LogicalGetData(_name) as Wrapper;
+                return ret == null ? ImmutableStack.Create<object>() : ret.Value;
+            }
+            set {
+                CallContext.LogicalSetData(_name, new Wrapper { Value = value });
+            }
+        }
+
+        private static IDisposable Push(object state) {
+            CurrentScopeStack = CurrentScopeStack.Push(state);
+            return new DisposableAction(Pop);
+        }
+
+        private static void Pop() {
+            CurrentScopeStack = CurrentScopeStack.Pop();
         }
     }
 }

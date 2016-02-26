@@ -85,6 +85,10 @@
       <Project>{f5b6c2b5-485f-4a4b-8e00-d5f77676cd6e}</Project>
       <Name>Foundatio</Name>
     </ProjectReference>
+    <ProjectReference Include="..\NLog\Foundatio.Logging.NLog.csproj">
+      <Project>{3353ba05-2366-4813-8712-782d7b39f49c}</Project>
+      <Name>Foundatio.Logging.NLog</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Redis\Foundatio.Redis.csproj">
       <Project>{E2029C76-1003-4A72-8407-81DDF4B2B102}</Project>
       <Name>Foundatio.Redis</Name>

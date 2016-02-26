@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Foundatio.Utility;
 
 namespace Foundatio.Logging.Xunit {
-    public class TestLogger : ILogger {
+    internal class TestLogger : ILogger {
         private readonly TestLoggerFactory _loggerFactory;
         private readonly string _categoryName;
         private readonly Stack<object> _scope = new Stack<object>();

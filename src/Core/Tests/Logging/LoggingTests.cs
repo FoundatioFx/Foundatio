@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Foundatio.Logging;
+using Foundatio.Logging.NLog;
 using Foundatio.Logging.Xunit;
 using Xunit;
 using Xunit.Abstractions;
@@ -26,6 +27,14 @@ namespace Foundatio.Tests.Logging {
             var kvp = (IDictionary<string, object>)scope1;
             Assert.True(kvp.ContainsKey("prop2"));
             Assert.Equal("val2", kvp["prop2"]);
+        }
+
+        [Fact]
+        public void NLogBeginScopeProperty() {
+            var provider = new NLogLoggerProvider();
+            var logger = provider.CreateLogger("blah");
+            using (logger.BeginScope(b => b.Property("prop1", "val1").Property("prop2", "val2")))
+                logger.Info("Hey {Stuff}!", "Eric");
         }
 
         [Fact]

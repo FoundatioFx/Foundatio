@@ -119,6 +119,10 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\NLog\Foundatio.Logging.NLog.csproj">
+      <Project>{3353ba05-2366-4813-8712-782d7b39f49c}</Project>
+      <Name>Foundatio.Logging.NLog</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\xUnit\Foundatio.Logging.Xunit.csproj">
       <Project>{d9e01fa4-170a-465a-a6e6-6a452485871a}</Project>
       <Name>Foundatio.Logging.Xunit</Name>

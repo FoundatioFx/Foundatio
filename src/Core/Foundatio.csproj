@@ -97,6 +97,8 @@
     <Compile Include="Logging\Internal\TypeNameHelper.cs" />
     <Compile Include="Logging\Fluent\LogBuilder.cs" />
     <Compile Include="Logging\Fluent\LogData.cs" />
+    <Compile Include="Logging\Logger.cs" />
+    <Compile Include="Logging\LoggerFactory.cs" />
     <Compile Include="Logging\LoggerFactoryExtensions.cs" />
     <Compile Include="Logging\LoggerExtensions.cs" />
     <Compile Include="Logging\LogLevel.cs" />
