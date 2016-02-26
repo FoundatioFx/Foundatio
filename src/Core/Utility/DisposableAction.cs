@@ -6,6 +6,7 @@ namespace Foundatio.Utility {
     /// </summary>
     public sealed class DisposableAction : IDisposable {
         private readonly Action _exitAction;
+        private bool _disposed;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DisposableAction"/> class.
@@ -19,7 +20,11 @@ namespace Foundatio.Utility {
         /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
         /// </summary>
         void IDisposable.Dispose() {
-            _exitAction.Invoke();
+            if (_disposed)
+                return;
+
+            _exitAction();
+            _disposed = true;
         }
     }
 }
