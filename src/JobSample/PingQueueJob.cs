@@ -41,10 +41,10 @@ namespace Foundatio.JobSample.Jobs {
 
         public async Task RunAsync() {
             var startDate = DateTime.Now;
-            while (startDate.AddSeconds(30) > DateTime.Now) {
+            while (startDate.AddMinutes(5) > DateTime.Now) {
                 _logger.Info("Enqueueing ping.");
                 await _pingQueue.EnqueueAsync(new PingRequest { Data = "Hi" }).AnyContext();
-                await Task.Delay(RandomData.GetInt(100, 1000)).AnyContext();
+                await Task.Delay(RandomData.GetInt(1000, 10000)).AnyContext();
             }
         }
     }
