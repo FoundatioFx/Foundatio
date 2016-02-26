@@ -18,7 +18,7 @@ namespace Foundatio.JobSample {
                     return;
 
                 container.RegisterSingleton<ILoggerFactory>(loggerFactory);
-                container.Register(typeof(ILogger<>), typeof(Logger<>));
+                container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
 
                 container.AddStartupAction<EnqueuePings>();
 
