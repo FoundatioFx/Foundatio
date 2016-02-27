@@ -3,13 +3,16 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.Remoting.Messaging;
 using Foundatio.Utility;
+using NLog;
 
 namespace Foundatio.Logging.NLog {
     internal class NLogLogger : ILogger {
         private readonly global::NLog.Logger _logger;
+        private readonly Action<object, object[], LogEventInfo> _populateAdditionalLogEventInfo;
 
-        public NLogLogger(global::NLog.Logger logger) {
+        public NLogLogger(global::NLog.Logger logger, Action<object, object[], LogEventInfo> populateAdditionalLogEventInfo = null) {
             _logger = logger;
+            _populateAdditionalLogEventInfo = populateAdditionalLogEventInfo;
         }
 
         // TODO: callsite showing the framework logging classes/methods
@@ -26,12 +29,8 @@ namespace Foundatio.Logging.NLog {
             eventInfo.Exception = exception;
             if (eventId.Id != 0)
                 eventInfo.Properties["EventId"] = eventId;
-
-            // TODO: Check for dictionary and add more properties
-
-            foreach (var scope in CurrentScopeStack.ToArray()) {
-                // TODO: Check scopes for dictionary and add more properties
-            }
+            
+            _populateAdditionalLogEventInfo?.Invoke(state, CurrentScopeStack.ToArray(), eventInfo);
 
             _logger.Log(eventInfo);
         }
