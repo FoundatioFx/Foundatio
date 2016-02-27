@@ -62,9 +62,11 @@ namespace Foundatio.Jobs {
 
                     IServiceProvider serviceProvider = ServiceProvider.Current;
                     // force bootstrap now so logging will be configured
-                    if (ServiceProvider.Current is IBootstrappedServiceProvider) {
-                        ((IBootstrappedServiceProvider)ServiceProvider.Current).Bootstrap();
-                        serviceProvider = ((IBootstrappedServiceProvider)ServiceProvider.Current).ServiceProvider;
+                    var bootstrappedServiceProvider = ServiceProvider.Current as IBootstrappedServiceProvider;
+                    if (bootstrappedServiceProvider != null) {
+                        bootstrappedServiceProvider.LoggerFactory = _loggerFactory;
+                        bootstrappedServiceProvider.Bootstrap();
+                        serviceProvider = bootstrappedServiceProvider.ServiceProvider;
                     }
 
                     _logger.Info("Starting job...");

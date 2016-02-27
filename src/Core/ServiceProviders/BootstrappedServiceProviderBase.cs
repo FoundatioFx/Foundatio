@@ -1,17 +1,19 @@
 using System;
+using Foundatio.Logging;
 
 namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {
+        public ILoggerFactory LoggerFactory { get; set; }
         public IServiceProvider ServiceProvider { get; private set; }
 
         public void Bootstrap() {
             lock (_lock) {
                 if (ServiceProvider == null)
-                    ServiceProvider = BootstrapInternal();
+                    ServiceProvider = BootstrapInternal(LoggerFactory);
             }
         }
 
-        protected abstract IServiceProvider BootstrapInternal();
+        protected abstract IServiceProvider BootstrapInternal(ILoggerFactory loggerFactory);
 
         private readonly object _lock = new object();
 

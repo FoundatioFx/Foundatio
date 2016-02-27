@@ -1,4 +1,5 @@
 ﻿using System;
+using Foundatio.Logging;
 using Foundatio.ServiceProviders;
 
 namespace Foundatio.Tests.Jobs {
@@ -15,7 +16,7 @@ namespace Foundatio.Tests.Jobs {
     }
 
     public class MyBootstrappedServiceProvider : BootstrappedServiceProviderBase {
-        protected override IServiceProvider BootstrapInternal() {
+        protected override IServiceProvider BootstrapInternal(ILoggerFactory loggerFactory) {
             // create container, do registrations and return the service provider instance.
             return new MyServiceProvider();
         }

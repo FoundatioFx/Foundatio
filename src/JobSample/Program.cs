@@ -17,9 +17,6 @@ namespace Foundatio.JobSample {
                 if (container == null)
                     return;
 
-                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
-                container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
-
                 container.AddStartupAction<EnqueuePings>();
 
                 Task.Run(() => container.RunStartupActionsAsync().GetAwaiter().GetResult());
