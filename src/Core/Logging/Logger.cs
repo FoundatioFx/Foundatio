@@ -175,10 +175,7 @@ namespace Foundatio.Logging {
         private readonly ILogger _logger;
 
         public Logger(ILoggerFactory factory) {
-            if (factory == null)
-                throw new ArgumentNullException(nameof(factory));
-
-            _logger = factory.CreateLogger(TypeNameHelper.GetTypeDisplayName(typeof(T)));
+            _logger = factory != null ? factory.CreateLogger(TypeNameHelper.GetTypeDisplayName(typeof(T))) : NullLogger.Instance;
         }
 
         IDisposable ILogger.BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) {

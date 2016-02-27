@@ -2,12 +2,14 @@
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
-using Benchmarks.Queues;
+using Foundatio.Benchmarks.Queues;
 
 namespace Foundatio.Benchmarks {
     class Program {
         static void Main(string[] args) {
-            var summary = BenchmarkRunner.Run<QueueBenchmarks>(new BenchmarkConfig());
+            var summary = BenchmarkRunner.Run<QueueBenchmarks>(); // new BenchmarkConfig());
+
+            Console.ReadKey();
         }
     }
 
@@ -17,3 +19,4 @@ namespace Foundatio.Benchmarks {
         }
     }
 }
+

@@ -32,8 +32,12 @@ namespace Foundatio.Jobs {
             _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger.Instance;
         }
 
-        public int RunInConsole<TJobType>(Action<IServiceProvider> afterBootstrap = null) {
-            return RunInConsole(new JobRunOptions { JobType = typeof(TJobType) }, afterBootstrap);
+        public int RunInConsole<TJob>(Action<IServiceProvider> afterBootstrap = null) {
+            return RunInConsole(new JobRunOptions { JobType = typeof(TJob) }, afterBootstrap);
+        }
+
+        public int RunInConsole<TJob, TServiceProvider>(Action<IServiceProvider> afterBootstrap = null) {
+            return RunInConsole(new JobRunOptions { JobType = typeof(TJob), ServiceProviderType = typeof(TServiceProvider) }, afterBootstrap);
         }
 
         public int RunInConsole(JobRunOptions options, Action<IServiceProvider> afterBootstrap = null) {

@@ -12,7 +12,7 @@ namespace Foundatio.JobSample {
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddNLog();
 
-            return new JobRunner(loggerFactory).RunInConsole<PingQueueJob>(serviceProvider => {
+            return new JobRunner(loggerFactory).RunInConsole<PingQueueJob, Bootstrapper>(serviceProvider => {
                 var container = serviceProvider as Container;
                 if (container == null)
                     return;

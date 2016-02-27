@@ -5,29 +5,52 @@ using StackExchange.Redis;
 
 namespace Foundatio.Benchmarks.Queues {
     public class QueueBenchmarks {
-        private const int _itemCount = 1000;
+        private const int _itemCount = 100;
+        private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>();
+        private readonly IQueue<QueueItem> _redisQueue;
+
+        public QueueBenchmarks() {
+            var muxer = ConnectionMultiplexer.Connect("localhost");
+            _redisQueue = new RedisQueue<QueueItem>(muxer);
+            _redisQueue.DeleteQueueAsync().GetAwaiter().GetResult();
+        }
 
         [Benchmark]
         public void ProcessInMemoryQueue() {
-            var _queue = new InMemoryQueue<QueueItem>();
+            try {
+                for (int i = 0; i < _itemCount; i++)
+                    _inMemoryQueue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
+            } catch (Exception ex) {
+                Console.WriteLine(ex);
+            }
 
-            for (int i = 0; i < _itemCount; i++)
-                _queue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
-
-            for (int i = 0; i < _itemCount; i++)
-                _queue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
+            try {
+                for (int i = 0; i < _itemCount; i++) {
+                    var entry = _inMemoryQueue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
+                    entry.CompleteAsync().GetAwaiter().GetResult();
+                }
+            } catch (Exception ex) {
+                Console.WriteLine(ex);
+            }
         }
 
         [Benchmark]
         public void ProcessRedisQueue() {
-            var muxer = ConnectionMultiplexer.Connect("localhost");
-            var _queue = new RedisQueue<QueueItem>(muxer);
+            try {
+                for (int i = 0; i < _itemCount; i++)
+                    _redisQueue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
+            } catch (Exception ex) {
+                Console.WriteLine(ex);
+            }
 
-            for (int i = 0; i < _itemCount; i++)
-                _queue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
-
-            for (int i = 0; i < _itemCount; i++)
-                _queue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
+            try {
+                for (int i = 0; i < _itemCount; i++) {
+                    var entry = _redisQueue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
+                    entry.CompleteAsync().GetAwaiter().GetResult();
+                }
+            } catch (Exception ex) {
+                Console.WriteLine(ex);
+            }
         }
     }
 
