@@ -37,8 +37,6 @@ namespace Foundatio.Logging.NLog {
                 eventInfo.Properties["CallerFilePath"] = logData.FilePath;
                 eventInfo.Properties["CallerLineNumber"] = logData.LineNumber;
 
-                eventInfo.Parameters = logData.Parameters;
-
                 foreach (var property in logData.Properties)
                     eventInfo.Properties[property.Key] = property.Value;
             } else {

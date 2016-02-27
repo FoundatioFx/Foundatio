@@ -1,9 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.Logging.NLog;
 using Foundatio.Logging.Xunit;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -12,30 +13,21 @@ namespace Foundatio.Tests.Logging {
         public LoggingTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public void BeginScopeProperty() {
+        public async Task BeginScopeProperty() {
             var logger = Log.CreateLogger<LoggingTests>();
             using (logger.BeginScope(b => b.Property("prop1", "val1").Property("prop2", "val2")))
+            using (logger.BeginScope(b => b.Property("prop1", "innerval1"))) {
                 logger.Info("Hey {Stuff}!", "Eric");
+                await BlahAsync(logger).AnyContext();
+            }
 
+            foreach (var entry in Log.LogEntries) {
+                Assert.Equal(2, entry.Scopes.Length);
 
-            var entry = Log.LogEntries.First();
-            Assert.Equal(1, entry.Scopes.Length);
-
-            var scope1 = entry.Scopes[0];
-            Assert.True(scope1 is IDictionary<string, object>);
-
-            var kvp = (IDictionary<string, object>)scope1;
-            Assert.True(kvp.ContainsKey("prop2"));
-            Assert.Equal("val2", kvp["prop2"]);
-        }
-
-        [Fact]
-        public void NLogBeginScopeProperty() {
-            var provider = new NLogLoggerProvider();
-            var logger = provider.CreateLogger("blah");
-            using (logger.BeginScope(b => b.Property("prop1", "val1").Property("prop2", "val2")))
-            using (logger.BeginScope(b => b.Property("prop1", "innerval1")))
-                logger.Info("Hey {Stuff}!", "Eric");
+                Assert.Equal(2, entry.Properties.Count);
+                Assert.Equal("innerval1", entry.Properties["prop1"]);
+                Assert.Equal("val2", entry.Properties["prop2"]);
+            }
         }
 
         [Fact]
@@ -45,6 +37,12 @@ namespace Foundatio.Tests.Logging {
             var name = "Tester";
 
             logger.Info(() => $"{name} at {DateTime.Now}.");
+        }
+
+        private Task BlahAsync(ILogger logger) {
+            logger.Info("Task hello");
+
+            return TaskHelper.Completed();
         }
     }
 }

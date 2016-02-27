@@ -1,5 +1,5 @@
 ﻿using System;
-using Foundatio.Logging;
+using System.Collections.Generic;
 
 namespace Foundatio.Logging.Xunit {
     public class LogEntry {
@@ -11,6 +11,7 @@ namespace Foundatio.Logging.Xunit {
         public object State { get; set; }
         public Exception Exception { get; set; }
         public string Message { get; set; }
+        public IDictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
 
         public override string ToString() {
             return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", CategoryName, " - ", Message);
