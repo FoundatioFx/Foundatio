@@ -40,6 +40,10 @@ namespace Foundatio.Jobs {
             return RunInConsole(new JobRunOptions { JobType = typeof(TJob), ServiceProviderType = typeof(TServiceProvider) }, afterBootstrap);
         }
 
+        public int RunInConsole<TJob>(string serviceProviderType, Action<IServiceProvider> afterBootstrap = null) {
+            return RunInConsole(new JobRunOptions { JobType = typeof(TJob), ServiceProviderTypeName = serviceProviderType }, afterBootstrap);
+        }
+
         public int RunInConsole(JobRunOptions options, Action<IServiceProvider> afterBootstrap = null) {
             int result;
             string jobName = "N/A";
