@@ -34,6 +34,7 @@ namespace Foundatio.Tests.Logging {
             var provider = new NLogLoggerProvider();
             var logger = provider.CreateLogger("blah");
             using (logger.BeginScope(b => b.Property("prop1", "val1").Property("prop2", "val2")))
+            using (logger.BeginScope(b => b.Property("prop1", "innerval1")))
                 logger.Info("Hey {Stuff}!", "Eric");
         }
 

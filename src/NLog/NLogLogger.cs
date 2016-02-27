@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.Remoting.Messaging;
@@ -29,8 +30,36 @@ namespace Foundatio.Logging.NLog {
             eventInfo.Exception = exception;
             if (eventId.Id != 0)
                 eventInfo.Properties["EventId"] = eventId;
-            
-            _populateAdditionalLogEventInfo?.Invoke(state, CurrentScopeStack.ToArray(), eventInfo);
+
+            var logData = state as LogData;
+            if (logData != null) {
+                eventInfo.Properties["CallerMemberName"] = logData.MemberName;
+                eventInfo.Properties["CallerFilePath"] = logData.FilePath;
+                eventInfo.Properties["CallerLineNumber"] = logData.LineNumber;
+
+                eventInfo.Parameters = logData.Parameters;
+
+                foreach (var property in logData.Properties)
+                    eventInfo.Properties[property.Key] = property.Value;
+            } else {
+                var logDictionary = state as IDictionary<string, object>;
+                if (logDictionary != null) {
+                    foreach (var property in logDictionary)
+                        eventInfo.Properties[property.Key] = property.Value;
+                }
+            }
+
+            var scopes = CurrentScopeStack.Reverse().ToArray();
+            foreach (var scope in scopes) {
+                var scopeData = scope as IDictionary<string, object>;
+                if (scopeData == null)
+                    continue;
+
+                foreach (var property in scopeData)
+                    eventInfo.Properties[property.Key] = property.Value;
+            }
+
+            _populateAdditionalLogEventInfo?.Invoke(state, scopes, eventInfo);
 
             _logger.Log(eventInfo);
         }
