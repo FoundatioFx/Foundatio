@@ -54,7 +54,7 @@ namespace Foundatio.Jobs {
                     return -1;
                 }
 
-                jobName = options.JobType.Name;
+                jobName = TypeHelper.GetTypeDisplayName(options.JobType);
 
                 using (_logger.BeginScope(s => s.Property("job", jobName))) {
                     if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))

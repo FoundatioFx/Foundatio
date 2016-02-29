@@ -4,16 +4,16 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
-using Foundatio.Logging.Abstractions.Internal;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IDisposable {
         protected readonly ILogger _logger;
         private readonly string _jobName;
+        private bool _runningContinuous = false;
 
         public JobBase(ILoggerFactory loggerFactory) {
-            _jobName = TypeNameHelper.GetTypeDisplayName(GetType());
+            _jobName = TypeHelper.GetTypeDisplayName(GetType());
             _logger = loggerFactory?.CreateLogger(_jobName) ?? NullLogger.Instance;
             JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
@@ -25,7 +25,11 @@ namespace Foundatio.Jobs {
         public string JobId { get; private set; }
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            using (_logger.BeginScope(s => s.Property("job", _jobName))) {
+            IDisposable scope = new EmptyDisposable();
+            if (!_runningContinuous)
+                scope = _logger.BeginScope(s => s.Property("job", _jobName));
+
+            using (scope) {
                 _logger.Trace("Job run \"{0}\" starting...", _jobName);
 
                 using (var lockValue = await GetJobLockAsync().AnyContext()) {
@@ -64,6 +68,7 @@ namespace Foundatio.Jobs {
 
             using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                 _logger.Info("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName);
+                _runningContinuous = true;
 
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
                     try {
@@ -94,6 +99,7 @@ namespace Foundatio.Jobs {
                 if (cancellationToken.IsCancellationRequested)
                     _logger.Trace("Job cancellation requested.");
 
+                _runningContinuous = false;
                 await Task.Delay(1).AnyContext(); // allow events to process
             }
         }

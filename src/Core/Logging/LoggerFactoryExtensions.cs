@@ -1,5 +1,5 @@
 using System;
-using Foundatio.Logging.Abstractions.Internal;
+using Foundatio.Utility;
 
 namespace Foundatio.Logging {
     public static class LoggerFactoryExtensions {
@@ -8,11 +8,11 @@ namespace Foundatio.Logging {
         }
 
         public static ILogger CreateLogger(this ILoggerFactory loggerFactory, Type type) {
-            return loggerFactory?.CreateLogger(TypeNameHelper.GetTypeDisplayName(type)) ?? NullLogger.Instance;
+            return loggerFactory?.CreateLogger(TypeHelper.GetTypeDisplayName(type)) ?? NullLogger.Instance;
         }
 
         public static void SetLogLevel<T>(this ILoggerFactory loggerFactory, LogLevel minLogLevel) {
-            loggerFactory.SetLogLevel(TypeNameHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
+            loggerFactory.SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
         }
     }
 }

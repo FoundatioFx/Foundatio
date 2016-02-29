@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Logging.Abstractions.Internal;
+using Foundatio.Utility;
 
 namespace Foundatio.Logging {
     internal class Logger : ILogger {
@@ -169,7 +169,7 @@ namespace Foundatio.Logging {
         private readonly ILogger _logger;
 
         public Logger(ILoggerFactory factory) {
-            _logger = factory != null ? factory.CreateLogger(TypeNameHelper.GetTypeDisplayName(typeof(T))) : NullLogger.Instance;
+            _logger = factory != null ? factory.CreateLogger(TypeHelper.GetTypeDisplayName(typeof(T))) : NullLogger.Instance;
         }
 
         IDisposable ILogger.BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) {

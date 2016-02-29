@@ -15,6 +15,6 @@
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\Release\Foundatio.MetricsNET.pdb" target="lib\net45" />
+    <file src="bin\Release\Foundatio.MetricsNET.pdb" target="lib\net451" />
   </files>
 </package>
