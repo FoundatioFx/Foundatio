@@ -42,8 +42,7 @@ namespace Foundatio.Logging {
             }
 
             if (exceptions != null && exceptions.Count > 0)
-                throw new AggregateException(
-                    message: "An error occurred while writing to logger(s).", innerExceptions: exceptions);
+                throw new AggregateException("An error occurred while writing to logger(s).", exceptions);
         }
 
         public bool IsEnabled(LogLevel logLevel) {
@@ -64,9 +63,7 @@ namespace Foundatio.Logging {
             }
 
             if (exceptions != null && exceptions.Count > 0)
-                throw new AggregateException(
-                    message: "An error occurred while writing to logger(s).",
-                    innerExceptions: exceptions);
+                throw new AggregateException("An error occurred while writing to logger(s).", exceptions);
 
             return false;
         }
@@ -87,17 +84,15 @@ namespace Foundatio.Logging {
                     var disposable = loggers[index].BeginScope(scopeFactory, state);
                     scope.SetDisposable(index, disposable);
                 } catch (Exception ex) {
-                    if (exceptions == null) {
+                    if (exceptions == null)
                         exceptions = new List<Exception>();
-                    }
 
                     exceptions.Add(ex);
                 }
             }
 
             if (exceptions != null && exceptions.Count > 0)
-                throw new AggregateException(
-                    message: "An error occurred while writing to logger(s).", innerExceptions: exceptions);
+                throw new AggregateException("An error occurred while writing to logger(s).", exceptions);
 
             return scope;
         }
@@ -129,9 +124,8 @@ namespace Foundatio.Logging {
             private readonly IDisposable[] _disposable;
 
             public Scope(int count) {
-                if (count > 2) {
+                if (count > 2)
                     _disposable = new IDisposable[count - 2];
-                }
             }
 
             public void SetDisposable(int index, IDisposable disposable) {
