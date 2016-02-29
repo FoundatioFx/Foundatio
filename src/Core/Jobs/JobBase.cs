@@ -25,7 +25,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; private set; }
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            using (_logger.BeginScope(_jobName)) {
+            using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                 _logger.Trace("Job run \"{0}\" starting...", _jobName);
 
                 using (var lockValue = await GetJobLockAsync().AnyContext()) {
@@ -62,7 +62,7 @@ namespace Foundatio.Jobs {
         public async Task RunContinuousAsync(TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
 
-            using (_logger.BeginScope(_jobName)) {
+            using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                 _logger.Info("Starting continuous job type \"{0}\" on machine \"{1}\"...", GetType().Name, Environment.MachineName);
 
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {

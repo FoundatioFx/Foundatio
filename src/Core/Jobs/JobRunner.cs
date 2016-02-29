@@ -56,7 +56,7 @@ namespace Foundatio.Jobs {
 
                 jobName = options.JobType.Name;
 
-                using (_logger.BeginScope(s => s.Property("Job", jobName))) {
+                using (_logger.BeginScope(s => s.Property("job", jobName))) {
                     if (!(options.NoServiceProvider.HasValue && options.NoServiceProvider.Value == false))
                         ServiceProvider.SetServiceProvider(options.ServiceProviderType ?? options.JobType);
 
