@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
+using Foundatio.Logging;
 using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 
@@ -39,36 +40,31 @@ namespace Foundatio.Jobs {
         Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken));
         Task HandleItemAsync(WorkItemContext context);
         bool AutoRenewLockOnProgress { get; set; }
-        bool EnableLogging { get; set; }
     }
 
     public interface IOneTimeWorkItemHandler : IWorkItemHandler {
         string GetKey();
     }
 
-    public abstract class OneTimeWorkItemHandlerBase : IOneTimeWorkItemHandler {
-        public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
-            return Task.FromResult(Disposable.EmptyLock);
-        }
-
-        public bool AutoRenewLockOnProgress { get; set; }
-        public bool EnableLogging { get; set; } = true;
-        public abstract Task HandleItemAsync(WorkItemContext context);
+    public abstract class OneTimeWorkItemHandlerBase : WorkItemHandlerBase, IOneTimeWorkItemHandler {
+        public OneTimeWorkItemHandlerBase(ILoggerFactory loggerFactory = null) : base(loggerFactory) {}
 
         public abstract string GetKey();
-
-        protected int CalculateProgress(long total, long completed, int startProgress = 0, int endProgress = 100) {
-            return startProgress + (int)((100 * (double)completed / total) * (((double)endProgress - startProgress) / 100));
-        }
     }
 
     public abstract class WorkItemHandlerBase : IWorkItemHandler {
+        protected readonly ILogger _logger;
+
+        public WorkItemHandlerBase(ILoggerFactory loggerFactory = null) {
+            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        }
+
         public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.FromResult(Disposable.EmptyLock);
         }
-
-        public bool EnableLogging { get; set; } = true;
+        
         public bool AutoRenewLockOnProgress { get; set; }
+
         public abstract Task HandleItemAsync(WorkItemContext context);
         
         protected int CalculateProgress(long total, long completed, int startProgress = 0, int endProgress = 100) {
@@ -76,22 +72,14 @@ namespace Foundatio.Jobs {
         }
     }
 
-    public class DelegateWorkItemHandler : IWorkItemHandler {
+    public class DelegateWorkItemHandler : WorkItemHandlerBase {
         private readonly Func<WorkItemContext, Task> _handler;
 
-        public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler) {
+        public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _handler = handler;
         }
 
-        public bool EnableLogging { get; set; } = true;
-
-        public bool AutoRenewLockOnProgress { get; set; }
-
-        public Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
-            return Task.FromResult(Disposable.EmptyLock);
-        }
-
-        public Task HandleItemAsync(WorkItemContext context) {
+        public override Task HandleItemAsync(WorkItemContext context) {
             if (_handler == null)
                 return TaskHelper.Completed();
 

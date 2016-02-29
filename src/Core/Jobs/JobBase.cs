@@ -12,7 +12,7 @@ namespace Foundatio.Jobs {
         private readonly string _jobName;
         private bool _runningContinuous = false;
 
-        public JobBase(ILoggerFactory loggerFactory) {
+        public JobBase(ILoggerFactory loggerFactory = null) {
             _jobName = TypeHelper.GetTypeDisplayName(GetType());
             _logger = loggerFactory?.CreateLogger(_jobName) ?? NullLogger.Instance;
             JobId = Guid.NewGuid().ToString("N").Substring(0, 10);
