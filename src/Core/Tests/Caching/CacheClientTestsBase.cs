@@ -10,6 +10,7 @@ using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
+using System.Linq;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
@@ -194,6 +195,10 @@ namespace Foundatio.Tests.Caching {
 
                 Assert.Equal(3, (await scopedCache1.GetAsync<int>("nested:test")).Value);
                 Assert.Equal(3, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
+
+                // ensure GetAllAsync returns unscoped keys
+                Assert.Equal("test", (await scopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
+                Assert.Equal("test", (await nestedScopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
 
                 await scopedCache2.SetAsync("test", 1);
 

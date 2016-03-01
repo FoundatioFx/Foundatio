@@ -1,13 +1,18 @@
-﻿using System;
+﻿using Foundatio.Extensions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public class ScopedCacheClient : ICacheClient {
+        private readonly string _keyPrefix;
+
         public ScopedCacheClient(ICacheClient client, string scope) {
             UnscopedCache = client ?? new NullCacheClient();
-            Scope = scope;
+            Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
+
+            _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
         }
 
         public ICacheClient UnscopedCache { get; private set; }
@@ -15,18 +20,22 @@ namespace Foundatio.Caching {
         public string Scope { get; private set; }
 
         protected string GetScopedCacheKey(string key) {
-            return String.Concat(Scope, ":", key);
+            return String.Concat(_keyPrefix, key);
         }
 
-        protected IEnumerable<string> GetScopedCacheKey(IEnumerable<string> keys) {
+        protected IEnumerable<string> GetScopedCacheKeys(IEnumerable<string> keys) {
             return keys?.Select(GetScopedCacheKey);
         }
-        
+
+        protected string UnscopeCacheKey(string scopedKey) {
+            return scopedKey?.Substring(_keyPrefix.Length);
+        }
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null)
                 return RemoveByPrefixAsync(String.Empty);
 
-            return UnscopedCache.RemoveAllAsync(GetScopedCacheKey(keys));
+            return UnscopedCache.RemoveAllAsync(GetScopedCacheKeys(keys));
         }
 
         public Task<int> RemoveByPrefixAsync(string prefix) {
@@ -37,8 +46,14 @@ namespace Foundatio.Caching {
             return UnscopedCache.GetAsync<T>(GetScopedCacheKey(key));
         }
 
-        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            return UnscopedCache.GetAllAsync<T>(GetScopedCacheKey(keys));
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
+            var scopedValueMap = await UnscopedCache.GetAllAsync<T>(GetScopedCacheKeys(keys)).AnyContext();
+            var valueMap = new Dictionary<string, CacheValue<T>>();
+
+            foreach (var kvp in scopedValueMap)
+                valueMap[UnscopeCacheKey(kvp.Key)] = kvp.Value;
+
+            return valueMap;
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
