@@ -8,6 +8,10 @@ namespace Foundatio.Metrics {
         Task TimerAsync(string name, int milliseconds);
     }
 
+    public interface IBufferedMetricsClient : IMetricsClient {
+        Task FlushAsync();
+    }
+
     public static class MetricsClientExtensions {
         public static IDisposable StartTimer(this IMetricsClient client, string name) {
             return new MetricTimer(name, client);

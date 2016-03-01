@@ -11,7 +11,7 @@ using Foundatio.Utility;
 using Nito.AsyncEx;
 
 namespace Foundatio.Metrics {
-    public abstract class CacheBucketMetricsClientBase : IMetricsClient, IMetricsClientStats {
+    public abstract class CacheBucketMetricsClientBase : IBufferedMetricsClient, IMetricsClientStats {
         private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>(); 
         private readonly ConcurrentDictionary<string, AsyncManualResetEvent> _counterEvents = new ConcurrentDictionary<string, AsyncManualResetEvent>();
         private readonly string _prefix;
