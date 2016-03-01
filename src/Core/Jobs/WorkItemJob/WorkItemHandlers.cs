@@ -41,17 +41,7 @@ namespace Foundatio.Jobs {
         Task HandleItemAsync(WorkItemContext context);
         bool AutoRenewLockOnProgress { get; set; }
     }
-
-    public interface IOneTimeWorkItemHandler : IWorkItemHandler {
-        string GetKey();
-    }
-
-    public abstract class OneTimeWorkItemHandlerBase : WorkItemHandlerBase, IOneTimeWorkItemHandler {
-        public OneTimeWorkItemHandlerBase(ILoggerFactory loggerFactory = null) : base(loggerFactory) {}
-
-        public abstract string GetKey();
-    }
-
+    
     public abstract class WorkItemHandlerBase : IWorkItemHandler {
         protected readonly ILogger _logger;
 
