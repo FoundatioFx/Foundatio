@@ -1,8 +1,8 @@
-﻿using Foundatio.Extensions;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 
 namespace Foundatio.Caching {
     public class ScopedCacheClient : ICacheClient {
@@ -47,13 +47,8 @@ namespace Foundatio.Caching {
         }
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var scopedValueMap = await UnscopedCache.GetAllAsync<T>(GetScopedCacheKeys(keys)).AnyContext();
-            var valueMap = new Dictionary<string, CacheValue<T>>();
-
-            foreach (var kvp in scopedValueMap)
-                valueMap[UnscopeCacheKey(kvp.Key)] = kvp.Value;
-
-            return valueMap;
+            var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetScopedCacheKeys(keys)).AnyContext();
+            return scopedDictionary.ToDictionary(kvp => UnscopeCacheKey(kvp.Key), kvp => kvp.Value);
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
