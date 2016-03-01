@@ -15,7 +15,6 @@ namespace Foundatio.Jobs {
             _messageBus = messageBus;
             _handlers = handlers;
             AutoComplete = true;
-            EnableLogging = false;
         }
         
         protected async override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {

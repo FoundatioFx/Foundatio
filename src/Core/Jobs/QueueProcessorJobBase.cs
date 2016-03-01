@@ -19,8 +19,6 @@ namespace Foundatio.Jobs {
 
         protected bool AutoComplete { get; set; }
 
-        protected bool EnableLogging { get; set; } = true;
-
         protected sealed override Task<ILock> GetJobLockAsync() {
             return base.GetJobLockAsync();
         }
@@ -50,8 +48,7 @@ namespace Foundatio.Jobs {
                     return JobResult.SuccessWithMessage("Unable to acquire queue item lock.");
                 }
 
-                if (EnableLogging)
-                    _logger.Info("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
+                _logger.Info("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
 
                 try {
                     var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, context.CancellationToken)).AnyContext();
@@ -61,22 +58,16 @@ namespace Foundatio.Jobs {
 
                     if (result.IsSuccess) {
                         await queueEntry.CompleteAsync().AnyContext();
-
-                        if (EnableLogging)
-                            _logger.Info("Completed {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
+                        _logger.Info("Completed {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
                     } else {
                         await queueEntry.AbandonAsync().AnyContext();
-
-                        if (EnableLogging)
-                            _logger.Warn("Abandoned {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
+                        _logger.Warn("Abandoned {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
                     }
 
                     return result;
                 } catch (Exception ex) {
                     await queueEntry.AbandonAsync().AnyContext();
-
-                    if (EnableLogging)
-                        _logger.Error(ex, "Error processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
+                    _logger.Error(ex, "Error processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
 
                     throw;
                 }
