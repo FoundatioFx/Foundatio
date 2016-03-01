@@ -131,6 +131,7 @@
     <Compile Include="Queues\QueueBase.cs" />
     <Compile Include="Queues\QueueBehaviour.cs" />
     <Compile Include="Queues\QueueEntry.cs" />
+    <Compile Include="Queues\QueueStatSummary.cs" />
     <Compile Include="Serializer\IHaveSerializer.cs" />
     <Compile Include="Serializer\ISerializer.cs" />
     <Compile Include="Serializer\JsonNetSerializer.cs" />
