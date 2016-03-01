@@ -10,9 +10,9 @@ namespace Foundatio.Caching {
 
         public ScopedCacheClient(ICacheClient client, string scope) {
             UnscopedCache = client ?? new NullCacheClient();
-            Scope = scope;
+            Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
 
-            _keyPrefix = scope != null ? String.Concat(scope, ":") : String.Empty;
+            _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
         }
 
         public ICacheClient UnscopedCache { get; private set; }
