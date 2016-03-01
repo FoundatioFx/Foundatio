@@ -6,9 +6,13 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public class ScopedCacheClient : ICacheClient {
+        private readonly string _keyPrefix;
+
         public ScopedCacheClient(ICacheClient client, string scope) {
             UnscopedCache = client ?? new NullCacheClient();
             Scope = scope;
+
+            _keyPrefix = scope != null ? String.Concat(scope, ":") : String.Empty;
         }
 
         public ICacheClient UnscopedCache { get; private set; }
@@ -16,21 +20,15 @@ namespace Foundatio.Caching {
         public string Scope { get; private set; }
 
         protected string GetScopedCacheKey(string key) {
-            return String.Concat(Scope, ":", key);
+            return String.Concat(_keyPrefix, key);
         }
 
         protected IEnumerable<string> GetScopedCacheKeys(IEnumerable<string> keys) {
             return keys?.Select(GetScopedCacheKey);
         }
 
-        protected string GetUnscopedCacheKey(string scopedKey) {
-            int i = scopedKey.IndexOf(':');
-
-            if (-1 < i && i < (scopedKey.Length - 1)) {
-                return scopedKey.Substring(i + 1);
-            }
-
-            return scopedKey;
+        protected string UnscopeCacheKey(string scopedKey) {
+            return scopedKey?.Substring(_keyPrefix.Length);
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -53,7 +51,7 @@ namespace Foundatio.Caching {
             var valueMap = new Dictionary<string, CacheValue<T>>();
 
             foreach (var kvp in scopedValueMap)
-                valueMap[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+                valueMap[UnscopeCacheKey(kvp.Key)] = kvp.Value;
 
             return valueMap;
         }
