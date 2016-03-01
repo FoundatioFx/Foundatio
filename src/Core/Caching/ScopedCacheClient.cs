@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Foundatio.Extensions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -18,15 +19,25 @@ namespace Foundatio.Caching {
             return String.Concat(Scope, ":", key);
         }
 
-        protected IEnumerable<string> GetScopedCacheKey(IEnumerable<string> keys) {
+        protected IEnumerable<string> GetScopedCacheKeys(IEnumerable<string> keys) {
             return keys?.Select(GetScopedCacheKey);
         }
-        
+
+        protected string GetUnscopedCacheKey(string scopedKey) {
+            int i = scopedKey.IndexOf(':');
+
+            if (-1 < i && i < (scopedKey.Length - 1)) {
+                return scopedKey.Substring(i + 1);
+            }
+
+            return scopedKey;
+        }
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null)
                 return RemoveByPrefixAsync(String.Empty);
 
-            return UnscopedCache.RemoveAllAsync(GetScopedCacheKey(keys));
+            return UnscopedCache.RemoveAllAsync(GetScopedCacheKeys(keys));
         }
 
         public Task<int> RemoveByPrefixAsync(string prefix) {
@@ -37,8 +48,14 @@ namespace Foundatio.Caching {
             return UnscopedCache.GetAsync<T>(GetScopedCacheKey(key));
         }
 
-        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            return UnscopedCache.GetAllAsync<T>(GetScopedCacheKey(keys));
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
+            var scopedValueMap = await UnscopedCache.GetAllAsync<T>(GetScopedCacheKeys(keys)).AnyContext();
+            var valueMap = new Dictionary<string, CacheValue<T>>();
+
+            foreach (var kvp in scopedValueMap)
+                valueMap[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+
+            return valueMap;
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
