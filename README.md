@@ -249,7 +249,7 @@ Allows you to run a long running process (in process or out of process) with out
   container.RegisterSingleton<IQueue<WorkItemData>>(() => new InMemoryQueue<WorkItemData>());
   
   // The job runner will automatically look for and run all registered WorkItemHandlers.
-  await JobRunner.RunContinuousAsync<WorkItemJob>(instanceCount: 2);
+  await new JobRunner().RunContinuousAsync<WorkItemJob>(instanceCount: 2);
   ```
   
   ```
@@ -288,15 +288,10 @@ string content = await storage.GetFileContentsAsync("test.txt")
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Metrics)
 
-We provide two different metric implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/IMetricsClient.cs):
+We provide multiple implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/IMetricsClient.cs):
 
-1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation. This metrics implementation is only valid for the lifetime of the process. It's worth noting that this metrics client also has the ability to display the metrics to a `TextWriter` on a timer or by calling `DisplayStats(TextWriter)`.
-  ```
- Counter: c1 Value: 1            Rate: 48.89/s     Rate: 47.97/s
-    Gauge: g1 Value: 2.53          Avg: 2.53         Max: 2.53
-    Timing: t1   Min: 50,788ms      Avg: 50,788ms     Max: 50,788ms
-  ```
-
+1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
+1. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
 2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 3. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/etishor/Metrics.NET) implementation.
 
@@ -316,6 +311,5 @@ We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapH
 ## Roadmap
 
 This is a list of high level things that we are planning to do:
-- Async Support **(In Progress: Some of our implementations are already fully Async)** 
 - dnx/vnext support
 - [Let us know what you'd like us to work on!](https://github.com/exceptionless/Foundatio/issues)
