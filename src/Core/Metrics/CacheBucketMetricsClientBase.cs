@@ -119,6 +119,8 @@ namespace Foundatio.Metrics {
 
                 foreach (var timing in timings)
                     await SubmitTimingAsync(timing.Name, timing.Minute, timing.Count, timing.Total, timing.Max, timing.Min).AnyContext();
+
+                // TODO: Aggregate data into bigger buckets of time for longer term storage
             } finally {
                 _sendingMetrics = false;
             }
@@ -204,9 +206,9 @@ namespace Foundatio.Metrics {
             return !cancellationToken.IsCancellationRequested;
         }
 
-        public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null) {
+        public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddDays(-1);
+                start = DateTime.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
                 end = DateTime.UtcNow;
@@ -214,7 +216,7 @@ namespace Foundatio.Metrics {
             var countBuckets = GetMetricBuckets(MetricNames.Counter, name, start.Value, end.Value, TimeSpan.FromMinutes(1));
             var countResults = await _cache.GetAllAsync<int>(countBuckets.Select(k => k.Key)).AnyContext();
 
-            var stats = new List<CounterStat>();
+            ICollection<CounterStat> stats = new List<CounterStat>();
             for (int i = 0; i < countBuckets.Count; i++) {
                 string countKey = countBuckets[i].Key;
 
@@ -224,12 +226,17 @@ namespace Foundatio.Metrics {
                 });
             }
 
+            stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new CounterStat {
+                Time = d,
+                Count = s.Sum(i => i.Count)
+            }, dataPoints);
+
             return new CounterStatSummary(name, stats, start.Value, end.Value);
         }
 
-        public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null) {
+        public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddDays(-1);
+                start = DateTime.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
                 end = DateTime.UtcNow;
@@ -240,7 +247,7 @@ namespace Foundatio.Metrics {
             var maxResults = await _cache.GetAllAsync<double>(maxBuckets.Select(k => k.Key)).AnyContext();
             var lastResults = await _cache.GetAllAsync<double>(lastBuckets.Select(k => k.Key)).AnyContext();
 
-            var stats = new List<GaugeStat>();
+            ICollection<GaugeStat> stats = new List<GaugeStat>();
             for (int i = 0; i < maxBuckets.Count; i++) {
                 string maxKey = maxBuckets[i].Key;
                 string lastKey = lastBuckets[i].Key;
@@ -252,12 +259,18 @@ namespace Foundatio.Metrics {
                 });
             }
 
+            stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new GaugeStat {
+                Time = d,
+                Last = s.Last().Last,
+                Max = s.Max(i => i.Max)
+            }, dataPoints);
+
             return new GaugeStatSummary(stats, start.Value, end.Value);
         }
 
-        public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null) {
+        public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddDays(-1);
+                start = DateTime.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
                 end = DateTime.UtcNow;
@@ -272,7 +285,7 @@ namespace Foundatio.Metrics {
             var minResults = await _cache.GetAllAsync<int>(minBuckets.Select(k => k.Key)).AnyContext();
             var maxResults = await _cache.GetAllAsync<int>(maxBuckets.Select(k => k.Key)).AnyContext();
 
-            var stats = new List<TimingStat>();
+            ICollection<TimingStat> stats = new List<TimingStat>();
             for (int i = 0; i < countBuckets.Count; i++) {
                 string countKey = countBuckets[i].Key;
                 string durationKey = durationBuckets[i].Key;
@@ -287,6 +300,14 @@ namespace Foundatio.Metrics {
                     MaxDuration = maxResults[maxKey].Value
                 });
             }
+
+            stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new TimingStat {
+                Time = d,
+                Count = s.Sum(i => i.Count),
+                MinDuration = s.Min(i => i.MinDuration),
+                MaxDuration = s.Max(i => i.MaxDuration),
+                TotalDuration = s.Sum(i => i.TotalDuration)
+            }, dataPoints);
 
             return new TimingStatSummary(stats, start.Value, end.Value);
         }

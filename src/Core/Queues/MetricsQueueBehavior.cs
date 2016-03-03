@@ -3,15 +3,14 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Metrics;
-using Nito.AsyncEx;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
         private readonly string _metricsPrefix;
         private readonly IMetricsClient _metricsClient;
-        private DateTime _nextQueueCountTime = DateTime.MinValue;
-        private readonly AsyncLock _countLock = new AsyncLock();
         private readonly ILogger _logger;
+        private readonly ScheduledTimer _timer;
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger.Instance;
@@ -22,27 +21,21 @@ namespace Foundatio.Queues {
 
             metricsPrefix += typeof(T).Name.ToLowerInvariant();
             _metricsPrefix = metricsPrefix;
+            _timer = new ScheduledTimer(ReportQueueCountAsync, minimumIntervalTime: TimeSpan.FromMilliseconds(500), loggerFactory: loggerFactory);
         }
 
-        private async Task ReportQueueCountAsync() {
-            if (_nextQueueCountTime > DateTime.UtcNow)
-                return;
+        private async Task<DateTime?> ReportQueueCountAsync() {
+            var stats = await _queue.GetQueueStatsAsync().AnyContext();
+            _logger.Trace("Reporting queue count");
 
-            using (await _countLock.LockAsync()) {
-                if (_nextQueueCountTime > DateTime.UtcNow)
-                    return;
+            await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
 
-                _nextQueueCountTime = DateTime.UtcNow.AddMilliseconds(500);
-                var stats = await _queue.GetQueueStatsAsync().AnyContext();
-                _logger.Trace("Reporting queue count");
-
-                await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
-            }
+            return null;
         }
 
         protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
             await base.OnEnqueued(sender, enqueuedEventArgs).AnyContext();
-            await ReportQueueCountAsync().AnyContext();
+            _timer.Run();
 
             string customMetricName = GetCustomMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -53,7 +46,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
             await base.OnDequeued(sender, dequeuedEventArgs).AnyContext();
-            await ReportQueueCountAsync().AnyContext();
+            _timer.Run();
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
@@ -76,7 +69,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
             await base.OnCompleted(sender, completedEventArgs).AnyContext();
-            await ReportQueueCountAsync().AnyContext();
+            _timer.Run();
 
             var metadata = completedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)
@@ -95,7 +88,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
             await base.OnAbandoned(sender, abandonedEventArgs).AnyContext();
-            await ReportQueueCountAsync().AnyContext();
+            _timer.Run();
 
             var metadata = abandonedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)

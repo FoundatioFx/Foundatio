@@ -5,9 +5,9 @@ using Foundatio.Queues;
 
 namespace Foundatio.Metrics {
     public interface IMetricsClientStats {
-        Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null);
-        Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null);
-        Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null);
+        Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20);
+        Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20);
+        Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20);
     }
 
     public static class MetricsClientStatsExtensions {
@@ -21,8 +21,8 @@ namespace Foundatio.Metrics {
             return result.Last;
         }
 
-        public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, DateTime? start = null, DateTime? end = null) {
-            var countTask = stats.GetGaugeStatsAsync($"{name}.counter", start, end);
+        public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
+            var countTask = stats.GetGaugeStatsAsync($"{name}.count", start, end);
             var enqueuedTask = stats.GetCounterStatsAsync($"{name}.enqueued", start, end);
             var queueTimeTask = stats.GetTimerStatsAsync($"{name}.queuetime", start, end);
             var dequeuedTask = stats.GetCounterStatsAsync($"{name}.dequeued", start, end);

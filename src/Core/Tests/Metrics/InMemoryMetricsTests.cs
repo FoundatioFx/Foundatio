@@ -4,6 +4,8 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
+using Foundatio.Queues;
+using Foundatio.Tests.Queue;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -41,6 +43,30 @@ namespace Foundatio.Tests.Metrics {
 
             var counter = await metrics.GetCounterStatsAsync("c1");
             Assert.Equal(100, counter.Count);
+        }
+
+        [Fact]
+        public async Task CanGetQueueMetrics() {
+            var metrics = new InMemoryMetricsClient(loggerFactory: Log);
+            var queue = new InMemoryQueue<SimpleWorkItem>(behaviors: new[] { new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log) }, loggerFactory: Log);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
+            await Task.Delay(50);
+            var entry = await queue.DequeueAsync(TimeSpan.Zero);
+            await Task.Delay(30);
+            await entry.CompleteAsync();
+            await Task.Delay(500); // give queue metrics time
+
+            await metrics.FlushAsync();
+
+            var queueStats = await metrics.GetQueueStatsAsync("simpleworkitem");
+            Assert.Equal(1, queueStats.Count.Max);
+            Assert.Equal(0, queueStats.Count.Last);
+            Assert.Equal(1, queueStats.Enqueued.Count);
+            Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 100);
+            Assert.Equal(1, queueStats.Dequeued.Count);
+            Assert.Equal(1, queueStats.Completed.Count);
+            Assert.InRange(queueStats.ProcessTime.AverageDuration, 30, 100);
         }
 
 #pragma warning disable 4014

@@ -60,6 +60,7 @@
     <Compile Include="Caching\InMemoryCacheClient.cs" />
     <Compile Include="Caching\NullCacheClient.cs" />
     <Compile Include="Caching\ScopedCacheClient.cs" />
+    <Compile Include="Extensions\CollectionExtensions.cs" />
     <Compile Include="Extensions\ConcurrentQueueExtensions.cs" />
     <Compile Include="Extensions\EnumerableExtensions.cs" />
     <Compile Include="Extensions\EnumExtensions.cs" />
@@ -153,6 +154,7 @@
     <Compile Include="Utility\MaintenanceBase.cs" />
     <Compile Include="Utility\PathHelper.cs" />
     <Compile Include="Utility\Run.cs" />
+    <Compile Include="Utility\ScheduledTimer.cs" />
     <Compile Include="Utility\TaskHelper.cs" />
     <Compile Include="Utility\TraceTextWriter.cs" />
     <Compile Include="Utility\TypeHelper.cs" />
