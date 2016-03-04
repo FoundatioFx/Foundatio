@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Foundatio.Metrics {
+    [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count}")]
     public class TimingStat {
         public DateTime Time { get; set; }
         public int Count { get; set; }
@@ -12,6 +14,7 @@ namespace Foundatio.Metrics {
         public double AverageDuration => (double)TotalDuration / Count;
     }
 
+    [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
     public class TimingStatSummary {
         public TimingStatSummary(ICollection<TimingStat> stats, DateTime start, DateTime end) {
             Stats = stats;

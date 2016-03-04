@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Foundatio.Logging.Xunit {
     public class LogEntry {
@@ -15,6 +16,17 @@ namespace Foundatio.Logging.Xunit {
 
         public override string ToString() {
             return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", CategoryName, " - ", Message);
+        }
+
+        public string ToString(bool useFullCategory) {
+            var category = CategoryName;
+            if (!useFullCategory) {
+                var lastDot = category.LastIndexOf('.');
+                if (lastDot >= 0)
+                    category = category.Substring(lastDot + 1);
+            }
+
+            return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", category, " - ", Message);
         }
     }
 }

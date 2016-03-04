@@ -27,7 +27,7 @@ namespace Foundatio.Logging.Xunit {
                 return;
 
             try {
-                _testOutputHelper.WriteLine(logEntry.ToString());
+                _testOutputHelper.WriteLine(logEntry.ToString(false));
             } catch (Exception) { }
         }
 

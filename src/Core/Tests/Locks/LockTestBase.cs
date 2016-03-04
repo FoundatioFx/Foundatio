@@ -87,6 +87,8 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task LockOneAtATime() {
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+
             var locker = GetLockProvider();
             if (locker == null)
                 return;

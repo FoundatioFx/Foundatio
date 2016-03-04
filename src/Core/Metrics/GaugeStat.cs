@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Foundatio.Metrics {
+    [DebuggerDisplay("Time: {Time} Max: {Max} Last: {Last}")]
     public class GaugeStat {
         public DateTime Time { get; set; }
         public double Max { get; set; }
         public double Last { get; set; }
     }
 
+    [DebuggerDisplay("Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}")]
     public class GaugeStatSummary {
         public GaugeStatSummary(ICollection<GaugeStat> stats, DateTime start, DateTime end) {
             Stats = stats;

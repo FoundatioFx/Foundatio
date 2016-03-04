@@ -51,9 +51,11 @@ namespace Foundatio.Lock {
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Trace("AcquireAsync: {name}", name);
+            _logger.Trace(() => $"AcquireAsync Name: {name} WillWait: {!cancellationToken.IsCancellationRequested}");
 
-            EnsureTopicSubscription();
+            if (!cancellationToken.IsCancellationRequested)
+                EnsureTopicSubscription();
+
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
             
@@ -75,7 +77,7 @@ namespace Foundatio.Lock {
 
                 _logger.Trace("Failed to acquire lock: {name}", name);
                 if (cancellationToken.IsCancellationRequested) {
-                    _logger.Trace("Cancellation Requested");
+                    _logger.Trace("Cancellation requested");
                     break;
                 }
 

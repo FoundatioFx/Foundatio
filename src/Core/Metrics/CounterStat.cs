@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Foundatio.Extensions;
 
 namespace Foundatio.Metrics {
+    [DebuggerDisplay("Time: {Time} Count: {Count}")]
     public class CounterStat {
         public DateTime Time { get; set; }
         public long Count { get; set; }
     }
 
+    [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count}")]
     public class CounterStatSummary {
         public CounterStatSummary(string name, ICollection<CounterStat> stats, DateTime start, DateTime end) {
             Name = name;
