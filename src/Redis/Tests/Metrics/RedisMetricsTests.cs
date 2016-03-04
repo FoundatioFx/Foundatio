@@ -1,58 +1,50 @@
 ﻿using System;
-using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Logging;
-using Foundatio.Logging.Xunit;
+using Foundatio.Metrics;
 using Foundatio.Redis.Metrics;
+using Foundatio.Tests.Metrics;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Metrics {
-    public class RedisMetricsTests : TestWithLoggingBase {
+    public class RedisMetricsTests : MetricsClientTestBase, IDisposable {
         public RedisMetricsTests(ITestOutputHelper output) : base(output) { }
 
-        [Fact]
-        public async Task CanIncrementCounter() {
-            var metrics = new RedisMetricsClient(SharedConnection.GetMuxer());
-            FlushAll();
-
-            await metrics.CounterAsync("c1");
-            await metrics.FlushAsync();
-            var counter = await metrics.GetCounterStatsAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(1, counter.Count);
-
-            await metrics.CounterAsync("c1", 5);
-            await metrics.FlushAsync();
-            counter = await metrics.GetCounterStatsAsync("c1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(6, counter.Count);
-
-            await metrics.GaugeAsync("g1", 5.34);
-            await metrics.FlushAsync();
-            var gauge = await metrics.GetGaugeStatsAsync("g1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(5.34, gauge.Last);
-            Assert.Equal(5.34, gauge.Max);
-
-            await metrics.GaugeAsync("g1", 2.534);
-            await metrics.FlushAsync();
-            gauge = await metrics.GetGaugeStatsAsync("g1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(2.534, gauge.Last);
-            Assert.Equal(5.34, gauge.Max);
-
-            await metrics.TimerAsync("t1", 50788);
-            await metrics.FlushAsync();
-            var timer = await metrics.GetTimerStatsAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(1, timer.Count);
-            Assert.Equal(50788, timer.TotalDuration);
-
-            await metrics.TimerAsync("t1", 98);
-            await metrics.TimerAsync("t1", 102);
-            await metrics.FlushAsync();
-            timer = await metrics.GetTimerStatsAsync("t1", DateTime.UtcNow.AddMinutes(-5), DateTime.UtcNow);
-            Assert.Equal(3, timer.Count);
-            Assert.Equal(50788 + 98 + 102, timer.TotalDuration);
+        public override IMetricsClient GetMetricsClient(bool buffered = false) {
+            return new RedisMetricsClient(SharedConnection.GetMuxer(), buffered, loggerFactory: Log);
         }
 
-        private void FlushAll() {
+        [Fact]
+        public override Task CanSetGaugesAsync() {
+            return base.CanSetGaugesAsync();
+        }
+
+        [Fact]
+        public override Task CanIncrementCounter() {
+            return base.CanIncrementCounter();
+        }
+
+        [Fact]
+        public override Task CanWaitForCounter() {
+            return base.CanWaitForCounter();
+        }
+
+        [Fact]
+        public override Task CanGetBufferedQueueMetrics() {
+            return base.CanGetBufferedQueueMetrics();
+        }
+
+        [Fact]
+        public override Task CanIncrementBufferedCounter() {
+            return base.CanIncrementBufferedCounter();
+        }
+
+        [Fact]
+        public override Task CanSendBufferedMetrics() {
+            return base.CanSendBufferedMetrics();
+        }
+
+        public void Dispose() {
             var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
             if (endpoints.Length == 0)
                 return;
@@ -64,26 +56,6 @@ namespace Foundatio.Redis.Tests.Metrics {
                     server.FlushAllDatabases();
                 } catch (Exception) { }
             }
-        }
-
-        private int CountAllKeys() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return 0;
-
-            int count = 0;
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    var keys = server.Keys().ToArray();
-                    foreach (var key in keys)
-                        _logger.Info(key);
-                    count += keys.Length;
-                } catch (Exception) { }
-            }
-
-            return count;
         }
     }
 }
