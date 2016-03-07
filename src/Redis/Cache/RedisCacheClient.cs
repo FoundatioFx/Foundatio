@@ -22,14 +22,14 @@ namespace Foundatio.Caching {
             _connectionMultiplexer = connectionMultiplexer;
             _serializer = serializer ?? new JsonNetSerializer();
             
-            var setIfLower = LuaScript.Prepare(SET_IF_HIGHER);
-            var setIfHigher = LuaScript.Prepare(SET_IF_LOWER);
+            var setIfLower = LuaScript.Prepare(SET_IF_LOWER);
+            var setIfHigher = LuaScript.Prepare(SET_IF_HIGHER);
             var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
             var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
 
             foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                _setIfHigherScript = setIfLower.Load(_connectionMultiplexer.GetServer(endpoint));
-                _setIfLowerScript = setIfHigher.Load(_connectionMultiplexer.GetServer(endpoint));
+                _setIfHigherScript = setIfHigher.Load(_connectionMultiplexer.GetServer(endpoint));
+                _setIfLowerScript = setIfLower.Load(_connectionMultiplexer.GetServer(endpoint));
                 _incrByAndExpireScript = incrByAndExpire.Load(_connectionMultiplexer.GetServer(endpoint));
                 _delByWildcardScript = delByWildcard.Load(_connectionMultiplexer.GetServer(endpoint));
             }
@@ -219,7 +219,7 @@ if c then
   if tonumber(@value) > c then
     redis.call('set', @key, @value)
     if (@expires) then
-      redis.call('expire', @key, @expires)
+      redis.call('expire', @key, math.ceil(@expires))
     end
     return tonumber(@value) - c
   else
@@ -228,7 +228,7 @@ if c then
 else
   redis.call('set', @key, @value)
   if (@expires) then
-    redis.call('expire', @key, @expires)
+    redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(@value)
 end";
@@ -238,7 +238,7 @@ if c then
   if tonumber(@value) > c then
     redis.call('set', @key, @value)
     if (@expires) then
-      redis.call('expire', @key, @expires)
+      redis.call('expire', @key, math.ceil(@expires))
     end
     return tonumber(@value) - c
   else
@@ -247,16 +247,16 @@ if c then
 else
   redis.call('set', @key, @value)
   if (@expires) then
-    redis.call('expire', @key, @expires)
+    redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(@value)
 end";
 
         private const string INCRBY_AND_EXPIRE = @"local v = redis.call('incrby', @key, @value)
-if v == @value and @expires then
-  redis.call('expire', @key, @expires)
+if (@expires) then
+  redis.call('expire', @key, math.ceil(@expires))
 end
-return v";
+return tonumber(v)";
 
         private const string DEL_BY_WILDCARD = @"return redis.call('del', unpack(redis.call('keys', @keys)))";
     }

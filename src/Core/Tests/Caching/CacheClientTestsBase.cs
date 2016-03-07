@@ -293,6 +293,27 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanIncrementAndExpire() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                var success = await cache.SetAsync("test", 0);
+                Assert.True(success);
+
+                var expiresIn = TimeSpan.FromSeconds(1);
+                var newVal = await cache.IncrementAsync("test", 1, expiresIn);
+
+                Assert.Equal(1, newVal);
+
+                await Task.Delay(1500);
+                Assert.False((await cache.GetAsync<int>("test")).HasValue);
+            }
+        }
+
         public virtual async Task MeasureThroughput() {
             var cacheClient = GetCacheClient();
             if (cacheClient == null)
