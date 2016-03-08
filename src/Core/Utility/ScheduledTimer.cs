@@ -29,7 +29,7 @@ namespace Foundatio.Utility {
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
-            if (!utcDate.HasValue)
+            if (!utcDate.HasValue || utcDate.Value < DateTime.UtcNow)
                 utcDate = DateTime.UtcNow;
 
             _logger.Trace(() => $"ScheduleNext called: value={utcDate}");
