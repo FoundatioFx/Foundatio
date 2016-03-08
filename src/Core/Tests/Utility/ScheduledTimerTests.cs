@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
-using Foundatio.Queues;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,9 +24,9 @@ namespace Foundatio.Tests.Utility {
                 return null;
             }, loggerFactory: Log);
 
-            timer.Run();
+            timer.ScheduleNext();
 
-            await Task.Delay(1);
+            await Task.Delay(50);
 
             Assert.Equal(1, hits);
         }
@@ -33,22 +34,31 @@ namespace Foundatio.Tests.Utility {
         [Fact]
         public async Task CanRunWithMinimumInterval() {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+            var resetEvent = new AsyncAutoResetEvent(false);
 
             int hits = 0;
-            var timer = new ScheduledTimer(async () => {
+            var timer = new ScheduledTimer(() => {
                 Interlocked.Increment(ref hits);
-                await Task.Delay(50);
-                return null;
-            }, minimumIntervalTime: TimeSpan.FromMilliseconds(50), loggerFactory: Log);
+                resetEvent.Set();
+                return Task.FromResult<DateTime?>(null);
+            }, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log);
 
-            timer.Run();
-            timer.Run();
+            timer.ScheduleNext();
+            timer.ScheduleNext();
+            timer.ScheduleNext();
 
-            await Task.Delay(1);
-
+            await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
+            var sw = Stopwatch.StartNew();
             Assert.Equal(1, hits);
 
-            await Task.Delay(100);
+            await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+            sw.Stop();
+            Assert.Equal(2, hits);
+
+            Assert.Throws<TaskCanceledException>(() => {
+                resetEvent.Wait(new CancellationTokenSource(100).Token);
+            });
+
             Assert.Equal(2, hits);
         }
 
@@ -64,7 +74,7 @@ namespace Foundatio.Tests.Utility {
             }, minimumIntervalTime: TimeSpan.FromMilliseconds(250), loggerFactory: Log);
 
             for (int i = 0; i < 5; i++) {
-                timer.Run();
+                timer.ScheduleNext();
                 await Task.Delay(5);
             }
 

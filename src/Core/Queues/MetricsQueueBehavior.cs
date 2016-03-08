@@ -29,13 +29,15 @@ namespace Foundatio.Queues {
             _logger.Trace("Reporting queue count");
 
             await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
+            await _metricsClient.GaugeAsync(GetFullMetricName("working"), stats.Working).AnyContext();
+            await _metricsClient.GaugeAsync(GetFullMetricName("deadletter"), stats.Deadletter).AnyContext();
 
             return null;
         }
 
         protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
             await base.OnEnqueued(sender, enqueuedEventArgs).AnyContext();
-            _timer.Run();
+            _timer.ScheduleNext();
 
             string customMetricName = GetCustomMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -46,7 +48,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
             await base.OnDequeued(sender, dequeuedEventArgs).AnyContext();
-            _timer.Run();
+            _timer.ScheduleNext();
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
@@ -69,7 +71,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
             await base.OnCompleted(sender, completedEventArgs).AnyContext();
-            _timer.Run();
+            _timer.ScheduleNext();
 
             var metadata = completedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)
@@ -88,7 +90,7 @@ namespace Foundatio.Queues {
 
         protected override async Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
             await base.OnAbandoned(sender, abandonedEventArgs).AnyContext();
-            _timer.Run();
+            _timer.ScheduleNext();
 
             var metadata = abandonedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)

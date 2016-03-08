@@ -28,11 +28,10 @@ namespace Foundatio.Utility {
             _timer = new Timer(s => RunCallbackAsync().GetAwaiter().GetResult(), null, dueTimeMs, Timeout.Infinite);
         }
 
-        public void Run() {
-            ScheduleNext(DateTime.UtcNow);
-        }
+        public void ScheduleNext(DateTime? utcDate = null) {
+            if (!utcDate.HasValue)
+                utcDate = DateTime.UtcNow;
 
-        public void ScheduleNext(DateTime utcDate) {
             _logger.Trace(() => $"ScheduleNext called: value={utcDate}");
 
             if (utcDate == DateTime.MaxValue) {
@@ -45,13 +44,13 @@ namespace Foundatio.Utility {
 
                 // already have an earlier scheduled time
                 if (_next > now && utcDate > _next) {
-                    _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Ticks} {_next.Ticks}");
+                    _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
                     return;
                 }
 
                 // enforce minimum interval
-                _logger.Trace(() => $"Last: {_last} Since: {_last.Subtract(utcDate)} Min interval: {_minimumInterval}");
-                if (_last != DateTime.MinValue && _last.Subtract(utcDate) < _minimumInterval) {
+                _logger.Trace(() => $"Last: {_last} Since: {_last.Subtract(utcDate.Value).TotalMilliseconds} Min interval: {_minimumInterval}");
+                if (_last != DateTime.MinValue && _last.Subtract(utcDate.Value) < _minimumInterval) {
                     _logger.Trace("Adding time due to minimum interval");
                     utcDate = _last.Add(_minimumInterval);
                 }
@@ -62,8 +61,11 @@ namespace Foundatio.Utility {
                     return;
                 }
 
-                int delay = Math.Max((int)utcDate.Subtract(now).TotalMilliseconds, 0);
-                _next = utcDate;
+                int delay = Math.Max((int)utcDate.Value.Subtract(now).TotalMilliseconds, 0);
+                _next = utcDate.Value;
+                if (_last == DateTime.MinValue)
+                    _last = _next;
+
                 _logger.Trace("Scheduling next: delay={delay}", delay);
 
                 _timer.Change(delay, Timeout.Infinite);
@@ -77,7 +79,7 @@ namespace Foundatio.Utility {
                 _last = DateTime.UtcNow;
                 if (_isRunning) {
                     _logger.Trace("Exiting run callback because its already running");
-                    Run();
+                    ScheduleNext();
                     return;
                 }
 
