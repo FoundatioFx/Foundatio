@@ -29,10 +29,11 @@ namespace Foundatio.Utility {
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
-            if (!utcDate.HasValue || utcDate.Value < DateTime.UtcNow)
-                utcDate = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            if (!utcDate.HasValue || utcDate.Value < now)
+                utcDate = now;
 
-            _logger.Trace(() => $"ScheduleNext called: value={utcDate}");
+            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value}");
 
             if (utcDate == DateTime.MaxValue) {
                 _logger.Trace("Ignoring MaxValue");
@@ -40,8 +41,6 @@ namespace Foundatio.Utility {
             }
 
             using (_lock.Lock()) {
-                var now = DateTime.UtcNow;
-
                 // already have an earlier scheduled time
                 if (_next > now && utcDate > _next) {
                     _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
