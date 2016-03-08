@@ -48,6 +48,11 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanSetExpiration();
         }
 
+        [Fact]
+        public override Task CanIncrementAndExpire() {
+            return base.CanIncrementAndExpire();
+        }
+
 
         [Fact]
         public override Task CanRemoveByPrefix() {

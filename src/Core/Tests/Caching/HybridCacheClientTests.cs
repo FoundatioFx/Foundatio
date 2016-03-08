@@ -62,6 +62,11 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanIncrementAndExpire() {
+            return base.CanIncrementAndExpire();
+        }
+
+        [Fact]
         public virtual async Task WillUseLocalCache() {
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);
