@@ -43,7 +43,9 @@ namespace Foundatio.Tests.Utility {
             }, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log);
 
             timer.ScheduleNext();
+            await Task.Delay(1);
             timer.ScheduleNext();
+            await Task.Delay(1);
             timer.ScheduleNext();
 
             await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
