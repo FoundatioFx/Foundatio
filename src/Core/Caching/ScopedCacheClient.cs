@@ -6,10 +6,13 @@ using Foundatio.Extensions;
 
 namespace Foundatio.Caching {
     public class ScopedCacheClient : ICacheClient {
-        private readonly string _keyPrefix;
+        private string _keyPrefix;
+        private bool _isLocked = false;
+        private readonly object _lock = new object();
 
-        public ScopedCacheClient(ICacheClient client, string scope) {
+        public ScopedCacheClient(ICacheClient client, string scope = null) {
             UnscopedCache = client ?? new NullCacheClient();
+            _isLocked = scope != null;
             Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
 
             _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
@@ -18,6 +21,20 @@ namespace Foundatio.Caching {
         public ICacheClient UnscopedCache { get; private set; }
 
         public string Scope { get; private set; }
+
+        public void SetScope(string scope) {
+            if (_isLocked)
+                throw new InvalidOperationException("Scope can't be changed after it has been set.");
+
+            lock (_lock) {
+                if (_isLocked)
+                    throw new InvalidOperationException("Scope can't be changed after it has been set.");
+
+                _isLocked = true;
+                Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
+                _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
+            }
+        }
 
         protected string GetScopedCacheKey(string key) {
             return String.Concat(_keyPrefix, key);
