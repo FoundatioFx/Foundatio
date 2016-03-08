@@ -41,7 +41,7 @@ The sections below contain a small subset of what's possible with Foundatio. We 
 
 Caching allows you to store and access data lightning fast, saving you exspensive operations to create or get data. We provide four different cache implementations that derive from the [`ICacheClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/ICacheClient.cs):
 
-1. [InMemoryCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property. We use this in [Exceptionless](https://github.com/exceptionless/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/exceptionless/Exceptionless/blob/master/Source/Core/Geo/MindMaxGeoIPResolver.cs).
+1. [InMemoryCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property. We use this in [Exceptionless](https://github.com/exceptionless/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/exceptionless/Exceptionless/blob/master/Source/Core/Geo/MaxMindGeoIpService.cs).
 2. [HybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Caching/HybridCacheClient.cs): This cache implementation uses the `InMemoryCacheClient` and uses the `IMessageBus` to keep the cache in sync across processes.
 3. [RedisCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
 4. [RedisHybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
@@ -293,7 +293,7 @@ We provide multiple implementations that derive from the [`IMetricsClient` inter
 1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
 1. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
 2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
-3. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/etishor/Metrics.NET) implementation.
+3. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/MetricsNet/MetricsNETClient.cs): An [Metrics.NET](https://github.com/etishor/Metrics.NET) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons. 
 
