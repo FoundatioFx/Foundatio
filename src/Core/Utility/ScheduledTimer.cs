@@ -20,7 +20,7 @@ namespace Foundatio.Utility {
             if (timerCallback == null)
                 throw new ArgumentNullException(nameof(timerCallback));
 
-            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<ScheduledTimer>();
             _timerCallback = timerCallback;
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
@@ -65,7 +65,7 @@ namespace Foundatio.Utility {
                 if (_last == DateTime.MinValue)
                     _last = _next;
 
-                _logger.Trace("Scheduling next: delay={delay}", delay);
+                _logger.Trace(() => $"Scheduling next: delay={delay}");
 
                 _timer.Change(delay, Timeout.Infinite);
             }
