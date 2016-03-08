@@ -26,7 +26,6 @@ namespace Foundatio.Tests.Utility {
             timer.Run();
 
             await Task.Delay(1);
-
             Assert.Equal(1, hits);
         }
 
@@ -45,10 +44,9 @@ namespace Foundatio.Tests.Utility {
             timer.Run();
 
             await Task.Delay(1);
-
             Assert.Equal(1, hits);
 
-            await Task.Delay(100);
+            await Task.Delay(110);
             Assert.Equal(2, hits);
         }
 
