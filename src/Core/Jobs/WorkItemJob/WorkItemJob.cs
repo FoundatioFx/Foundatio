@@ -61,7 +61,7 @@ namespace Foundatio.Jobs {
                     await handler.HandleItemAsync(new WorkItemContext(context, workItemData, JobId, lockValue, progressCallback)).AnyContext();
                 } catch (Exception ex) {
                     await context.QueueEntry.AbandonAsync().AnyContext();
-                    _logger.Error("Error processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id);
+                    _logger.Error(ex, "Error processing {0} work item queue entry ({1}).", workItemDataType.Name, context.QueueEntry.Id);
 
                     return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
                 }

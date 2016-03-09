@@ -30,8 +30,7 @@ namespace Foundatio.Tests.Logging {
         }
 
         [Fact]
-        public void LogDelegate()
-        {
+        public void LogDelegate() {
             var logger = Log.CreateLogger<LoggingTests>();
             var name = "Tester";
 
