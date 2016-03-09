@@ -124,5 +124,20 @@ namespace Foundatio.Tests.Queue {
         public override Task CanRunWorkItemWithMetrics() {
             return base.CanRunWorkItemWithMetrics();
         }
+
+        [Fact]
+        public override Task CanRenewLock() {
+            return base.CanRenewLock();
+        }
+
+        [Fact]
+        public override Task CanAbandonQueueEntryOnce() {
+            return base.CanAbandonQueueEntryOnce();
+        }
+
+        [Fact]
+        public override Task CanCompleteQueueEntryOnce() {
+            return base.CanCompleteQueueEntryOnce();
+        }
     }
 }

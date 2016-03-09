@@ -542,6 +542,80 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
+        public virtual async Task CanAbandonQueueEntryOnce() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                await workItem.AbandonAsync();
+                await workItem.AbandonAsync();
+                await workItem.CompleteAsync();
+                await workItem.CompleteAsync();
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Abandoned);
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(0, stats.Deadletter);
+                Assert.Equal(1, stats.Dequeued);
+                Assert.Equal(1, stats.Enqueued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Timeouts);
+                Assert.Equal(0, stats.Working);
+
+                var queueEntry = workItem as QueueEntry<SimpleWorkItem>;
+                if (queueEntry != null)
+                    Assert.Equal(1, queueEntry.Attempts);
+            }
+        }
+
+        public virtual async Task CanCompleteQueueEntryOnce() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                await workItem.CompleteAsync();
+                await workItem.CompleteAsync();
+                await workItem.AbandonAsync();
+                await workItem.AbandonAsync();
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Abandoned);
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(0, stats.Deadletter);
+                Assert.Equal(1, stats.Dequeued);
+                Assert.Equal(1, stats.Enqueued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Timeouts);
+                Assert.Equal(0, stats.Working);
+
+                var queueEntry = workItem as QueueEntry<SimpleWorkItem>;
+                if (queueEntry != null)
+                    Assert.Equal(1, queueEntry.Attempts);
+            }
+        }
+        
         protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
             Trace.WriteLine($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);

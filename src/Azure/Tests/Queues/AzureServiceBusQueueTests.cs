@@ -93,6 +93,16 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.CanRenewLock();
         }
 
+        [Fact]
+        public override Task CanAbandonQueueEntryOnce() {
+            return base.CanAbandonQueueEntryOnce();
+        }
+
+        [Fact]
+        public override Task CanCompleteQueueEntryOnce() {
+            return base.CanCompleteQueueEntryOnce();
+        }
+
         // NOTE: Not using this test because you can set specific delay times for servicebus
         public override Task CanDelayRetry() {
             return base.CanDelayRetry();

@@ -166,14 +166,13 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             _logger.Trace("Queue {0} complete item: {1}", typeof(T).Name, entry.Id);
 
-            QueueEntry<T> info = null;
+            QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
 
             await OnCompletedAsync(entry).AnyContext();
-
             _logger.Trace("Complete done: {0}", entry.Id);
         }
 

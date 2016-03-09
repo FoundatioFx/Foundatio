@@ -298,7 +298,7 @@ namespace Foundatio.Queues {
             }
 
             var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0).AnyContext();
-            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), -1).AnyContext();
+            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), 1).AnyContext();
 
             return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
         }
@@ -314,13 +314,14 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             _logger.Debug("Queue {0} complete item: {1}", _queueName, entry.Id);
 
-            var tasks = new List<Task>();
-            tasks.Add(Database.ListRemoveAsync(WorkListName, entry.Id));
-            tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(entry.Id)));
-            tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)));
-            tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)));
-            tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
-            tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
+            var tasks = new List<Task> {
+                Database.ListRemoveAsync(WorkListName, entry.Id),
+                Database.KeyDeleteAsync(GetPayloadKey(entry.Id)),
+                Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)),
+                Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)),
+                Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
+                Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
+            };
 
             await Task.WhenAll(tasks).AnyContext();
 
@@ -331,7 +332,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {_queueName}:{QueueId} abandon item: {entry.Id}");
+            _logger.Debug("Queue {_queueName}:{QueueId} abandon item: {entryId}", _queueName, QueueId, entry.Id);
 
             var attemptsCachedValue = await _cache.GetAsync<int>(GetAttemptsKey(entry.Id)).AnyContext();
             int attempts = 1;
@@ -339,10 +340,10 @@ namespace Foundatio.Queues {
                 attempts = attemptsCachedValue.Value + 1;
             
             var retryDelay = GetRetryDelay(attempts);
-            _logger.Trace("Item: {entry.Id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}", entry.Id, attempts, retryDelay, _retries);
+            _logger.Trace("Item: {entryId} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}", entry.Id, attempts, retryDelay, _retries);
 
             if (attempts > _retries) {
-                _logger.Trace("Exceeded retry limit moving to deadletter: {entry.Id}", entry.Id);
+                _logger.Trace("Exceeded retry limit moving to deadletter: {entryId}", entry.Id);
 
                 var tx = Database.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, entry.Id);
@@ -383,7 +384,6 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _abandonedCount);
             await OnAbandonedAsync(entry).AnyContext();
-
             _logger.Trace("Abandon complete: {entryId}", entry.Id);
         }
 
@@ -416,14 +416,14 @@ namespace Foundatio.Queues {
         private async Task DeleteListAsync(string name) {
             var itemIds = await Database.ListRangeAsync(name).AnyContext();
             foreach (var id in itemIds) {
-                var tasks = new List<Task>();
-
-                tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
-
+                var tasks = new List<Task> {
+                    Database.KeyDeleteAsync(GetPayloadKey(id)),
+                    Database.KeyDeleteAsync(GetAttemptsKey(id)),
+                    Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
+                    Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
+                    Database.KeyDeleteAsync(GetWaitTimeKey(id))
+                };
+                
                 await Task.WhenAll(tasks).AnyContext();
             }
 
@@ -433,16 +433,17 @@ namespace Foundatio.Queues {
         private async Task TrimDeadletterItemsAsync(int maxItems) {
             var itemIds = (await Database.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
             foreach (var id in itemIds) {
-                var tasks = new List<Task>();
-                tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
-                tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
-                tasks.Add(Database.ListRemoveAsync(QueueListName, id));
-                tasks.Add(Database.ListRemoveAsync(WorkListName, id));
-                tasks.Add(Database.ListRemoveAsync(WaitListName, id));
-                tasks.Add(Database.ListRemoveAsync(DeadListName, id));
+                var tasks = new List<Task> {
+                    Database.KeyDeleteAsync(GetPayloadKey(id)),
+                    Database.KeyDeleteAsync(GetAttemptsKey(id)),
+                    Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
+                    Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
+                    Database.KeyDeleteAsync(GetWaitTimeKey(id)),
+                    Database.ListRemoveAsync(QueueListName, id),
+                    Database.ListRemoveAsync(WorkListName, id),
+                    Database.ListRemoveAsync(WaitListName, id),
+                    Database.ListRemoveAsync(DeadListName, id)
+                };
 
                 await Task.WhenAll(tasks).AnyContext();
             }

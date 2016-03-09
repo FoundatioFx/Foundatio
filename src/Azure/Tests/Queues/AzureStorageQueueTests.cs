@@ -26,7 +26,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 retries,
                 workItemTimeout,
                 TimeSpan.FromMilliseconds(50),
-                new ExponentialRetry(retryDelay.Value, retries + 1),
+                new ExponentialRetry(retryDelay.Value, retries),
                 loggerFactory: Log
             );
         }
@@ -94,6 +94,16 @@ namespace Foundatio.Azure.Tests.Queue {
         [Fact]
         public override Task CanRenewLock() {
             return base.CanRenewLock();
+        }
+
+        [Fact]
+        public override Task CanAbandonQueueEntryOnce() {
+            return base.CanAbandonQueueEntryOnce();
+        }
+
+        [Fact]
+        public override Task CanCompleteQueueEntryOnce() {
+            return base.CanCompleteQueueEntryOnce();
         }
 
         // NOTE: Not using this test because you can set specific delay times for storage queue

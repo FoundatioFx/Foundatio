@@ -86,7 +86,7 @@ namespace Foundatio.Queues {
             var q = await _namespaceManager.GetQueueAsync(_queueName).AnyContext();
             return new QueueStats {
                 Queued = q.MessageCount,
-                Working = -1,
+                Working = 0,
                 Deadletter = q.MessageCountDetails.DeadLetterMessageCount,
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,

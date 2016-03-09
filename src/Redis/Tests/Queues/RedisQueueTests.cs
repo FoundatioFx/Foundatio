@@ -101,6 +101,22 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override Task CanRenewLock() {
+            Assert.False(true, "Not implemented");
+            return base.CanRenewLock();
+        }
+
+        [Fact]
+        public override Task CanAbandonQueueEntryOnce() {
+            return base.CanAbandonQueueEntryOnce();
+        }
+
+        [Fact]
+        public override Task CanCompleteQueueEntryOnce() {
+            return base.CanCompleteQueueEntryOnce();
+        }
+
+        [Fact]
         public async Task VerifyCacheKeysAreCorrect() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)

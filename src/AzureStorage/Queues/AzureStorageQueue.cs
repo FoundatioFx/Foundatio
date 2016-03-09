@@ -129,7 +129,7 @@ namespace Foundatio.Queues {
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
-                Working = -1,
+                Working = 0,
                 Deadletter = _deadletterQueueReference.ApproximateMessageCount.GetValueOrDefault(),
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
@@ -197,9 +197,8 @@ namespace Foundatio.Queues {
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = queueEntry as AzureStorageQueueEntry<T>;
 
-            if (azureQueueEntry == null) {
+            if (azureQueueEntry == null)
                 throw new ArgumentException($"Unknown entry type. Can only process entries of type '{nameof(AzureStorageQueueEntry<T>)}'");
-            }
 
             return azureQueueEntry;
         } 

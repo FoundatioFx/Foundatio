@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
             AutoComplete = true;
         }
         
-        protected async override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {
+        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<WorkItemData> context) {
             var workItemDataType = Type.GetType(context.QueueEntry.Value.Type);
             if (workItemDataType == null)
                 return JobResult.FailedWithMessage("Could not resolve work item data type.");
