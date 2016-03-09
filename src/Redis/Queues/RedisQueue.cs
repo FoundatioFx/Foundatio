@@ -315,14 +315,12 @@ namespace Foundatio.Queues {
             _logger.Debug("Queue {0} complete item: {1}", _queueName, entry.Id);
 
             var tasks = new List<Task>();
-            var batch = Database.CreateBatch();
-            tasks.Add(batch.ListRemoveAsync(WorkListName, entry.Id));
-            tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(entry.Id)));
-            tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(entry.Id)));
-            tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)));
-            tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
-            tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
-            batch.Execute();
+            tasks.Add(Database.ListRemoveAsync(WorkListName, entry.Id));
+            tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(entry.Id)));
+            tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)));
+            tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)));
+            tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
+            tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
 
             await Task.WhenAll(tasks.ToArray()).AnyContext();
 
@@ -344,7 +342,7 @@ namespace Foundatio.Queues {
             _logger.Trace("Item: {entry.Id} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}", entry.Id, attempts, retryDelay, _retries);
 
             if (attempts > _retries) {
-                _logger.Trace($"Exceeded retry limit moving to deadletter: {entry.Id}");
+                _logger.Trace("Exceeded retry limit moving to deadletter: {entry.Id}", entry.Id);
 
                 var tx = Database.CreateTransaction();
                 tx.ListRemoveAsync(WorkListName, entry.Id);
@@ -419,14 +417,13 @@ namespace Foundatio.Queues {
             var itemIds = await Database.ListRangeAsync(name).AnyContext();
             foreach (var id in itemIds) {
                 var tasks = new List<Task>();
-                var batch = Database.CreateBatch();
-                tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
 
-                batch.Execute();
+                tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
+
                 await Task.WhenAll(tasks.ToArray()).AnyContext();
             }
 
@@ -437,18 +434,16 @@ namespace Foundatio.Queues {
             var itemIds = (await Database.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
             foreach (var id in itemIds) {
                 var tasks = new List<Task>();
-                var batch = Database.CreateBatch();
-                tasks.Add(batch.KeyDeleteAsync(GetPayloadKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetAttemptsKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetDequeuedTimeKey(id)));
-                tasks.Add(batch.KeyDeleteAsync(GetWaitTimeKey(id)));
-                tasks.Add(batch.ListRemoveAsync(QueueListName, id));
-                tasks.Add(batch.ListRemoveAsync(WorkListName, id));
-                tasks.Add(batch.ListRemoveAsync(WaitListName, id));
-                tasks.Add(batch.ListRemoveAsync(DeadListName, id));
+                tasks.Add(Database.KeyDeleteAsync(GetPayloadKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
+                tasks.Add(Database.ListRemoveAsync(QueueListName, id));
+                tasks.Add(Database.ListRemoveAsync(WorkListName, id));
+                tasks.Add(Database.ListRemoveAsync(WaitListName, id));
+                tasks.Add(Database.ListRemoveAsync(DeadListName, id));
 
-                batch.Execute();
                 await Task.WhenAll(tasks.ToArray()).AnyContext();
             }
         }
