@@ -322,7 +322,7 @@ namespace Foundatio.Queues {
             tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
             tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
 
-            await Task.WhenAll(tasks.ToArray()).AnyContext();
+            await Task.WhenAll(tasks).AnyContext();
 
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(entry).AnyContext();
@@ -424,7 +424,7 @@ namespace Foundatio.Queues {
                 tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
 
-                await Task.WhenAll(tasks.ToArray()).AnyContext();
+                await Task.WhenAll(tasks).AnyContext();
             }
 
             await Database.KeyDeleteAsync(name).AnyContext();
@@ -444,7 +444,7 @@ namespace Foundatio.Queues {
                 tasks.Add(Database.ListRemoveAsync(WaitListName, id));
                 tasks.Add(Database.ListRemoveAsync(DeadListName, id));
 
-                await Task.WhenAll(tasks.ToArray()).AnyContext();
+                await Task.WhenAll(tasks).AnyContext();
             }
         }
 

@@ -167,11 +167,12 @@ namespace Foundatio.Caching {
             if (values == null)
                 return 0;
 
-            var dictionary = new Dictionary<RedisKey, RedisValue>();
+            var tasks = new List<Task>();
             foreach (var value in values)
-                dictionary.Add(value.Key, await _serializer.SerializeAsync(value.Value).AnyContext());
-            
-            await Database.StringSetAsync(dictionary.ToArray()).AnyContext();
+                tasks.Add(Database.StringSetAsync(value.Key, await _serializer.SerializeAsync(value.Value).AnyContext(), expiresIn));
+
+            await Task.WhenAll(tasks).AnyContext();
+
             return values.Count;
         }
 
