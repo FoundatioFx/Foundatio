@@ -66,6 +66,11 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override Task CanRenewLock() {
+            return base.CanRenewLock();
+        }
+
+        [Fact]
         public override Task CanHandleErrorInWorker() {
             return base.CanHandleErrorInWorker();
         }
