@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
-using Foundatio.JobSample.Jobs;
+using Foundatio.SampleJob.Jobs;
 using Foundatio.Logging;
 using Foundatio.Logging.NLog;
 using SimpleInjector;
 
-namespace Foundatio.JobSample {
+namespace Foundatio.SampleJob {
     public class Program {
         public static int Main() {
             var loggerFactory = new LoggerFactory();
