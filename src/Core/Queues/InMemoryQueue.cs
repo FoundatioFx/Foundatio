@@ -160,6 +160,16 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            _logger.Trace("Queue {0} renew lock item: {1}", typeof(T).Name, entry.Id);
+            var item = entry as QueueEntry<T>;
+
+            _dequeued.AddOrUpdate(entry.Id, item, (key, value) => {
+                if (item != null)
+                    value.RenewedTimeUtc = item.RenewedTimeUtc;
+
+                return value;
+            });
+
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
@@ -237,7 +247,7 @@ namespace Foundatio.Queues {
 
             try {
                 foreach (var entry in _dequeued.Values.ToList()) {
-                    var abandonAt = entry.DequeuedTimeUtc.Add(_workItemTimeout);
+                    var abandonAt = entry.RenewedTimeUtc.Add(_workItemTimeout);
                     if (abandonAt < utcNow) {
                         _logger.Info("DoMaintenance Abandon: {entryId}", entry.Id);
 

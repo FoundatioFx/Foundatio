@@ -447,7 +447,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDelayRetry() {
-            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(150), retryDelay: TimeSpan.FromSeconds(1));
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(500), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
 
@@ -464,7 +464,6 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
-                // wait for the task to be auto abandoned
                 var sw = Stopwatch.StartNew();
                 await workItem.AbandonAsync();
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
@@ -509,10 +508,12 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanRenewLock() {
+            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
+
             // Need large value to reproduce this test
             var workItemTimeout = TimeSpan.FromSeconds(1);
             // Slightly shorter than the timeout to ensure we haven't lost the lock
-            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds*.75d);
+            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .75d);
 
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
             if (queue == null)
@@ -524,20 +525,20 @@ namespace Foundatio.Tests.Queue {
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 });
-                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-                Assert.NotNull(workItem);
-                Assert.Equal("Hello", workItem.Value.Data);
+                var entry = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(entry);
+                Assert.Equal("Hello", entry.Value.Data);
 
                 await Task.Delay(renewWait);
 
-                await workItem.RenewLockAsync();
+                await entry.RenewLockAsync();
 
                 await Task.Delay(renewWait);
                 
                 // We shouldn't get another item here if RenewLock works.
                 var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.Null(nullWorkItem);
-                await workItem.CompleteAsync();
+                await entry.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             }
         }

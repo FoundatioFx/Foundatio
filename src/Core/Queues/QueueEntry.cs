@@ -15,18 +15,20 @@ namespace Foundatio.Queues {
             _queue = queue;
             EnqueuedTimeUtc = enqueuedTimeUtc;
             Attempts = attempts;
-            DequeuedTimeUtc = DateTime.UtcNow;
+            DequeuedTimeUtc = RenewedTimeUtc = DateTime.UtcNow;
         }
 
         public string Id { get; }
         public T Value { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
+        public DateTime RenewedTimeUtc { get; set; }
         public DateTime DequeuedTimeUtc { get; set; }
         public int Attempts { get; set; }
         public TimeSpan ProcessingTime { get; set; }
         public DataDictionary Data { get; } = new DataDictionary();
 
         public Task RenewLockAsync() {
+            RenewedTimeUtc = DateTime.UtcNow;
             return _queue.RenewLockAsync(this);
         }
 
@@ -54,6 +56,7 @@ namespace Foundatio.Queues {
 
     public interface IQueueEntryMetadata {
         DateTime EnqueuedTimeUtc { get; }
+        DateTime RenewedTimeUtc { get; }
         DateTime DequeuedTimeUtc { get; }
         int Attempts { get; }
         TimeSpan ProcessingTime { get; }
