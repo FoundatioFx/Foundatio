@@ -13,9 +13,5 @@
   </metadata>
   <files>
     <file src="bin\Release\Foundatio.pdb" target="lib\net451" />
-    <file src="..\JobRunner\bin\Release\Job.*" target="tools" />
-    <file src="..\JobRunner\bin\Release\CommandLine.*" target="tools\bin" />
-    <file src="..\JobRunner\bin\Release\Foundatio.*" target="tools\bin" />
-    <file src="..\JobRunner\bin\Release\Newtonsoft.Json.*" target="tools\bin" />
   </files>
 </package>
