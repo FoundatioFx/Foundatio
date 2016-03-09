@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class AzureStorageQueueTests : QueueTestBase {
-        private readonly static string QueueName = Guid.NewGuid().ToString("N");
+        private static readonly string QueueName = Guid.NewGuid().ToString("N");
 
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
 

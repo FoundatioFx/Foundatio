@@ -181,7 +181,6 @@ namespace Foundatio.Queues {
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
-
             await OnCompletedAsync(entry).AnyContext();
             _logger.Trace("Complete done: {0}", entry.Id);
         }
@@ -192,8 +191,7 @@ namespace Foundatio.Queues {
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new ApplicationException("Unable to remove item from the dequeued list.");
-
-            Interlocked.Increment(ref _abandonedCount);
+            
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
                     _logger.Trace("Adding item to wait list for future retry: {0}", entry.Id);
@@ -207,6 +205,7 @@ namespace Foundatio.Queues {
                 _deadletterQueue.Enqueue(info);
             }
 
+            Interlocked.Increment(ref _abandonedCount);
             await OnAbandonedAsync(entry).AnyContext();
             _logger.Trace("Abandon complete: {0}", entry.Id);
         }

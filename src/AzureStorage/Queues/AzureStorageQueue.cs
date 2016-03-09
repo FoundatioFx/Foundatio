@@ -98,14 +98,14 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
-            Interlocked.Increment(ref _completedCount);
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
+
+            Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(queueEntry).AnyContext();
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
-            Interlocked.Increment(ref _abandonedCount);
 
             if (azureQueueEntry.Attempts > _retries) {
                 await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
@@ -115,7 +115,8 @@ namespace Foundatio.Queues {
                 // Make the item visible immediately
                 await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, TimeSpan.Zero, MessageUpdateFields.Visibility).AnyContext();
             }
-            
+
+            Interlocked.Increment(ref _abandonedCount);
             await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
@@ -124,8 +125,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
-            await _queueReference.FetchAttributesAsync();
-            await _deadletterQueueReference.FetchAttributesAsync();
+            await _queueReference.FetchAttributesAsync().AnyContext();
+            await _deadletterQueueReference.FetchAttributesAsync().AnyContext();
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
@@ -190,7 +191,6 @@ namespace Foundatio.Queues {
             _logger.Trace("Queue {0} dispose", _queueName);
 
             _queueDisposedCancellationTokenSource?.Cancel();
-
             base.Dispose();
         }
         

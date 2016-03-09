@@ -19,7 +19,7 @@ using Xunit.Abstractions;
 #pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue {
-    public abstract class QueueTestBase : TestWithLoggingBase {
+    public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
@@ -570,7 +570,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, stats.Dequeued);
                 Assert.Equal(1, stats.Enqueued);
                 Assert.Equal(0, stats.Errors);
-                Assert.Equal(0, stats.Queued);
+                Assert.InRange(stats.Queued, 0, 1);
                 Assert.Equal(0, stats.Timeouts);
                 Assert.Equal(0, stats.Working);
 
@@ -640,6 +640,15 @@ namespace Foundatio.Tests.Queue {
                 Trace.WriteLine($"Signal {countdown.CurrentCount}");
                 countdown.Signal();
             }
+        }
+        
+        public async void Dispose() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue)
+                await queue.DeleteQueueAsync();
         }
     }
 

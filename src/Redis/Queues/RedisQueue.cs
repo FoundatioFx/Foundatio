@@ -106,7 +106,7 @@ namespace Foundatio.Queues {
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
             return new QueueStats {
-                Queued = await Database.ListLengthAsync(QueueListName).AnyContext(),
+                Queued = await Database.ListLengthAsync(QueueListName).AnyContext() + await Database.ListLengthAsync(WaitListName).AnyContext(),
                 Working = await Database.ListLengthAsync(WorkListName).AnyContext(),
                 Deadletter = await Database.ListLengthAsync(DeadListName).AnyContext(),
                 Enqueued = _enqueuedCount,
