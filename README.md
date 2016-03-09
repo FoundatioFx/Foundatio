@@ -154,10 +154,6 @@ Allows you to run a long running process (in process or out of process) with out
   await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
   ```
 
-  ```
-  Job.exe -t "MyLib.HelloWorldJob,MyLib"
-  ```
-
 2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueProcessorJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueProcessorJobBase.cs) which also inherits from the [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
@@ -199,10 +195,6 @@ Allows you to run a long running process (in process or out of process) with out
   await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
   await job.RunUntilEmptyAsync(); // job.RunCount = 3;
   ```
-
-  ```
-  Job.exe -t "MyLib.HelloWorldQueueJob,MyLib"
-  ``` 
 
 3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the  [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/WorkItemJob/WorkItemHandlers.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
@@ -252,10 +244,6 @@ Allows you to run a long running process (in process or out of process) with out
   await new JobRunner().RunContinuousAsync<WorkItemJob>(instanceCount: 2);
   ```
   
-  ```
-  Job.exe -t "Foundatio.Jobs.WorkItemJob, Foundatio"
-  ```
-
   ```csharp
    // To trigger the job we need to queue the HelloWorldWorkItem message. 
    // This assumes that we injected an instance of IQueue<WorkItemData> queue
