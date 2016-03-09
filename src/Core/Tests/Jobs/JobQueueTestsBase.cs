@@ -114,8 +114,8 @@ namespace Foundatio.Tests.Jobs {
 
             await metrics.FlushAsync();
 
-            var counter = await metrics.GetCounterStatsAsync("completed");
-            Assert.Equal(queueStats.Sum(s => s.Completed), counter.Count);
+            var queueSummary = await metrics.GetQueueStatsAsync("test.samplequeueworkitem");
+            Assert.Equal(queueStats.Sum(s => s.Completed), queueSummary.Completed.Count);
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
          }
     }

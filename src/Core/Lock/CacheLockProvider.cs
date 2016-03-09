@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Foundatio.Extensions;
-using Microsoft.SqlServer.Server;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {

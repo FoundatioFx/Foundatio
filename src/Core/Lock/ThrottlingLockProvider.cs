@@ -14,8 +14,8 @@ namespace Foundatio.Lock {
         private readonly ILogger _logger;
 
         public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger.Instance;
-            _cacheClient = cacheClient;
+            _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
+            _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
             _maxHitsPerPeriod = maxHitsPerPeriod;
 
             if (maxHitsPerPeriod <= 0)
@@ -108,7 +108,7 @@ namespace Foundatio.Lock {
         }
 
         private string GetCacheKey(string name, DateTime now) {
-            return String.Concat("throttling-lock:", name, ":", now.Floor(_throttlingPeriod).Ticks);
+            return String.Concat(name, ":", now.Floor(_throttlingPeriod).Ticks);
         }
 
         public void Dispose() {}
