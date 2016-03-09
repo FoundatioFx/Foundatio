@@ -104,13 +104,7 @@ namespace Foundatio.Redis.Tests.Queues {
         public override Task CanRunWorkItemWithMetrics() {
             return base.CanRunWorkItemWithMetrics();
         }
-
-        [Fact]
-        public override Task CanRenewLock() {
-            Assert.False(true, "Not implemented");
-            return base.CanRenewLock();
-        }
-
+        
         [Fact]
         public override Task CanAbandonQueueEntryOnce() {
             return base.CanAbandonQueueEntryOnce();
