@@ -4,7 +4,7 @@ using Foundatio.Extensions;
 using SimpleInjector;
 using SimpleInjector.Advanced;
 
-namespace Foundatio.JobSample {
+namespace Foundatio.SampleJob {
 
     public static class StartupTasks {
         public static async Task RunStartupActionsAsync(this Container container) {

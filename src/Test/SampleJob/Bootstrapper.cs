@@ -5,7 +5,7 @@ using Foundatio.ServiceProviders;
 using SimpleInjector;
 using StackExchange.Redis;
 
-namespace Foundatio.JobSample.Jobs {
+namespace Foundatio.SampleJob.Jobs {
     public class Bootstrapper : BootstrappedServiceProviderBase {
         protected override IServiceProvider BootstrapInternal(ILoggerFactory loggerFactory) {
             var container = new Container();

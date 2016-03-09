@@ -154,7 +154,11 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _queueName, ":", id, ":dequeued");
         }
 
-        private TimeSpan GetDequeuedTimeTtl() {
+        private string GetRenewedTimeKey(string id) {
+            return String.Concat("q:", _queueName, ":", id, ":renewed");
+        }
+
+        private TimeSpan GetWorkItemTimeoutTimeTtl() {
             return TimeSpan.FromMilliseconds(Math.Max(_workItemTimeout.TotalMilliseconds * 1.5, TimeSpan.FromHours(1).TotalMilliseconds));
         }
 
@@ -266,7 +270,8 @@ namespace Foundatio.Queues {
             if (value.IsNullOrEmpty)
                 return null;
 
-            await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
+            await _cache.SetAsync(GetDequeuedTimeKey(value), DateTime.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()).AnyContext();
+            await _cache.SetAsync(GetRenewedTimeKey(value), DateTime.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()).AnyContext();
 
             try {
                 var entry = await GetQueueEntry(value).AnyContext();
@@ -286,6 +291,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            await _cache.SetAsync(GetRenewedTimeKey(entry.Id), DateTime.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
@@ -298,7 +304,7 @@ namespace Foundatio.Queues {
             }
 
             var enqueuedTimeTicks = await _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0).AnyContext();
-            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), -1).AnyContext();
+            var attemptsValue = await _cache.GetAsync<int>(GetAttemptsKey(workId), 0).AnyContext();
 
             return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
         }
@@ -320,6 +326,7 @@ namespace Foundatio.Queues {
             tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)));
             tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)));
             tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)));
+            tasks.Add(Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)));
             tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)));
 
             await Task.WhenAll(tasks).AnyContext();
@@ -353,6 +360,9 @@ namespace Foundatio.Queues {
                     throw new Exception($"Unable to move item to wait list: {entry.Id}");
 
                 await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
+                await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
+                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
+                await Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
                 _logger.Trace("Adding item to wait list for future retry: {entryId}", entry.Id);
 
@@ -365,6 +375,9 @@ namespace Foundatio.Queues {
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
                     throw new Exception($"Unable to move item to wait list: {entry.Id}");
+
+                await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
+                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
             } else {
                 _logger.Trace("Adding item back to queue for retry: {entryId}", entry.Id);
 
@@ -379,6 +392,8 @@ namespace Foundatio.Queues {
                 
                 // This should pulse the monitor.
                 await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
+                await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
+                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
@@ -422,6 +437,7 @@ namespace Foundatio.Queues {
                 tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetRenewedTimeKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
 
                 await Task.WhenAll(tasks).AnyContext();
@@ -438,6 +454,7 @@ namespace Foundatio.Queues {
                 tasks.Add(Database.KeyDeleteAsync(GetAttemptsKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetDequeuedTimeKey(id)));
+                tasks.Add(Database.KeyDeleteAsync(GetRenewedTimeKey(id)));
                 tasks.Add(Database.KeyDeleteAsync(GetWaitTimeKey(id)));
                 tasks.Add(Database.ListRemoveAsync(QueueListName, id));
                 tasks.Add(Database.ListRemoveAsync(WorkListName, id));
@@ -461,18 +478,18 @@ namespace Foundatio.Queues {
             try {
                 var workIds = await Database.ListRangeAsync(WorkListName).AnyContext();
                 foreach (var workId in workIds) {
-                    var dequeuedTimeTicks = await _cache.GetAsync<long>(GetDequeuedTimeKey(workId)).AnyContext();
+                    var renewedTimeTicks = await _cache.GetAsync<long>(GetRenewedTimeKey(workId)).AnyContext();
 
-                    // dequeue time should be set, use current time
-                    if (!dequeuedTimeTicks.HasValue) {
-                        await _cache.SetAsync(GetDequeuedTimeKey(workId), DateTime.UtcNow.Ticks, GetDequeuedTimeTtl()).AnyContext();
+                    // renewed time should be set, use current time
+                    if (!renewedTimeTicks.HasValue) {
+                        await _cache.SetAsync(GetRenewedTimeKey(workId), DateTime.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()).AnyContext();
                         continue;
                     }
 
-                    var dequeuedTime = new DateTime(dequeuedTimeTicks.Value);
-                    _logger.Trace("Dequeue time {0}", dequeuedTime);
+                    var renewedTime = new DateTime(renewedTimeTicks.Value);
+                    _logger.Trace("Renewed time {0}", renewedTime);
 
-                    if (DateTime.UtcNow.Subtract(dequeuedTime) <= _workItemTimeout)
+                    if (DateTime.UtcNow.Subtract(renewedTime) <= _workItemTimeout)
                         continue;
 
                     _logger.Trace("Auto abandon item {0}", workId);

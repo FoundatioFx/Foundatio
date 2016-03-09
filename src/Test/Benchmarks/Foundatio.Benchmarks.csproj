@@ -64,11 +64,11 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Core\Foundatio.csproj">
+    <ProjectReference Include="..\..\Core\Foundatio.csproj">
       <Project>{f5b6c2b5-485f-4a4b-8e00-d5f77676cd6e}</Project>
       <Name>Foundatio</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Redis\Foundatio.Redis.csproj">
+    <ProjectReference Include="..\..\Redis\Foundatio.Redis.csproj">
       <Project>{e2029c76-1003-4a72-8407-81ddf4b2b102}</Project>
       <Name>Foundatio.Redis</Name>
     </ProjectReference>
