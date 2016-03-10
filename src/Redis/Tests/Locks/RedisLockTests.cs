@@ -12,11 +12,11 @@ namespace Foundatio.Redis.Tests.Locks {
         public RedisLockTests(ITestOutputHelper output) : base(output) {}
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), maxHits, period);
+            return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log), maxHits, period, Log);
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer()), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber()), Log);
+            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), loggerFactory: Log), Log);
         }
 
         [Fact]
