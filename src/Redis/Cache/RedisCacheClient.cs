@@ -12,27 +12,18 @@ namespace Foundatio.Caching {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly ISerializer _serializer;
         private readonly ILogger _logger;
-        private readonly LoadedLuaScript _setIfHigherScript;
-        private readonly LoadedLuaScript _setIfLowerScript;
-        private readonly LoadedLuaScript _incrByAndExpireScript;
-        private readonly LoadedLuaScript _delByWildcardScript;
+        private LoadedLuaScript _setIfHigherScript;
+        private LoadedLuaScript _setIfLowerScript;
+        private LoadedLuaScript _incrByAndExpireScript;
+        private LoadedLuaScript _delByWildcardScript;
 
         public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<RedisCacheClient>() ?? NullLogger.Instance;
             _connectionMultiplexer = connectionMultiplexer;
+            _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _serializer = serializer ?? new JsonNetSerializer();
             
-            var setIfLower = LuaScript.Prepare(SET_IF_LOWER);
-            var setIfHigher = LuaScript.Prepare(SET_IF_HIGHER);
-            var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
-            var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
-
-            foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                _setIfHigherScript = setIfHigher.Load(_connectionMultiplexer.GetServer(endpoint));
-                _setIfLowerScript = setIfLower.Load(_connectionMultiplexer.GetServer(endpoint));
-                _incrByAndExpireScript = incrByAndExpire.Load(_connectionMultiplexer.GetServer(endpoint));
-                _delByWildcardScript = delByWildcard.Load(_connectionMultiplexer.GetServer(endpoint));
-            }
+            LoadScripts();
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -210,6 +201,25 @@ namespace Foundatio.Caching {
         }
 
         private IDatabase Database => _connectionMultiplexer.GetDatabase();
+
+        private void LoadScripts() {
+            var setIfLower = LuaScript.Prepare(SET_IF_LOWER);
+            var setIfHigher = LuaScript.Prepare(SET_IF_HIGHER);
+            var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
+            var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
+
+            foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
+                _setIfHigherScript = setIfHigher.Load(_connectionMultiplexer.GetServer(endpoint));
+                _setIfLowerScript = setIfLower.Load(_connectionMultiplexer.GetServer(endpoint));
+                _incrByAndExpireScript = incrByAndExpire.Load(_connectionMultiplexer.GetServer(endpoint));
+                _delByWildcardScript = delByWildcard.Load(_connectionMultiplexer.GetServer(endpoint));
+            }
+        }
+
+        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
+            _logger.Info("Redis connection restored.");
+            LoadScripts();
+        }
 
         public void Dispose() {}
         

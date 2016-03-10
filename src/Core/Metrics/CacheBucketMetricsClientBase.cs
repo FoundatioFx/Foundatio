@@ -60,7 +60,11 @@ namespace Foundatio.Metrics {
         }
 
         private void OnMetricsTimer(object state) {
-            FlushAsync().GetAwaiter().GetResult();
+            try {
+                FlushAsync().GetAwaiter().GetResult();
+            } catch (Exception ex) {
+                _logger.Error(ex, () => $"Error flushing metrics: {ex.Message}");
+            }
         }
 
         private bool _sendingMetrics = false;

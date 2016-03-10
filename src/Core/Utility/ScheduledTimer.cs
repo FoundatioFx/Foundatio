@@ -94,6 +94,8 @@ namespace Foundatio.Utility {
                     ScheduleNext();
                 else if (next.HasValue)
                     ScheduleNext(next.Value);
+            } catch (Exception ex) {
+                _logger.Error(ex, () => $"Error running scheduled timer callback: {ex.Message}");
             } finally {
                 _shouldRunAgainImmediately = false;
                 _isRunning = false;

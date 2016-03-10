@@ -45,6 +45,7 @@ namespace Foundatio.Queues {
             TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
             : base(serializer, behaviors, loggerFactory) {
             _connectionMultiplexer = connection;
+            _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _cache = new RedisCacheClient(connection, _serializer);
             _queueName = queueName ?? typeof(T).Name;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
@@ -471,6 +472,13 @@ namespace Foundatio.Queues {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
 
             using (await _monitor.EnterAsync())
+                _monitor.Pulse();
+        }
+
+        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
+            _logger.Info("Redis connection restored.");
+
+            using (_monitor.Enter())
                 _monitor.Pulse();
         }
 
