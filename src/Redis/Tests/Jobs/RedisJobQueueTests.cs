@@ -10,12 +10,17 @@ namespace Foundatio.Redis.Tests.Jobs {
         public RedisJobQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay) {
-            return new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), retries: retries, retryDelay: retryDelay);
+            return new RedisQueue<SampleQueueWorkItem>(SharedConnection.GetMuxer(), retries: retries, retryDelay: retryDelay, loggerFactory: Log);
         }
 
         [Fact]
         public override Task CanRunMultipleQueueJobs() {
             return base.CanRunMultipleQueueJobs();
+        }
+
+        [Fact]
+        public override Task CanRunQueueJobWithLockFail() {
+            return base.CanRunQueueJobWithLockFail();
         }
 
         [Fact]

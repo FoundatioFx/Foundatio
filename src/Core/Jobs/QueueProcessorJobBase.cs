@@ -51,7 +51,7 @@ namespace Foundatio.Jobs {
                 _logger.Info("Processing {0} queue entry ({1}).", _queueEntryName, queueEntry.Id);
 
                 try {
-                    var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, lockValue, context.CancellationToken)).AnyContext();
+                    var result = await ProcessQueueEntryAsync(new JobQueueEntryContext<T>(queueEntry, context.JobLock, lockValue, context.CancellationToken)).AnyContext();
 
                     if (!AutoComplete)
                         return result;
@@ -92,15 +92,27 @@ namespace Foundatio.Jobs {
     }
     
     public class JobQueueEntryContext<T> where T : class {
-        public JobQueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) {
+        public JobQueueEntryContext(IQueueEntry<T> queueEntry, ILock jobLock, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) {
             QueueEntry = queueEntry;
             QueueEntryLock = queueEntryLock;
             CancellationToken = cancellationToken;
+            JobLock = jobLock;
         }
 
         public IQueueEntry<T> QueueEntry { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
+        public ILock JobLock { get; private set; }
         public ILock QueueEntryLock { get; private set; }
+
+        public virtual async Task RenewLocksAsync() {
+            if (JobLock != null)
+                await JobLock.RenewAsync().AnyContext();
+
+            if (QueueEntryLock != null)
+                await QueueEntryLock.RenewAsync().AnyContext();
+
+            await QueueEntry.RenewLockAsync().AnyContext();
+        }
     }
 
     public interface IQueueProcessorJob : IDisposable {

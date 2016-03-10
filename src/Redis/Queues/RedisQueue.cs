@@ -286,7 +286,7 @@ namespace Foundatio.Queues {
 
                 return entry;
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting queue payload: {0}", value);
+                _logger.Error(ex, "Error getting dequeued item payload: {0}", value);
                 throw;
             }
         }
@@ -321,8 +321,11 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             _logger.Debug("Queue {0} complete item: {1}", _queueName, entry.Id);
 
+            var result = await Database.ListRemoveAsync(WorkListName, entry.Id).AnyContext();
+            if (result == 0)
+                throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+
             var tasks = new List<Task> {
-                Database.ListRemoveAsync(WorkListName, entry.Id),
                 Database.KeyDeleteAsync(GetPayloadKey(entry.Id)),
                 Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)),
                 Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)),
@@ -354,8 +357,10 @@ namespace Foundatio.Queues {
                 _logger.Trace("Exceeded retry limit moving to deadletter: {entryId}", entry.Id);
 
                 var tx = Database.CreateTransaction();
+                tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
                 tx.ListRemoveAsync(WorkListName, entry.Id);
                 tx.ListLeftPushAsync(DeadListName, entry.Id);
+                tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 tx.KeyExpireAsync(GetPayloadKey(entry.Id), _deadLetterTtl);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
@@ -363,7 +368,6 @@ namespace Foundatio.Queues {
 
                 await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
-                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
                 await Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
                 _logger.Trace("Adding item to wait list for future retry: {entryId}", entry.Id);
@@ -372,22 +376,25 @@ namespace Foundatio.Queues {
                 await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
 
                 var tx = Database.CreateTransaction();
+                tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
                 tx.ListRemoveAsync(WorkListName, entry.Id);
                 tx.ListLeftPushAsync(WaitListName, entry.Id);
+                tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
                     throw new Exception($"Unable to move item to wait list: {entry.Id}");
 
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
-                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
             } else {
                 _logger.Trace("Adding item back to queue for retry: {entryId}", entry.Id);
 
                 await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
 
                 var tx = Database.CreateTransaction();
+                tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
                 tx.ListRemoveAsync(WorkListName, entry.Id);
                 tx.ListLeftPushAsync(QueueListName, entry.Id);
+                tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
                     throw new Exception($"Unable to move item to queue list: {entry.Id}");
@@ -395,7 +402,6 @@ namespace Foundatio.Queues {
                 // This should pulse the monitor.
                 await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
-                await Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
@@ -502,7 +508,7 @@ namespace Foundatio.Queues {
                     if (DateTime.UtcNow.Subtract(renewedTime) <= _workItemTimeout)
                         continue;
 
-                    _logger.Trace("Auto abandon item {0}", workId);
+                    _logger.Debug("Auto abandon item {0}", workId);
 
                     var entry = await GetQueueEntry(workId).AnyContext();
                     await AbandonAsync(entry).AnyContext();
@@ -523,7 +529,7 @@ namespace Foundatio.Queues {
                         continue;
 
                     _logger.Trace("Getting retry lock");
-                    _logger.Trace("Adding item back to queue for retry: {0}", waitId);
+                    _logger.Debug("Adding item back to queue for retry: {0}", waitId);
 
                     var tx = Database.CreateTransaction();
                     tx.ListRemoveAsync(WaitListName, waitId);

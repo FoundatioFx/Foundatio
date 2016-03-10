@@ -46,7 +46,7 @@ namespace Foundatio.Jobs {
 
                 var progressCallback = new Func<int, string, Task>(async (progress, message) => {
                     if (handler.AutoRenewLockOnProgress)
-                        await context.QueueEntry.RenewLockAsync().AnyContext();
+                        await context.RenewLocksAsync().AnyContext();
 
                     if (handler.AutoRenewLockOnProgress && lockValue != null)
                         await lockValue.RenewAsync().AnyContext();

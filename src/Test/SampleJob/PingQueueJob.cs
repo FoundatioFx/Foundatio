@@ -13,16 +13,18 @@ namespace Foundatio.SampleJob.Jobs {
         }
 
         public int RunCount { get; set; }
-
-        protected override Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<PingRequest> context) {
+        
+        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<PingRequest> context) {
             RunCount++;
 
             _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
 
+            await Task.Delay(TimeSpan.FromSeconds(10)).AnyContext();
+
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
                 throw new ApplicationException("Boom!");
 
-            return Task.FromResult(JobResult.Success);
+            return JobResult.Success;
         }
     }
 
