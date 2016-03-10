@@ -19,7 +19,7 @@ namespace Foundatio.Azure.Tests.Messaging {
             if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
                 return null;
 
-            _messageBus = new AzureServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"));
+            _messageBus = new AzureServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"), loggerFactory: Log);
             
             return _messageBus;
         }

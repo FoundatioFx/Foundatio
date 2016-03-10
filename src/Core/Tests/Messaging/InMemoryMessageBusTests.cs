@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Messaging {
         public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            return new InMemoryMessageBus();
+            return new InMemoryMessageBus(Log);
         }
 
         [Fact]

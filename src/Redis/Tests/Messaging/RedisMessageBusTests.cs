@@ -9,7 +9,7 @@ namespace Foundatio.Redis.Tests.Messaging {
         public RedisMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            return new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), "test-messages");
+            return new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), "test-messages", loggerFactory: Log);
         }
 
         [Fact]
