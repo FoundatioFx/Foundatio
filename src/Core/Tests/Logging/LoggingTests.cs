@@ -30,6 +30,12 @@ namespace Foundatio.Tests.Logging {
         }
 
         [Fact]
+        public void LogNullString() {
+            var logger = Log.CreateLogger<LoggingTests>();
+            logger.Info().Message((string)null).Property("Id", (string)null).Write();
+        }
+
+        [Fact]
         public void LogDelegate() {
             var logger = Log.CreateLogger<LoggingTests>();
             var name = "Tester";
