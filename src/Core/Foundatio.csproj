@@ -93,10 +93,13 @@
     <Compile Include="Logging\ILogger.cs" />
     <Compile Include="Logging\ILoggerFactory.cs" />
     <Compile Include="Logging\ILoggerProvider.cs" />
+    <Compile Include="Logging\InMemory\InMemoryLogger.cs" />
+    <Compile Include="Logging\InMemory\InMemoryLoggerFactory.cs" />
     <Compile Include="Logging\Internal\FormattedLogValues.cs" />
     <Compile Include="Logging\Internal\LogValuesFormatter.cs" />
     <Compile Include="Logging\Fluent\LogBuilder.cs" />
     <Compile Include="Logging\Fluent\LogData.cs" />
+    <Compile Include="Logging\LogEntry.cs" />
     <Compile Include="Logging\Logger.cs" />
     <Compile Include="Logging\LoggerFactory.cs" />
     <Compile Include="Logging\LoggerFactoryExtensions.cs" />

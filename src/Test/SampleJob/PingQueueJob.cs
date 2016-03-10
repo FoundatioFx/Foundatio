@@ -9,7 +9,7 @@ using Foundatio.Logging;
 namespace Foundatio.SampleJob.Jobs {
     public class PingQueueJob : QueueProcessorJobBase<PingRequest> {
         public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
-            AutoComplete = false;
+            AutoComplete = true;
         }
 
         public int RunCount { get; set; }
@@ -19,7 +19,7 @@ namespace Foundatio.SampleJob.Jobs {
 
             _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
 
-            if (RandomData.GetBool(1))
+            if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
                 throw new ApplicationException("Boom!");
 
             return Task.FromResult(JobResult.Success);
@@ -28,24 +28,6 @@ namespace Foundatio.SampleJob.Jobs {
 
     public class PingRequest {
         public string Data { get; set; }
-    }
-
-    public class EnqueuePings : IStartupAction {
-        private readonly IQueue<PingRequest> _pingQueue;
-        private readonly ILogger _logger;
-
-        public EnqueuePings(IQueue<PingRequest> pingQueue, ILogger<EnqueuePings> logger) {
-            _pingQueue = pingQueue;
-            _logger = logger;
-        }
-
-        public async Task RunAsync() {
-            var startDate = DateTime.Now;
-            while (startDate.AddMinutes(5) > DateTime.Now) {
-                _logger.Info("Enqueueing ping.");
-                await _pingQueue.EnqueueAsync(new PingRequest { Data = "Hi" }).AnyContext();
-                await Task.Delay(RandomData.GetInt(1000, 10000)).AnyContext();
-            }
-        }
+        public int PercentChanceOfException { get; set; } = 0;
     }
 }

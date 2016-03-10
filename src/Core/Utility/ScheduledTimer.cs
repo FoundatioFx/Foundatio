@@ -15,6 +15,7 @@ namespace Foundatio.Utility {
         private readonly TimeSpan _minimumInterval;
         private readonly AsyncLock _lock = new AsyncLock();
         private bool _isRunning = false;
+        private bool _shouldRunAgainImmediately = false;
 
         public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, ILoggerFactory loggerFactory = null) {
             if (timerCallback == null)
@@ -47,13 +48,6 @@ namespace Foundatio.Utility {
                     return;
                 }
 
-                // enforce minimum interval
-                _logger.Trace(() => $"Last: {_last} Since: {_last.Subtract(utcDate.Value).TotalMilliseconds} Min interval: {_minimumInterval}");
-                if (_last != DateTime.MinValue && _last.Subtract(utcDate.Value) < _minimumInterval) {
-                    _logger.Trace("Adding time due to minimum interval");
-                    utcDate = _last.Add(_minimumInterval);
-                }
-
                 // ignore duplicate times
                 if (_next == utcDate) {
                     _logger.Trace("Ignoring because already scheduled for same time");
@@ -72,25 +66,37 @@ namespace Foundatio.Utility {
         }
 
         private async Task RunCallbackAsync() {
+            if (_isRunning) {
+                _logger.Trace("Exiting run callback because its already running, will run again immediately.");
+                _shouldRunAgainImmediately = true;
+                return;
+            }
+
             _logger.Trace("RunCallbackAsync");
 
             using (await _lock.LockAsync()) {
-                _last = DateTime.UtcNow;
                 if (_isRunning) {
-                    _logger.Trace("Exiting run callback because its already running");
-                    ScheduleNext();
+                    _logger.Trace("Exiting run callback because its already running, will run again immediately.");
+                    _shouldRunAgainImmediately = true;
                     return;
                 }
 
-                try {
-                    _isRunning = true;
-                    var next = await _timerCallback().AnyContext();
+                _last = DateTime.UtcNow;
+            }
 
-                    if (next.HasValue)
-                        ScheduleNext(next.Value);
-                } finally {
-                    _isRunning = false;
-                }
+            try {
+                _isRunning = true;
+                var next = await _timerCallback().AnyContext();
+                if (_minimumInterval > TimeSpan.Zero)
+                    await Task.Delay(_minimumInterval).AnyContext();
+
+                if (_shouldRunAgainImmediately)
+                    ScheduleNext();
+                else if (next.HasValue)
+                    ScheduleNext(next.Value);
+            } finally {
+                _shouldRunAgainImmediately = false;
+                _isRunning = false;
             }
         }
 

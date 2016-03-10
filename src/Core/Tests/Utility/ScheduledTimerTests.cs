@@ -31,6 +31,30 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
+        public async Task CanRunAndScheduleConcurrently() {
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+
+            int hits = 0;
+            var timer = new ScheduledTimer(() => {
+                _logger.Info("Starting work.");
+                Interlocked.Increment(ref hits);
+                Thread.Sleep(1000);
+                _logger.Info("Finished work.");
+                return Task.FromResult<DateTime?>(null);
+            }, loggerFactory: Log);
+
+            timer.ScheduleNext();
+            await Task.Delay(1);
+            timer.ScheduleNext();
+
+            await Task.Delay(50);
+            Assert.Equal(1, hits);
+
+            await Task.Delay(1000);
+            Assert.Equal(2, hits);
+        }
+
+        [Fact]
         public async Task CanRunWithMinimumInterval() {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             var resetEvent = new AsyncAutoResetEvent(false);

@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Logging.Xunit {
+namespace Foundatio.Logging {
     public class LogEntry {
         public DateTime Date { get; set; }
         public string CategoryName { get; set; }
