@@ -16,7 +16,7 @@ namespace Foundatio.SampleJob.Jobs {
 
             var muxer = ConnectionMultiplexer.Connect("localhost");
             container.RegisterSingleton(muxer);
-            container.RegisterSingleton<IQueue<PingRequest>>(() => new RedisQueue<PingRequest>(muxer, behaviors: new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(muxer)) }));
+            container.RegisterSingleton<IQueue<PingRequest>>(() => new RedisQueue<PingRequest>(muxer, behaviors: new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(muxer, loggerFactory: loggerFactory), loggerFactory: loggerFactory) }, loggerFactory: loggerFactory));
 
             return container;
         }
