@@ -117,7 +117,7 @@ namespace Foundatio.Jobs {
 
         public CancellationToken CancellationToken { get; private set; }
 
-        public async Task RenewLock() {
+        public async Task RenewLockAsync() {
             if (JobLock != null)
                 await JobLock.RenewAsync().AnyContext();
         }
