@@ -110,7 +110,14 @@ namespace Foundatio.Jobs {
 
         public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
             if (Options.InstanceCount == 1)
-                new Task(() => RunAsync(cancellationToken).GetAwaiter().GetResult(), cancellationToken, TaskCreationOptions.LongRunning).Start();
+                new Task(() => {
+                    try {
+                        RunAsync(cancellationToken).GetAwaiter().GetResult();
+                    } catch (Exception ex) {
+                        _logger.Error(ex, () => $"Error running job in background: {ex.Message}");
+                        throw;
+                    }
+                }, cancellationToken, TaskCreationOptions.LongRunning).Start();
             else
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                 RunAsync(cancellationToken);
@@ -133,8 +140,13 @@ namespace Foundatio.Jobs {
                 var tasks = new List<Task>();
                 for (int i = 0; i < Options.InstanceCount; i++) {
                     var task = new Task(() => {
-                        var job = GetJobInstance();
-                        job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                        try {
+                            var job = GetJobInstance();
+                            job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                        } catch (Exception ex) {
+                            _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
+                            throw;
+                        }
                     }, cancellationToken, TaskCreationOptions.LongRunning);
                     tasks.Add(task);
                     task.Start();
