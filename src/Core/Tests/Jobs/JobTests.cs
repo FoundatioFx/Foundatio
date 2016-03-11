@@ -52,20 +52,12 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
-            await new JobRunner(new JobOptions {
-                JobType = typeof(HelloWorldJob),
-                InstanceCount = 5,
-                IterationLimit = 1
-            }, Log).RunAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
+            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 1).RunAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
 
-            await new JobRunner(new JobOptions {
-                JobType = typeof(HelloWorldJob),
-                InstanceCount = 5,
-                IterationLimit = 100,
-            }, Log).RunAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
+            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 100).RunAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
@@ -75,12 +67,7 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
             Assert.Equal(1, job.RunCount);
 
-            await new JobRunner(new JobOptions {
-                JobType = typeof(HelloWorldJob),
-                InstanceCount = 5,
-                IterationLimit = 10000,
-                Interval = TimeSpan.FromMilliseconds(1)
-            }, Log).RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
+            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
         }
 
         [Fact]

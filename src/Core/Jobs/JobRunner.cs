@@ -10,13 +10,40 @@ using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
-    public class JobRunner<TJob, TServiceProvider> : JobRunner {
-        public JobRunner(ILoggerFactory loggerFactory = null) : base(new JobOptions { JobType = typeof(TJob), ServiceProviderType = typeof(TServiceProvider) }, loggerFactory) { }
+    public class JobRunner<TJob, TServiceProvider> : JobRunner where TJob : IJob where TServiceProvider : IServiceProvider {
+        public JobRunner(ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+            : base(new JobOptions {
+                JobType = typeof(TJob),
+                ServiceProviderType = typeof(TServiceProvider),
+                InitialDelay = initialDelay,
+                InstanceCount = instanceCount,
+                RunContinuous = runContinuous,
+                IterationLimit = iterationLimit,
+                Interval = interval
+            }, loggerFactory) { }
     }
 
-    public class JobRunner<TJob> : JobRunner {
-        public JobRunner(ILoggerFactory loggerFactory = null) : base(new JobOptions { JobType = typeof(TJob) }, loggerFactory) {}
-        public JobRunner(string serviceProviderType, ILoggerFactory loggerFactory = null) : base(new JobOptions { JobType = typeof(TJob), ServiceProviderTypeName = serviceProviderType }, loggerFactory) { }
+    public class JobRunner<TJob> : JobRunner where TJob: IJob {
+        public JobRunner(ILoggerFactory loggerFactory = null, TimeSpan ? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+            : base(new JobOptions {
+                JobType = typeof(TJob),
+                InitialDelay = initialDelay,
+                InstanceCount = instanceCount,
+                RunContinuous = runContinuous,
+                IterationLimit = iterationLimit,
+                Interval = interval
+            }, loggerFactory) {}
+
+        public JobRunner(string serviceProviderType = null, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+            : base(new JobOptions {
+                JobType = typeof(TJob),
+                ServiceProviderTypeName = serviceProviderType,
+                InitialDelay = initialDelay,
+                InstanceCount = instanceCount,
+                RunContinuous = runContinuous,
+                IterationLimit = iterationLimit,
+                Interval = interval
+            }, loggerFactory) { }
     }
 
     public class JobRunner {
@@ -32,9 +59,16 @@ namespace Foundatio.Jobs {
             _jobName = TypeHelper.GetTypeDisplayName(Options.JobType);
         }
 
-        public JobRunner(IJob instance, ILoggerFactory loggerFactory = null) {
+        public JobRunner(IJob instance, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null) {
             _loggerFactory = loggerFactory;
-            Options = new JobOptions { JobInstance = instance };
+            Options = new JobOptions {
+                JobInstance = instance,
+                InitialDelay = initialDelay,
+                InstanceCount = instanceCount,
+                RunContinuous = runContinuous,
+                IterationLimit = iterationLimit,
+                Interval = interval
+            };
             _logger = loggerFactory.CreateLogger(instance.GetType());
             _jobName = TypeHelper.GetTypeDisplayName(instance.GetType());
         }
@@ -52,7 +86,8 @@ namespace Foundatio.Jobs {
         public int RunInConsole() {
             int result;
             try {
-                result = Run();
+                WatchForShutdown();
+                result = RunAsync(_cancellationTokenSource.Token).GetAwaiter().GetResult();
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -75,10 +110,6 @@ namespace Foundatio.Jobs {
             return result;
         }
 
-        public int Run() {
-            return RunAsync().GetAwaiter().GetResult();
-        }
-
         public async Task<int> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (Options.JobType == null)
                 return -1;
@@ -86,8 +117,6 @@ namespace Foundatio.Jobs {
             if (Options.InitialDelay.HasValue && Options.InitialDelay.Value > TimeSpan.Zero)
                 await Task.Delay(Options.InitialDelay.Value, cancellationToken).AnyContext();
 
-            WatchForShutdown();
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token, cancellationToken).Token;
             var job = GetJobInstance();
             if (Options.RunContinuous) {
                 var tasks = new List<Task>();
@@ -98,7 +127,7 @@ namespace Foundatio.Jobs {
             } else {
                 using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                     _logger.Trace("Job run \"{0}\" starting...", _jobName);
-                    var result = await job.TryRunAsync(linkedCancellationToken).AnyContext();
+                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 
                     return result.IsSuccess ? 0 : -1;
