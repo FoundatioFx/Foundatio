@@ -170,6 +170,8 @@ namespace Foundatio.Jobs {
         }
 
         public IJob GetJobInstance() {
+            ResolveTypes();
+
             if (Options.JobInstance != null)
                 return Options.JobInstance;
             
