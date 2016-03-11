@@ -7,7 +7,7 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public interface IQueue<T> : IHaveSerializer, IDisposable where T : class {
+    public interface IQueue<T> : IQueue where T : class {
         AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
         AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
         AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
@@ -16,30 +16,22 @@ namespace Foundatio.Queues {
         AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
         void AttachBehavior(IQueueBehavior<T> behavior);
-
         Task<string> EnqueueAsync(T data);
-
         Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
-
         Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
-
         Task RenewLockAsync(IQueueEntry<T> queueEntry);
-
         Task CompleteAsync(IQueueEntry<T> queueEntry);
-
         Task AbandonAsync(IQueueEntry<T> queueEntry);
-
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
-
-        Task<QueueStats> GetQueueStatsAsync();
-
-        Task DeleteQueueAsync();
-
         void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+    }
 
+    public interface IQueue : IHaveSerializer, IDisposable {
+        Task<QueueStats> GetQueueStatsAsync();
+        Task DeleteQueueAsync();
         string QueueId { get; }
     }
-    
+
     public static class QueueExtensions {
         public static void StartWorking<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             queue.StartWorking((entry, token) => handler(entry), autoComplete, cancellationToken);

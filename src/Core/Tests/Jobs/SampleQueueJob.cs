@@ -10,14 +10,14 @@ using Foundatio.Tests.Utility;
 using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
-    public class SampleQueueJob : QueueProcessorJobBase<SampleQueueWorkItem> {
+    public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem> {
         private readonly IMetricsClient _metrics;
 
         public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
             _metrics = metrics ?? NullMetricsClient.Instance;
         }
 
-        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {
+        protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
             await _metrics.CounterAsync("dequeued").AnyContext();
 
             if (RandomData.GetBool(10)) {
@@ -35,7 +35,7 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 
-    public class SampleQueueJobWithLocking : QueueProcessorJobBase<SampleQueueWorkItem> {
+    public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem> {
         private readonly IMetricsClient _metrics;
         private readonly ILockProvider _lockProvider;
 
@@ -51,7 +51,7 @@ namespace Foundatio.Tests.Jobs {
             return await base.GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
         }
 
-        protected override async Task<JobResult> ProcessQueueEntryAsync(JobQueueEntryContext<SampleQueueWorkItem> context) {
+        protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
             await _metrics.CounterAsync("completed").AnyContext();
             return JobResult.Success;
         }
@@ -69,7 +69,7 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> RunInternalAsync(JobRunContext context) {
+        protected override async Task<JobResult> RunInternalAsync(JobContext context) {
             await _metrics.CounterAsync("runs").AnyContext();
 
             if (RandomData.GetBool(10)) {

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
@@ -81,7 +82,7 @@ namespace Foundatio.Tests.Jobs {
 
             var queues = new List<IQueue<SampleQueueWorkItem>>();
             for (int i = 0; i < jobCount; i++) {
-                var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromSeconds(1));
+                var q = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromMilliseconds(5));
                 await q.DeleteQueueAsync();
                 q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", Log));
                 queues.Add(q);

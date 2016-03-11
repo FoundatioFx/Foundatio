@@ -10,7 +10,7 @@ namespace Foundatio.Redis.Tests.Caching {
         public RedisCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new RedisCacheClient(SharedConnection.GetMuxer());
+            return new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log);
         }
 
         [Fact]

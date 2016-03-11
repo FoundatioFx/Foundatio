@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
@@ -9,7 +10,7 @@ using Foundatio.Messaging;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs {
-    public class WithLockingJob : JobBase {
+    public class WithLockingJob : JobWithLockBase {
         private readonly ILockProvider _locker;
 
         public WithLockingJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
@@ -18,11 +19,11 @@ namespace Foundatio.Tests.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override Task<ILock> GetJobLockAsync(){
+        protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default(CancellationToken)){
             return _locker.AcquireAsync(nameof(WithLockingJob), TimeSpan.FromSeconds(1), TimeSpan.Zero);
         }
 
-        protected override async Task<JobResult> RunInternalAsync(JobRunContext context) {
+        protected override async Task<JobResult> RunInternalAsync(JobContext context) {
             RunCount++;
 
             await Task.Delay(150, context.CancellationToken).AnyContext();

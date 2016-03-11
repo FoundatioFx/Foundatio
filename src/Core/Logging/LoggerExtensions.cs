@@ -497,6 +497,11 @@ namespace Foundatio.Logging {
             logger.Log<object>(LogLevel.Critical, 0, null, null, (state, exception) => formatter());
         }
 
+        public static ILogger GetLogger(this object target) {
+            var accessor = target as IHaveLogger;
+            return accessor != null ? accessor.Logger : NullLogger.Instance;
+        }
+
         //------------------------------------------HELPERS------------------------------------------//
 
         private static string MessageFormatter(object state, Exception error) {

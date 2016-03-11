@@ -56,14 +56,14 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanHandleMultipleWorkItemInstances() {
             const int workItemCount = 1000;
 
-            var metrics = new InMemoryMetricsClient();
-            var queue = new InMemoryQueue<WorkItemData>(retries: 0, retryDelay: TimeSpan.Zero);
-            queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics));
-            var messageBus = new InMemoryMessageBus();
+            var metrics = new InMemoryMetricsClient(loggerFactory: Log);
+            var queue = new InMemoryQueue<WorkItemData>(retries: 0, retryDelay: TimeSpan.Zero, loggerFactory: Log);
+            queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
+            var messageBus = new InMemoryMessageBus(Log);
             var handlerRegistry = new WorkItemHandlers();
-            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry);
-            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry);
-            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry);
+            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
             int errors = 0;
 
             var jobIds = new ConcurrentDictionary<string, int>();

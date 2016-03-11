@@ -15,7 +15,7 @@ namespace Foundatio.Tests.Jobs {
         public static int GlobalRunCount;
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
+        protected override Task<JobResult> RunInternalAsync(JobContext context) {
             RunCount++;
             Interlocked.Increment(ref GlobalRunCount);
 

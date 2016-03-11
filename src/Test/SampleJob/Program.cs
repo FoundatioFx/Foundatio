@@ -11,7 +11,7 @@ namespace Foundatio.SampleJob {
             loggerFactory.AddNLog();
             loggerFactory.DefaultLogLevel = LogLevel.Trace;
 
-            return new JobRunner(loggerFactory).RunInConsole<PingQueueJob, Bootstrapper>();
+            return new JobRunner<PingQueueJob>(loggerFactory).RunInConsole();
         }
     }
 }

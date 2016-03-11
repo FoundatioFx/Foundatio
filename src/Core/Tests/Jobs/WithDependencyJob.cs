@@ -13,7 +13,7 @@ namespace Foundatio.Tests.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
+        protected override Task<JobResult> RunInternalAsync(JobContext context) {
             RunCount++;
 
             return Task.FromResult(JobResult.Success);

@@ -98,6 +98,8 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
+            Log.MinimumLevel = LogLevel.Trace;
+
             _logger.Trace("Warm the log...");
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);

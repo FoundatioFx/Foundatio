@@ -6,8 +6,6 @@ using Foundatio.Utility;
 namespace Foundatio.Queues {
     public class QueueEntry<T> : IDisposable, IQueueEntry<T>, IQueueEntryMetadata where T : class {
         private readonly IQueue<T> _queue;
-        private bool _isAbandoned;
-        private bool _isCompleted;
 
         public QueueEntry(string id, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {
             Id = id;
@@ -19,6 +17,8 @@ namespace Foundatio.Queues {
         }
 
         public string Id { get; }
+        public bool IsCompleted { get; private set; }
+        public bool IsAbandoned { get; private set; }
         public T Value { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         public DateTime RenewedTimeUtc { get; set; }
@@ -33,23 +33,23 @@ namespace Foundatio.Queues {
         }
 
         public Task CompleteAsync() {
-            if (_isAbandoned || _isCompleted)
-                return TaskHelper.Completed();
+            if (IsAbandoned || IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            _isCompleted = true;
+            IsCompleted = true;
             return _queue.CompleteAsync(this);
         }
 
         public Task AbandonAsync() {
-            if (_isAbandoned || _isCompleted)
-                return TaskHelper.Completed();
+            if (IsAbandoned || IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            _isAbandoned = true;
+            IsAbandoned = true;
             return _queue.AbandonAsync(this);
         }
 
         public virtual async void Dispose() {
-            if (!_isAbandoned && !_isCompleted)
+            if (!IsAbandoned && !IsCompleted)
                 await AbandonAsync().AnyContext();
         }
     }

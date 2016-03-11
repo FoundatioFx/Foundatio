@@ -325,16 +325,14 @@ namespace Foundatio.Queues {
             if (result == 0)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-            var tasks = new List<Task> {
+            await Task.WhenAll(
                 Database.KeyDeleteAsync(GetPayloadKey(entry.Id)),
                 Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)),
                 Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)),
                 Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
                 Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)),
                 Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
-            };
-
-            await Task.WhenAll(tasks).AnyContext();
+            ).AnyContext();
 
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(entry).AnyContext();
@@ -364,7 +362,7 @@ namespace Foundatio.Queues {
                 tx.KeyExpireAsync(GetPayloadKey(entry.Id), _deadLetterTtl);
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to wait list: {entry.Id}");
+                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
 
                 await _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()).AnyContext();
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
@@ -382,7 +380,7 @@ namespace Foundatio.Queues {
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to wait list: {entry.Id}");
+                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
 
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
             } else {
@@ -397,8 +395,8 @@ namespace Foundatio.Queues {
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 var success = await tx.ExecuteAsync().AnyContext();
                 if (!success)
-                    throw new Exception($"Unable to move item to queue list: {entry.Id}");
-                
+                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
+
                 // This should pulse the monitor.
                 await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
                 await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)).AnyContext();
@@ -439,16 +437,14 @@ namespace Foundatio.Queues {
         private async Task DeleteListAsync(string name) {
             var itemIds = await Database.ListRangeAsync(name).AnyContext();
             foreach (var id in itemIds) {
-                var tasks = new List<Task> {
+                await Task.WhenAll(
                     Database.KeyDeleteAsync(GetPayloadKey(id)),
                     Database.KeyDeleteAsync(GetAttemptsKey(id)),
                     Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
                     Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
                     Database.KeyDeleteAsync(GetRenewedTimeKey(id)),
                     Database.KeyDeleteAsync(GetWaitTimeKey(id))
-                };
-                
-                await Task.WhenAll(tasks).AnyContext();
+                ).AnyContext();
             }
 
             await Database.KeyDeleteAsync(name).AnyContext();
@@ -457,7 +453,7 @@ namespace Foundatio.Queues {
         private async Task TrimDeadletterItemsAsync(int maxItems) {
             var itemIds = (await Database.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
             foreach (var id in itemIds) {
-                var tasks = new List<Task> {
+                await Task.WhenAll(
                     Database.KeyDeleteAsync(GetPayloadKey(id)),
                     Database.KeyDeleteAsync(GetAttemptsKey(id)),
                     Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
@@ -468,9 +464,7 @@ namespace Foundatio.Queues {
                     Database.ListRemoveAsync(WorkListName, id),
                     Database.ListRemoveAsync(WaitListName, id),
                     Database.ListRemoveAsync(DeadListName, id)
-                };
-
-                await Task.WhenAll(tasks).AnyContext();
+                ).AnyContext();
             }
         }
 
