@@ -49,18 +49,17 @@ namespace Foundatio.Jobs {
     public class JobRunner {
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
-        private readonly string _jobName;
+        private string _jobName;
 
         public JobRunner(JobOptions options, ILoggerFactory loggerFactory = null) {
             _loggerFactory = loggerFactory;
+            _logger = loggerFactory.CreateLogger<JobRunner>();
             Options = options;
-            ResolveTypes();
-            _logger = loggerFactory.CreateLogger(Options.JobType ?? GetType());
-            _jobName = TypeHelper.GetTypeDisplayName(Options.JobType);
         }
 
         public JobRunner(IJob instance, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null) {
             _loggerFactory = loggerFactory;
+            _logger = loggerFactory.CreateLogger<JobRunner>();
             Options = new JobOptions {
                 JobInstance = instance,
                 InitialDelay = initialDelay,
@@ -69,8 +68,6 @@ namespace Foundatio.Jobs {
                 IterationLimit = iterationLimit,
                 Interval = interval
             };
-            _logger = loggerFactory.CreateLogger(instance.GetType());
-            _jobName = TypeHelper.GetTypeDisplayName(instance.GetType());
         }
 
         public JobRunner(string jobType, ILoggerFactory loggerFactory = null)
@@ -125,6 +122,9 @@ namespace Foundatio.Jobs {
                 _logger.Error("JobType or JobInstance must be specified.");
                 return false;
             }
+            
+            ResolveTypes();
+            _jobName = TypeHelper.GetTypeDisplayName(Options.JobType);
 
             if (Options.InitialDelay.HasValue && Options.InitialDelay.Value > TimeSpan.Zero)
                 await Task.Delay(Options.InitialDelay.Value, cancellationToken).AnyContext();
@@ -160,7 +160,10 @@ namespace Foundatio.Jobs {
 
         private void ResolveTypes() {
             if (Options.JobType == null && !String.IsNullOrEmpty(Options.JobTypeName))
-                Options.JobType = TypeHelper.ResolveType(Options.JobTypeName, typeof(JobBase), _logger);
+                Options.JobType = TypeHelper.ResolveType(Options.JobTypeName, typeof(IJob), _logger);
+
+            if (Options.JobType == null && Options.JobInstance != null)
+                Options.JobType = Options.JobInstance.GetType();
 
             if (Options.ServiceProviderType == null && !String.IsNullOrEmpty(Options.ServiceProviderTypeName))
                 Options.ServiceProviderType = TypeHelper.ResolveType(Options.ServiceProviderTypeName, typeof(IServiceProvider), _logger);
