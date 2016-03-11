@@ -87,7 +87,8 @@ namespace Foundatio.Jobs {
             int result;
             try {
                 WatchForShutdown();
-                result = RunAsync(_cancellationTokenSource.Token).GetAwaiter().GetResult();
+                var success = RunAsync(_cancellationTokenSource.Token).GetAwaiter().GetResult();
+                result = success ? 0 : -1;
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -110,31 +111,51 @@ namespace Foundatio.Jobs {
             return result;
         }
 
-        public async Task<int> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            if (Options.JobType == null)
-                return -1;
+        public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
+            if (Options.InstanceCount == 1)
+                new Task(() => RunAsync(cancellationToken).GetAwaiter().GetResult(), cancellationToken, TaskCreationOptions.LongRunning).Start();
+            else
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                RunAsync(cancellationToken);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+        }
+
+        public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            if (Options.JobType == null && Options.JobInstance == null) {
+                _logger.Error("JobType or JobInstance must be specified.");
+                return false;
+            }
 
             if (Options.InitialDelay.HasValue && Options.InitialDelay.Value > TimeSpan.Zero)
                 await Task.Delay(Options.InitialDelay.Value, cancellationToken).AnyContext();
 
-            var job = GetJobInstance();
-            if (Options.RunContinuous) {
+            if (Options.RunContinuous && Options.InstanceCount > 1) {
                 var tasks = new List<Task>();
-                for (int i = 0; i < Options.InstanceCount; i++)
-                    tasks.Add(Task.Run(async () => await GetJobInstance().RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).AnyContext(), cancellationToken));
+                for (int i = 0; i < Options.InstanceCount; i++) {
+                    var task = new Task(() => {
+                        var job = GetJobInstance();
+                        job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                    }, cancellationToken, TaskCreationOptions.LongRunning);
+                    tasks.Add(task);
+                    task.Start();
+                }
 
                 await Task.WhenAll(tasks).AnyContext();
+            } else if (Options.RunContinuous && Options.InstanceCount == 1) {
+                var job = GetJobInstance();
+                await job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).AnyContext();
             } else {
                 using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                     _logger.Trace("Job run \"{0}\" starting...", _jobName);
+                    var job = GetJobInstance();
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 
-                    return result.IsSuccess ? 0 : -1;
+                    return result.IsSuccess;
                 }
             }
 
-            return 0;
+            return true;
         }
 
         private void ResolveTypes() {

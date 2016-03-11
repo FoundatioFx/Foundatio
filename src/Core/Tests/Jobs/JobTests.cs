@@ -23,7 +23,7 @@ namespace Foundatio.Tests.Jobs {
             var token = TimeSpan.FromSeconds(1).ToCancellationToken();
             var result = await new JobRunner<HelloWorldJob>(Log).RunAsync(token);
 
-            Assert.Equal(0, result);
+            Assert.True(result);
         }
 
         [Fact]

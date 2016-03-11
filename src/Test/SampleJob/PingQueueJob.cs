@@ -19,7 +19,7 @@ namespace Foundatio.SampleJob.Jobs {
 
             _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
 
-            //await Task.Delay(TimeSpan.FromSeconds(10)).AnyContext();
+            await Task.Delay(TimeSpan.FromMilliseconds(1)).AnyContext();
 
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
                 throw new ApplicationException("Boom!");
