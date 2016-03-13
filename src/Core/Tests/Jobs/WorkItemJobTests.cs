@@ -134,13 +134,12 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemWithClassHandler() {
-            ServiceProvider.SetServiceProvider(typeof(MyBootstrappedServiceProvider));
             var queue = new InMemoryQueue<WorkItemData>();
             var messageBus = new InMemoryMessageBus();
             var handlerRegistry = new WorkItemHandlers();
             var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-            handlerRegistry.Register<MyWorkItem, MyWorkItemHandler>();
+            handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler());
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {
                 SomeData = "Test"
@@ -193,15 +192,9 @@ namespace Foundatio.Tests.Jobs {
     }
 
     public class MyWorkItemHandler : WorkItemHandlerBase {
-        public MyWorkItemHandler(MyDependency dependency) {
-            Dependency = dependency;
-        }
-
-        public MyDependency Dependency { get; private set; }
+        public MyWorkItemHandler() {}
 
         public override async Task HandleItemAsync(WorkItemContext context) {
-            Assert.NotNull(Dependency);
-
             var jobData = context.GetData<MyWorkItem>();
             Assert.Equal("Test", jobData.SomeData);
 

@@ -21,7 +21,8 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanCancelJob() {
             var token = TimeSpan.FromSeconds(1).ToCancellationToken();
-            var result = await new JobRunner<HelloWorldJob>(Log).RunAsync(token);
+            var job = new HelloWorldJob();
+            var result = await new JobRunner(job, Log).RunAsync(token);
 
             Assert.True(result);
         }
@@ -41,23 +42,24 @@ namespace Foundatio.Tests.Jobs {
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(150));
 
-            var jobInstance = new JobRunner(typeof(HelloWorldJob).AssemblyQualifiedName).GetJobInstance();
+            var jobInstance = new HelloWorldJob();
             Assert.NotNull(jobInstance);
-            Assert.Equal(0, ((HelloWorldJob)jobInstance).RunCount);
+            Assert.Equal(0, jobInstance.RunCount);
             Assert.Equal(JobResult.Success, await jobInstance.RunAsync());
-            Assert.Equal(1, ((HelloWorldJob)jobInstance).RunCount);
+            Assert.Equal(1, jobInstance.RunCount);
         }
 
         [Fact]
         public async Task CanRunMultipleInstances() {
             HelloWorldJob.GlobalRunCount = 0;
             
-            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 1).RunAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
+            var job = new HelloWorldJob();
+            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 1).RunAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
             HelloWorldJob.GlobalRunCount = 0;
 
-            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 100).RunAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
+            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 100).RunAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
             Assert.Equal(500, HelloWorldJob.GlobalRunCount);
         }
 
@@ -67,7 +69,8 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
             Assert.Equal(1, job.RunCount);
 
-            await new JobRunner<HelloWorldJob>(Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
+            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
+                .RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
         }
 
         [Fact]
@@ -96,37 +99,6 @@ namespace Foundatio.Tests.Jobs {
                 _logger.Info(jobs.Sum(j => j.RunCount).ToString());
                 Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
             }
-        }
-
-        [Fact]
-        public async Task CanBootstrapJobs() {
-            ServiceProvider.SetServiceProvider(typeof(JobTests));
-            Assert.NotNull(ServiceProvider.Current);
-            Assert.Equal(ServiceProvider.Current.GetType(), typeof(MyBootstrappedServiceProvider));
-
-            ServiceProvider.SetServiceProvider(typeof(MyBootstrappedServiceProvider));
-            Assert.NotNull(ServiceProvider.Current);
-            Assert.Equal(ServiceProvider.Current.GetType(), typeof(MyBootstrappedServiceProvider));
-
-            var job = ServiceProvider.Current.GetService<WithDependencyJob>();
-            Assert.NotNull(job);
-            Assert.NotNull(job.Dependency);
-            Assert.Equal(5, job.Dependency.MyProperty);
-
-            var jobInstance = new JobRunner("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests").GetJobInstance();
-            Assert.NotNull(job);
-            Assert.NotNull(job.Dependency);
-            Assert.Equal(5, job.Dependency.MyProperty);
-
-            ServiceProvider.SetServiceProvider("Foundatio.Tests.Jobs.MyBootstrappedServiceProvider,Foundatio.Tests", "Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests");
-            jobInstance = new JobRunner("Foundatio.Tests.Jobs.HelloWorldJob,Foundatio.Tests").GetJobInstance();
-            Assert.NotNull(job);
-            Assert.NotNull(job.Dependency);
-            Assert.Equal(5, job.Dependency.MyProperty);
-
-            var result = await jobInstance.RunAsync();
-            Assert.Equal(true, result.IsSuccess);
-            Assert.True(jobInstance is HelloWorldJob);
         }
 
         [Fact(Skip = "Meant to be run manually.")]

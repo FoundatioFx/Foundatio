@@ -72,7 +72,7 @@
     <Compile Include="..\..\Core\Extensions\TaskExtensions.cs">
       <Link>Extensions\TaskExtensions.cs</Link>
     </Compile>
-    <Compile Include="Bootstrapper.cs" />
+    <Compile Include="SampleServiceProvider.cs" />
     <Compile Include="PingQueueJob.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

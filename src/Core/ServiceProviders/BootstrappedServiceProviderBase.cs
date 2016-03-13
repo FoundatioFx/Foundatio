@@ -3,6 +3,12 @@ using Foundatio.Logging;
 
 namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {
+        public BootstrappedServiceProviderBase() {}
+
+        public BootstrappedServiceProviderBase(ILoggerFactory loggerFactory) {
+            LoggerFactory = loggerFactory;
+        }
+
         public ILoggerFactory LoggerFactory { get; set; }
         public IServiceProvider ServiceProvider { get; private set; }
 

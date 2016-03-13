@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
 using Foundatio.Logging;
-using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
@@ -15,12 +14,12 @@ namespace Foundatio.Jobs {
             _handlers = new ConcurrentDictionary<Type, Lazy<IWorkItemHandler>>();
         }
 
-        public void Register<TWorkItem, THandler>() where TWorkItem : class where THandler : IWorkItemHandler {
-            _handlers.TryAdd(typeof(TWorkItem), new Lazy<IWorkItemHandler>(() => ServiceProvider.Current.GetService(typeof(THandler)) as IWorkItemHandler));
-        }
-
         public void Register<T>(IWorkItemHandler handler) {
             _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => handler));
+        }
+
+        public void Register<T>(Func<IWorkItemHandler> handler) {
+            _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(handler));
         }
 
         public void Register<T>(Func<WorkItemContext, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {

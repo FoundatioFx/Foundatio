@@ -2,20 +2,37 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Foundatio.Logging;
 using Foundatio.Utility;
 
 namespace Foundatio.ServiceProviders {
     public static class ServiceProvider {
-        private static IServiceProvider _serviceProvider;
-        private static readonly Lazy<IServiceProvider> _defaultServiceProvider = new Lazy<IServiceProvider>(() => FindServiceProvider()); 
+        public static IServiceProvider FindServiceProvider(string relativeTypeName, ILoggerFactory loggerFactory = null) {
+            if (String.IsNullOrEmpty(relativeTypeName))
+                return null;
 
-        public static IServiceProvider Current
-        {
-            get { return _serviceProvider ?? _defaultServiceProvider.Value; }
-            set { _serviceProvider = value ?? Current; }
+            var relativeType = TypeHelper.ResolveType(relativeTypeName, typeof(IServiceProvider), loggerFactory?.CreateLogger("Foundatio.ServiceProviders.ServiceProvider"));
+            if (relativeType == null)
+                return null;
+
+            return FindServiceProvider(relativeType, loggerFactory);
         }
 
-        internal static IServiceProvider FindServiceProvider(Assembly[] assembliesToSearch = null) {
+        public static IServiceProvider FindServiceProvider(Type relativeType, ILoggerFactory loggerFactory = null) {
+            if (relativeType == null)
+                return null;
+
+            if (!typeof(IServiceProvider).IsAssignableFrom(relativeType))
+                return FindServiceProvider(loggerFactory, relativeType.Assembly);
+
+            return GetServiceProviderInstance(relativeType, loggerFactory);
+        }
+
+        public static IServiceProvider FindServiceProvider(params Assembly[] assembliesToSearch) {
+            return FindServiceProvider(null, assembliesToSearch);
+        }
+
+        public static IServiceProvider FindServiceProvider(ILoggerFactory loggerFactory, params Assembly[] assembliesToSearch) {
             var assemblies = new List<Assembly>();
             if (assembliesToSearch != null && assembliesToSearch.Length > 0) {
                 assemblies.AddRange(assembliesToSearch);
@@ -24,73 +41,38 @@ namespace Foundatio.ServiceProviders {
                     var entryAssembly = Assembly.GetEntryAssembly();
                     if (entryAssembly != null)
                         assemblies.Add(entryAssembly);
-                } catch {}
+                } catch { }
             }
 
+            // try to find bootstrapped service providers first
             var serviceProviderTypes = assemblies.SelectMany(a =>
                 a.GetTypes().Where(t => !t.IsInterface && !t.IsAbstract && typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
-                var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
-                if (bootstrapper != null)
-                    return bootstrapper;
+                var serviceProvider = GetServiceProviderInstance(serviceProviderType, loggerFactory);
+                if (serviceProvider != null)
+                    return serviceProvider;
             }
 
+            // find any service providers
             serviceProviderTypes = assemblies.SelectMany(a => a.GetTypes()
                 .Where(t => !t.IsInterface && !t.IsAbstract && typeof(IServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
-                var bootstrapper = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
-                if (bootstrapper != null)
-                    return bootstrapper;
+                var serviceProvider = GetServiceProviderInstance(serviceProviderType, loggerFactory);
+                if (serviceProvider != null)
+                    return serviceProvider;
             }
 
             return new ActivatorServiceProvider();
         }
 
-        public static void SetServiceProvider(string serviceProviderTypeName, params string[] typeNamesToSearch) {
-            if (!String.IsNullOrEmpty(serviceProviderTypeName)) {
-                var serviceProviderType = TypeHelper.ResolveType(serviceProviderTypeName, typeof(IServiceProvider));
-                if (serviceProviderType != null) {
-                    SetServiceProvider(serviceProviderType);
-                    return;
-                }
-            }
+        private static IServiceProvider GetServiceProviderInstance(Type serviceProviderType, ILoggerFactory loggerFactory) {
+            var serviceProvider = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
+            if (serviceProvider is IBootstrappedServiceProvider)
+                ((IBootstrappedServiceProvider)serviceProvider).LoggerFactory = loggerFactory;
 
-            var assembliesToSearch = new List<Assembly>();
-            var assemblyType = !String.IsNullOrEmpty(serviceProviderTypeName) ? Type.GetType(serviceProviderTypeName) : null;
-            if (assemblyType != null)
-                assembliesToSearch.Add(assemblyType.Assembly);
-
-            foreach (var typeName in typeNamesToSearch) {
-                var type = !String.IsNullOrEmpty(typeName) ? Type.GetType(typeName) : null;
-                if (type != null)
-                    assembliesToSearch.Add(type.Assembly);
-            }
-
-            SetServiceProvider(assembliesToSearch.Distinct().ToArray());
-        }
-
-        public static void SetServiceProvider(Type serviceProviderOrJobType) {
-            if (serviceProviderOrJobType == null)
-                return;
-
-            if (!typeof(IServiceProvider).IsAssignableFrom(serviceProviderOrJobType)) {
-                SetServiceProvider(serviceProviderOrJobType.Assembly);
-                return;
-            }
-
-            var bootstrapper = Activator.CreateInstance(serviceProviderOrJobType) as IServiceProvider;
-            if (bootstrapper == null)
-                return;
-
-            Current = bootstrapper;
-        }
-        
-        public static void SetServiceProvider(params Assembly[] assembliesToSearch) {
-            var result = FindServiceProvider(assembliesToSearch);
-            if (result != null)
-                Current = result;
+            return serviceProvider;
         }
     }
 }

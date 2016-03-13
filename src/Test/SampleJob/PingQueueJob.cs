@@ -6,7 +6,7 @@ using Foundatio.Jobs;
 using Foundatio.Queues;
 using Foundatio.Logging;
 
-namespace Foundatio.SampleJob.Jobs {
+namespace Foundatio.SampleJob {
     public class PingQueueJob : QueueJobBase<PingRequest> {
         public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory) : base(queue, loggerFactory) {
             AutoComplete = true;

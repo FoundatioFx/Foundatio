@@ -6,13 +6,18 @@ using Foundatio.ServiceProviders;
 using SimpleInjector;
 using StackExchange.Redis;
 
-namespace Foundatio.SampleJob.Jobs {
-    public class Bootstrapper : BootstrappedServiceProviderBase {
+namespace Foundatio.SampleJob {
+    public class SampleServiceProvider : BootstrappedServiceProviderBase {
+        public SampleServiceProvider() { }
+        public SampleServiceProvider(ILoggerFactory loggerFactory) : base(loggerFactory) {}
+
         protected override IServiceProvider BootstrapInternal(ILoggerFactory loggerFactory) {
             var container = new Container();
 
-            container.RegisterSingleton<ILoggerFactory>(loggerFactory);
-            container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
+            if (loggerFactory != null) {
+                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
+            }
 
             var muxer = ConnectionMultiplexer.Connect("localhost");
             container.RegisterSingleton(muxer);

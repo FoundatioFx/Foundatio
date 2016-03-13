@@ -1,8 +1,9 @@
 ﻿using System;
 using Foundatio.Jobs;
-using Foundatio.SampleJob.Jobs;
 using Foundatio.Logging;
 using Foundatio.Logging.NLog;
+using Foundatio.Extensions;
+using Foundatio.ServiceProviders;
 
 namespace Foundatio.SampleJob {
     public class Program {
@@ -11,7 +12,11 @@ namespace Foundatio.SampleJob {
             loggerFactory.AddNLog();
             loggerFactory.DefaultLogLevel = LogLevel.Trace;
 
-            return new JobRunner<PingQueueJob>(loggerFactory).RunInConsole();
+            //var serviceProvider = new SampleServiceProvider(loggerFactory);
+            //var serviceProvider = ServiceProvider.FindServiceProvider("Foundatio.SampleJob.SampleServiceProvider,Foundatio.SampleJob", loggerFactory);
+            var serviceProvider = ServiceProvider.FindServiceProvider(typeof(PingQueueJob), loggerFactory);
+            var job = serviceProvider.GetService<PingQueueJob>();
+            return new JobRunner(job, loggerFactory).RunInConsole();
         }
     }
 }

@@ -6,79 +6,28 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
-    public class JobRunner<TJob, TServiceProvider> : JobRunner where TJob : IJob where TServiceProvider : IServiceProvider {
-        public JobRunner(ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
-            : base(new JobOptions {
-                JobType = typeof(TJob),
-                ServiceProviderType = typeof(TServiceProvider),
-                InitialDelay = initialDelay,
-                InstanceCount = instanceCount,
-                RunContinuous = runContinuous,
-                IterationLimit = iterationLimit,
-                Interval = interval
-            }, loggerFactory) { }
-    }
-
-    public class JobRunner<TJob> : JobRunner where TJob: IJob {
-        public JobRunner(ILoggerFactory loggerFactory = null, TimeSpan ? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
-            : base(new JobOptions {
-                JobType = typeof(TJob),
-                InitialDelay = initialDelay,
-                InstanceCount = instanceCount,
-                RunContinuous = runContinuous,
-                IterationLimit = iterationLimit,
-                Interval = interval
-            }, loggerFactory) {}
-
-        public JobRunner(string serviceProviderType = null, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
-            : base(new JobOptions {
-                JobType = typeof(TJob),
-                ServiceProviderTypeName = serviceProviderType,
-                InitialDelay = initialDelay,
-                InstanceCount = instanceCount,
-                RunContinuous = runContinuous,
-                IterationLimit = iterationLimit,
-                Interval = interval
-            }, loggerFactory) { }
-    }
-
     public class JobRunner {
-        private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
         private string _jobName;
+        private readonly JobOptions _options;
 
         public JobRunner(JobOptions options, ILoggerFactory loggerFactory = null) {
-            _loggerFactory = loggerFactory;
             _logger = loggerFactory.CreateLogger<JobRunner>();
-            Options = options;
+            _options = options;
         }
 
-        public JobRunner(IJob instance, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null) {
-            _loggerFactory = loggerFactory;
-            _logger = loggerFactory.CreateLogger<JobRunner>();
-            Options = new JobOptions {
-                JobInstance = instance,
+        public JobRunner(IJob instance, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+            : this(new JobOptions {
+                Job = instance,
                 InitialDelay = initialDelay,
                 InstanceCount = instanceCount,
-                RunContinuous = runContinuous,
                 IterationLimit = iterationLimit,
+                RunContinuous = runContinuous,
                 Interval = interval
-            };
-        }
-
-        public JobRunner(string jobType, ILoggerFactory loggerFactory = null)
-            : this(new JobOptions { JobTypeName = jobType }, loggerFactory) {
-        }
-
-        public JobRunner(string jobType, string serviceProviderType, ILoggerFactory loggerFactory = null)
-            : this(new JobOptions { JobTypeName = jobType, ServiceProviderTypeName = serviceProviderType }, loggerFactory) {
-        }
-        
-        public JobOptions Options { get; }
+            }, loggerFactory) {}
 
         public int RunInConsole() {
             int result;
@@ -109,7 +58,7 @@ namespace Foundatio.Jobs {
         }
 
         public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
-            if (Options.InstanceCount == 1)
+            if (_options.InstanceCount == 1) {
                 new Task(() => {
                     try {
                         RunAsync(cancellationToken).GetAwaiter().GetResult();
@@ -118,31 +67,28 @@ namespace Foundatio.Jobs {
                         throw;
                     }
                 }, cancellationToken, TaskCreationOptions.LongRunning).Start();
-            else
-#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                RunAsync(cancellationToken);
-#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            } else {
+                var ignored = RunAsync(cancellationToken);
+            }
         }
 
         public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            if (Options.JobType == null && Options.JobInstance == null) {
-                _logger.Error("JobType or JobInstance must be specified.");
+            if (_options.Job == null) {
+                _logger.Error("Job must be specified.");
                 return false;
             }
             
-            ResolveTypes();
-            _jobName = TypeHelper.GetTypeDisplayName(Options.JobType);
+            _jobName = TypeHelper.GetTypeDisplayName(_options.Job.GetType());
 
-            if (Options.InitialDelay.HasValue && Options.InitialDelay.Value > TimeSpan.Zero)
-                await Task.Delay(Options.InitialDelay.Value, cancellationToken).AnyContext();
+            if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
+                await Task.Delay(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
-            if (Options.RunContinuous && Options.InstanceCount > 1) {
+            if (_options.RunContinuous && _options.InstanceCount > 1) {
                 var tasks = new List<Task>();
-                for (int i = 0; i < Options.InstanceCount; i++) {
+                for (int i = 0; i < _options.InstanceCount; i++) {
                     var task = new Task(() => {
                         try {
-                            var job = GetJobInstance();
-                            job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                            _options.Job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
                         } catch (Exception ex) {
                             _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
                             throw;
@@ -153,14 +99,12 @@ namespace Foundatio.Jobs {
                 }
 
                 await Task.WhenAll(tasks).AnyContext();
-            } else if (Options.RunContinuous && Options.InstanceCount == 1) {
-                var job = GetJobInstance();
-                await job.RunContinuousAsync(Options.Interval, Options.IterationLimit, cancellationToken).AnyContext();
+            } else if (_options.RunContinuous && _options.InstanceCount == 1) {
+                await _options.Job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
             } else {
                 using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                     _logger.Trace("Job run \"{0}\" starting...", _jobName);
-                    var job = GetJobInstance();
-                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
+                    var result = await _options.Job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 
                     return result.IsSuccess;
@@ -168,54 +112,6 @@ namespace Foundatio.Jobs {
             }
 
             return true;
-        }
-
-        private void ResolveTypes() {
-            if (Options.JobType == null && !String.IsNullOrEmpty(Options.JobTypeName))
-                Options.JobType = TypeHelper.ResolveType(Options.JobTypeName, typeof(IJob), _logger);
-
-            if (Options.JobType == null && Options.JobInstance != null)
-                Options.JobType = Options.JobInstance.GetType();
-
-            if (Options.ServiceProviderType == null && !String.IsNullOrEmpty(Options.ServiceProviderTypeName))
-                Options.ServiceProviderType = TypeHelper.ResolveType(Options.ServiceProviderTypeName, typeof(IServiceProvider), _logger);
-        }
-
-        public IJob GetJobInstance() {
-            ResolveTypes();
-
-            if (Options.JobInstance != null)
-                return Options.JobInstance;
-            
-            if (Options.JobType == null)
-                return null;
-
-            return CreateJobInstance(Options.JobType);
-        }
-
-        private IJob CreateJobInstance(Type jobType) {
-            if (!typeof(IJob).IsAssignableFrom(jobType)) {
-                _logger.Error("Job Type must derive from IJob.");
-                return null;
-            }
-
-            if (!(Options.NoServiceProvider.HasValue && Options.NoServiceProvider.Value == false))
-                ServiceProvider.SetServiceProvider(Options.ServiceProviderType ?? Options.JobType);
-
-            // force bootstrap now so logging will be configured
-            var bootstrappedServiceProvider = ServiceProvider.Current as IBootstrappedServiceProvider;
-            if (bootstrappedServiceProvider != null) {
-                bootstrappedServiceProvider.LoggerFactory = _loggerFactory;
-                bootstrappedServiceProvider.Bootstrap();
-            }
-
-            var job = ServiceProvider.Current.GetService(jobType) as IJob;
-            if (job == null) {
-                _logger.Error("Unable to create job instance.");
-                return null;
-            }
-
-            return job;
         }
 
         private string _webJobsShutdownFile;

@@ -90,7 +90,6 @@
     <Compile Include="Jobs\ThrottledJob.cs" />
     <Compile Include="Jobs\WithLockingJob.cs" />
     <Compile Include="Jobs\WorkItemJobTests.cs" />
-    <Compile Include="Jobs\MyServiceProvider.cs" />
     <Compile Include="Jobs\SampleQueueJob.cs" />
     <Compile Include="Jobs\WithDependencyJob.cs" />
     <Compile Include="Jobs\HelloWorldJob.cs" />
