@@ -7,7 +7,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.ServiceProviders {
     public static class ServiceProvider {
-        public static IServiceProvider FindServiceProvider(string relativeTypeName, ILoggerFactory loggerFactory = null) {
+        public static IServiceProvider FindAndGetServiceProvider(string relativeTypeName, ILoggerFactory loggerFactory = null) {
             if (String.IsNullOrEmpty(relativeTypeName))
                 return null;
 
@@ -15,24 +15,24 @@ namespace Foundatio.ServiceProviders {
             if (relativeType == null)
                 return null;
 
-            return FindServiceProvider(relativeType, loggerFactory);
+            return FindAndGetServiceProvider(relativeType, loggerFactory);
         }
 
-        public static IServiceProvider FindServiceProvider(Type relativeType, ILoggerFactory loggerFactory = null) {
+        public static IServiceProvider FindAndGetServiceProvider(Type relativeType, ILoggerFactory loggerFactory = null) {
             if (relativeType == null)
                 return null;
 
             if (!typeof(IServiceProvider).IsAssignableFrom(relativeType))
-                return FindServiceProvider(loggerFactory, relativeType.Assembly);
+                return FindAndGetServiceProvider(loggerFactory, relativeType.Assembly);
 
-            return GetServiceProviderInstance(relativeType, loggerFactory);
+            return GetServiceProvider(relativeType, loggerFactory);
         }
 
-        public static IServiceProvider FindServiceProvider(params Assembly[] assembliesToSearch) {
-            return FindServiceProvider(null, assembliesToSearch);
+        public static IServiceProvider FindAndGetServiceProvider(params Assembly[] assembliesToSearch) {
+            return FindAndGetServiceProvider(null, assembliesToSearch);
         }
 
-        public static IServiceProvider FindServiceProvider(ILoggerFactory loggerFactory, params Assembly[] assembliesToSearch) {
+        public static IServiceProvider FindAndGetServiceProvider(ILoggerFactory loggerFactory, params Assembly[] assembliesToSearch) {
             var assemblies = new List<Assembly>();
             if (assembliesToSearch != null && assembliesToSearch.Length > 0) {
                 assemblies.AddRange(assembliesToSearch);
@@ -49,7 +49,7 @@ namespace Foundatio.ServiceProviders {
                 a.GetTypes().Where(t => !t.IsInterface && !t.IsAbstract && typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
-                var serviceProvider = GetServiceProviderInstance(serviceProviderType, loggerFactory);
+                var serviceProvider = GetServiceProvider(serviceProviderType, loggerFactory);
                 if (serviceProvider != null)
                     return serviceProvider;
             }
@@ -59,7 +59,7 @@ namespace Foundatio.ServiceProviders {
                 .Where(t => !t.IsInterface && !t.IsAbstract && typeof(IServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
-                var serviceProvider = GetServiceProviderInstance(serviceProviderType, loggerFactory);
+                var serviceProvider = GetServiceProvider(serviceProviderType, loggerFactory);
                 if (serviceProvider != null)
                     return serviceProvider;
             }
@@ -67,7 +67,15 @@ namespace Foundatio.ServiceProviders {
             return new ActivatorServiceProvider();
         }
 
-        private static IServiceProvider GetServiceProviderInstance(Type serviceProviderType, ILoggerFactory loggerFactory) {
+        public static IServiceProvider GetServiceProvider(string serviceProviderTypeName, ILoggerFactory loggerFactory) {
+            var type = Type.GetType(serviceProviderTypeName);
+            if (type == null)
+                return null;
+
+            return GetServiceProvider(type, loggerFactory);
+        }
+
+        public static IServiceProvider GetServiceProvider(Type serviceProviderType, ILoggerFactory loggerFactory) {
             var serviceProvider = Activator.CreateInstance(serviceProviderType) as IServiceProvider;
             if (serviceProvider is IBootstrappedServiceProvider)
                 ((IBootstrappedServiceProvider)serviceProvider).LoggerFactory = loggerFactory;

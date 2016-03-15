@@ -13,8 +13,8 @@ namespace Foundatio.SampleJob {
             loggerFactory.DefaultLogLevel = LogLevel.Trace;
 
             //var serviceProvider = new SampleServiceProvider(loggerFactory);
-            //var serviceProvider = ServiceProvider.FindServiceProvider("Foundatio.SampleJob.SampleServiceProvider,Foundatio.SampleJob", loggerFactory);
-            var serviceProvider = ServiceProvider.FindServiceProvider(typeof(PingQueueJob), loggerFactory);
+            //var serviceProvider = ServiceProvider.GetServiceProvider("Foundatio.SampleJob.SampleServiceProvider,Foundatio.SampleJob", loggerFactory);
+            var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(PingQueueJob), loggerFactory);
             var job = serviceProvider.GetService<PingQueueJob>();
             return new JobRunner(job, loggerFactory).RunInConsole();
         }

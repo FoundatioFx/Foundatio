@@ -12,23 +12,23 @@ namespace Foundatio.Metrics {
 
     public static class MetricsClientStatsExtensions {
         public static async Task<long> GetCounterCountAsync(this IMetricsClientStats stats, string name, DateTime? start = null, DateTime? end = null) {
-            var result = await stats.GetCounterStatsAsync(name, start, end).AnyContext();
+            var result = await stats.GetCounterStatsAsync(name, start, end, 1).AnyContext();
             return result.Count;
         }
 
         public static async Task<double> GetLastGaugeValueAsync(this IMetricsClientStats stats, string name, DateTime? start = null, DateTime? end = null) {
-            var result = await stats.GetGaugeStatsAsync(name, start, end).AnyContext();
+            var result = await stats.GetGaugeStatsAsync(name, start, end, 1).AnyContext();
             return result.Last;
         }
 
         public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
-            var countTask = stats.GetGaugeStatsAsync($"{name}.count", start, end);
-            var enqueuedTask = stats.GetCounterStatsAsync($"{name}.enqueued", start, end);
-            var queueTimeTask = stats.GetTimerStatsAsync($"{name}.queuetime", start, end);
-            var dequeuedTask = stats.GetCounterStatsAsync($"{name}.dequeued", start, end);
-            var completedTask = stats.GetCounterStatsAsync($"{name}.completed", start, end);
-            var abandonedTask = stats.GetCounterStatsAsync($"{name}.abandoned", start, end);
-            var processTimeTask = stats.GetTimerStatsAsync($"{name}.processtime", start, end);
+            var countTask = stats.GetGaugeStatsAsync($"{name}.count", start, end, dataPoints);
+            var enqueuedTask = stats.GetCounterStatsAsync($"{name}.enqueued", start, end, dataPoints);
+            var queueTimeTask = stats.GetTimerStatsAsync($"{name}.queuetime", start, end, dataPoints);
+            var dequeuedTask = stats.GetCounterStatsAsync($"{name}.dequeued", start, end, dataPoints);
+            var completedTask = stats.GetCounterStatsAsync($"{name}.completed", start, end, dataPoints);
+            var abandonedTask = stats.GetCounterStatsAsync($"{name}.abandoned", start, end, dataPoints);
+            var processTimeTask = stats.GetTimerStatsAsync($"{name}.processtime", start, end, dataPoints);
 
             await Task.WhenAll(countTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask);
 

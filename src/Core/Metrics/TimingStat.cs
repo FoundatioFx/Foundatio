@@ -11,7 +11,7 @@ namespace Foundatio.Metrics {
         public long TotalDuration { get; set; }
         public int MinDuration { get; set; }
         public int MaxDuration { get; set; }
-        public double AverageDuration => (double)TotalDuration / Count;
+        public double AverageDuration => Count > 0 ? (double)TotalDuration / Count : 0;
     }
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
@@ -22,7 +22,7 @@ namespace Foundatio.Metrics {
             MinDuration = Stats.Min(s => s.MinDuration);
             MaxDuration = Stats.Max(s => s.MaxDuration);
             TotalDuration = Stats.Sum(s => s.TotalDuration);
-            AverageDuration = (double)TotalDuration / Count;
+            AverageDuration = Count > 0 ? (double)TotalDuration / Count : 0;
             StartTime = start;
             EndTime = end;
         }
