@@ -8,6 +8,7 @@ using Microsoft.WindowsAzure.Storage.RetryPolicies;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
+    [Collection("AzureStorageIntegrationTests")]
     public class AzureStorageQueueTests : QueueTestBase {
         private static readonly string QueueName = Guid.NewGuid().ToString("N");
 

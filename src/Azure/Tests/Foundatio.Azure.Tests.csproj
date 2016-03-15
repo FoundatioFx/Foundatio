@@ -78,6 +78,10 @@
       <HintPath>..\..\..\packages\Nito.AsyncEx.3.0.1\lib\net45\Nito.AsyncEx.Enlightenment.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="RimDev.Automation.StorageEmulator, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\RimDev.Automation.StorageEmulator.0.1.0\lib\net45\RimDev.Automation.StorageEmulator.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Runtime.Serialization" />
@@ -109,6 +113,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AzureStorageEmulatorCollection.cs" />
+    <Compile Include="AzureStorageEmulatorFixture.cs" />
     <Compile Include="Messaging\AzureServiceBusMessageBusTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queues\AzureStorageQueueTests.cs" />
