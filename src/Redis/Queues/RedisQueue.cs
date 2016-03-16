@@ -315,7 +315,7 @@ namespace Foundatio.Queues {
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
             try {
                 return await Run.WithRetriesAsync(() => Database.ListRightPopLeftPushAsync(QueueListName, WorkListName), 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken).AnyContext();
-            } catch (TaskCanceledException) {
+            } catch (Exception) {
                 return RedisValue.Null;
             }
         }
