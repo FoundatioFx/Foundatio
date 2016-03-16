@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
@@ -63,9 +64,9 @@ namespace Foundatio.Lock {
             do {
                 bool gotLock;
                 if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow).AnyContext();
+                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow), cancellationToken: cancellationToken).AnyContext();
                 else
-                    gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value).AnyContext();
+                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value), cancellationToken: cancellationToken).AnyContext();
 
                 if (gotLock) {
                     allowLock = true;
@@ -117,13 +118,13 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            return (await _cacheClient.GetAsync<object>(name).AnyContext()).HasValue;
+            return (await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name)).AnyContext()).HasValue;
         }
 
         public async Task ReleaseAsync(string name) {
             _logger.Trace("ReleaseAsync: {name}", name);
 
-            await _cacheClient.RemoveAsync(name).AnyContext();
+            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name)).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }
 
@@ -132,7 +133,7 @@ namespace Foundatio.Lock {
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);
 
-            await _cacheClient.SetExpirationAsync(name, lockExtension.Value).AnyContext();
+            await Run.WithRetriesAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value)).AnyContext();
         }
 
         public void Dispose() { }

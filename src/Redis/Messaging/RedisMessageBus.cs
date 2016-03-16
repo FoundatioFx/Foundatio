@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -67,7 +68,7 @@ namespace Foundatio.Messaging {
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             }).AnyContext();
 
-            await _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget).AnyContext();
+            await Run.WithRetriesAsync(() => _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget), cancellationToken: cancellationToken).AnyContext();
         }
 
         public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
