@@ -21,7 +21,18 @@ namespace Foundatio.Jobs {
 
         public JobRunner(IJob instance, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
             : this(new JobOptions {
-                Job = instance,
+                  JobFactory = () => instance,
+                  InitialDelay = initialDelay,
+                  InstanceCount = instanceCount,
+                  IterationLimit = iterationLimit,
+                  RunContinuous = runContinuous,
+                  Interval = interval
+              }, loggerFactory) {
+            }
+
+        public JobRunner(Func<IJob> jobFactory, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+            : this(new JobOptions {
+                JobFactory = jobFactory,
                 InitialDelay = initialDelay,
                 InstanceCount = instanceCount,
                 IterationLimit = iterationLimit,
@@ -73,12 +84,13 @@ namespace Foundatio.Jobs {
         }
 
         public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            if (_options.Job == null) {
-                _logger.Error("Job must be specified.");
+            if (_options.JobFactory == null) {
+                _logger.Error("JobFactory must be specified.");
                 return false;
             }
-            
-            _jobName = TypeHelper.GetTypeDisplayName(_options.Job.GetType());
+
+            var job = _options.JobFactory();
+            _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
 
             if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
                 await Task.Delay(_options.InitialDelay.Value, cancellationToken).AnyContext();
@@ -88,7 +100,8 @@ namespace Foundatio.Jobs {
                 for (int i = 0; i < _options.InstanceCount; i++) {
                     var task = new Task(() => {
                         try {
-                            _options.Job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                            var jobInstance = _options.JobFactory();
+                            jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
                         } catch (Exception ex) {
                             _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
                             throw;
@@ -100,11 +113,11 @@ namespace Foundatio.Jobs {
 
                 await Task.WhenAll(tasks).AnyContext();
             } else if (_options.RunContinuous && _options.InstanceCount == 1) {
-                await _options.Job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
             } else {
                 using (_logger.BeginScope(s => s.Property("job", _jobName))) {
                     _logger.Trace("Job run \"{0}\" starting...", _jobName);
-                    var result = await _options.Job.TryRunAsync(cancellationToken).AnyContext();
+                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 
                     return result.IsSuccess;

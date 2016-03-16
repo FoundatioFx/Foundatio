@@ -99,8 +99,11 @@ namespace Foundatio.Metrics {
 
                 _logger.Trace("Aggregated {count} counters", counters.Count);
 
-                foreach (var counter in counters)
-                    await SubmitCounterAsync(counter.Name, counter.Minute, counter.Count).AnyContext();
+                foreach (var counter in counters) {
+                    await Run.WithRetriesAsync(async () => {
+                        await SubmitCounterAsync(counter.Name, counter.Minute, counter.Count).AnyContext();
+                    }).AnyContext();
+                }
 
                 // gauges
 
@@ -110,8 +113,11 @@ namespace Foundatio.Metrics {
 
                 _logger.Trace("Aggregated {count} gauges", gauges.Count);
 
-                foreach (var gauge in gauges)
-                    await SubmitGaugeAsync(gauge.Name, gauge.Minute, gauge.Last, gauge.Max).AnyContext();
+                foreach (var gauge in gauges) {
+                    await Run.WithRetriesAsync(async () => {
+                        await SubmitGaugeAsync(gauge.Name, gauge.Minute, gauge.Last, gauge.Max).AnyContext();
+                    }).AnyContext();
+                }
 
                 // timings
 
@@ -121,8 +127,12 @@ namespace Foundatio.Metrics {
 
                 _logger.Trace("Aggregated {count} timings", timings.Count);
 
-                foreach (var timing in timings)
-                    await SubmitTimingAsync(timing.Name, timing.Minute, timing.Count, timing.Total, timing.Max, timing.Min).AnyContext();
+
+                foreach (var timing in timings) {
+                    await Run.WithRetriesAsync(async () => {
+                        await SubmitTimingAsync(timing.Name, timing.Minute, timing.Count, timing.Total, timing.Max, timing.Min).AnyContext();
+                    }).AnyContext();
+                }
 
                 // TODO: Aggregate data into bigger buckets of time for longer term storage
             } finally {

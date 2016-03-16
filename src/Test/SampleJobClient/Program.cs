@@ -132,6 +132,7 @@ namespace Foundatio.SampleJobClient {
 
     public class PingRequest {
         public string Data { get; set; }
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public int PercentChanceOfException { get; set; } = 0;
     }
 }

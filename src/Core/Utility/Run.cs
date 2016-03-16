@@ -16,7 +16,14 @@ namespace Foundatio.Utility {
         public static Task InParallel(int iterations, Func<int, Task> work) {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
-        
+
+        public static async Task WithRetriesAsync(Func<Task> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            await Run.WithRetriesAsync(async () => {
+                await action().AnyContext();
+                return TaskHelper.Completed();
+            }, maxAttempts, retryInterval, cancellationToken).AnyContext();
+        }
+
         public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
@@ -26,9 +33,9 @@ namespace Foundatio.Utility {
                 try {
                     return await action().AnyContext();
                 } catch {
-                    if (attempts > maxAttempts)
+                    if (attempts >= maxAttempts)
                         throw;
-                    
+
                     await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
                 }
 

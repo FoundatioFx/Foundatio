@@ -1,5 +1,8 @@
 ﻿using System;
+using Foundatio.Caching;
+using Foundatio.Lock;
 using Foundatio.Logging;
+using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Redis.Metrics;
 using Foundatio.ServiceProviders;
@@ -22,6 +25,9 @@ namespace Foundatio.SampleJob {
             var muxer = ConnectionMultiplexer.Connect("localhost");
             container.RegisterSingleton(muxer);
             container.RegisterSingleton<IQueue<PingRequest>>(() => new RedisQueue<PingRequest>(muxer, retryDelay: TimeSpan.FromSeconds(1), workItemTimeout: TimeSpan.FromSeconds(1), behaviors: new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(muxer, loggerFactory: loggerFactory), loggerFactory: loggerFactory) }, loggerFactory: loggerFactory));
+            container.RegisterSingleton<ICacheClient>(() => new RedisCacheClient(muxer, loggerFactory: loggerFactory));
+            container.RegisterSingleton<IMessageBus>(() => new RedisMessageBus(muxer.GetSubscriber(), loggerFactory: loggerFactory));
+            container.RegisterSingleton<ILockProvider>(() => new CacheLockProvider(container.GetInstance<ICacheClient>(), container.GetInstance<IMessageBus>(), loggerFactory));
 
             return container;
         }
