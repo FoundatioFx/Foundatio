@@ -64,9 +64,9 @@ namespace Foundatio.Lock {
             do {
                 bool gotLock;
                 if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow), cancellationToken: cancellationToken).AnyContext();
+                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow), cancellationToken: cancellationToken, logger: _logger).AnyContext();
                 else
-                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value), cancellationToken: cancellationToken).AnyContext();
+                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value), cancellationToken: cancellationToken, logger: _logger).AnyContext();
 
                 if (gotLock) {
                     allowLock = true;
@@ -118,15 +118,17 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            var result = await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name)).AnyContext();
+            var result = await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name), logger: _logger).AnyContext();
             return result.HasValue;
         }
 
         public async Task ReleaseAsync(string name) {
-            _logger.Trace("ReleaseAsync: {name}", name);
+            _logger.Trace("ReleaseAsync Start: {name}", name);
 
-            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name), 15).AnyContext();
+            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name), 15, logger: _logger).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
+
+            _logger.Trace("ReleaseAsync Complete: {name}", name);
         }
 
         public async Task RenewAsync(String name, TimeSpan? lockExtension = null) {

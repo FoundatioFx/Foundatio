@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Logging;
 
 namespace Foundatio.Utility {
     internal static class Run {
@@ -17,25 +18,30 @@ namespace Foundatio.Utility {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
 
-        public static async Task WithRetriesAsync(Func<Task> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {
             await Run.WithRetriesAsync(async () => {
                 await action().AnyContext();
                 return TaskHelper.Completed;
-            }, maxAttempts, retryInterval, cancellationToken).AnyContext();
+            }, maxAttempts, retryInterval, cancellationToken, logger).AnyContext();
         }
 
-        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
 
             int attempts = 1;
+            var startTime = DateTime.UtcNow;
             do {
+                if (attempts > 1)
+                    logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
+
                 try {
                     return await action().AnyContext();
-                } catch {
+                } catch (Exception ex) {
                     if (attempts >= maxAttempts)
                         throw;
 
+                    logger?.Error(ex, $"Retry error: {ex.Message}");
                     await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
                 }
 

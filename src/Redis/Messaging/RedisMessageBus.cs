@@ -68,7 +68,7 @@ namespace Foundatio.Messaging {
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             }).AnyContext();
 
-            await Run.WithRetriesAsync(() => _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget), cancellationToken: cancellationToken).AnyContext();
+            await Run.WithRetriesAsync(() => _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
         public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
