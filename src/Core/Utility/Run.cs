@@ -20,7 +20,7 @@ namespace Foundatio.Utility {
         public static async Task WithRetriesAsync(Func<Task> action, int maxAttempts = 3, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken)) {
             await Run.WithRetriesAsync(async () => {
                 await action().AnyContext();
-                return TaskHelper.Completed();
+                return TaskHelper.Completed;
             }, maxAttempts, retryInterval, cancellationToken).AnyContext();
         }
 

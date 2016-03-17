@@ -24,27 +24,27 @@ namespace Foundatio.Queues {
         }
 
         protected virtual Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         protected virtual Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         protected virtual Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         protected virtual Task OnLockRenewed(object sender, LockRenewedEventArgs<T> dequeuedEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         protected virtual Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         protected virtual Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         public void Dispose() {

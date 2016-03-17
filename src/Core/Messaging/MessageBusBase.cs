@@ -74,7 +74,7 @@ namespace Foundatio.Messaging {
             });
 
             ScheduleNextMaintenance(sendTime);
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {

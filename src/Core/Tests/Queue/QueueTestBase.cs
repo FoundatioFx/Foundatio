@@ -356,7 +356,7 @@ namespace Foundatio.Tests.Queue {
                 queue.StartWorking(w => {
                     Assert.Equal("Hello", w.Value.Data);
                     resetEvent.Set();
-                    return TaskHelper.Completed();
+                    return TaskHelper.Completed;
                 }, true);
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
@@ -486,7 +486,7 @@ namespace Foundatio.Tests.Queue {
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
             queue.Completed.AddHandler((sender, e) => {
                 eventRaised.Set();
-                return TaskHelper.Completed();
+                return TaskHelper.Completed;
             });
 
             var work = new SimpleWorkItem { Id = 1, Data = "Testing" };

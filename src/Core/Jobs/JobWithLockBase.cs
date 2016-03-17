@@ -17,11 +17,14 @@ namespace Foundatio.Jobs {
         ILogger IHaveLogger.Logger => _logger;
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = new CancellationToken()) {
-            using (var lockValue = await GetLockAsync(cancellationToken).AnyContext()) {
-                if (lockValue == null)
-                    return JobResult.SuccessWithMessage("Unable to acquire job lock.");
+            var lockValue = await GetLockAsync(cancellationToken).AnyContext();
+            if (lockValue == null)
+                return JobResult.SuccessWithMessage("Unable to acquire job lock.");
 
+            try {
                 return await RunInternalAsync(new JobContext(cancellationToken, lockValue)).AnyContext();
+            } finally {
+                await lockValue.ReleaseAsync().AnyContext();
             }
         }
 

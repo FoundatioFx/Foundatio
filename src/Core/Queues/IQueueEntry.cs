@@ -9,6 +9,6 @@ namespace Foundatio.Queues {
         Task RenewLockAsync();
         Task AbandonAsync();
         Task CompleteAsync();
-        void Dispose();
+        Task DisposeAsync();
     }
 }

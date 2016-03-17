@@ -66,37 +66,30 @@ namespace Foundatio.Jobs {
                     Type = queueEntry.Value.Type
                 }).AnyContext();
 
-            using (var lockValue = await handler.GetWorkItemLockAsync(workItemData, linkedCancellationTokenSource.Token).AnyContext()) {
-                if (lockValue == null) {
-                    await queueEntry.AbandonAsync().AnyContext();
-                    return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
-                }
+            var lockValue = await handler.GetWorkItemLockAsync(workItemData, linkedCancellationTokenSource.Token).AnyContext();
+            if (lockValue == null) {
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
+            }
 
-                var progressCallback = new Func<int, string, Task>(async (progress, message) => {
-                    if (handler.AutoRenewLockOnProgress)
-                        await queueEntry.RenewLockAsync().AnyContext();
+            var progressCallback = new Func<int, string, Task>(async (progress, message) => {
+                if (handler.AutoRenewLockOnProgress)
+                    await queueEntry.RenewLockAsync().AnyContext();
 
-                    if (handler.AutoRenewLockOnProgress && lockValue != null)
-                        await lockValue.RenewAsync().AnyContext();
+                if (handler.AutoRenewLockOnProgress)
+                    await lockValue.RenewAsync().AnyContext();
 
-                    await _messageBus.PublishAsync(new WorkItemStatus {
-                        WorkItemId = queueEntry.Value.WorkItemId,
-                        Progress = progress,
-                        Message = message,
-                        Type = queueEntry.Value.Type
-                    }).AnyContext();
-                });
+                await _messageBus.PublishAsync(new WorkItemStatus {
+                    WorkItemId = queueEntry.Value.WorkItemId,
+                    Progress = progress,
+                    Message = message,
+                    Type = queueEntry.Value.Type
+                }).AnyContext();
+            });
 
-                try {
-                    _logger.Info("Processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
-                    await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, linkedCancellationTokenSource.Token, progressCallback)).AnyContext();
-                } catch (Exception ex) {
-                    if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                        await queueEntry.AbandonAsync().AnyContext();
-
-                    _logger.Error(ex, "Error processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
-                    return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
-                }
+            try {
+                _logger.Info("Processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
+                await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, linkedCancellationTokenSource.Token, progressCallback)).AnyContext();
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.CompleteAsync().AnyContext();
@@ -111,6 +104,14 @@ namespace Foundatio.Jobs {
                     }).AnyContext();
 
                 return JobResult.Success;
+            } catch (Exception ex) {
+                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                    await queueEntry.AbandonAsync().AnyContext();
+
+                _logger.Error(ex, "Error processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
+                return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
+            } finally {
+                await lockValue.ReleaseAsync().AnyContext();
             }
         }
     }

@@ -237,7 +237,7 @@ namespace Foundatio.Queues {
             _abandonedCount = 0;
             _workerErrorCount = 0;
 
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {

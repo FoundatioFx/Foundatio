@@ -99,12 +99,12 @@ namespace Foundatio.Lock {
         public Task ReleaseAsync(string name) {
             _logger.Trace("ReleaseAsync: {0}", name);
 
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
         public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
             _logger.Trace("RenewAsync: {0}", name);
 
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
 
         private string GetCacheKey(string name, DateTime now) {

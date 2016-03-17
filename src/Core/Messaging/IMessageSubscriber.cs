@@ -16,7 +16,7 @@ namespace Foundatio.Messaging {
         public static void Subscribe<T>(this IMessageSubscriber subscriber, Action<T> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             subscriber.Subscribe<T>((msg, token) => {
                 handler(msg);
-                return TaskHelper.Completed();
+                return TaskHelper.Completed;
             }, cancellationToken);
         }
     }

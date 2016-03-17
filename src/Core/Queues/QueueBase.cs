@@ -56,7 +56,7 @@ namespace Foundatio.Queues {
                 Data = data
             };
             
-            await (Enqueuing?.InvokeAsync(this, args) ?? TaskHelper.Completed()).AnyContext();
+            await (Enqueuing?.InvokeAsync(this, args) ?? TaskHelper.Completed).AnyContext();
             return !args.Cancel;
         }
 
@@ -66,7 +66,7 @@ namespace Foundatio.Queues {
             await (Enqueued?.InvokeAsync(this, new EnqueuedEventArgs<T> {
                 Queue = this,
                 Entry = entry
-            }) ?? TaskHelper.Completed()).AnyContext();
+            }) ?? TaskHelper.Completed).AnyContext();
         }
 
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
             await (Dequeued?.InvokeAsync(this, new DequeuedEventArgs<T> {
                 Queue = this,
                 Entry = entry
-            }) ?? TaskHelper.Completed()).AnyContext();
+            }) ?? TaskHelper.Completed).AnyContext();
         }
 
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
@@ -84,7 +84,7 @@ namespace Foundatio.Queues {
             await (LockRenewed?.InvokeAsync(this, new LockRenewedEventArgs<T> {
                 Queue = this,
                 Entry = entry
-            }) ?? TaskHelper.Completed()).AnyContext();
+            }) ?? TaskHelper.Completed).AnyContext();
         }
 
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
@@ -97,7 +97,7 @@ namespace Foundatio.Queues {
             await (Completed?.InvokeAsync(this, new CompletedEventArgs<T> {
                 Queue = this,
                 Entry = entry
-            }) ?? TaskHelper.Completed()).AnyContext();
+            }) ?? TaskHelper.Completed).AnyContext();
         }
 
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
@@ -110,7 +110,7 @@ namespace Foundatio.Queues {
             await (Abandoned?.InvokeAsync(this, new AbandonedEventArgs<T> {
                 Queue = this,
                 Entry = entry
-            }) ?? TaskHelper.Completed()).AnyContext();
+            }) ?? TaskHelper.Completed).AnyContext();
         }
 
         public string QueueId { get; protected set; }

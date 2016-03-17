@@ -50,7 +50,7 @@ namespace Foundatio.SampleJobClient {
 
         private static void EnqueuePing(int count = 1) {
             for (int i = 0; i < count; i++)
-                _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 5 }).GetAwaiter().GetResult();
+                _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
         }
 
         private const int OPTIONS_MENU_LINE_COUNT = 6;

@@ -11,13 +11,13 @@ namespace Foundatio.Messaging {
 
         public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (message == null)
-                return TaskHelper.Completed();
+                return TaskHelper.Completed;
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 
             Task.Run(async () => await SendMessageToSubscribersAsync(messageType, message.Copy()).AnyContext());
-            return TaskHelper.Completed();
+            return TaskHelper.Completed;
         }
     }
 }

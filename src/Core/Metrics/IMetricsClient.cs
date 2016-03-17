@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public interface IMetricsClient : IDisposable {
@@ -13,18 +15,20 @@ namespace Foundatio.Metrics {
     }
 
     public static class MetricsClientExtensions {
-        public static IDisposable StartTimer(this IMetricsClient client, string name) {
+        public static IAsyncDisposable StartTimer(this IMetricsClient client, string name) {
             return new MetricTimer(name, client);
         }
 
-        public static void Time(this IMetricsClient client, Action action, string name) {
-            using (client.StartTimer(name))
-                action();
+        public static async Task TimeAsync(this IMetricsClient client, Func<Task> action, string name) {
+            await Async.Using(client.StartTimer(name), action).AnyContext();
         }
 
-        public static T Time<T>(this IMetricsClient client, Func<T> func, string name) {
-            using (client.StartTimer(name))
-                return func();
+        public static Task TimeAsync(this IMetricsClient client, Action action, string name) {
+            return Async.Using(client.StartTimer(name), action);
+        }
+
+        public static Task<T> TimeAsync<T>(this IMetricsClient client, Func<Task<T>> func, string name) {
+            return Async.Using(client.StartTimer(name), func);
         }
     }
 }

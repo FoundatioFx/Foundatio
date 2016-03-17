@@ -15,7 +15,7 @@ namespace Foundatio.SampleJob {
             //var serviceProvider = new SampleServiceProvider(loggerFactory);
             //var serviceProvider = ServiceProvider.GetServiceProvider("Foundatio.SampleJob.SampleServiceProvider,Foundatio.SampleJob", loggerFactory);
             var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(PingQueueJob), loggerFactory);
-            return new JobRunner(serviceProvider.GetService<PingQueueJob>(), loggerFactory, instanceCount: 5).RunInConsole();
+            return new JobRunner(serviceProvider.GetService<PingQueueJob>(), loggerFactory, instanceCount: 1).RunInConsole();
         }
     }
 }

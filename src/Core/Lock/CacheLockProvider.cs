@@ -118,13 +118,14 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            return (await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name)).AnyContext()).HasValue;
+            var result = await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name)).AnyContext();
+            return result.HasValue;
         }
 
         public async Task ReleaseAsync(string name) {
             _logger.Trace("ReleaseAsync: {name}", name);
 
-            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name)).AnyContext();
+            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name), 15).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
         }
 

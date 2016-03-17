@@ -35,7 +35,7 @@ namespace Foundatio.Caching {
                 Key = key
             };
 
-            await (ItemExpired?.InvokeAsync(this, args) ?? TaskHelper.Completed()).AnyContext();
+            await (ItemExpired?.InvokeAsync(this, args) ?? TaskHelper.Completed).AnyContext();
         }
 
         public ICollection<string> Keys {

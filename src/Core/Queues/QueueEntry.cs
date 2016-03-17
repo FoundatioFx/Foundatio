@@ -4,7 +4,7 @@ using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IDisposable, IQueueEntry<T>, IQueueEntryMetadata where T : class {
+    public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposable where T : class {
         private readonly IQueue<T> _queue;
 
         public QueueEntry(string id, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {
@@ -48,7 +48,7 @@ namespace Foundatio.Queues {
             return _queue.AbandonAsync(this);
         }
 
-        public virtual async void Dispose() {
+        public async Task DisposeAsync() {
             if (!IsAbandoned && !IsCompleted)
                 await AbandonAsync().AnyContext();
         }

@@ -70,7 +70,7 @@ namespace Foundatio.Jobs {
 
         public override Task HandleItemAsync(WorkItemContext context) {
             if (_handler == null)
-                return TaskHelper.Completed();
+                return TaskHelper.Completed;
 
             return _handler(context);
         }

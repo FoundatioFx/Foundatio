@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     internal class DisposableLock : ILock {
@@ -16,12 +15,10 @@ namespace Foundatio.Lock {
             _lockProvider = lockProvider;
         }
 
-        public async void Dispose() {
+        public async Task DisposeAsync() {
             _logger.Trace("Disposing lock: {0}", _name);
             try {
-                await Run.WithRetriesAsync(async () => {
-                    await _lockProvider.ReleaseAsync(_name).AnyContext();
-                }, 15);
+                await _lockProvider.ReleaseAsync(_name).AnyContext();
             } catch (Exception ex) {
                 _logger.Error(ex, $"Unable to release lock {_name}");
             }
@@ -32,6 +29,10 @@ namespace Foundatio.Lock {
             _logger.Trace("Renewing lock: {0}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
             _logger.Trace("Renewing lock: {0}", _name);
+        }
+
+        public async Task ReleaseAsync() {
+            await _lockProvider.ReleaseAsync(_name).AnyContext();
         }
     }
 }

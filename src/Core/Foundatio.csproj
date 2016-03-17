@@ -160,6 +160,7 @@
     <Compile Include="Utility\DataDictionary.cs" />
     <Compile Include="Utility\DisposableAction.cs" />
     <Compile Include="Utility\EmptyDisposable.cs" />
+    <Compile Include="Utility\IAsyncDisposable.cs" />
     <Compile Include="Utility\LambdaComparer.cs" />
     <Compile Include="Utility\MaintenanceBase.cs" />
     <Compile Include="Utility\PathHelper.cs" />
