@@ -1,6 +1,7 @@
 # Foundatio
 [![Build status](https://ci.appveyor.com/api/projects/status/mpak90b87dl9crl8/branch/master?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio)
-[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/) [![NuGet Downloads](http://img.shields.io/nuget/dt/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/) [![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/exceptionless/Discuss)
+[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
+[![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/exceptionless/Discuss)
 [![Donate](https://img.shields.io/badge/donorbox-donate-blue.svg)](https://donorbox.org/exceptionless) 
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
@@ -295,6 +296,10 @@ await metrics.TimerAsync("t1", 50788);
 
 ## Sample Application
 We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
+
+## Sponsors
+
+[![Learning Machine](https://avatars2.githubusercontent.com/u/16006067?v=3&s=200)](http://learningmachine.com)
 
 ## Roadmap
 
