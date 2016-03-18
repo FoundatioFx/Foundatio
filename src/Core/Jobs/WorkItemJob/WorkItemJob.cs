@@ -69,7 +69,8 @@ namespace Foundatio.Jobs {
             var lockValue = await handler.GetWorkItemLockAsync(workItemData, linkedCancellationTokenSource.Token).AnyContext();
             if (lockValue == null) {
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.SuccessWithMessage("Unable to acquire work item lock.");
+                _logger.Trace("Unable to acquire work item lock.");
+                return JobResult.Success;
             }
 
             var progressCallback = new Func<int, string, Task>(async (progress, message) => {
