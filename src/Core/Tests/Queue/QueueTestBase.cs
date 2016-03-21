@@ -479,32 +479,71 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanRunWorkItemWithMetrics() {
-            var eventRaised = new ManualResetEvent(false);
+            int completedCount = 0;
 
             var metricsClient = new InMemoryMetricsClient(false);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
             queue.Completed.AddHandler((sender, e) => {
-                eventRaised.Set();
+                completedCount++;
                 return TaskHelper.Completed;
             });
 
-            var work = new SimpleWorkItem { Id = 1, Data = "Testing" };
+            await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
+            await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
+            await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await queue.EnqueueAsync(work);
+            await Task.Delay(600);
+
             var item = await queue.DequeueAsync();
             await item.CompleteAsync();
 
-            Assert.True(eventRaised.WaitOne(TimeSpan.FromMinutes(1)));
+            item = await queue.DequeueAsync();
+            await item.CompleteAsync();
 
-            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
-            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
-            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.completed"));
+            item = await queue.DequeueAsync();
+            await item.AbandonAsync();
+
+            Assert.Equal(2, completedCount);
+
+            Assert.Equal(3, (await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max);
+            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
+
+            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
+            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.enqueued"));
+
+            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
+            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.dequeued"));
+
+            Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.completed"));
+            Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.completed"));
+
+            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
+            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.abandoned"));
 
             var queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
-            Assert.True(0 < queueTiming.Count);
+            Assert.Equal(3, queueTiming.Count);
+            queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.queuetime");
+            Assert.Equal(3, queueTiming.Count);
+
             var processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
-            Assert.True(0 < processTiming.Count);
+            Assert.Equal(3, processTiming.Count);
+            processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.processtime");
+            Assert.Equal(3, processTiming.Count);
+
+            var queueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata");
+            Assert.Equal(3, queueStats.Enqueued.Count);
+            Assert.Equal(3, queueStats.Dequeued.Count);
+            Assert.Equal(2, queueStats.Completed.Count);
+            Assert.Equal(1, queueStats.Abandoned.Count);
+            Assert.Equal(3, queueStats.Count.Max);
+            Assert.InRange(queueStats.Working.Max, 0, 1);
+
+            var subQueueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata", "simple");
+            Assert.Equal(3, subQueueStats.Enqueued.Count);
+            Assert.Equal(3, subQueueStats.Dequeued.Count);
+            Assert.Equal(2, subQueueStats.Completed.Count);
+            Assert.Equal(1, subQueueStats.Abandoned.Count);
         }
 
         public virtual async Task CanRenewLock() {

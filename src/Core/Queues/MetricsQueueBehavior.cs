@@ -97,8 +97,9 @@ namespace Foundatio.Queues {
                 return;
 
             string customMetricName = GetCustomMetricName(abandonedEventArgs.Entry.Value);
-            string counter = GetFullMetricName(customMetricName, "abandoned");
-            await _metricsClient.CounterAsync(counter).AnyContext();
+            if (!String.IsNullOrEmpty(customMetricName))
+                await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "abandoned")).AnyContext();
+            await _metricsClient.CounterAsync(GetFullMetricName("abandoned")).AnyContext();
 
             var time = (int)metadata.ProcessingTime.TotalMilliseconds;
             if (!String.IsNullOrEmpty(customMetricName))
