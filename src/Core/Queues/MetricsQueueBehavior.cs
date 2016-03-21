@@ -12,16 +12,19 @@ namespace Foundatio.Queues {
         private readonly ILogger _logger;
         private readonly ScheduledTimer _timer;
 
-        public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null) {
+        public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null, TimeSpan? reportCountsInterval = null) {
             _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger.Instance;
             _metricsClient = metrics ?? NullMetricsClient.Instance;
+
+            if (!reportCountsInterval.HasValue)
+                reportCountsInterval = TimeSpan.FromMilliseconds(500);
 
             if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
                 metricsPrefix += ".";
 
             metricsPrefix += typeof(T).Name.ToLowerInvariant();
             _metricsPrefix = metricsPrefix;
-            _timer = new ScheduledTimer(ReportQueueCountAsync, minimumIntervalTime: TimeSpan.FromMilliseconds(500), loggerFactory: loggerFactory);
+            _timer = new ScheduledTimer(ReportQueueCountAsync, minimumIntervalTime: reportCountsInterval, loggerFactory: loggerFactory);
         }
 
         private async Task<DateTime?> ReportQueueCountAsync() {

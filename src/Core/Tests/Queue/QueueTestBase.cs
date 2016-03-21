@@ -480,21 +480,24 @@ namespace Foundatio.Tests.Queue {
 
         public virtual async Task CanRunWorkItemWithMetrics() {
             int completedCount = 0;
+            Log.MinimumLevel = LogLevel.Trace;
 
             var metricsClient = new InMemoryMetricsClient(false);
-            var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric");
+            var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
             queue.Completed.AddHandler((sender, e) => {
                 completedCount++;
                 return TaskHelper.Completed;
             });
 
+            _logger.Trace("Before enqueue");
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await Task.Delay(600);
+            await Task.Delay(50);
 
+            _logger.Trace("Before dequeue");
             var item = await queue.DequeueAsync();
             await item.CompleteAsync();
 
@@ -504,6 +507,7 @@ namespace Foundatio.Tests.Queue {
             item = await queue.DequeueAsync();
             await item.AbandonAsync();
 
+            _logger.Trace("Before asserts");
             Assert.Equal(2, completedCount);
 
             Assert.Equal(3, (await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max);
