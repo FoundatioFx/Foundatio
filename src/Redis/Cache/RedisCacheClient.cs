@@ -263,11 +263,19 @@ else
   return tonumber(@value)
 end";
 
-        private const string INCRBY_AND_EXPIRE = @"local v = redis.call('incrby', @key, @value)
-if (@expires) then
-  redis.call('expire', @key, math.ceil(@expires))
-end
-return tonumber(v)";
+        private const string INCRBY_AND_EXPIRE = @"if math.modf(@value) == 0 then
+  local v = redis.call('incrby', @key, @value)
+  if (@expires) then
+    redis.call('expire', @key, math.ceil(@expires))
+  end
+  return tonumber(v)
+else
+  local v = redis.call('incrbyfloat', @key, @value)
+  if (@expires) then
+    redis.call('expire', @key, math.ceil(@expires))
+  end
+  return tonumber(v)
+end";
 
         private const string DEL_BY_WILDCARD = @"return redis.call('del', unpack(redis.call('keys', @keys)))";
     }

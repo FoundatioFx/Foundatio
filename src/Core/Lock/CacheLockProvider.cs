@@ -62,11 +62,14 @@ namespace Foundatio.Lock {
             bool allowLock = false;
 
             do {
-                bool gotLock;
-                if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow), cancellationToken: cancellationToken, logger: _logger).AnyContext();
-                else
-                    gotLock = await Run.WithRetriesAsync(() => _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value), cancellationToken: cancellationToken, logger: _logger).AnyContext();
+                bool gotLock = false;
+
+                try {
+                    if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
+                        gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow).AnyContext();
+                    else
+                        gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value).AnyContext();
+                } catch { }
 
                 if (gotLock) {
                     allowLock = true;
