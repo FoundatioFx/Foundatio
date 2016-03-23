@@ -91,12 +91,15 @@ namespace Foundatio.Tests.Storage {
             string readmeFile = Path.GetFullPath(@"..\..\..\..\..\README.md");
 
             using (storage) {
+                Assert.False(await storage.ExistsAsync("README.md"));
+
                 using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
                     bool result = await storage.SaveFileAsync("README.md", stream);
                     Assert.True(result);
                 }
 
                 Assert.Equal(1, (await storage.GetFileListAsync()).Count());
+                Assert.True(await storage.ExistsAsync("README.md"));
 
                 using (var stream = await storage.GetFileStreamAsync("README.md")) {
                     string result = await new StreamReader(stream).ReadToEndAsync();
@@ -155,14 +158,14 @@ namespace Foundatio.Tests.Storage {
 
                 await Run.InParallel(10, async i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
-                    var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"));
+                    var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);
                     if (eventPost == null)
                         return;
 
                     if (RandomData.GetBool()) {
-                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true);
+                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true, _logger);
                     } else
-                        await storage.SetNotActiveAsync(path);
+                        await storage.SetNotActiveAsync(path, _logger);
                 });
             }
         }
@@ -190,7 +193,7 @@ namespace Foundatio.Tests.Storage {
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                logger.Error(ex, "Error retrieving event post data \"{0}\".", path);
+                logger?.Error(ex, () => $"Error retrieving event post data \"{path}\": {ex.Message}");
                 return null;
             }
 
@@ -201,7 +204,7 @@ namespace Foundatio.Tests.Storage {
             try {
                 return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
-                logger.Error(ex, "Error deleting work marker \"{0}\".", path + ".x");
+                logger?.Error(ex, () => $"Error deleting work marker \"{path}.x\": {ex.Message}");
             }
 
             return false;
@@ -212,7 +215,7 @@ namespace Foundatio.Tests.Storage {
             if (path.StartsWith("archive"))
                 return true;
 
-            string archivePath = String.Format("archive\\{0}\\{1}\\{2}", projectId, created.ToString("yy\\\\MM\\\\dd"), Path.GetFileName(path));
+            string archivePath = $"archive\\{projectId}\\{created.ToString("yy\\\\MM\\\\dd")}\\{Path.GetFileName(path)}";
 
             try {
                 if (shouldArchive) {
@@ -223,7 +226,7 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                logger.Error(ex, "Error archiving event post data \"{0}\".", path);
+                logger?.Error(ex, () => $"Error archiving event post data \"{path}\": {ex.Message}");
                 return false;
             }
 
