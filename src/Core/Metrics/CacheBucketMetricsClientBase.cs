@@ -280,11 +280,17 @@ namespace Foundatio.Metrics {
 
             ICollection<GaugeStat> stats = new List<GaugeStat>();
             for (int i = 0; i < maxBuckets.Count; i++) {
+                string countKey = countBuckets[i].Key;
+                string totalKey = totalBuckets[i].Key;
+                string minKey = minBuckets[i].Key;
                 string maxKey = maxBuckets[i].Key;
                 string lastKey = lastBuckets[i].Key;
 
                 stats.Add(new GaugeStat {
                     Time = maxBuckets[i].Time,
+                    Count = countResults[countKey].Value,
+                    Total = totalResults[totalKey].Value,
+                    Min = minResults[minKey].Value,
                     Max = maxResults[maxKey].Value,
                     Last = lastResults[lastKey].Value
                 });
@@ -292,8 +298,11 @@ namespace Foundatio.Metrics {
 
             stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new GaugeStat {
                 Time = d,
-                Last = s.Last().Last,
-                Max = s.Max(i => i.Max)
+                Count = s.Sum(i => i.Count),
+                Total = s.Sum(i => i.Total),
+                Min = s.Min(i => i.Min),
+                Max = s.Max(i => i.Max),
+                Last = s.Last().Last
             }, dataPoints);
 
             return new GaugeStatSummary(stats, start.Value, end.Value);
