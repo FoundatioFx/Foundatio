@@ -495,7 +495,7 @@ namespace Foundatio.Tests.Queue {
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await Task.Delay(50);
+            await Task.Delay(100);
 
             _logger.Trace("Before dequeue");
             var item = await queue.DequeueAsync();
@@ -510,7 +510,7 @@ namespace Foundatio.Tests.Queue {
             _logger.Trace("Before asserts");
             Assert.Equal(2, completedCount);
 
-            Assert.Equal(3, (await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max);
+            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 2, 3);
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
 
             Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
