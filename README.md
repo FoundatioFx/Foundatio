@@ -299,10 +299,12 @@ await metrics.TimerAsync("t1", 50788);
 
 We provide a [fluent logging api](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Logging/ILogger.cs) that can be used to log messages throughout your application. This is really great because it allows you to log to different sources like NLog and change it at a later date without updating your whole application to use the latest and greatest logging framework on the market.
 
+By default the logger will not write to anything, but you can configure what to write to adding registering a logging provider. We provide a few logging providers out of the box (in memory, xUnit and NLog).
 
 #### Sample
 
 ```csharp
+ILoggerFactory loggerFactory = new LoggerFactory();
 ILogger log = loggerFactory.CreateLogger("Program");
 log.Info("Application starting up"); // OR
 log.Info().Message("Application starting up").Write();
