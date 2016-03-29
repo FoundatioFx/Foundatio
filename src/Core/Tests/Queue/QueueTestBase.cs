@@ -482,9 +482,9 @@ namespace Foundatio.Tests.Queue {
             int completedCount = 0;
             Log.MinimumLevel = LogLevel.Trace;
 
-            var metricsClient = new InMemoryMetricsClient(false);
+            var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
-            var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior });
+            var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior }, loggerFactory: Log);
             queue.Completed.AddHandler((sender, e) => {
                 completedCount++;
                 return TaskHelper.Completed;
