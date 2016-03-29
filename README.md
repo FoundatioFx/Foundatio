@@ -305,5 +305,5 @@ We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapH
 ## Roadmap
 
 This is a list of high level things that we are planning to do:
-- dnx/vnext support
+- .NET Core support
 - [Let us know what you'd like us to work on!](https://github.com/exceptionless/Foundatio/issues)
