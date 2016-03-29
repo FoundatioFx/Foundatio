@@ -120,7 +120,7 @@ Allows you to publish and subscribe to messages flowing through your application
 using Foundatio.Messaging;
 
 IMessageBus messageBus = new InMemoryMessageBus();
-await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+await messageBus.Subscribe<SimpleMessageA>(msg => {
   // Got message
 });
 
