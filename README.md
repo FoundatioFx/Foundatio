@@ -14,7 +14,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - Metrics
 - Logging
 
-Includes implementations in Redis, Azure and in memory (for development).
+Includes implementations in Redis, Azure, AWS and in memory (for development).
 
 ## Why should I use Foundatio?
 When we first started building [Exceptionless](https://github.com/exceptionless/Exceptionless) we found a lack of great solutions (that's not to say there isn't great solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
@@ -95,7 +95,7 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 ```csharp
 using Foundatio.Lock;
 
-ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient());
+ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
 using (await locker.AcquireAsync("test")) {
   // ...
 }
@@ -131,7 +131,7 @@ await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
 
 Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide a few different ways of defining a job based on your use case.
 
-1. **Jobs**: All jobs must derive from the  [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs) and calling one of the Run methods.  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -155,19 +155,19 @@ Allows you to run a long running process (in process or out of process) with out
   await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
   ```
 
-2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueProcessorJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueProcessorJobBase.cs) which also inherits from the [`JobBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
   ```csharp
   using Foundatio.Jobs;
 
-  public class HelloWorldQueueJob : QueueProcessorJobBase<HelloWorldQueueItem> {
+  public class HelloWorldQueueJob : QueueJobBase<HelloWorldQueueItem> {
     public int RunCount { get; set; }
 
     public HelloWorldQueueJob(IQueue<HelloWorldQueueItem> queue) : base(queue) {}
     
-    protected override Task<JobResult> ProcessQueueItemAsync(QueueEntry<HelloWorldQueueItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
+    protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<HelloWorldQueueItem> context) {
        RunCount++;
 
        return Task.FromResult(JobResult.Success);
@@ -197,7 +197,7 @@ Allows you to run a long running process (in process or out of process) with out
   await job.RunUntilEmptyAsync(); // job.RunCount = 3;
   ```
 
-3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the  [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/WorkItemJob/WorkItemHandlers.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the  [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/WorkItemJob/WorkItemHandlerBase.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -206,7 +206,7 @@ Allows you to run a long running process (in process or out of process) with out
   using Foundatio.Jobs;
 
   public class HelloWorldWorkItemHandler : WorkItemHandlerBase {
-    public override async Task HandleItemAsync(WorkItemContext ctx, CancellationToken cancellationToken = default(CancellationToken)) {
+    public override async Task HandleItemAsync(WorkItemContext ctx) {
       var workItem = ctx.GetData<HelloWorldWorkItem>();
 
       // We can report the progress over the message bus easily.
@@ -257,11 +257,12 @@ Allows you to run a long running process (in process or out of process) with out
 
 ### [File Storage](https://github.com/exceptionless/Foundatio/tree/master/src/Core/Storage)
 
-We provide three different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/IFileStorage.cs):
+We provide four different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/IFileStorage.cs):
 
 1. [InMemoryFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Core/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob Storage implementation.
+3. [S3Storage](https://github.com/exceptionless/Foundatio/blob/master/src/AWS/Storage/S3Storage.cs): An AWS S3 Storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 
