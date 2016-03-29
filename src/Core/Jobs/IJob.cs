@@ -74,7 +74,7 @@ namespace Foundatio.Jobs {
         internal static void LogResult(JobResult result, ILogger logger, string jobName) {
             if (result != null) {
                 if (result.IsCancelled)
-                    logger.Error(result.Error, "Job run \"{0}\" cancelled: {1}", jobName, result.Message);
+                    logger.Warn(result.Error, "Job run \"{0}\" cancelled: {1}", jobName, result.Message);
                 else if (!result.IsSuccess)
                     logger.Error(result.Error, "Job run \"{0}\" {1}: {2}", jobName, result.Message);
                 else if (!String.IsNullOrEmpty(result.Message))
