@@ -38,7 +38,7 @@ namespace Foundatio.Jobs {
             if (queueEntry == null)
                 return JobResult.Success;
 
-            if (linkedCancellationTokenSource.IsCancellationRequested) {
+            if (cancellationToken.IsCancellationRequested) {
                 _logger.Info("Job was cancelled. Abandoning {queueEntryType} work item: {queueEntryId}", queueEntry.Value.Type, queueEntry.Id);
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}");
@@ -66,7 +66,7 @@ namespace Foundatio.Jobs {
                     Type = queueEntry.Value.Type
                 }).AnyContext();
 
-            var lockValue = await handler.GetWorkItemLockAsync(workItemData, linkedCancellationTokenSource.Token).AnyContext();
+            var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
             if (lockValue == null) {
                 await queueEntry.AbandonAsync().AnyContext();
                 _logger.Trace("Unable to acquire work item lock.");
@@ -90,7 +90,7 @@ namespace Foundatio.Jobs {
 
             try {
                 _logger.Info("Processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
-                await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, linkedCancellationTokenSource.Token, progressCallback)).AnyContext();
+                await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback)).AnyContext();
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.CompleteAsync().AnyContext();
