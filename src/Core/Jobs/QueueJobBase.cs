@@ -38,9 +38,9 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             if (cancellationToken.IsCancellationRequested) {
-                _logger.Info(() => $"Job was cancelled. Abandoning queue item: {queueEntry.Id}");
+                _logger.Info(() => $"Job was cancelled. Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.Cancelled;
+                return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
             }
 
             var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();

@@ -39,9 +39,9 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             if (linkedCancellationTokenSource.IsCancellationRequested) {
-                _logger.Info("Job was cancelled. Abandoning work item item: {queueEntryId}", queueEntry.Id);
+                _logger.Info("Job was cancelled. Abandoning {queueEntryType} work item: {queueEntryId}", queueEntry.Value.Type, queueEntry.Id);
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.Cancelled;
+                return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}");
             }
 
             var workItemDataType = Type.GetType(queueEntry.Value.Type);
@@ -52,7 +52,7 @@ namespace Foundatio.Jobs {
             try {
                 workItemData = await _queue.Serializer.DeserializeAsync(queueEntry.Value.Data, workItemDataType).AnyContext();
             } catch (Exception ex) {
-                return JobResult.FromException(ex, "Failed to parse work item data.");
+                return JobResult.FromException(ex, $"Failed to parse {workItemDataType.Name} work item data.");
             }
 
             var handler = _handlers.GetHandler(workItemDataType);
