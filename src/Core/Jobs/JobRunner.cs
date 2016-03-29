@@ -43,8 +43,8 @@ namespace Foundatio.Jobs {
         public int RunInConsole() {
             int result;
             try {
-                WatchForShutdown();
-                var success = RunAsync(_cancellationTokenSource.Token).GetAwaiter().GetResult();
+                var token = GetShutdownCancellationToken();
+                var success = RunAsync(token).GetAwaiter().GetResult();
                 result = success ? 0 : -1;
 
                 if (Debugger.IsAttached)
@@ -127,32 +127,33 @@ namespace Foundatio.Jobs {
             return true;
         }
 
-        private string _webJobsShutdownFile;
-        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
-
-        private void WatchForShutdown() {
+        public CancellationToken GetShutdownCancellationToken() {
+            var cancellationTokenSource = new CancellationTokenSource();
             ShutdownEventCatcher.Shutdown += args => {
-                _cancellationTokenSource.Cancel();
+                cancellationTokenSource.Cancel();
                 _logger.Info("Job shutdown event signaled: {0}", args.Reason);
             };
 
-            _webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
-            if (String.IsNullOrEmpty(_webJobsShutdownFile))
-                return;
+            var webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
+            if (String.IsNullOrEmpty(webJobsShutdownFile))
+                return cancellationTokenSource.Token;
 
-            var watcher = new FileSystemWatcher(Path.GetDirectoryName(_webJobsShutdownFile));
-            watcher.Created += OnFileChanged;
-            watcher.Changed += OnFileChanged;
+            var handler = new FileSystemEventHandler((s, e) => {
+                if (e.FullPath.IndexOf(Path.GetFileName(webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) < 0)
+                    return;
+
+                cancellationTokenSource.Cancel();
+                _logger.Info("Job shutdown signaled.");
+            });
+
+            var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));
+            watcher.Created += handler;
+            watcher.Changed += handler;
             watcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
             watcher.IncludeSubdirectories = false;
             watcher.EnableRaisingEvents = true;
-        }
 
-        private void OnFileChanged(object sender, FileSystemEventArgs e) {
-            if (e.FullPath.IndexOf(Path.GetFileName(_webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) >= 0) {
-                _cancellationTokenSource.Cancel();
-                _logger.Info("Job shutdown signaled.");
-            }
+            return cancellationTokenSource.Token;
         }
     }
 }
