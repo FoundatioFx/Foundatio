@@ -76,7 +76,7 @@ namespace Foundatio.Jobs {
                 if (result.IsCancelled)
                     logger.Warn(result.Error, "Job run \"{0}\" cancelled: {1}", jobName, result.Message);
                 else if (!result.IsSuccess)
-                    logger.Error(result.Error, "Job run \"{0}\" {1}: {2}", jobName, result.Message);
+                    logger.Error(result.Error, "Job run \"{0}\" failed: {1}", jobName, result.Message);
                 else if (!String.IsNullOrEmpty(result.Message))
                     logger.Info("Job run \"{0}\" succeeded: {1}", jobName, result.Message);
                 else
