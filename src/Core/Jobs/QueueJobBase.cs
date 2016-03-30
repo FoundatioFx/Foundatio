@@ -68,8 +68,9 @@ namespace Foundatio.Jobs {
 
                 return result;
             } catch (Exception ex) {
-                await queueEntry.AbandonAsync().AnyContext();
                 _logger.Error(ex, () => $"Error processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+                if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
+                    await queueEntry.AbandonAsync().AnyContext();
 
                 throw;
             } finally {
