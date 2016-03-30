@@ -73,8 +73,7 @@ namespace Foundatio.Queues {
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
                     await Task.Delay(_dequeueInterval, linkedCancellationToken);
-                }
-                catch (TaskCanceledException) { }
+                } catch (TaskCanceledException) { }
 
                 // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
                 message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
@@ -165,21 +164,22 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueAsync(cancellationToken).AnyContext();
-                    }
-                    catch (TaskCanceledException) { }
+                    } catch (TaskCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try { 
                         await handler(queueEntry, cancellationToken);
-                        if (autoComplete)
+                        if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
-                        _logger.Error(ex, "Worker error: {0}", ex.Message);
-                        await queueEntry.AbandonAsync().AnyContext();
                         Interlocked.Increment(ref _workerErrorCount);
+                        _logger.Error(ex, "Worker error: {0}", ex.Message);
+
+                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                            await queueEntry.AbandonAsync().AnyContext();
                     }
                 }
 

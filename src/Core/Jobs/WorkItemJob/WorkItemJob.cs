@@ -44,20 +44,32 @@ namespace Foundatio.Jobs {
                 return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}");
             }
 
-            var workItemDataType = Type.GetType(queueEntry.Value.Type);
-            if (workItemDataType == null)
-                return JobResult.FailedWithMessage("Could not resolve work item data type.");
+            Type workItemDataType = null;
+            try {
+                workItemDataType = Type.GetType(queueEntry.Value.Type);
+            } catch (Exception ex) {
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.FromException(ex, $"Could not resolve {workItemDataType.Name} work item data type.");
+            }
+
+            if (workItemDataType == null) {
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.FailedWithMessage($"Could not resolve {workItemDataType.Name} work item data type.");
+            }
 
             object workItemData;
             try {
                 workItemData = await _queue.Serializer.DeserializeAsync(queueEntry.Value.Data, workItemDataType).AnyContext();
             } catch (Exception ex) {
+                await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FromException(ex, $"Failed to parse {workItemDataType.Name} work item data.");
             }
 
             var handler = _handlers.GetHandler(workItemDataType);
-            if (handler == null)
+            if (handler == null) {
+                await queueEntry.CompleteAsync().AnyContext();
                 return JobResult.FailedWithMessage($"Handler for type {workItemDataType.Name} not registered.");
+            }
 
             if (queueEntry.Value.SendProgressReports)
                 await _messageBus.PublishAsync(new WorkItemStatus {

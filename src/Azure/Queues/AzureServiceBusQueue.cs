@@ -120,16 +120,18 @@ namespace Foundatio.Queues {
                 throw new ArgumentNullException(nameof(handler));
             
             _queueClient.OnMessageAsync(async msg => {
-                var workItem = await HandleDequeueAsync(msg);
+                var queueEntry = await HandleDequeueAsync(msg);
 
                 try {
-                    await handler(workItem, cancellationToken).AnyContext();
-                    if (autoComplete)
-                        await workItem.CompleteAsync().AnyContext();
+                    await handler(queueEntry, cancellationToken).AnyContext();
+                    if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                        await queueEntry.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
                     Interlocked.Increment(ref _workerErrorCount);
                     _logger.Error(ex, "Error sending work item to worker: {0}", ex.Message);
-                    await workItem.AbandonAsync().AnyContext();
+
+                    if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                        await queueEntry.AbandonAsync().AnyContext();
                 }
             });
         }

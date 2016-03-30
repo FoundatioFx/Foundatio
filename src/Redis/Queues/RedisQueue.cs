@@ -229,12 +229,14 @@ namespace Foundatio.Queues {
 
                     try {
                         await handler(queueEntry, linkedCancellationToken).AnyContext();
-                        if (autoComplete)
+                        if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
-                        _logger.Error(ex, "Worker error: {0}", ex.Message);
-                        await queueEntry.AbandonAsync().AnyContext();
                         Interlocked.Increment(ref _workerErrorCount);
+                        _logger.Error(ex, "Worker error: {0}", ex.Message);
+
+                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                            await queueEntry.AbandonAsync().AnyContext();
                     }
                 }
 
