@@ -242,7 +242,7 @@ Allows you to run a long running process (in process or out of process) with out
   container.RegisterSingleton<IQueue<WorkItemData>>(() => new InMemoryQueue<WorkItemData>());
   
   // The job runner will automatically look for and run all registered WorkItemHandlers.
-  await new JobRunner().RunContinuousAsync<WorkItemJob>(instanceCount: 2);
+  new JobRunner(container.GetInstance<WorkItemJob>(), instanceCount: 2).RunInBackground();
   ```
   
   ```csharp
