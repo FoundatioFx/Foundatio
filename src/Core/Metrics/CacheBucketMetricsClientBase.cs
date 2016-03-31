@@ -36,6 +36,7 @@ namespace Foundatio.Metrics {
         }
 
         public Task CounterAsync(string name, int value = 1) {
+            _logger.Trace(() => $"Counter name={name} value={value} buffered={_buffered}");
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
             if (!_buffered)
                 return SubmitMetricAsync(entry);
@@ -46,6 +47,7 @@ namespace Foundatio.Metrics {
         }
 
         public Task GaugeAsync(string name, double value) {
+            _logger.Trace(() => $"Gauge name={name} value={value} buffered={_buffered}");
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
             if (!_buffered)
                 return SubmitMetricAsync(entry);
@@ -56,6 +58,7 @@ namespace Foundatio.Metrics {
         }
 
         public Task TimerAsync(string name, int milliseconds) {
+            _logger.Trace(() => $"Timer name={name} milliseconds={milliseconds} buffered={_buffered}");
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
             if (!_buffered)
                 return SubmitMetricAsync(entry);
@@ -113,7 +116,8 @@ namespace Foundatio.Metrics {
                     .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
                     .Select(e => new { e.Key.Name, e.Key.Time, Count = e.Sum(c => c.Counter) }).ToList();
 
-                _logger.Trace("Aggregated {count} counters", counters.Count);
+                if (metrics.Count > 1)
+                    _logger.Trace(() => $"Aggregated {counters.Count} counters");
                 if (counters.Count > 0)
                     await Run.WithRetriesAsync(() => Task.WhenAll(counters.Select(c => StoreCounterAsync(c.Name, c.Time, c.Count, bucket)))).AnyContext();
 
@@ -122,7 +126,8 @@ namespace Foundatio.Metrics {
                 .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
                 .Select(e => new { e.Key.Name, Minute = e.Key.Time, Count = e.Count(), Total = e.Sum(c => c.Gauge), Last = e.Last().Gauge, Min = e.Min(c => c.Gauge), Max = e.Max(c => c.Gauge) }).ToList();
 
-                _logger.Trace("Aggregated {count} gauges", gauges.Count);
+                if (metrics.Count > 1)
+                    _logger.Trace(() => $"Aggregated {gauges.Count} gauges");
                 if (gauges.Count > 0)
                     await Run.WithRetriesAsync(() => Task.WhenAll(gauges.Select(g => StoreGaugeAsync(g.Name, g.Minute, g.Count, g.Total, g.Last, g.Min, g.Max, bucket)))).AnyContext();
 
@@ -131,19 +136,24 @@ namespace Foundatio.Metrics {
                 .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
                 .Select(e => new { e.Key.Name, Minute = e.Key.Time, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) }).ToList();
 
-                _logger.Trace("Aggregated {count} timings", timings.Count);
+                if (metrics.Count > 1)
+                    _logger.Trace(() => $"Aggregated {timings.Count} timings");
                 if (timings.Count > 0)
                     await Run.WithRetriesAsync(() => Task.WhenAll(timings.Select(t => StoreTimingAsync(t.Name, t.Minute, t.Count, t.Total, t.Max, t.Min, bucket)))).AnyContext();
             }
         }
 
         private async Task StoreCounterAsync(string name, DateTime time, int value, BucketSettings settings) {
+            _logger.Trace(() => $"Storing counter name={name} value={value} time={time}");
+
             string key = GetBucketKey(MetricNames.Counter, name, time, settings.Size);
             await _cache.IncrementAsync(key, value, settings.Ttl).AnyContext();
 
             AsyncManualResetEvent waitHandle;
             _counterEvents.TryGetValue(name, out waitHandle);
             waitHandle?.Set();
+
+            _logger.Trace(() => $"Done storing counter name={name}");
         }
 
         private Task StoreGaugeAsync(string name, DateTime time, double value, BucketSettings settings) {
@@ -151,6 +161,8 @@ namespace Foundatio.Metrics {
         }
 
         private async Task StoreGaugeAsync(string name, DateTime time, int count, double total, double last, double min, double max, BucketSettings settings) {
+            _logger.Trace(() => $"Storing gauge name={name} count={count} total={total} last={last} min={min} max={max} time={time}");
+
             string countKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Count);
             await _cache.IncrementAsync(countKey, count, settings.Ttl).AnyContext();
 
@@ -165,6 +177,8 @@ namespace Foundatio.Metrics {
 
             string maxKey = GetBucketKey(MetricNames.Gauge, name, time, settings.Size, MetricNames.Max);
             await _cache.SetIfHigherAsync(maxKey, max, settings.Ttl).AnyContext();
+
+            _logger.Trace(() => $"Done storing gauge name={name}");
         }
 
         private Task StoreTimingAsync(string name, DateTime time, int duration, BucketSettings settings) {
@@ -172,6 +186,8 @@ namespace Foundatio.Metrics {
         }
 
         private async Task StoreTimingAsync(string name, DateTime time, int count, int totalDuration, int maxDuration, int minDuration, BucketSettings settings) {
+            _logger.Trace(() => $"Storing timing name={name} count={count} total={totalDuration} min={minDuration} max={maxDuration} time={time}");
+
             string countKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Count);
             await _cache.IncrementAsync(countKey, count, settings.Ttl).AnyContext();
 
@@ -183,6 +199,8 @@ namespace Foundatio.Metrics {
 
             string minKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Min);
             await _cache.SetIfLowerAsync(minKey, minDuration, settings.Ttl).AnyContext();
+
+            _logger.Trace(() => $"Done storing timing name={name}");
         }
 
         public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
