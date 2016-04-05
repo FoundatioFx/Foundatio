@@ -77,7 +77,7 @@ namespace Foundatio.Caching {
         }
 
         public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetAllAsync(values.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
+            return UnscopedCache.SetAllAsync(values?.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

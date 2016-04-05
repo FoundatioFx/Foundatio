@@ -118,7 +118,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
-            if (values == null)
+            if (values == null || values.Count == 0)
                 return 0;
 
             if (TypeRequiresSerialization(typeof(T))) {
