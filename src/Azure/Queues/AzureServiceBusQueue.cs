@@ -1,79 +1,149 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Foundatio.Extensions;
+﻿using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
         private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
-        private readonly QueueClient _queueClient;
-        private QueueDescription _queueDescription;
+        private readonly Func<Task<QueueDescription>> _createQueue;
+        private readonly Func<string, QueueClient> _clientFactory;
+        private Action _disposeClient = () => { };
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
-        private readonly int _retries;
-        private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
 
+        [Obsolete("This constructor runs synchronously. Prefer the async Factory.Build method.")]
         public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
-            _retries = retries;
-            if (workItemTimeout.HasValue && workItemTimeout.Value < TimeSpan.FromMinutes(5))
-                _workItemTimeout = workItemTimeout.Value;
+
+            workItemTimeout = workItemTimeout ?? TimeSpan.FromMinutes(5);
+            if (workItemTimeout.Value > TimeSpan.FromMinutes(5))
+                workItemTimeout = TimeSpan.FromMinutes(5);
+
+            _createQueue = MemoizeQueueFactory(_namespaceManager, queueName, workItemTimeout.Value, retries);
 
             if (_namespaceManager.QueueExists(_queueName) && shouldRecreate)
                 _namespaceManager.DeleteQueue(_queueName);
 
-            if (!_namespaceManager.QueueExists(_queueName)) {
-                _queueDescription = new QueueDescription(_queueName) {
-                    MaxDeliveryCount = retries + 1,
-                    LockDuration = _workItemTimeout
-                };
-                _namespaceManager.CreateQueue(_queueDescription);
-            } else {
-                _queueDescription = _namespaceManager.GetQueue(_queueName);
+            // maintain previous functionality: go ahead and synchronously create queue and client
+            var queueDescription = EnsureQueueExistsAsync().Result;
 
-                bool changes = false;
+            _clientFactory = MemoizeClientFactory(connectionString, retryPolicy);
+            var ignoreResult = _clientFactory(queueDescription.Path);
+        }
 
-                int newMaxDeliveryCount = retries + 1;
-                if (_queueDescription.MaxDeliveryCount != newMaxDeliveryCount) {
-                    _queueDescription.MaxDeliveryCount = newMaxDeliveryCount;
-                    changes = true;
-                }
+        private AzureServiceBusQueue(string queueName, NamespaceManager namespaceManager, Func<Task<QueueDescription>> queueFactory, Func<string, QueueClient> clientFactory, ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory) : base(serializer, behaviors, loggerFactory) {
+            _queueName = queueName;
+            _namespaceManager = namespaceManager;
+            _createQueue = queueFactory;
+            _clientFactory = clientFactory;
+        }
 
-                if (_queueDescription.LockDuration != _workItemTimeout) {
-                    _queueDescription.LockDuration = _workItemTimeout;
-                    changes = true;
-                }
+        public class Factory {
+            private readonly string _connectionString;
+            private string _queueName;
+            private int _retries;
+            private TimeSpan _workItemTimeout;
+            private bool _shouldRecreate;
+            private bool _lazyConnect;
+            private RetryPolicy _retryPolicy;
+            private ISerializer _serializer;
+            private IEnumerable<IQueueBehavior<T>> _behaviors;
+            private ILoggerFactory _loggerFactory;
 
-                if (changes) {
-                    _namespaceManager.UpdateQueue(_queueDescription);
-                }
+            public Factory(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, bool lazyConnect = true, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) {
+                _connectionString = connectionString;
+                Queue(queueName);
+                _retries = retries;
+                Timeout(workItemTimeout ?? TimeSpan.FromMinutes(5));
+                _shouldRecreate = shouldRecreate;
+                _lazyConnect = lazyConnect;
+                _retryPolicy = retryPolicy;
+                _serializer = serializer;
+                _behaviors = behaviors;
+                _loggerFactory = loggerFactory;
             }
-            
-            _queueClient = QueueClient.CreateFromConnectionString(connectionString, _queueDescription.Path);
-            if (retryPolicy != null)
-                _queueClient.RetryPolicy = retryPolicy;
+
+            public Factory Queue(string queueName) {
+                _queueName = queueName ?? typeof(T).Name;
+                return this;
+            }
+
+            public Factory Retries(int retries) {
+                _retries = retries;
+                return this;
+            }
+
+            public Factory Timeout(TimeSpan workItemTimeout) {
+                if (workItemTimeout <= TimeSpan.FromMinutes(5)) {
+                    _workItemTimeout = workItemTimeout;
+                }
+                return this;
+            }
+
+            public Factory RecreateQueue(bool shouldRecreate) {
+                _shouldRecreate = shouldRecreate;
+                return this;
+            }
+
+            public Factory LazyConnect(bool lazyConnect) {
+                _lazyConnect = lazyConnect;
+                return this;
+            }
+
+            public Factory RetryPolicy(RetryPolicy retryPolicy) {
+                _retryPolicy = retryPolicy;
+                return this;
+            }
+
+            public Factory Serializer(ISerializer serializer) {
+                _serializer = serializer;
+                return this;
+            }
+
+            public Factory Behaviors(IEnumerable<IQueueBehavior<T>> behaviors) {
+                _behaviors = behaviors;
+                return this;
+            }
+
+            public Factory LoggerFactory(ILoggerFactory loggerFactory) {
+                _loggerFactory = loggerFactory;
+                return this;
+            }
+
+            public async Task<AzureServiceBusQueue<T>> Build() {
+                var namespaceManager = NamespaceManager.CreateFromConnectionString(_connectionString);
+
+                var createQueue = MemoizeQueueFactory(namespaceManager, _queueName, _workItemTimeout, _retries);
+                var createClient = MemoizeClientFactory(_connectionString, _retryPolicy);
+
+                if (!_lazyConnect) {
+                    if (_shouldRecreate && await namespaceManager.QueueExistsAsync(_queueName).AnyContext()) {
+                        await namespaceManager.DeleteQueueAsync(_queueName).AnyContext();
+                    }
+
+                    var description = await createQueue().AnyContext();
+                    var ignoreResult = createClient(description.Path);
+                }
+
+                return new AzureServiceBusQueue<T>(_queueName, namespaceManager, createQueue, createClient, _serializer, _behaviors, _loggerFactory);
+            }
         }
 
         public override async Task DeleteQueueAsync() {
-            if (await _namespaceManager.QueueExistsAsync(_queueName).AnyContext())
+            if (await _namespaceManager.QueueExistsAsync(_queueName).AnyContext()) {
                 await _namespaceManager.DeleteQueueAsync(_queueName).AnyContext();
-
-            _queueDescription = new QueueDescription(_queueName) {
-                MaxDeliveryCount = _retries + 1,
-                LockDuration = _workItemTimeout
-            };
-
-            await _namespaceManager.CreateQueueAsync(_queueDescription).AnyContext();
+            }
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -83,6 +153,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
+            await EnsureQueueExistsAsync().AnyContext();
+
             var q = await _namespaceManager.GetQueueAsync(_queueName).AnyContext();
             return new QueueStats {
                 Queued = q.MessageCount,
@@ -105,9 +177,11 @@ namespace Foundatio.Queues {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
+            var queueClient = await EnsureQueueExistsAsync().AnyContext();
+
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
-            await _queueClient.SendAsync(message).AnyContext();
+            await queueClient.SendAsync(message).AnyContext();
             
             var entry = new QueueEntry<T>(message.MessageId, data, this, DateTime.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
@@ -118,8 +192,11 @@ namespace Foundatio.Queues {
         public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-            
-            _queueClient.OnMessageAsync(async msg => {
+
+            // revisit: can StartWorking be made to return Task? it's a breaking change - perhaps mark obsolete and add a new async version?
+            var queueClient = EnsureQueueExistsAsync().Result;
+
+            queueClient.OnMessageAsync(async msg => {
                 var queueEntry = await HandleDequeueAsync(msg);
 
                 try {
@@ -137,7 +214,9 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
-            using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
+            var queueClient = await EnsureQueueExistsAsync().AnyContext();
+
+            using (var msg = await queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
                 return await HandleDequeueAsync(msg).AnyContext();
             }
         }
@@ -149,25 +228,39 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            await _queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
+            var queueClient = await EnsureQueueExistsAsync().AnyContext();
+
+            await queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
+            var queueClient = await EnsureQueueExistsAsync().AnyContext();
+
             Interlocked.Increment(ref _completedCount);
-            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
+            await queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
             await OnCompletedAsync(entry).AnyContext();
         }
         
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
+            var queueClient = await EnsureQueueExistsAsync().AnyContext();
+
             Interlocked.Increment(ref _abandonedCount);
-            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
+            await queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
             await OnAbandonedAsync(entry).AnyContext();
         }
         
         public override void Dispose() {
-            _queueClient.Close();
+            _disposeClient();
             base.Dispose();
+        }
+
+        private async Task<QueueClient> EnsureQueueExistsAsync() {
+            var description = await _createQueue().AnyContext();
+            var client = _clientFactory(description.Path);
+
+            _disposeClient = () => client.Close();
+            return client;
         }
 
         private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {
@@ -179,6 +272,54 @@ namespace Foundatio.Queues {
             var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
-        } 
+        }
+
+        private static Func<Task<QueueDescription>> MemoizeQueueFactory(NamespaceManager namespaceManager, string queueName, TimeSpan workItemTimeout, int retries) {
+            return async () => {
+                var queueDescription = default(QueueDescription);
+
+                if (!await namespaceManager.QueueExistsAsync(queueName).AnyContext()) {
+                    queueDescription = new QueueDescription(queueName) {
+                        MaxDeliveryCount = retries + 1,
+                        LockDuration = workItemTimeout
+                    };
+                    await namespaceManager.CreateQueueAsync(queueDescription).AnyContext();
+                } else {
+                    queueDescription = await namespaceManager.GetQueueAsync(queueName).AnyContext();
+
+                    var changes = false;
+                    var newMaxDeliveryCount = retries + 1;
+                    if (queueDescription.MaxDeliveryCount != newMaxDeliveryCount) {
+                        queueDescription.MaxDeliveryCount = newMaxDeliveryCount;
+                        changes = true;
+                    }
+
+                    if (queueDescription.LockDuration != workItemTimeout) {
+                        queueDescription.LockDuration = workItemTimeout;
+                        changes = true;
+                    }
+
+                    if (changes) {
+                        await namespaceManager.UpdateQueueAsync(queueDescription).AnyContext();
+                    }
+                }
+
+                return queueDescription;
+            };
+        }
+
+        private static Func<string, QueueClient> MemoizeClientFactory(string connectionString, RetryPolicy retryPolicy) {
+            var client = default(QueueClient);
+            return path => {
+                if (client == null) {
+                    client = QueueClient.CreateFromConnectionString(connectionString, path);
+
+                    if (retryPolicy != null)
+                        client.RetryPolicy = retryPolicy;
+                }
+
+                return client;
+            };
+        }
     }
 }

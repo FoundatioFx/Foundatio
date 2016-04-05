@@ -1,10 +1,10 @@
-﻿using System;
-using Foundatio.Queues;
+﻿using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
-using Xunit;
-using System.Threading.Tasks;
 using Microsoft.ServiceBus;
+using System;
+using System.Threading.Tasks;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
@@ -24,8 +24,18 @@ namespace Foundatio.Azure.Tests.Queue {
                 ? retryDelay.Value + retryDelay.Value
                 : TimeSpan.FromSeconds(1);
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
-            return new AzureServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"),
-                QueueName, retries, workItemTimeout, false, retryPolicy, loggerFactory: Log);
+
+            var factory = new AzureServiceBusQueue<SimpleWorkItem>.Factory(ConnectionStrings.Get("ServiceBusConnectionString"))
+                .Queue(QueueName)
+                .Retries(retries)
+                .RecreateQueue(false)
+                .RetryPolicy(retryPolicy)
+                .LoggerFactory(Log);
+
+            if (workItemTimeout != null)
+                factory.Timeout(workItemTimeout.Value);
+
+            return factory.Build().Result;
         }
 
         [Fact]
