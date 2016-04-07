@@ -283,7 +283,20 @@ namespace Foundatio.Queues {
                         MaxDeliveryCount = retries + 1,
                         LockDuration = workItemTimeout
                     };
-                    await namespaceManager.CreateQueueAsync(queueDescription).AnyContext();
+
+                    try {
+                        await namespaceManager.CreateQueueAsync(queueDescription).AnyContext();
+                    }
+                    catch (MessagingEntityAlreadyExistsException) {
+                        // do nothing - something created the queue between the check for exist and the call to create
+                    }
+                    catch (MessagingException) {
+                        // this one is a little more sinister - something conflicted with the create, but we don't know what
+                        // in that case, we'll re-check to see if something else created it
+                        if (!await namespaceManager.QueueExistsAsync(queueName).AnyContext()) {
+                            throw;
+                        }
+                    }
                 } else {
                     queueDescription = await namespaceManager.GetQueueAsync(queueName).AnyContext();
 
