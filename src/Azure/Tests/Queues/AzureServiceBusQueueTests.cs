@@ -9,33 +9,40 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
-        private static readonly string QueueName = Guid.NewGuid().ToString("N");
+        private IQueue<SimpleWorkItem> _queue;
 
         public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
-                return null;
+            if (_queue == null) {
 
-            if (!retryDelay.HasValue)
-                retryDelay = TimeSpan.Zero;
+                if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
+                    return null;
 
-            var maxBackoff = retryDelay.Value > TimeSpan.Zero
-                ? retryDelay.Value + retryDelay.Value
-                : TimeSpan.FromSeconds(1);
-            var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
+                if (!retryDelay.HasValue)
+                    retryDelay = TimeSpan.Zero;
 
-            var factory = new AzureServiceBusQueue<SimpleWorkItem>.Factory(ConnectionStrings.Get("ServiceBusConnectionString"))
-                .Queue(QueueName)
-                .Retries(retries)
-                .RecreateQueue(false)
-                .RetryPolicy(retryPolicy)
-                .LoggerFactory(Log);
+                var maxBackoff = retryDelay.Value > TimeSpan.Zero
+                    ? retryDelay.Value + retryDelay.Value
+                    : TimeSpan.FromSeconds(1);
+                var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
 
-            if (workItemTimeout != null)
-                factory.Timeout(workItemTimeout.Value);
+                var queueName = Guid.NewGuid().ToString("N");
 
-            return factory.Build().Result;
+                var factory = new AzureServiceBusQueue<SimpleWorkItem>.Factory(ConnectionStrings.Get("ServiceBusConnectionString"))
+                    .Queue(queueName)
+                    .Retries(retries)
+                    .RecreateQueue(false)
+                    .RetryPolicy(retryPolicy)
+                    .LoggerFactory(Log);
+
+                if (workItemTimeout != null)
+                    factory.Timeout(workItemTimeout.Value);
+
+                _queue = factory.Build().Result;
+            }
+
+            return _queue;
         }
 
         [Fact]
