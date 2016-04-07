@@ -88,7 +88,7 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.CanAutoCompleteWorker();
         }
 
-        [Fact]
+        [Fact(Skip="Base code incompatible: ServiceBus expects multiple QueueClients, not Queues.")]
         public override Task CanHaveMultipleQueueInstances() {
             return base.CanHaveMultipleQueueInstances();
         }
