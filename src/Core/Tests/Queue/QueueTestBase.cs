@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
-                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5));
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -355,9 +355,11 @@ namespace Foundatio.Tests.Queue {
                 var resetEvent = new AsyncManualResetEvent(false);
                 queue.StartWorking(w => {
                     Assert.Equal("Hello", w.Value.Data);
-                    resetEvent.Set();
                     return TaskHelper.Completed;
                 }, true);
+                queue.Completed.AddSyncHandler((s, e) => {
+                    resetEvent.Set();
+                });
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
@@ -365,9 +367,6 @@ namespace Foundatio.Tests.Queue {
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
-                // Delay again as the resetEvent will only trigger once the handler
-                // has completed, not the call to CompleteAsync()
-                await Task.Delay(50);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
