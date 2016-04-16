@@ -8,6 +8,8 @@ using Foundatio.Serializer;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
+using Nito.AsyncEx;
+using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
@@ -23,6 +25,8 @@ namespace Foundatio.Queues {
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly TimeSpan _dequeueInterval = TimeSpan.FromSeconds(1);
+        private readonly AsyncLock _lock = new AsyncLock();
+        private bool _queueCreated;
 
         public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null,
             IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
@@ -32,7 +36,7 @@ namespace Foundatio.Queues {
 
             _queueName = queueName;
             _queueReference = client.GetQueueReference(queueName);
-            _deadletterQueueReference = client.GetQueueReference(String.Concat(queueName, "-deadletter"));
+            _deadletterQueueReference = client.GetQueueReference($"{queueName}-deadletter");
             
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
@@ -44,19 +48,35 @@ namespace Foundatio.Queues {
                 _dequeueInterval = dequeueInterval.Value;
             if (retryPolicy != null) 
                 client.DefaultRequestOptions.RetryPolicy = retryPolicy;
+        }
 
-            _queueReference.CreateIfNotExists();
-            _deadletterQueueReference.CreateIfNotExists();
+        protected async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            if (_queueCreated) {
+                return;
+            }
+
+            using (await _lock.LockAsync(cancellationToken)) {
+                if (_queueCreated) {
+                    return;
+                }
+                
+                await _queueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
+                await _deadletterQueueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
+
+                _queueCreated = true;
+            }
         }
 
         public override async Task<string> EnqueueAsync(T data) {
+            await EnsureQueueCreatedAsync().AnyContext();
+
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = new CloudQueueMessage(await _serializer.SerializeAsync(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
-
+            
             var entry = new QueueEntry<T>(message.Id, data, this, DateTime.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
             
@@ -64,6 +84,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
@@ -90,12 +112,16 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+            await EnsureQueueCreatedAsync().AnyContext();
+
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _workItemTimeout, MessageUpdateFields.Visibility).AnyContext();
             await OnLockRenewedAsync(queueEntry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
+            await EnsureQueueCreatedAsync().AnyContext();
+
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
 
@@ -104,6 +130,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
+            await EnsureQueueCreatedAsync().AnyContext();
+
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
 
             if (azureQueueEntry.Attempts > _retries) {
@@ -124,6 +152,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task<QueueStats> GetQueueStatsAsync() {
+            await EnsureQueueCreatedAsync().AnyContext();
+
             await _queueReference.FetchAttributesAsync().AnyContext();
             await _deadletterQueueReference.FetchAttributesAsync().AnyContext();
 
@@ -141,10 +171,8 @@ namespace Foundatio.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
-            // ServiceBusQueue seems to recreate so we're doing the same here.
-            // This should probably be renamed to ClearQueueAsync()?
-            await _queueReference.ClearAsync().AnyContext();
-            await _deadletterQueueReference.ClearAsync().AnyContext();
+            await _queueReference.DeleteIfExistsAsync().AnyContext();
+            await _deadletterQueueReference.DeleteIfExistsAsync().AnyContext();
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -156,6 +184,8 @@ namespace Foundatio.Queues {
         public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
+
+            EnsureQueueCreatedAsync(cancellationToken).WaitAndUnwrapException(cancellationToken);
 
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 

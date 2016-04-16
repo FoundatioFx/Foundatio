@@ -8,6 +8,7 @@ using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using Nito.AsyncEx;
+using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
@@ -139,7 +140,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var queueClient = GetQueueClientAsync(cancellationToken: cancellationToken).AnyContext().GetAwaiter().GetResult();
+            var queueClient = GetQueueClientAsync(cancellationToken).WaitAndUnwrapException();
 
             queueClient.OnMessageAsync(async msg => {
                 var queueEntry = await HandleDequeueAsync(msg);
