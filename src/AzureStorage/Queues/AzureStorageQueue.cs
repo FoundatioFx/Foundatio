@@ -50,7 +50,7 @@ namespace Foundatio.Queues {
                 client.DefaultRequestOptions.RetryPolicy = retryPolicy;
         }
 
-        protected async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_queueCreated) {
                 return;
             }
@@ -67,9 +67,7 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override async Task<string> EnqueueAsync(T data) {
-            await EnsureQueueCreatedAsync().AnyContext();
-
+        protected override async Task<string> EnqueueImplAsync(T data) {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
@@ -83,9 +81,7 @@ namespace Foundatio.Queues {
             return message.Id;
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
-
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             // TODO: Use cancellation token overloads
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
@@ -112,16 +108,12 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
-            await EnsureQueueCreatedAsync().AnyContext();
-
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _workItemTimeout, MessageUpdateFields.Visibility).AnyContext();
             await OnLockRenewedAsync(queueEntry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
-            await EnsureQueueCreatedAsync().AnyContext();
-
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
 
@@ -130,8 +122,6 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
-            await EnsureQueueCreatedAsync().AnyContext();
-
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
 
             if (azureQueueEntry.Attempts > _retries) {
@@ -147,13 +137,11 @@ namespace Foundatio.Queues {
             await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
-        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken = new CancellationToken()) {
             throw new NotImplementedException("Azure Storage Queues do not support retrieving the entire queue");
         }
 
-        public override async Task<QueueStats> GetQueueStatsAsync() {
-            await EnsureQueueCreatedAsync().AnyContext();
-
+        protected override async Task<QueueStats> GetQueueStatsImplAsync() {
             await _queueReference.FetchAttributesAsync().AnyContext();
             await _deadletterQueueReference.FetchAttributesAsync().AnyContext();
 
@@ -181,19 +169,17 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
         }
 
-        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-
-            EnsureQueueCreatedAsync(cancellationToken).WaitAndUnwrapException(cancellationToken);
-
+            
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             Task.Run(async () => {
                 while (!linkedCancellationToken.IsCancellationRequested) {
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueAsync(cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(cancellationToken).AnyContext();
                     } catch (TaskCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)

@@ -8,7 +8,6 @@ using Foundatio.Serializer;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using Nito.AsyncEx;
-using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
@@ -38,14 +37,14 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected async Task<QueueClient> GetQueueClientAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (_queueClient != null) {
-                return _queueClient;
+                return;
             }
 
             using (await _lock.LockAsync(cancellationToken)) {
                 if (_queueClient != null) {
-                    return _queueClient;
+                    return;
                 }
 
                 QueueDescription queueDescription;
@@ -83,8 +82,6 @@ namespace Foundatio.Queues {
                     _queueClient.RetryPolicy = _retryPolicy;
                 }
             }
-
-            return _queueClient;
         }
 
         public override async Task DeleteQueueAsync() {
@@ -101,7 +98,7 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
         }
 
-        public override async Task<QueueStats> GetQueueStatsAsync() {
+        protected override async Task<QueueStats> GetQueueStatsImplAsync() {
             var q = await _namespaceManager.GetQueueAsync(_queueName).AnyContext();
             return new QueueStats {
                 Queued = q.MessageCount,
@@ -116,19 +113,17 @@ namespace Foundatio.Queues {
             };
         }
 
-        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             throw new NotImplementedException();
         }
         
-        public override async Task<string> EnqueueAsync(T data) {
-            var queueClient = await GetQueueClientAsync();
-
+        protected override async Task<string> EnqueueImplAsync(T data) {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = new BrokeredMessage(data);
-            await queueClient.SendAsync(message).AnyContext();
+            await _queueClient.SendAsync(message).AnyContext();
             
             var entry = new QueueEntry<T>(message.MessageId, data, this, DateTime.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
@@ -136,13 +131,11 @@ namespace Foundatio.Queues {
             return message.MessageId;
         }
         
-        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-
-            var queueClient = GetQueueClientAsync(cancellationToken).WaitAndUnwrapException();
-
-            queueClient.OnMessageAsync(async msg => {
+            
+            _queueClient.OnMessageAsync(async msg => {
                 var queueEntry = await HandleDequeueAsync(msg);
 
                 try {
@@ -156,43 +149,45 @@ namespace Foundatio.Queues {
                     if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.AbandonAsync().AnyContext();
                 }
+            }, new OnMessageOptions {
+                AutoComplete = false
             });
         }
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
-            var queueClient = await GetQueueClientAsync();
+            await EnsureQueueCreatedAsync().AnyContext();
 
-            using (var msg = await queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
                 return await HandleDequeueAsync(msg).AnyContext();
             }
         }
 
-        public override Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+        protected override Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             _logger.Warn("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.");
 
             return DequeueAsync();
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            var queueClient = await GetQueueClientAsync();
+            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
-            await queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
+            await _queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            var queueClient = await GetQueueClientAsync();
+            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
             Interlocked.Increment(ref _completedCount);
-            await queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
+            await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
             await OnCompletedAsync(entry).AnyContext();
         }
         
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            var queueClient = await GetQueueClientAsync();
+            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
             Interlocked.Increment(ref _abandonedCount);
-            await queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
+            await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
             await OnAbandonedAsync(entry).AnyContext();
         }
         
