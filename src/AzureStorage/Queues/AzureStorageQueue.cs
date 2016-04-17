@@ -137,7 +137,7 @@ namespace Foundatio.Queues {
             await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
-        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
             throw new NotImplementedException("Azure Storage Queues do not support retrieving the entire queue");
         }
 
