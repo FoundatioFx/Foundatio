@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
-                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5));
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
