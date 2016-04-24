@@ -64,8 +64,8 @@ namespace Foundatio.Queues {
         public abstract Task DeleteQueueAsync();
         
         protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
-        public void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
-            EnsureQueueCreatedAsync(cancellationToken).WaitAndUnwrapException(cancellationToken);
+        public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
             StartWorkingImpl(handler, autoComplete, cancellationToken);
         }
 
@@ -145,6 +145,7 @@ namespace Foundatio.Queues {
 
             base.Dispose();
 
+            // ReSharper disable once SuspiciousTypeConversion.Global
             var disposableSerializer = _serializer as IDisposable;
             disposableSerializer?.Dispose();
 

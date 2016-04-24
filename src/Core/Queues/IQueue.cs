@@ -23,7 +23,20 @@ namespace Foundatio.Queues {
         Task CompleteAsync(IQueueEntry<T> queueEntry);
         Task AbandonAsync(IQueueEntry<T> queueEntry);
         Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
-        void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        /// <summary>
+        ///     Asynchronously dequeues entries in the background.
+        /// </summary>
+        /// <param name="handler">
+        ///     Function called on entry dequeued.
+        /// </param>
+        /// <param name="autoComplete">
+        ///     True to call <see cref="CompleteAsync"/> after the <paramref name="handler"/> is run,
+        ///     defaults to false.
+        /// </param>
+        /// <param name="cancellationToken">
+        ///     The token used to cancel the background worker.
+        /// </param>
+        Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
     }
 
     public interface IQueue : IHaveSerializer, IDisposable {
@@ -33,9 +46,8 @@ namespace Foundatio.Queues {
     }
 
     public static class QueueExtensions {
-        public static void StartWorking<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            queue.StartWorking((entry, token) => handler(entry), autoComplete, cancellationToken);
-        }
+        public static Task StartWorkingAsync<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+            => queue.StartWorkingAsync((entry, token) => handler(entry), autoComplete, cancellationToken);
     }
 
     public class QueueStats {

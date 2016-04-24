@@ -427,7 +427,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var metrics = new InMemoryMetricsClient();
-                queue.StartWorking(async workItem => {
+                await queue.StartWorkingAsync(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
                     await metrics.CounterAsync("work");
