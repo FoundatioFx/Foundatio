@@ -43,7 +43,11 @@ namespace Foundatio.Queues {
             _disposeTokenSource = new CancellationTokenSource();
         }
 
-        public override Task<QueueStats> GetQueueStatsAsync() {
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
+            return TaskHelper.Completed;
+        }
+
+        protected override Task<QueueStats> GetQueueStatsImplAsync() {
             return Task.FromResult(new QueueStats {
                 Queued = _queue.Count,
                 Working = _dequeued.Count,
@@ -57,7 +61,7 @@ namespace Foundatio.Queues {
             });
         }
 
-        public override async Task<string> EnqueueAsync(T data) {
+        protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
             _logger.Trace("Queue {0} enqueue item: {1}", typeof(T).Name, id);
 
@@ -78,7 +82,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
@@ -94,7 +98,7 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(cancellationToken: cancellationToken).AnyContext();
                     } catch (Exception ex) {
                         _logger.Error(ex, "Error on Dequeue: " + ex.Message);
                     }
@@ -119,7 +123,7 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             _logger.Trace("Queue {type} dequeuing item...", typeof(T).Name);
             _logger.Trace("Queue count: {0}", _queue.Count);
 
@@ -224,7 +228,7 @@ namespace Foundatio.Queues {
             return TimeSpan.FromMilliseconds((int)(_retryDelay.TotalMilliseconds * multiplier));
         }
 
-        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
             return Task.FromResult(_deadletterQueue.Select(i => i.Value));
         }
 
