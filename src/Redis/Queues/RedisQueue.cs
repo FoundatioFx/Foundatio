@@ -99,10 +99,10 @@ namespace Foundatio.Queues {
             using (await _lock.LockAsync()) {
                 if (_isSubscribed)
                     return;
-
-                _isSubscribed = true;
+                
                 _logger.Trace("Subscribing to enqueue messages for {_queueName}.", _queueName);
                 await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessage(channel, value).AnyContext()).AnyContext();
+                _isSubscribed = true;
             }
         }
 
