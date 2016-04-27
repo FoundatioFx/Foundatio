@@ -47,11 +47,13 @@ namespace Foundatio.Caching {
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll) {
                 await _localCache.RemoveAllAsync().AnyContext();
+                _logger.Trace("Fushed local cache");
             } else if (message.Keys != null && message.Keys.Length > 0) {
                 foreach (var pattern in message.Keys.Where(k => k.EndsWith("*")))
                     await _localCache.RemoveByPrefixAsync(pattern.Substring(0, pattern.Length - 1)).AnyContext();
 
                 await _localCache.RemoveAllAsync(message.Keys.Where(k => !k.EndsWith("*"))).AnyContext();
+                _logger.Trace("Removed keys from local cache");
             } else {
                 _logger.Warn("Unknown invalidate cache message");
             }
