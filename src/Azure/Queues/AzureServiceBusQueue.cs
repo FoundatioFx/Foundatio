@@ -21,13 +21,21 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
+        private readonly TimeSpan _autoDeleteOnIdle = TimeSpan.MaxValue;
+        private readonly TimeSpan _defaultMessageTimeToLive = TimeSpan.MaxValue;
 
-        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
+        public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, bool shouldRecreate = false, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null, TimeSpan? autoDeleteOnIdle = null, TimeSpan? defaultMessageTimeToLive = null) : base(serializer, behaviors, loggerFactory) {
             _queueName = queueName ?? typeof(T).Name;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
             if (workItemTimeout.HasValue && workItemTimeout.Value < TimeSpan.FromMinutes(5))
                 _workItemTimeout = workItemTimeout.Value;
+
+            if (autoDeleteOnIdle.HasValue && autoDeleteOnIdle.Value >= TimeSpan.FromMinutes(5))
+                _autoDeleteOnIdle = autoDeleteOnIdle.Value;
+
+            if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero)
+                _defaultMessageTimeToLive = defaultMessageTimeToLive.Value;
 
             if (_namespaceManager.QueueExists(_queueName) && shouldRecreate)
                 _namespaceManager.DeleteQueue(_queueName);
@@ -35,8 +43,11 @@ namespace Foundatio.Queues {
             if (!_namespaceManager.QueueExists(_queueName)) {
                 _queueDescription = new QueueDescription(_queueName) {
                     MaxDeliveryCount = retries + 1,
-                    LockDuration = _workItemTimeout
+                    LockDuration = _workItemTimeout,
+                    AutoDeleteOnIdle = _autoDeleteOnIdle,
+                    DefaultMessageTimeToLive = _defaultMessageTimeToLive
                 };
+
                 _namespaceManager.CreateQueue(_queueDescription);
             } else {
                 _queueDescription = _namespaceManager.GetQueue(_queueName);
@@ -51,6 +62,16 @@ namespace Foundatio.Queues {
 
                 if (_queueDescription.LockDuration != _workItemTimeout) {
                     _queueDescription.LockDuration = _workItemTimeout;
+                    changes = true;
+                }
+
+                if (_queueDescription.AutoDeleteOnIdle != _autoDeleteOnIdle) {
+                    _queueDescription.AutoDeleteOnIdle = _autoDeleteOnIdle;
+                    changes = true;
+                }
+
+                if (_queueDescription.DefaultMessageTimeToLive != _defaultMessageTimeToLive) {
+                    _queueDescription.DefaultMessageTimeToLive = _defaultMessageTimeToLive;
                     changes = true;
                 }
 
@@ -70,7 +91,9 @@ namespace Foundatio.Queues {
 
             _queueDescription = new QueueDescription(_queueName) {
                 MaxDeliveryCount = _retries + 1,
-                LockDuration = _workItemTimeout
+                LockDuration = _workItemTimeout,
+                AutoDeleteOnIdle = _autoDeleteOnIdle,
+                DefaultMessageTimeToLive = _defaultMessageTimeToLive
             };
 
             await _namespaceManager.CreateQueueAsync(_queueDescription).AnyContext();
@@ -120,7 +143,7 @@ namespace Foundatio.Queues {
                 throw new ArgumentNullException(nameof(handler));
             
             _queueClient.OnMessageAsync(async msg => {
-                var queueEntry = await HandleDequeueAsync(msg);
+                var queueEntry = await HandleDequeueAsync(msg).AnyContext();
 
                 try {
                     await handler(queueEntry, cancellationToken).AnyContext();
