@@ -471,8 +471,9 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 try {
                     var keys = server.Keys().ToArray();
-                    foreach (var key in keys)
-                        _logger.Info(key);
+                    for (int index = 0; index < keys.Length; index++)
+                        _logger.Info($"Server: {server.EndPoint} Key {index}: {keys[index]}");
+
                     count += keys.Length;
                 } catch (Exception) { }
             }
