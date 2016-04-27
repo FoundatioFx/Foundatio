@@ -67,10 +67,12 @@ namespace Foundatio.Queues {
 
                 if (_queueDescription.AutoDeleteOnIdle != _autoDeleteOnIdle) {
                     _queueDescription.AutoDeleteOnIdle = _autoDeleteOnIdle;
+                    changes = true;
                 }
 
                 if (_queueDescription.DefaultMessageTimeToLive != _defaultMessageTimeToLive) {
                     _queueDescription.DefaultMessageTimeToLive = _defaultMessageTimeToLive;
+                    changes = true;
                 }
 
                 if (changes) {
