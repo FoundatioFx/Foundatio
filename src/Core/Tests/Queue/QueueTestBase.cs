@@ -540,7 +540,7 @@ namespace Foundatio.Tests.Queue {
             Assert.Equal(3, queueStats.Dequeued.Count);
             Assert.Equal(2, queueStats.Completed.Count);
             Assert.Equal(1, queueStats.Abandoned.Count);
-            Assert.Equal(3, queueStats.Count.Max);
+            Assert.InRange(queueStats.Count.Max, 2, 3);
             Assert.InRange(queueStats.Working.Max, 0, 1);
 
             var subQueueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata", "simple");

@@ -18,7 +18,7 @@ namespace Foundatio.Caching {
         private LoadedLuaScript _delByWildcardScript;
 
         public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory?.CreateLogger<RedisCacheClient>() ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<RedisCacheClient>();
             _connectionMultiplexer = connectionMultiplexer;
             _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _serializer = serializer ?? new JsonNetSerializer();

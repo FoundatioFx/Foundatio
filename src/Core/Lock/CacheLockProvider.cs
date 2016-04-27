@@ -20,7 +20,7 @@ namespace Foundatio.Lock {
         protected readonly ILogger _logger;
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<CacheLockProvider>();
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
         }

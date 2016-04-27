@@ -45,7 +45,7 @@ namespace Foundatio.Jobs {
         protected readonly ILogger _logger;
 
         public WorkItemHandlerBase(ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger(GetType());
         }
 
         public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {

@@ -18,7 +18,7 @@ namespace Foundatio.Caching {
         private long _invalidateCacheCalls;
 
         public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
-            _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<HybridCacheClient>();
             _distributedCache = distributedCacheClient;
             _localCache = new InMemoryCacheClient(loggerFactory);
             _localCache.MaxItems = 100;
@@ -73,6 +73,8 @@ namespace Foundatio.Caching {
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             CacheValue<T> cacheValue;
             bool requiresSerialization = TypeRequiresSerialization(typeof(T));
+            _logger.Trace("Type requires serialization: {0}", requiresSerialization);
+
             if (requiresSerialization) {
                 cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
                 if (cacheValue.HasValue) {
