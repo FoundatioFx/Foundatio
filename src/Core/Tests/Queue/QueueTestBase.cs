@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Logging;
@@ -481,6 +482,8 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CanRunWorkItemWithMetrics() {
             int completedCount = 0;
             Log.MinimumLevel = LogLevel.Trace;
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
 
             var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
