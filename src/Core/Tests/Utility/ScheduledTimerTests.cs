@@ -35,12 +35,12 @@ namespace Foundatio.Tests.Utility {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
 
             int hits = 0;
-            var timer = new ScheduledTimer(() => {
+            var timer = new ScheduledTimer(async () => {
                 _logger.Info("Starting work.");
                 Interlocked.Increment(ref hits);
-                Thread.Sleep(1000);
+                await Task.Delay(1000);
                 _logger.Info("Finished work.");
-                return Task.FromResult<DateTime?>(null);
+                return null;
             }, loggerFactory: Log);
 
             timer.ScheduleNext();

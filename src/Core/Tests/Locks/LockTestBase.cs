@@ -147,6 +147,7 @@ namespace Foundatio.Tests.Locks {
 
             var sw = Stopwatch.StartNew();
             for (int i = 0; i < allowedLocks; i++) {
+                _logger.Info($"Allowed Locks: {i}");
                 var l = await locker.AcquireAsync(lockName);
                 Assert.NotNull(l);
             }

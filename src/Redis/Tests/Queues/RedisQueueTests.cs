@@ -16,7 +16,10 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
-        public RedisQueueTests(ITestOutputHelper output) : base(output) {}
+        public RedisQueueTests(ITestOutputHelper output) : base(output) {
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout,
@@ -164,9 +167,6 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             FlushAll();
-            if (CountAllKeys() != 0)
-                FlushAll();
-
             Assert.Equal(0, CountAllKeys());
 
             using (queue) {
@@ -331,6 +331,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             FlushAll();
+            Assert.Equal(0, CountAllKeys());
 
             using (queue) {
                 await queue.DeleteQueueAsync();
@@ -374,6 +375,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             FlushAll();
+            Assert.Equal(0, CountAllKeys());
 
             using (queue) {
                 await queue.DeleteQueueAsync();
@@ -413,6 +415,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             FlushAll();
+            Assert.Equal(0, CountAllKeys());
 
             using (queue) {
                 await queue.DeleteQueueAsync();
@@ -456,7 +459,9 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 try {
                     server.FlushAllDatabases();
-                } catch (Exception) { }
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error flushing redis");
+                }
             }
         }
 
@@ -475,7 +480,9 @@ namespace Foundatio.Redis.Tests.Queues {
                         _logger.Info($"Server: {server.EndPoint} Key {index}: {keys[index]}");
 
                     count += keys.Length;
-                } catch (Exception) { }
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error getting redis key count");
+                }
             }
 
             return count;

@@ -371,8 +371,8 @@ namespace Foundatio.Tests.Queue {
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
-                Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Errors);
+                Assert.Equal(1, stats.Completed);
             }
         }
 
@@ -511,6 +511,8 @@ namespace Foundatio.Tests.Queue {
 
             _logger.Trace("Before asserts");
             Assert.Equal(2, completedCount);
+
+            await Task.Delay(100);
 
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 2, 3);
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);

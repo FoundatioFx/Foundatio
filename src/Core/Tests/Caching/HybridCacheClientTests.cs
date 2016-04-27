@@ -119,7 +119,7 @@ namespace Foundatio.Tests.Caching {
 
             var cacheKey = "willexpireremote";
             _logger.Trace("First Set");
-            await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(500));
+            await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250));
             _logger.Trace("Done First Set");
             Assert.Equal(1, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
@@ -128,6 +128,8 @@ namespace Foundatio.Tests.Caching {
             _logger.Trace("First Get");
             Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
             Assert.Equal(1, firstCache.LocalCacheHits);
+
+            await Task.Delay(50);
 
             _logger.Trace("Second Get");
             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
@@ -139,7 +141,7 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
-            await countdownEvent.WaitAsync(new CancellationTokenSource(1000).Token);
+            await countdownEvent.WaitAsync(new CancellationTokenSource(500).Token);
             sw.Stop();
             Trace.WriteLine(sw.Elapsed);
             Assert.Equal(0, firstCache.LocalCache.Count);
