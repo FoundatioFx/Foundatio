@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Logging;
@@ -144,7 +145,7 @@ namespace Foundatio.Tests.Queue {
                 }
                 sw.Stop();
                 Trace.WriteLine(sw.Elapsed);
-                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+                Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5));
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(workItemCount, stats.Dequeued);
@@ -230,7 +231,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
 
                 var resetEvent = new AsyncManualResetEvent(false);
-                queue.StartWorking(async w => {
+                await queue.StartWorkingAsync(async w => {
                     Assert.Equal("Hello", w.Value.Data);
                     await w.CompleteAsync();
                     resetEvent.Set();
@@ -263,7 +264,7 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 await queue.DeleteQueueAsync();
 				
-                queue.StartWorking(w => {
+                await queue.StartWorkingAsync(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
                     throw new ApplicationException();
@@ -353,11 +354,13 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
 
                 var resetEvent = new AsyncManualResetEvent(false);
-                queue.StartWorking(w => {
+                await queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
-                    resetEvent.Set();
                     return TaskHelper.Completed;
                 }, true);
+                queue.Completed.AddSyncHandler((s, e) => {
+                    resetEvent.Set();
+                });
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
@@ -365,14 +368,11 @@ namespace Foundatio.Tests.Queue {
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
-                // Delay again as the resetEvent will only trigger once the handler
-                // has completed, not the call to CompleteAsync()
-                await Task.Delay(50);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
-                Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Errors);
+                Assert.Equal(1, stats.Completed);
             }
         }
 
@@ -394,7 +394,7 @@ namespace Foundatio.Tests.Queue {
                 for (int i = 0; i < workerCount; i++) {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
-                    q.StartWorking(async w => await DoWorkAsync(w, countdown, info));
+                    await q.StartWorkingAsync(async w => await DoWorkAsync(w, countdown, info));
                     workers.Add(q);
                 }
 
@@ -481,6 +481,8 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CanRunWorkItemWithMetrics() {
             int completedCount = 0;
             Log.MinimumLevel = LogLevel.Trace;
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
 
             var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
@@ -509,6 +511,8 @@ namespace Foundatio.Tests.Queue {
 
             _logger.Trace("Before asserts");
             Assert.Equal(2, completedCount);
+
+            await Task.Delay(100);
 
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 2, 3);
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
@@ -540,7 +544,7 @@ namespace Foundatio.Tests.Queue {
             Assert.Equal(3, queueStats.Dequeued.Count);
             Assert.Equal(2, queueStats.Completed.Count);
             Assert.Equal(1, queueStats.Abandoned.Count);
-            Assert.Equal(3, queueStats.Count.Max);
+            Assert.InRange(queueStats.Count.Max, 2, 3);
             Assert.InRange(queueStats.Working.Max, 0, 1);
 
             var subQueueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata", "simple");

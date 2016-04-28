@@ -11,7 +11,7 @@ namespace Foundatio.Utility {
         protected readonly ILogger _logger;
 
         public MaintenanceBase(ILoggerFactory loggerFactory) {
-            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger(GetType());
         }
 
         protected void InitializeMaintenance(TimeSpan? dueTime = null, TimeSpan? intervalTime = null) {

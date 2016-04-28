@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {
@@ -12,18 +13,19 @@ namespace Foundatio.Caching {
         private readonly ConnectionMultiplexer _connectionMultiplexer;
         private readonly ISerializer _serializer;
         private readonly ILogger _logger;
+
+        private readonly AsyncLock _lock = new AsyncLock();
+        private bool _scriptsLoaded;
         private LoadedLuaScript _setIfHigherScript;
         private LoadedLuaScript _setIfLowerScript;
         private LoadedLuaScript _incrByAndExpireScript;
         private LoadedLuaScript _delByWildcardScript;
 
         public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory?.CreateLogger<RedisCacheClient>() ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<RedisCacheClient>();
             _connectionMultiplexer = connectionMultiplexer;
             _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _serializer = serializer ?? new JsonNetSerializer();
-            
-            LoadScripts();
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -59,6 +61,8 @@ namespace Foundatio.Caching {
         }
 
         public async Task<int> RemoveByPrefixAsync(string prefix) {
+            await LoadScriptsAsync().AnyContext();
+
             try {
                 var result = await Database.ScriptEvaluateAsync(_delByWildcardScript, new { keys = prefix + "*" }).AnyContext();
                 return (int)result;
@@ -126,11 +130,15 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            await LoadScriptsAsync().AnyContext();
+
             var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
             return (double)result;
         }
 
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            await LoadScriptsAsync().AnyContext();
+
             var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
             return (double)result;
         }
@@ -178,6 +186,7 @@ namespace Foundatio.Caching {
             }
 
             if (expiresIn.HasValue) {
+                await LoadScriptsAsync().AnyContext();
                 var result = await Database.ScriptEvaluateAsync(_incrByAndExpireScript, new { key, value = amount, expires = expiresIn.Value.TotalSeconds }).AnyContext();
                 return (long)result;
             }
@@ -201,24 +210,34 @@ namespace Foundatio.Caching {
         }
 
         private IDatabase Database => _connectionMultiplexer.GetDatabase();
+        
+        private async Task LoadScriptsAsync() {
+            if (_scriptsLoaded)
+                return;
 
-        private void LoadScripts() {
-            var setIfLower = LuaScript.Prepare(SET_IF_LOWER);
-            var setIfHigher = LuaScript.Prepare(SET_IF_HIGHER);
-            var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
-            var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
+            using (await _lock.LockAsync()) {
+                if (_scriptsLoaded)
+                    return;
 
-            foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                _setIfHigherScript = setIfHigher.Load(_connectionMultiplexer.GetServer(endpoint));
-                _setIfLowerScript = setIfLower.Load(_connectionMultiplexer.GetServer(endpoint));
-                _incrByAndExpireScript = incrByAndExpire.Load(_connectionMultiplexer.GetServer(endpoint));
-                _delByWildcardScript = delByWildcard.Load(_connectionMultiplexer.GetServer(endpoint));
+                var setIfLower = LuaScript.Prepare(SET_IF_LOWER);
+                var setIfHigher = LuaScript.Prepare(SET_IF_HIGHER);
+                var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
+                var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
+
+                foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
+                    _setIfHigherScript = await setIfHigher.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                    _setIfLowerScript = await setIfLower.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                    _incrByAndExpireScript = await incrByAndExpire.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                    _delByWildcardScript = await delByWildcard.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                }
+
+                _scriptsLoaded = true;
             }
         }
 
         private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
             _logger.Info("Redis connection restored.");
-            LoadScripts();
+            _scriptsLoaded = false;
         }
 
         public void Dispose() {}

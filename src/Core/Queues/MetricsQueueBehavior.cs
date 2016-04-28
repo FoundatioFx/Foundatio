@@ -13,7 +13,7 @@ namespace Foundatio.Queues {
         private readonly ScheduledTimer _timer;
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null, TimeSpan? reportCountsInterval = null) {
-            _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger.Instance;
+            _logger = loggerFactory.CreateLogger<MetricsQueueBehavior<T>>();
             _metricsClient = metrics ?? NullMetricsClient.Instance;
 
             if (!reportCountsInterval.HasValue)

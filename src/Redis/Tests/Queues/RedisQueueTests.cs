@@ -16,7 +16,10 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
-        public RedisQueueTests(ITestOutputHelper output) : base(output) {}
+        public RedisQueueTests(ITestOutputHelper output) : base(output) {
+            FlushAll();
+            Assert.Equal(0, CountAllKeys());
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout,
@@ -120,10 +123,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
                 return;
-
-            FlushAll();
-            Assert.Equal(0, CountAllKeys());
-
+            
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
@@ -162,13 +162,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
-
-            FlushAll();
-            if (CountAllKeys() != 0)
-                FlushAll();
-
-            Assert.Equal(0, CountAllKeys());
-
+            
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
@@ -227,10 +221,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250), runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
-
-            FlushAll();
-            Assert.Equal(0, CountAllKeys());
-
+            
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
@@ -286,10 +277,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
-
-            FlushAll();
-            Assert.Equal(0, CountAllKeys());
-
+            
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
                 var workItemIds = new List<string>();
@@ -329,9 +317,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
-
-            FlushAll();
-
+            
             using (queue) {
                 await queue.DeleteQueueAsync();
 
@@ -372,9 +358,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
-
-            FlushAll();
-
+            
             using (queue) {
                 await queue.DeleteQueueAsync();
 
@@ -411,9 +395,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
-
-            FlushAll();
-
+            
             using (queue) {
                 await queue.DeleteQueueAsync();
 
@@ -427,7 +409,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var metrics = new InMemoryMetricsClient();
-                queue.StartWorking(async workItem => {
+                await queue.StartWorkingAsync(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
                     await metrics.CounterAsync("work");
@@ -456,7 +438,9 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 try {
                     server.FlushAllDatabases();
-                } catch (Exception) { }
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error flushing redis");
+                }
             }
         }
 
@@ -471,10 +455,13 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 try {
                     var keys = server.Keys().ToArray();
-                    foreach (var key in keys)
-                        _logger.Info(key);
+                    for (int index = 0; index < keys.Length; index++)
+                        _logger.Info($"Server: {server.EndPoint} Key {index}: {keys[index]}");
+
                     count += keys.Length;
-                } catch (Exception) { }
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error getting redis key count");
+                }
             }
 
             return count;

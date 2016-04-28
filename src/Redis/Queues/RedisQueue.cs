@@ -79,6 +79,8 @@ namespace Foundatio.Queues {
             _logger.Trace("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString());
         }
 
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) => TaskHelper.Completed;
+
         private async Task EnsureMaintenanceRunningAsync() {
             if (!_runMaintenanceTasks || _maintenanceTask != null)
                 return;
@@ -99,14 +101,14 @@ namespace Foundatio.Queues {
             using (await _lock.LockAsync()) {
                 if (_isSubscribed)
                     return;
-
-                _isSubscribed = true;
+                
                 _logger.Trace("Subscribing to enqueue messages for {_queueName}.", _queueName);
                 await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessage(channel, value).AnyContext()).AnyContext();
+                _isSubscribed = true;
             }
         }
 
-        public override async Task<QueueStats> GetQueueStatsAsync() {
+        protected override async Task<QueueStats> GetQueueStatsImplAsync() {
             return new QueueStats {
                 Queued = await Database.ListLengthAsync(QueueListName).AnyContext() + await Database.ListLengthAsync(WaitListName).AnyContext(),
                 Working = await Database.ListLengthAsync(WorkListName).AnyContext(),
@@ -176,7 +178,7 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _queueName, ":in");
         }
 
-        public override async Task<string> EnqueueAsync(T data) {
+        protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
             _logger.Debug("Queue {_queueName} enqueue item: {id}", _queueName, id);
 
@@ -207,7 +209,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        public override void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
@@ -221,7 +223,7 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueAsync(cancellationToken: cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(cancellationToken: cancellationToken).AnyContext();
                     } catch (TimeoutException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
@@ -244,7 +246,7 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             _logger.Trace("Queue {_queueName} dequeuing item...", _queueName);
             var now = DateTime.UtcNow.Ticks;
 
@@ -425,7 +427,7 @@ namespace Foundatio.Queues {
             return TimeSpan.FromMilliseconds(_retryDelay.TotalMilliseconds * multiplier);
         }
 
-        public override Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             throw new NotImplementedException();
         }
 

@@ -7,28 +7,39 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T> : MaintenanceBase, IQueue<T> where T : class {
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
 
-        public QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        protected QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             QueueId = Guid.NewGuid().ToString("N");
             _serializer = serializer ?? new JsonNetSerializer();
             behaviors.ForEach(AttachBehavior);
         }
 
         public void AttachBehavior(IQueueBehavior<T> behavior) {
-            if (behavior != null)
+            if (behavior != null) {
                 _behaviors.Add(behavior);
-            behavior?.Attach(this);
+                behavior.Attach(this);
+            }
         }
 
-        public abstract Task<string> EnqueueAsync(T data);
-        
-        public abstract Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
+        protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken));
 
+        protected abstract Task<string> EnqueueImplAsync(T data);
+        public async Task<string> EnqueueAsync(T data) {
+            await EnsureQueueCreatedAsync().AnyContext();
+            return await EnqueueImplAsync(data).AnyContext();
+        }
+
+        protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken);
+        public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            return await DequeueImplAsync(cancellationToken).AnyContext();
+        }
         public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
             => this.DequeueAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30)).ToCancellationToken());
 
@@ -38,13 +49,25 @@ namespace Foundatio.Queues {
 
         public abstract Task AbandonAsync(IQueueEntry<T> queueEntry);
 
-        public abstract Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
+        public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+            await EnsureQueueCreatedAsync(cancellationToken);
+            return await GetDeadletterItemsImplAsync(cancellationToken);
+        }
 
-        public abstract Task<QueueStats> GetQueueStatsAsync();
+        protected abstract Task<QueueStats> GetQueueStatsImplAsync();
+        public async Task<QueueStats> GetQueueStatsAsync() {
+            await EnsureQueueCreatedAsync().AnyContext();
+            return await GetQueueStatsImplAsync().AnyContext();
+        }
 
         public abstract Task DeleteQueueAsync();
         
-        public abstract void StartWorking(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
+        public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            StartWorkingImpl(handler, autoComplete, cancellationToken);
+        }
 
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 
@@ -122,6 +145,7 @@ namespace Foundatio.Queues {
 
             base.Dispose();
 
+            // ReSharper disable once SuspiciousTypeConversion.Global
             var disposableSerializer = _serializer as IDisposable;
             disposableSerializer?.Dispose();
 

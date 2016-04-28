@@ -1,13 +1,16 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Logging;
 using Foundatio.Tests.Caching;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
-        public RedisCacheClientTests(ITestOutputHelper output) : base(output) {}
+        public RedisCacheClientTests(ITestOutputHelper output) : base(output) {
+            FlushAll();
+        }
 
         protected override ICacheClient GetCacheClient() {
             return new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log);
@@ -77,6 +80,22 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact(Skip = "Performance Test")]
         public override Task MeasureSerializerComplexThroughput() {
             return base.MeasureSerializerComplexThroughput();
+        }
+
+        private void FlushAll() {
+            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
+            if (endpoints.Length == 0)
+                return;
+
+            foreach (var endpoint in endpoints) {
+                var server = SharedConnection.GetMuxer().GetServer(endpoint);
+
+                try {
+                    server.FlushAllDatabases();
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error flushing redis");
+                }
+            }
         }
     }
 }

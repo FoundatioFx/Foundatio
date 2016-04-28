@@ -1,4 +1,6 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Xunit;
@@ -6,7 +8,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
-        public RedisMessageBusTests(ITestOutputHelper output) : base(output) {}
+        public RedisMessageBusTests(ITestOutputHelper output) : base(output) {
+            FlushAll();
+        }
 
         protected override IMessageBus GetMessageBus() {
             return new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), "test-messages", loggerFactory: Log);
@@ -65,6 +69,22 @@ namespace Foundatio.Redis.Tests.Messaging {
         [Fact]
         public override Task WontKeepMessagesWithNoSubscribers() {
             return base.WontKeepMessagesWithNoSubscribers();
+        }
+
+        private void FlushAll() {
+            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
+            if (endpoints.Length == 0)
+                return;
+
+            foreach (var endpoint in endpoints) {
+                var server = SharedConnection.GetMuxer().GetServer(endpoint);
+
+                try {
+                    server.FlushAllDatabases();
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error flushing redis");
+                }
+            }
         }
     }
 }
