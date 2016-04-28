@@ -514,7 +514,7 @@ namespace Foundatio.Tests.Queue {
 
             await Task.Delay(100);
 
-            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 2, 3);
+            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
             Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
 
             Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
