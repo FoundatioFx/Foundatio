@@ -154,6 +154,7 @@
     <Compile Include="Storage\FolderFileStorage.cs" />
     <Compile Include="Storage\IFileStorage.cs" />
     <Compile Include="Storage\InMemoryFileStorage.cs" />
+    <Compile Include="Storage\ScopedFileStorage.cs" />
     <Compile Include="Utility\AsyncEvent.cs" />
     <Compile Include="Utility\CloneExpressionBuilder.cs" />
     <Compile Include="Utility\CloneExpressionHelper.cs" />
