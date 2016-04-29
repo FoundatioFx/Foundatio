@@ -102,6 +102,9 @@ namespace Foundatio.Logging {
         }
 
         public string GetMessage() {
+            if (MessageFormatter != null)
+                return MessageFormatter();
+
             if (Parameters != null && Parameters.Length > 0)
                 return String.Format(FormatProvider, Message, Parameters);
 
@@ -119,6 +122,9 @@ namespace Foundatio.Logging {
         }
 
         public string ToString(bool includeFileInfo, bool includeException) {
+            if (!includeFileInfo && !includeException)
+                return GetMessage();
+
             var message = new StringBuilder();
 
             if (includeFileInfo && !String.IsNullOrEmpty(FilePath) && !String.IsNullOrEmpty(MemberName))

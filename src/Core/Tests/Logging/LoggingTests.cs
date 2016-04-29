@@ -2,6 +2,7 @@
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Logging.NLog;
 using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
 using Xunit;
@@ -27,6 +28,16 @@ namespace Foundatio.Tests.Logging {
                 Assert.Equal("innerval1", entry.Properties["prop1"]);
                 Assert.Equal("val2", entry.Properties["prop2"]);
             }
+        }
+
+        [Fact]
+        public void LogBuilder() {
+            var logger = Log.CreateLogger<LoggingTests>();
+            Log.AddNLog();
+            logger.Info().Message(() => "hello").Property("Id", "fdsf").Write();
+
+            Assert.Equal(1, Log.LogEntries.Count);
+            Assert.Equal("hello", Log.LogEntries[0].Message);
         }
 
         [Fact]
