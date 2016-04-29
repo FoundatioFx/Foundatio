@@ -33,8 +33,7 @@ namespace Foundatio.Tests.Logging {
         [Fact]
         public void LogBuilder() {
             var logger = Log.CreateLogger<LoggingTests>();
-            Log.AddNLog();
-            logger.Info().Message(() => "hello").Property("Id", "fdsf").Write();
+            logger.Info().Message(() => "hello").Write();
 
             Assert.Equal(1, Log.LogEntries.Count);
             Assert.Equal("hello", Log.LogEntries[0].Message);
