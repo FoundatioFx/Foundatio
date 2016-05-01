@@ -28,10 +28,10 @@ namespace Foundatio.Messaging {
             lock (_lockObject) {
                 if (_isSubscribed)
                     return;
-
-                _isSubscribed = true;
+                
                 _logger.Trace("Subscribing to topic: {0}", _topic);
                 _subscriber.Subscribe(_topic, OnMessage);
+                _isSubscribed = true;
             }
         }
 
