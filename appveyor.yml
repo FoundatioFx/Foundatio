@@ -19,7 +19,7 @@ assembly_info:
 
 before_build:
   - appveyor-retry nuget restore -verbosity quiet
-  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "${appveyor_build_version}$(VERSION_SUFFIX)" -Path src\**\*.nuspec -Overwrite
+  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$($env:appveyor_build_version)$($env:VERSION_SUFFIX)" -Path src\**\*.nuspec -Overwrite
 
 build:
   project: Foundatio.sln
