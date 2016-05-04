@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+// ReSharper disable ExplicitCallerInfoArgument
 
 namespace Foundatio.Logging {
     /// <summary>
@@ -37,16 +38,6 @@ namespace Foundatio.Logging {
         /// The log data.
         /// </value>
         public LogData LogData => _data;
-
-        /// <summary>
-        /// Sets the level of the logging event.
-        /// </summary>
-        /// <param name="logLevel">The level of the logging event.</param>
-        /// <returns></returns>
-        public ILogBuilder Level(LogLevel logLevel) {
-            _data.LogLevel = logLevel;
-            return this;
-        }
 
         /// <summary>
         /// Sets the id of the logging event.

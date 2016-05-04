@@ -102,13 +102,13 @@ namespace Foundatio.Jobs {
 
             try {
                 var logLevel = handler.AutoLogQueueProcessingEvents ? LogLevel.Information : LogLevel.Trace;
-                handler.Log.Build(logLevel)
+                handler.Log.Level(logLevel)
                      .Message(() => $"Processing {workItemDataType.Name} work item queue entry ({queueEntry.Id}).").Write();
                 await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback)).AnyContext();
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.CompleteAsync().AnyContext();
-                    handler.Log.Build(logLevel)
+                    handler.Log.Level(logLevel)
                         .Message(() => $"Auto completed {workItemDataType.Name} work item queue entry ({queueEntry.Id}).").Write();
                 }
 

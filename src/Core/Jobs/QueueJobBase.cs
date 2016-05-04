@@ -53,7 +53,7 @@ namespace Foundatio.Jobs {
             }
 
             try {
-                _logger.Build(_queueEventsLogLevel)
+                _logger.Level(_queueEventsLogLevel)
                     .Message(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
 
                 var result = await ProcessQueueEntryAsync(new QueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
@@ -63,7 +63,7 @@ namespace Foundatio.Jobs {
 
                 if (result.IsSuccess) {
                     await queueEntry.CompleteAsync().AnyContext();
-                    _logger.Build(_queueEventsLogLevel)
+                    _logger.Level(_queueEventsLogLevel)
                         .Message(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
                 } else {
                     await queueEntry.AbandonAsync().AnyContext();

@@ -15,13 +15,6 @@ namespace Foundatio.Logging {
         LogData LogData { get; }
 
         /// <summary>
-        /// Sets the level of the logging event.
-        /// </summary>
-        /// <param name="logLevel">The level of the logging event.</param>
-        /// <returns></returns>
-        ILogBuilder Level(LogLevel logLevel);
-
-        /// <summary>
         /// Sets the log message on the logging event.
         /// </summary>
         /// <param name="messageFormatter">The message formatter <see langword="delegate"/>.</param>

@@ -2,7 +2,7 @@
 
 namespace Foundatio.Logging {
     public static class BuilderExtensions {
-        public static ILogBuilder Build(this ILogger logger, LogLevel logLevel) {
+        public static ILogBuilder Level(this ILogger logger, LogLevel logLevel) {
             if (!logger.IsEnabled(logLevel))
                 return NullLogBuilder.Instance;
 
