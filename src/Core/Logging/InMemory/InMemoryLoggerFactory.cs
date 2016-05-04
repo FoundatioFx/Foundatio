@@ -9,7 +9,7 @@ namespace Foundatio.Logging.InMemory {
 
         public LogLevel MinimumLevel { get; set; } = LogLevel.Information;
         public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
-        public int MaxLogEntries = 250;
+        public int MaxLogEntries = 1000;
 
         public List<LogEntry> GetLogEntries(int entryCount = 10) {
             return new List<LogEntry>(_logEntries.OrderByDescending(l => l.Date).Take(entryCount).ToArray());
