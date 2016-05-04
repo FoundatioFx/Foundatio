@@ -158,6 +158,39 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
+        public async Task CanRunWorkItemWithDelegateHandler() {
+            var queue = new InMemoryQueue<WorkItemData>();
+            var messageBus = new InMemoryMessageBus();
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+
+            handlerRegistry.Register<MyWorkItem>(async ctx => {
+                var jobData = ctx.GetData<MyWorkItem>();
+                Assert.Equal("Test", jobData.SomeData);
+
+                for (int i = 1; i < 10; i++) {
+                    await Task.Delay(100);
+                    await ctx.ReportProgressAsync(10 * i);
+                }
+            }, Log.CreateLogger("MyWorkItem"));
+
+            var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
+
+            int statusCount = 0;
+            messageBus.Subscribe<WorkItemStatus>(status => {
+                _logger.Trace("Progress: {progress}", status.Progress);
+                Assert.Equal(jobId, status.WorkItemId);
+                statusCount++;
+            });
+
+            await job.RunUntilEmptyAsync();
+
+            Assert.Equal(11, statusCount);
+        }
+
+        [Fact]
         public async Task CanRunBadWorkItem() {
             var queue = new InMemoryQueue<WorkItemData>(retries: 2, retryDelay: TimeSpan.FromMilliseconds(500));
             var messageBus = new InMemoryMessageBus();

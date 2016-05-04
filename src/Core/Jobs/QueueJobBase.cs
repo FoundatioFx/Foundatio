@@ -12,10 +12,12 @@ namespace Foundatio.Jobs {
         protected readonly ILogger _logger;
         protected readonly IQueue<T> _queue;
         protected readonly string _queueEntryName = typeof(T).Name;
+        protected readonly LogLevel _queueEventsLogLevel;
 
-        public QueueJobBase(IQueue<T> queue, ILoggerFactory loggerFactory = null) {
+        public QueueJobBase(IQueue<T> queue, ILoggerFactory loggerFactory = null, bool autoLogQueueProcessingEvents = true) {
             _queue = queue;
             _logger = loggerFactory.CreateLogger(GetType());
+            _queueEventsLogLevel = autoLogQueueProcessingEvents ? LogLevel.Information : LogLevel.Trace;
             AutoComplete = true;
         }
 
@@ -51,7 +53,8 @@ namespace Foundatio.Jobs {
             }
 
             try {
-                _logger.Info(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+                _logger.Build(_queueEventsLogLevel)
+                    .Message(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
 
                 var result = await ProcessQueueEntryAsync(new QueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
 
@@ -60,7 +63,8 @@ namespace Foundatio.Jobs {
 
                 if (result.IsSuccess) {
                     await queueEntry.CompleteAsync().AnyContext();
-                    _logger.Info(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).");
+                    _logger.Build(_queueEventsLogLevel)
+                        .Message(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
                 } else {
                     await queueEntry.AbandonAsync().AnyContext();
                     _logger.Warn(() => $"Auto abandoned {_queueEntryName} queue entry ({queueEntry.Id}).");

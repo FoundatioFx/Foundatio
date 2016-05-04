@@ -81,7 +81,7 @@ namespace Foundatio.Jobs {
             var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
             if (lockValue == null) {
                 await queueEntry.AbandonAsync().AnyContext();
-                _logger.Trace("Unable to acquire work item lock.");
+                handler.Log.Trace("Unable to acquire work item lock.");
                 return JobResult.Success;
             }
 
@@ -101,12 +101,15 @@ namespace Foundatio.Jobs {
             });
 
             try {
-                _logger.Info("Processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
+                var logLevel = handler.AutoLogQueueProcessingEvents ? LogLevel.Information : LogLevel.Trace;
+                handler.Log.Build(logLevel)
+                     .Message(() => $"Processing {workItemDataType.Name} work item queue entry ({queueEntry.Id}).").Write();
                 await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback)).AnyContext();
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.CompleteAsync().AnyContext();
-                    _logger.Info("Auto completed {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
+                    handler.Log.Build(logLevel)
+                        .Message(() => $"Auto completed {workItemDataType.Name} work item queue entry ({queueEntry.Id}).").Write();
                 }
 
                 if (queueEntry.Value.SendProgressReports)
@@ -121,7 +124,7 @@ namespace Foundatio.Jobs {
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                     await queueEntry.AbandonAsync().AnyContext();
 
-                _logger.Error(ex, "Error processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
+                handler.Log.Error(ex, "Error processing {0} work item queue entry ({1}).", workItemDataType.Name, queueEntry.Id);
                 return JobResult.FromException(ex, $"Error in handler {workItemDataType.Name}.");
             } finally {
                 await lockValue.ReleaseAsync().AnyContext();

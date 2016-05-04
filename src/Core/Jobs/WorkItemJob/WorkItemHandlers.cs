@@ -22,8 +22,8 @@ namespace Foundatio.Jobs {
             _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(handler));
         }
 
-        public void Register<T>(Func<WorkItemContext, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => new DelegateWorkItemHandler(handler)));
+        public void Register<T>(Func<WorkItemContext, Task> handler, ILogger logger = null, bool autoLogQueueProcessingEvents = true) where T : class {
+            _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => new DelegateWorkItemHandler(handler, logger, autoLogQueueProcessingEvents)));
         }
 
         public IWorkItemHandler GetHandler(Type jobDataType) {
@@ -39,13 +39,16 @@ namespace Foundatio.Jobs {
         Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken));
         Task HandleItemAsync(WorkItemContext context);
         bool AutoRenewLockOnProgress { get; set; }
+        bool AutoLogQueueProcessingEvents { get; set; }
+        ILogger Log { get; set; }
     }
     
     public abstract class WorkItemHandlerBase : IWorkItemHandler {
-        protected readonly ILogger _logger;
-
         public WorkItemHandlerBase(ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger(GetType());
+            Log = loggerFactory.CreateLogger(GetType());
+        }
+        public WorkItemHandlerBase(ILogger logger) {
+            Log = logger ?? NullLogger.Instance;
         }
 
         public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -53,6 +56,8 @@ namespace Foundatio.Jobs {
         }
         
         public bool AutoRenewLockOnProgress { get; set; }
+        public bool AutoLogQueueProcessingEvents { get; set; } = true;
+        public ILogger Log { get; set; }
 
         public abstract Task HandleItemAsync(WorkItemContext context);
         
@@ -64,8 +69,9 @@ namespace Foundatio.Jobs {
     public class DelegateWorkItemHandler : WorkItemHandlerBase {
         private readonly Func<WorkItemContext, Task> _handler;
 
-        public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILogger logger = null, bool autoLogQueueProcessingEvents = true) : base(logger) {
             _handler = handler;
+            AutoLogQueueProcessingEvents = autoLogQueueProcessingEvents;
         }
 
         public override Task HandleItemAsync(WorkItemContext context) {

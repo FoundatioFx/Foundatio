@@ -2,6 +2,13 @@
 
 namespace Foundatio.Logging {
     public static class BuilderExtensions {
+        public static ILogBuilder Build(this ILogger logger, LogLevel logLevel) {
+            if (!logger.IsEnabled(logLevel))
+                return NullLogBuilder.Instance;
+
+            return new LogBuilder(logLevel, logger);
+        }
+
         public static ILogBuilder Trace(this ILogger logger) {
             if (!logger.IsEnabled(LogLevel.Trace))
                 return NullLogBuilder.Instance;
