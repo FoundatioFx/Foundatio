@@ -139,7 +139,7 @@ namespace Foundatio.Tests.Jobs {
             var handlerRegistry = new WorkItemHandlers();
             var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-            handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler());
+            handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {
                 SomeData = "Test"
@@ -225,7 +225,7 @@ namespace Foundatio.Tests.Jobs {
     }
 
     public class MyWorkItemHandler : WorkItemHandlerBase {
-        public MyWorkItemHandler() {}
+        public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory) { }
 
         public override async Task HandleItemAsync(WorkItemContext context) {
             var jobData = context.GetData<MyWorkItem>();
