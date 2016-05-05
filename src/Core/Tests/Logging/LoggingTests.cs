@@ -53,6 +53,12 @@ namespace Foundatio.Tests.Logging {
             logger.Info(() => $"{name} at {DateTime.Now}.");
         }
 
+        [Fact]
+        public void LogException() {
+            var logger = Log.CreateLogger<LoggingTests>();
+            logger.Error().Exception(new Exception("test")).Write();
+        }
+
         private Task BlahAsync(ILogger logger) {
             logger.Info("Task hello");
 
