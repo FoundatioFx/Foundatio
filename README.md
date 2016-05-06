@@ -314,7 +314,7 @@ log.Error().Exception(ex).Message("Writing a captured exception out to the log."
 ```
 
 ## Sample Application
-We both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
+We have both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
 
 ## Sponsors
 [Learning Machine](http://learningmachine.com)
