@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "System.Collections.Immutable": "1.1.37",
+    "System.Linq": "4.0.0",
+    "System.Resources.ResourceManager": "4.0.0",
+    "xunit.abstractions": "2.0.0",
+    "xunit.core": "2.1.0",
+    "xunit.extensibility.core": "2.1.0",
+    "xunit.extensibility.execution": "2.1.0"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}

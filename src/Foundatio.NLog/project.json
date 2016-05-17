@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "System.Collections.Immutable": "1.1.37",
+    "NLog": "4.3.3"
+  },
+  "frameworks": {
+    "net45": {
+      "frameworkAssemblies": {
+        "System.Xml": "4.0.0.0"
+      }
+    }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}

@@ -1,0 +1,8 @@
+#:C:\Development\Community\Foundatio\src\Foundatio.xUnit\Foundatio.xUnit.xproj
+C:\Development\Community\Foundatio\src\Foundatio.xUnit\Foundatio.xUnit.xproj|C:\Development\Community\Foundatio\src\Foundatio.Core\Foundatio.Core.xproj
+#:C:\Development\Community\Foundatio\test\Core.Tests\Core.Tests.xproj
+C:\Development\Community\Foundatio\test\Core.Tests\Core.Tests.xproj|C:\Development\Community\Foundatio\src\Foundatio.Core\Foundatio.Core.xproj
+C:\Development\Community\Foundatio\test\Core.Tests\Core.Tests.xproj|C:\Development\Community\Foundatio\src\Foundatio.NLog\Foundatio.NLog.xproj
+C:\Development\Community\Foundatio\test\Core.Tests\Core.Tests.xproj|C:\Development\Community\Foundatio\src\Foundatio.xUnit\Foundatio.xUnit.xproj
+C:\Development\Community\Foundatio\src\Foundatio.NLog\Foundatio.NLog.xproj|C:\Development\Community\Foundatio\src\Foundatio.Core\Foundatio.Core.xproj
+C:\Development\Community\Foundatio\src\Foundatio.xUnit\Foundatio.xUnit.xproj|C:\Development\Community\Foundatio\src\Foundatio.Core\Foundatio.Core.xproj

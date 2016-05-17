@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "Metrics.NET": "0.3.5",
+    "Nito.AsyncEx": "3.0.1"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}
