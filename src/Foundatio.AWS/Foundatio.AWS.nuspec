@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>Foundatio.AWS</id>
+    <version>$version$</version>
+    <title>Foundatio Amazon AWS Implementations</title>
+    <authors>ejsmith, bniemyjski</authors>
+    <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
+    <projectUrl>https://github.com/exceptionless/Foundatio</projectUrl>
+    <iconUrl>https://be.exceptionless.io/img/exceptionless-32.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Pluggable foundation blocks for building distributed apps.</description>
+    <tags>Queue Messaging Message Bus Locking Lock Distributed File Storage Blob Jobs Metrics Stats Azure AWS S3 Redis StatsD</tags>
+    <dependencies>
+      <dependency id="Foundatio" version="[$version$]" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\Release\Foundatio.AWS.pdb" target="lib\net451" />
+  </files>
+</package>

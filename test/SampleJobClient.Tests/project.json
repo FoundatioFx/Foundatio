@@ -1,0 +1,13 @@
+﻿{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "Foundatio.Redis": "1.0.0-*",
+    "StackExchange.Redis": "1.0.488"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}

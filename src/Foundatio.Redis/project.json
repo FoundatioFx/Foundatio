@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "Newtonsoft.Json": "8.0.3",
+    "Nito.AsyncEx": "3.0.1",
+    "StackExchange.Redis": "1.0.488",
+    "xunit.core": "2.1.0"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}
