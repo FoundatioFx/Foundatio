@@ -492,7 +492,7 @@ namespace Foundatio.Queues {
                 _monitor.Pulse();
         }
 
-        internal async Task DoMaintenanceWorkAsync() {
+        public async Task DoMaintenanceWorkAsync() {
             _logger.Trace("DoMaintenance: Name={0} Id={1}", _queueName, QueueId);
             var now = DateTime.UtcNow;
 

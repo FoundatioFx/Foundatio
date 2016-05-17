@@ -1,14 +1,24 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<packages>
-  <package id="Exceptionless.RandomData" version="1.0.22.0" targetFramework="net46" />
-  <package id="Newtonsoft.Json" version="8.0.3" targetFramework="net46" />
-  <package id="Nito.AsyncEx" version="3.0.1" targetFramework="net46" />
-  <package id="StackExchange.Redis" version="1.0.488" targetFramework="net46" />
-  <package id="xunit" version="2.1.0" targetFramework="net46" />
-  <package id="xunit.abstractions" version="2.0.0" targetFramework="net46" />
-  <package id="xunit.assert" version="2.1.0" targetFramework="net46" />
-  <package id="xunit.core" version="2.1.0" targetFramework="net46" />
-  <package id="xunit.extensibility.core" version="2.1.0" targetFramework="net46" />
-  <package id="xunit.extensibility.execution" version="2.1.0" targetFramework="net46" />
-  <package id="xunit.runner.visualstudio" version="2.1.0" targetFramework="net46" />
-</packages>
+﻿{
+  "dependencies": {
+    "Core.Tests": "1.0.0-*",
+    "Exceptionless.RandomData": "1.0.22.0",
+    "Foundatio.Core": "1.0.0-*",
+    "Foundatio.Redis": "1.0.0-*",
+    "Newtonsoft.Json": "8.0.3",
+    "Nito.AsyncEx": "3.0.1",
+    "StackExchange.Redis": "1.0.488",
+    "xunit": "2.1.0",
+    "xunit.abstractions": "2.0.0",
+    "xunit.assert": "2.1.0",
+    "xunit.core": "2.1.0",
+    "xunit.extensibility.core": "2.1.0",
+    "xunit.extensibility.execution": "2.1.0",
+    "xunit.runner.visualstudio": "2.1.0"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}

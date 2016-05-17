@@ -1,4 +1,13 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<packages>
-  <package id="StackExchange.Redis" version="1.0.488" targetFramework="net46" />
-</packages>
+﻿{
+  "dependencies": {
+    "Foundatio.Core": "1.0.0-*",
+    "Foundatio.Redis": "1.0.0-*",
+    "StackExchange.Redis": "1.0.488"
+  },
+  "frameworks": {
+    "net45": { }
+  },
+  "runtimes": {
+    "win": { }
+  }
+}
