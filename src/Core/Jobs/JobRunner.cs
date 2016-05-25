@@ -40,11 +40,13 @@ namespace Foundatio.Jobs {
                 Interval = interval
             }, loggerFactory) {}
 
+        public CancellationTokenSource CancellationTokenSource { get; private set; }
+
         public int RunInConsole() {
             int result;
             try {
-                var token = GetShutdownCancellationToken();
-                var success = RunAsync(token).GetAwaiter().GetResult();
+                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(GetShutdownCancellationToken(_logger));
+                var success = RunAsync(CancellationTokenSource.Token).GetAwaiter().GetResult();
                 result = success ? 0 : -1;
 
                 if (Debugger.IsAttached)
@@ -127,33 +129,43 @@ namespace Foundatio.Jobs {
             return true;
         }
 
-        public CancellationToken GetShutdownCancellationToken() {
-            var cancellationTokenSource = new CancellationTokenSource();
-            ShutdownEventCatcher.Shutdown += args => {
-                cancellationTokenSource.Cancel();
-                _logger.Info("Job shutdown event signaled: {0}", args.Reason);
-            };
+        private static CancellationTokenSource _jobShutdownCancellationTokenSource;
+        private static readonly object _lock = new object();
+        public static CancellationToken GetShutdownCancellationToken(ILogger logger = null) {
+            if (_jobShutdownCancellationTokenSource != null)
+                return _jobShutdownCancellationTokenSource.Token;
 
-            var webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
-            if (String.IsNullOrEmpty(webJobsShutdownFile))
-                return cancellationTokenSource.Token;
+            lock (_lock) {
+                if (_jobShutdownCancellationTokenSource != null)
+                    return _jobShutdownCancellationTokenSource.Token;
 
-            var handler = new FileSystemEventHandler((s, e) => {
-                if (e.FullPath.IndexOf(Path.GetFileName(webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) < 0)
-                    return;
+                _jobShutdownCancellationTokenSource = new CancellationTokenSource();
+                ShutdownEventCatcher.Shutdown += args => {
+                    _jobShutdownCancellationTokenSource.Cancel();
+                    logger?.Info("Job shutdown event signaled: {0}", args.Reason);
+                };
 
-                cancellationTokenSource.Cancel();
-                _logger.Info("Job shutdown signaled.");
-            });
+                var webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
+                if (String.IsNullOrEmpty(webJobsShutdownFile))
+                    return _jobShutdownCancellationTokenSource.Token;
 
-            var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));
-            watcher.Created += handler;
-            watcher.Changed += handler;
-            watcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
-            watcher.IncludeSubdirectories = false;
-            watcher.EnableRaisingEvents = true;
+                var handler = new FileSystemEventHandler((s, e) => {
+                    if (e.FullPath.IndexOf(Path.GetFileName(webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) < 0)
+                        return;
 
-            return cancellationTokenSource.Token;
+                    _jobShutdownCancellationTokenSource.Cancel();
+                    logger?.Info("Job shutdown signaled.");
+                });
+
+                var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));
+                watcher.Created += handler;
+                watcher.Changed += handler;
+                watcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
+                watcher.IncludeSubdirectories = false;
+                watcher.EnableRaisingEvents = true;
+
+                return _jobShutdownCancellationTokenSource.Token;
+            }
         }
     }
 }
