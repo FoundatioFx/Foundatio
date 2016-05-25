@@ -5,7 +5,6 @@ using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.ServiceProviders;
 using SimpleInjector;
-using StackExchange.Redis;
 
 namespace Foundatio.SampleJob {
     public class SampleServiceProvider : BootstrappedServiceProviderBase {
@@ -20,8 +19,7 @@ namespace Foundatio.SampleJob {
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
-            var muxer = ConnectionMultiplexer.Connect("localhost");
-            container.RegisterSingleton(muxer);
+            container.RegisterSingleton<ICacheClient>(() => new InMemoryCacheClient());
             container.RegisterSingleton<ILockProvider>(() => new CacheLockProvider(container.GetInstance<ICacheClient>(), container.GetInstance<IMessageBus>(), loggerFactory));
 
             return container;

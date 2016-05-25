@@ -17,16 +17,21 @@ namespace Foundatio.CronJob {
             var logger = loggerFactory.CreateLogger<Program>();
 
             var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(EveryMinuteJob), loggerFactory);
-            var cronService = new CronService(serviceProvider.GetService<ICacheClient>(), loggerFactory);
 
-            // every minute
-            cronService.Add<EveryMinuteJob>(() => serviceProvider.GetService<EveryMinuteJob>(), "* * * * *");
+            for (int i = 0; i < 5; i++) {
+                Task.Run(() => {
+                    var cronService = new CronService(serviceProvider.GetService<ICacheClient>(), loggerFactory);
 
-            // every even minute
-            cronService.Add<EvenMinuteJob>(() => serviceProvider.GetService<EvenMinuteJob>(), "*/2 * * * *");
+                    // every minute
+                    cronService.Add(serviceProvider.GetService<EveryMinuteJob>(), "* * * * *");
 
-            logger.Info($"Cron Service Running on {Thread.CurrentThread.ManagedThreadId}");
-            cronService.Run();
+                    // every even minute
+                    cronService.Add(() => serviceProvider.GetService<EvenMinuteJob>(), "*/2 * * * *");
+
+                    logger.Info($"Cron Service ({i}) Running on {Thread.CurrentThread.ManagedThreadId}");
+                    cronService.Run();
+                });
+            }
 
             Console.ReadKey();
         }

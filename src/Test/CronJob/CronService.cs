@@ -26,11 +26,16 @@ namespace Foundatio.CronJob {
             _jobs.Add(new ScheduledJobRunner(job, schedule, _cacheClient, _loggerFactory));
         }
 
-        public void Add<T>(Func<IJob> jobFactory, string schedule) where T : class, IJob {
+        public void Add<T>(Func<T> jobFactory, string schedule) where T : class, IJob {
             _jobs.Add(new ScheduledJobRunner(jobFactory, schedule, _cacheClient, _loggerFactory));
         }
 
         public void Run() {
+            var scheduler = new Scheduler(_jobs);
+            scheduler.Start();
+        }
+
+        public void RunAsService() {
             var cancellationTokenSource = new CancellationTokenSource();
 
             HostFactory.Run(config => {
