@@ -68,7 +68,7 @@ namespace Foundatio.Queues {
                             DefaultMessageTimeToLive = _defaultMessageTimeToLive
                         }).AnyContext();
                     }
-                    catch (MessagingEntityAlreadyExistsException) {
+                    catch (MessagingException) {
                         queueDescription = await _namespaceManager.GetQueueAsync(_queueName).AnyContext();
                     }
                 }
