@@ -6,12 +6,13 @@ using FastClone.Internal;
 namespace Foundatio.Extensions {
     public static class ObjectExtensions {
         public static bool IsPrimitive(this Type type) {
-            if (type == typeof(String))
+            if (type == typeof(string))
                 return true;
-            return (type.IsValueType & type.IsPrimitive);
+
+            return type.IsValueType & type.IsPrimitive;
         }
 
-        public static Object Copy(this Object original) {
+        public static object Copy(this object original) {
             if (original == null)
                 return null;
 
@@ -20,18 +21,23 @@ namespace Foundatio.Extensions {
                 return original;
 
             Func<object, Dictionary<object, object>, object> creator = GetTypeCloner(typeToReflect);
-            return creator(original, new Dictionary<object, object>());
+            var dict = new Dictionary<object, object>();
+            var result = creator(original, dict);
+            return result;
         }
 
-        static Func<object, Dictionary<object, object>, object> GetTypeCloner(Type type) { return _TypeCloners.GetOrAdd(type, t => new CloneExpressionBuilder(t).CreateTypeCloner()); }
-        static readonly ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>> _TypeCloners = new ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>>();
+        private static Func<object, Dictionary<object, object>, object> GetTypeCloner(Type type) {
+            return _typeCloners.GetOrAdd(type, t => new CloneExpressionBuilder(t).CreateTypeCloner());
+        }
+
+        private static readonly ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>> _typeCloners = new ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>>();
 
         public static T Copy<T>(this T original) {
-            return (T)Copy((Object)original);
+            return (T)Copy((object)original);
         }
     }
 
-    public class ReferenceEqualityComparer : EqualityComparer<Object> {
+    public class ReferenceEqualityComparer : EqualityComparer<object> {
         public override bool Equals(object x, object y) {
             return ReferenceEquals(x, y);
         }
@@ -39,6 +45,7 @@ namespace Foundatio.Extensions {
         public override int GetHashCode(object obj) {
             if (obj == null)
                 return 0;
+
             return obj.GetHashCode();
         }
     }
