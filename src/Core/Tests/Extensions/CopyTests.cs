@@ -5,38 +5,50 @@ using Xunit;
 namespace Foundatio.Tests.Extensions {
     public class CopyTests {
         [Fact]
-        public void CopyTest1() {
-            var contact = new Root();
+        public void CanCopyIdenticalValueOnDifferentProperties() {
+            // properties are the same type
+            // values are structs
+            // values are equal
+            var child = new Child { Stuff = "test" };
+            var root = new Root {
+                Value1 = child,
+                Value2 = child
+            };
 
-            // only happens if the values are the same
-            contact.Value1 = new MyValueType { Value = 12 };
-            contact.Value2 = new MyValueType { Value = 12 };
+            var copy = root.Copy();
 
-            var copy = contact.Copy();
-
-            Assert.Equal(contact.Value1, copy.Value1);
-            Assert.Equal(contact.Value2, copy.Value2);
+            Assert.Equal(root.Value1.ToString(), copy.Value1.ToString());
+            Assert.Equal(root.Value2.ToString(), copy.Value2.ToString());
         }
+
+        [Fact]
+        public void CanHandleRecursion() {
+            // only happens if the values are the same
+            var root = new RecursiveRoot();
+            root.Sub = new RecursiveSub { Root = root };
+
+            var copy = root.Copy();
+        }
+    }
+
+    public class RecursiveRoot {
+        public RecursiveSub Sub { get; set; }
+    }
+
+    public class RecursiveSub {
+        public RecursiveRoot Root { get; set; }
     }
 
     public class Root {
-        public object Value1 { get; set; }
-        public object Value2 { get; set; }
+        public object Value1;
+        public object Value2;
     }
 
-    public struct MyValueType {
-        public long Value { get; set; }
-
-        public override bool Equals(object obj) {
-            return Value == (obj as MyValueType?)?.Value;
-        }
-
-        public override int GetHashCode() {
-            return Value.GetHashCode();
-        }
+    public struct Child {
+        public string Stuff;
 
         public override string ToString() {
-            return Value.ToString();
+            return Stuff;
         }
     }
 }

@@ -66,15 +66,14 @@ namespace FastClone.Internal {
             _clone = Expression.Variable(_type);
             _variables.Add(_clone);
 
-            _expressions.Add(
-                Expression.Block(
-                    // create new instance and add to objectDictionary
-                    Expression.Assign(_clone, Expression.Convert(Expression.Call(_getUninitializedObjectMethodInfo, Expression.Constant(_type)), _type)),
-                    Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, typeof(object)))
-                    ));
+            _expressions.Add(Expression.Assign(_clone, Expression.Convert(Expression.Call(_getUninitializedObjectMethodInfo, Expression.Constant(_type)), _type)));
+
+            if (!_type.IsValueType)
+                _expressions.Add(Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, typeof(object))));
 
             // Generate the expressions required to transfer the type field by field
             GenerateFieldBasedComplexTypeTransferExpressions(_type, _typedOriginal, _clone, _expressions);
+
             // Make sure the clone is the last thing in the block to set the return value
             _expressions.Add(_clone);
         }
