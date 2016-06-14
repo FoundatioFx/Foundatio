@@ -7,75 +7,75 @@ using System.Runtime.Serialization;
 
 namespace FastClone.Internal {
     internal class CloneExpressionBuilder {
-        static readonly MethodInfo _ArrayCloneMethodInfo = typeof(Array).GetMethod("Clone");
-        static readonly MethodInfo _ArrayGetLengthMethodInfo = typeof(Array).GetMethod("GetLength");
-        static readonly MethodInfo _DictionaryAddMethodInfo = typeof(Dictionary<object, object>).GetMethod("Add");
-        static readonly MethodInfo _GetUninitializedObjectMethodInfo = typeof(FormatterServices).GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public);
+        static readonly MethodInfo _arrayCloneMethodInfo = typeof(Array).GetMethod("Clone");
+        static readonly MethodInfo _arrayGetLengthMethodInfo = typeof(Array).GetMethod("GetLength");
+        static readonly MethodInfo _dictionaryAddMethodInfo = typeof(Dictionary<object, object>).GetMethod("Add");
+        static readonly MethodInfo _getUninitializedObjectMethodInfo = typeof(FormatterServices).GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public);
 
-        readonly List<Expression> _Expressions = new List<Expression>();
-        readonly ParameterExpression _ObjectDictionary = Expression.Parameter(typeof(Dictionary<object, object>), "objectDictionary");
-        readonly ParameterExpression _Original = Expression.Parameter(typeof(object), "original");
-        readonly Type _Type;
-        readonly List<ParameterExpression> _Variables = new List<ParameterExpression>();
+        readonly List<Expression> _expressions = new List<Expression>();
+        readonly ParameterExpression _objectDictionary = Expression.Parameter(typeof(Dictionary<object, object>), "objectDictionary");
+        readonly ParameterExpression _original = Expression.Parameter(typeof(object), "original");
+        readonly Type _type;
+        readonly List<ParameterExpression> _variables = new List<ParameterExpression>();
 
-        ParameterExpression _Clone;
-        ParameterExpression _TypedOriginal;
+        ParameterExpression _clone;
+        ParameterExpression _typedOriginal;
 
-        internal CloneExpressionBuilder(Type type) { _Type = type; }
+        internal CloneExpressionBuilder(Type type) { _type = type; }
 
         internal Func<object, Dictionary<object, object>, object> CreateTypeCloner() {
             Expression resultExpression;
 
-            if (TypeIsPrimitiveOrString(_Type)) {
-                _Expressions.Add(_Original);
-                resultExpression = _Expressions[0];
+            if (TypeIsPrimitiveOrString(_type)) {
+                _expressions.Add(_original);
+                resultExpression = _expressions[0];
             } else {
-                _Expressions.Add(_ObjectDictionary);
+                _expressions.Add(_objectDictionary);
 
                 // To access the fields of the original type, we need it to be of the actual type instead of an object, so perform a downcast
-                _TypedOriginal = Expression.Variable(_Type);
-                _Variables.Add(_TypedOriginal);
-                _Expressions.Add(Expression.Assign(_TypedOriginal, Expression.Convert(_Original, _Type)));
+                _typedOriginal = Expression.Variable(_type);
+                _variables.Add(_typedOriginal);
+                _expressions.Add(Expression.Assign(_typedOriginal, Expression.Convert(_original, _type)));
 
-                if (_Type.IsArray)
+                if (_type.IsArray)
                     CloneArray();
                 else
                     CloneObject();
 
-                resultExpression = Expression.Block(_Variables, _Expressions);
+                resultExpression = Expression.Block(_variables, _expressions);
             }
 
-            if (_Type.IsValueType)
+            if (_type.IsValueType)
                 resultExpression = Expression.Convert(resultExpression, typeof(object));
 
-            return Expression.Lambda<Func<object, Dictionary<object, object>, object>>(resultExpression, _Original, _ObjectDictionary).Compile();
+            var expr = Expression.Lambda<Func<object, Dictionary<object, object>, object>>(resultExpression, _original, _objectDictionary);
+            return expr.Compile();
         }
 
         void CloneArray() {
             // Arrays need to be cloned element-by-element
-            Type elementType = _Type.GetElementType();
+            Type elementType = _type.GetElementType();
 
-            _Expressions.Add(TypeIsPrimitiveOrString(elementType)
-                ? GenerateFieldBasedPrimitiveArrayTransferExpressions(_Type, _Original)
-                : GenerateFieldBasedComplexArrayTransferExpressions(_Type, elementType, _TypedOriginal, _Variables, _Expressions));
+            _expressions.Add(TypeIsPrimitiveOrString(elementType)
+                ? GenerateFieldBasedPrimitiveArrayTransferExpressions(_type, _original)
+                : GenerateFieldBasedComplexArrayTransferExpressions(_type, elementType, _typedOriginal, _variables, _expressions));
         }
 
         void CloneObject() {
             // We need a variable to hold the clone because due to the assignments it won't be last in the block when we're finished
-            _Clone = Expression.Variable(_Type);
-            _Variables.Add(_Clone);
+            _clone = Expression.Variable(_type);
+            _variables.Add(_clone);
 
-            _Expressions.Add(
-                Expression.Block(
-                    // create new instance and add to objectDictionary
-                    Expression.Assign(_Clone, Expression.Convert(Expression.Call(_GetUninitializedObjectMethodInfo, Expression.Constant(_Type)), _Type)),
-                    Expression.Call(_ObjectDictionary, _DictionaryAddMethodInfo, _Original, Expression.Convert(_Clone, typeof(object)))
-                    ));
+            _expressions.Add(Expression.Assign(_clone, Expression.Convert(Expression.Call(_getUninitializedObjectMethodInfo, Expression.Constant(_type)), _type)));
+
+            if (!_type.IsValueType)
+                _expressions.Add(Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, typeof(object))));
 
             // Generate the expressions required to transfer the type field by field
-            GenerateFieldBasedComplexTypeTransferExpressions(_Type, _TypedOriginal, _Clone, _Expressions);
+            GenerateFieldBasedComplexTypeTransferExpressions(_type, _typedOriginal, _clone, _expressions);
+
             // Make sure the clone is the last thing in the block to set the return value
-            _Expressions.Add(_Clone);
+            _expressions.Add(_clone);
         }
 
         static bool TypeIsPrimitiveOrString(Type type) { return type.IsPrimitive || (type == typeof(string)); }
@@ -86,7 +86,9 @@ namespace FastClone.Internal {
         /// <param name="elementType">Type of array that will be cloned</param>
         /// <param name="source">Variable expression for the original array</param>
         /// <returns>The variable holding the cloned array</returns>
-        static Expression GenerateFieldBasedPrimitiveArrayTransferExpressions(Type elementType, Expression source) { return Expression.Convert(Expression.Call(Expression.Convert(source, typeof(Array)), _ArrayCloneMethodInfo), elementType); }
+        static Expression GenerateFieldBasedPrimitiveArrayTransferExpressions(Type elementType, Expression source) {
+            return Expression.Convert(Expression.Call(Expression.Convert(source, typeof(Array)), _arrayCloneMethodInfo), elementType);
+        }
 
         /// <summary>
         /// Generates state transfer expressions to copy an array of complex types
@@ -104,16 +106,16 @@ namespace FastClone.Internal {
 
             int dimensionCount = arrayType.GetArrayRank();
 
-            List<ParameterExpression> lengths = new List<ParameterExpression>();
-            List<ParameterExpression> indexes = new List<ParameterExpression>();
-            List<LabelTarget> labels = new List<LabelTarget>();
+            var lengths = new List<ParameterExpression>();
+            var indexes = new List<ParameterExpression>();
+            var labels = new List<LabelTarget>();
 
             // Retrieve the length of each of the array's dimensions
             for (int index = 0; index < dimensionCount; ++index) {
                 // Obtain the length of the array in the current dimension
                 lengths.Add(Expression.Variable(typeof(int)));
                 arrayVariables.Add(lengths[index]);
-                arrayExpressions.Add(Expression.Assign(lengths[index], Expression.Call(originalArray, _ArrayGetLengthMethodInfo, Expression.Constant(index))));
+                arrayExpressions.Add(Expression.Assign(lengths[index], Expression.Call(originalArray, _arrayGetLengthMethodInfo, Expression.Constant(index))));
 
                 // Set up a variable to index the array in this dimension
                 indexes.Add(Expression.Variable(typeof(int)));
@@ -134,8 +136,8 @@ namespace FastClone.Internal {
             // Build the nested loops (one for each dimension) from the inside out
             Expression innerLoop = null;
             for (int index = dimensionCount - 1; index >= 0; --index) {
-                List<ParameterExpression> loopVariables = new List<ParameterExpression>();
-                List<Expression> loopExpressions = new List<Expression> { Expression.IfThen(Expression.GreaterThanOrEqual(indexes[index], lengths[index]), Expression.Break(labels[index])) };
+                var loopVariables = new List<ParameterExpression>();
+                var loopExpressions = new List<Expression> { Expression.IfThen(Expression.GreaterThanOrEqual(indexes[index], lengths[index]), Expression.Break(labels[index])) };
 
                 // If we reached the end of the current array dimension, break the loop
 
@@ -145,8 +147,8 @@ namespace FastClone.Internal {
                     else if (elementType.IsValueType)
                         GenerateFieldBasedComplexTypeTransferExpressions(elementType, Expression.ArrayAccess(originalArray, indexes), Expression.ArrayAccess(arrayClone, indexes), loopExpressions);
                     else {
-                        List<ParameterExpression> nestedVariables = new List<ParameterExpression>();
-                        List<Expression> nestedExpressions = new List<Expression>();
+                        var nestedVariables = new List<ParameterExpression>();
+                        var nestedExpressions = new List<Expression>();
 
                         // A nested array should be cloned by directly creating a new array (not invoking a cloner) since you cannot derive from an array
                         if (elementType.IsArray) {
@@ -157,7 +159,7 @@ namespace FastClone.Internal {
 
                             nestedExpressions.Add(Expression.Assign(Expression.ArrayAccess(arrayClone, indexes), clonedElement));
                         } else
-                            nestedExpressions.Add(CloneExpressionHelper.CreateCopyComplexArrayTypeFieldExpression(Expression.ArrayAccess(originalArray, indexes), Expression.ArrayAccess(arrayClone, indexes), elementType, _ObjectDictionary));
+                            nestedExpressions.Add(CloneExpressionHelper.CreateCopyComplexArrayTypeFieldExpression(Expression.ArrayAccess(originalArray, indexes), Expression.ArrayAccess(arrayClone, indexes), elementType, _objectDictionary));
 
                         // Whether array-in-array of reference-type-in-array, we need a null check before // doing anything to avoid NullReferenceExceptions for unset members
                         loopExpressions.Add(
@@ -227,7 +229,7 @@ namespace FastClone.Internal {
                 Expression fieldClone = GenerateFieldBasedComplexArrayTransferExpressions(fieldType, fieldType.GetElementType(), Expression.Field(original, fieldInfo), fieldVariables, fieldExpressions);
                 fieldExpressions.Add(CloneExpressionHelper.CreateSetFieldExpression(clone, fieldClone, fieldInfo));
             } else
-                fieldExpressions.Add(CloneExpressionHelper.CreateCopyComplexFieldExpression(original, clone, fieldInfo, _ObjectDictionary));
+                fieldExpressions.Add(CloneExpressionHelper.CreateCopyComplexFieldExpression(original, clone, fieldInfo, _objectDictionary));
 
             expressions.Add(
                 Expression.IfThen(
@@ -255,14 +257,15 @@ namespace FastClone.Internal {
             List<FieldInfo> fieldInfoList = new List<FieldInfo>(fieldInfos);
             while (type != null && type.BaseType != typeof(object)) {
                 type = type.BaseType;
-                if (type != null) {
-                    fieldInfos = type.GetFields(bindingFlags);
+                if (type == null)
+                    continue;
 
-                    // Look for fields we do not have listed yet and merge them into the main list
-                    foreach (FieldInfo fieldInfo in fieldInfos)
-                        if (!fieldInfoList.Any(x => x.DeclaringType == fieldInfo.DeclaringType && x.Name == fieldInfo.Name))
-                            fieldInfoList.Add(fieldInfo);
-                }
+                fieldInfos = type.GetFields(bindingFlags);
+
+                // Look for fields we do not have listed yet and merge them into the main list
+                foreach (FieldInfo fieldInfo in fieldInfos)
+                    if (!fieldInfoList.Any(x => x.DeclaringType == fieldInfo.DeclaringType && x.Name == fieldInfo.Name))
+                        fieldInfoList.Add(fieldInfo);
             }
 
             return fieldInfoList.ToArray();
