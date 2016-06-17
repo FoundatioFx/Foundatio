@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Redis;
 using Foundatio.Serializer;
 using Nito.AsyncEx;
 using StackExchange.Redis;
@@ -79,22 +80,32 @@ namespace Foundatio.Caching {
             return await RedisValueToCacheValueAsync<T>(redisValue).AnyContext();
         }
 
+        private async Task<CacheValue<ICollection<T>>> RedisValuesToCacheValueAsync<T>(RedisValue[] redisValues) {
+            var result = new List<T>();
+            foreach (var redisValue in redisValues) {
+                if (!redisValue.HasValue)
+                    continue;
+                if (redisValue == _nullValue)
+                    continue;
+
+                try {
+                    var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
+
+                    result.Add(value);
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
+                }
+            }
+
+            return new CacheValue<ICollection<T>>(result, true);
+        }
+
         private async Task<CacheValue<T>> RedisValueToCacheValueAsync<T>(RedisValue redisValue) {
             if (!redisValue.HasValue) return CacheValue<T>.NoValue;
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
             try {
-                T value;
-                if (typeof (T) == typeof (Int16) || typeof (T) == typeof (Int32) || typeof (T) == typeof (Int64) ||
-                    typeof (T) == typeof (bool) || typeof (T) == typeof (double) || typeof (T) == typeof (string))
-                    value = (T) Convert.ChangeType(redisValue, typeof (T));
-                else if (typeof (T) == typeof (Int16?) || typeof (T) == typeof (Int32?) || typeof (T) == typeof (Int64?) ||
-                         typeof (T) == typeof (bool?) || typeof (T) == typeof (double?))
-                    value = redisValue.IsNull
-                        ? default(T)
-                        : (T) Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(typeof (T)));
-                else
-                    value = await _serializer.DeserializeAsync<T>(redisValue.ToString()).AnyContext();
+                var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
@@ -114,6 +125,11 @@ namespace Foundatio.Caching {
             return result;
         }
 
+        public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            var set = await Database.SetMembersAsync(key).AnyContext();
+            return await RedisValuesToCacheValueAsync<T>(set).AnyContext();
+        }
+
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (expiresIn?.Ticks < 0) {
                 _logger.Trace("Removing expired key: {key}", key);
@@ -123,6 +139,40 @@ namespace Foundatio.Caching {
             }
 
             return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
+        }
+
+        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (expiresIn?.Ticks < 0) {
+                _logger.Trace("Removing expired key: {key}", key);
+
+                await this.RemoveAsync(key).AnyContext();
+                return false;
+            }
+
+            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
+            
+            var result = await Database.SetAddAsync(key, redisValue).AnyContext();
+            if (result && expiresIn.HasValue)
+                await this.SetExpirationAsync(key, expiresIn.Value).AnyContext();
+
+            return result;
+        }
+
+        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (expiresIn?.Ticks < 0) {
+                _logger.Trace("Removing expired key: {key}", key);
+
+                await this.RemoveAsync(key).AnyContext();
+                return false;
+            }
+
+            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
+
+            var result = await Database.SetRemoveAsync(key, redisValue).AnyContext();
+            if (result && expiresIn.HasValue)
+                await this.SetExpirationAsync(key, expiresIn.Value).AnyContext();
+
+            return result;
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -144,22 +194,9 @@ namespace Foundatio.Caching {
         }
 
         private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
-            if (value == null)
-                return await Database.StringSetAsync(key, _nullValue, expiresIn, when, flags).AnyContext();
+            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
 
-            if (typeof(T) == typeof(Int16))
-                return await Database.StringSetAsync(key, Convert.ToInt16(value), expiresIn, when, flags).AnyContext();
-            if (typeof(T) == typeof(Int32))
-                return await Database.StringSetAsync(key, Convert.ToInt32(value), expiresIn, when, flags).AnyContext();
-            if (typeof(T) == typeof(Int64))
-                return await Database.StringSetAsync(key, Convert.ToInt64(value), expiresIn, when, flags).AnyContext();
-            if (typeof(T) == typeof(bool))
-                return await Database.StringSetAsync(key, Convert.ToBoolean(value), expiresIn, when, flags).AnyContext();
-            if (typeof(T) == typeof(string))
-                return await Database.StringSetAsync(key, value?.ToString(), expiresIn, when, flags).AnyContext();
-
-            var data = await _serializer.SerializeAsync(value).AnyContext();
-            return await Database.StringSetAsync(key, data, expiresIn, when, flags).AnyContext();
+            return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
         }
 
         public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {

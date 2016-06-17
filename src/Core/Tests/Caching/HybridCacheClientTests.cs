@@ -67,6 +67,11 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanManageSets() {
+            return base.CanManageSets();
+        }
+
+        [Fact]
         public virtual async Task WillUseLocalCache() {
             var firstCache = GetCacheClient() as HybridCacheClient;
             Assert.NotNull(firstCache);

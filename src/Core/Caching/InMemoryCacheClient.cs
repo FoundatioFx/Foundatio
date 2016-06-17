@@ -168,6 +168,8 @@ namespace Foundatio.Caching {
             if (expiresIn.HasValue)
                 ScheduleNextMaintenance(expiresAt);
 
+            Cleanup();
+
             return difference;
         }
 
@@ -203,7 +205,82 @@ namespace Foundatio.Caching {
             if (expiresIn.HasValue)
                 ScheduleNextMaintenance(expiresAt);
 
+            Cleanup();
+
             return difference;
+        }
+
+        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            // TODO: Look up the existing expiration if expiresIn is null.
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < DateTime.UtcNow) {
+                _logger.Trace("Removing expired key {0}", key);
+
+                await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
+                return false;
+            }
+
+
+            var entry = new CacheEntry(new List<T> { value }, expiresAt, ShouldCloneValues);
+            _memory.AddOrUpdate(key, entry, (k, cacheEntry) =>
+            {
+                var collection = cacheEntry.Value as ICollection<T>;
+                collection?.Add(value);
+                cacheEntry.Value = collection;
+                cacheEntry.ExpiresAt = expiresAt;
+                return cacheEntry;
+            });
+
+            ScheduleNextMaintenance(expiresAt);
+
+            Cleanup();
+
+            return true;
+        }
+
+        private void Cleanup() {
+            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value) return;
+
+            string oldest = _memory.ToArray()
+                                   .OrderBy(kvp => kvp.Value.LastAccessTicks)
+                                   .ThenBy(kvp => kvp.Value.InstanceNumber)
+                                   .First()
+                                   .Key;
+
+            _logger.Trace("Removing key {oldest}", oldest);
+
+            CacheEntry cacheEntry;
+            _memory.TryRemove(oldest, out cacheEntry);
+        }
+
+        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < DateTime.UtcNow) {
+                _logger.Trace("Removing expired key {0}", key);
+
+                await this.RemoveAsync(key).AnyContext();
+                await OnItemExpiredAsync(key).AnyContext();
+                return false;
+            }
+            
+            _memory.TryUpdate(key, (k, cacheEntry) => {
+                var collection = cacheEntry.Value as ICollection<T>;
+                if (collection != null && collection.Contains(value)) {
+                    collection.Remove(value);
+                    cacheEntry.Value = collection;
+                }
+
+                cacheEntry.ExpiresAt = expiresAt;
+                _logger.Trace("Removed value from set with cache key: {key}", key);
+                return cacheEntry;
+            });
+
+            return true;
+        }
+
+        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            return GetAsync<ICollection<T>>(key);
         }
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
@@ -232,19 +309,7 @@ namespace Foundatio.Caching {
 
             ScheduleNextMaintenance(entry.ExpiresAt);
 
-            if (MaxItems.HasValue && _memory.Count > MaxItems.Value) {
-                string oldest =
-                    _memory.ToArray()
-                        .OrderBy(kvp => kvp.Value.LastAccessTicks)
-                        .ThenBy(kvp => kvp.Value.InstanceNumber)
-                        .First()
-                        .Key;
-
-                _logger.Trace("SetInternalAsync: Removing key {key}", key);
-
-                CacheEntry cacheEntry;
-                _memory.TryRemove(oldest, out cacheEntry);
-            }
+            Cleanup();
 
             return true;
         }

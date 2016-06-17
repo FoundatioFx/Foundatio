@@ -45,6 +45,11 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanSetExpiration() {
             return base.CanSetExpiration();
         }
+        
+        [Fact]
+        public override Task CanManageSets() {
+            return base.CanManageSets();
+        }
 
         [Fact]
         public override Task WillUseLocalCache() {

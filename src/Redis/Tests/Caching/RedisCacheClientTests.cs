@@ -67,6 +67,11 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanUseScopedCaches();
         }
 
+        [Fact]
+        public override Task CanManageSets() {
+            return base.CanManageSets();
+        }
+
         [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughput() {
             return base.MeasureThroughput();

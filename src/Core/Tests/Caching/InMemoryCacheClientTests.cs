@@ -90,5 +90,10 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(2, cache.Misses);
             }
         }
+
+        [Fact]
+        public override async Task CanManageSets() {
+            await base.CanManageSets();
+        }
     }
 }
