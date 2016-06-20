@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Tests.Caching;
 using Xunit;
@@ -68,8 +69,19 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanManageSets() {
-            return base.CanManageSets();
+        public override async Task CanManageSets() {
+            await base.CanManageSets();
+
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await Assert.ThrowsAsync<StackExchange.Redis.RedisServerException>(async () => {
+                    await cache.AddAsync("key1", 1).AnyContext();
+                    await cache.SetAddAsync("key1", 1).AnyContext();
+                }).AnyContext();
+            }
         }
 
         [Fact(Skip = "Performance Test")]

@@ -91,6 +91,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             CacheEntry cacheEntry;
             if (!_memory.TryGetValue(key, out cacheEntry)) {
                 Interlocked.Increment(ref _misses);
@@ -126,17 +129,26 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             // TODO: Look up the existing expiration if expiresIn is null.
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
@@ -174,6 +186,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
@@ -211,6 +226,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             // TODO: Look up the existing expiration if expiresIn is null.
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
@@ -226,7 +244,10 @@ namespace Foundatio.Caching {
             _memory.AddOrUpdate(key, entry, (k, cacheEntry) =>
             {
                 var collection = cacheEntry.Value as ICollection<T>;
-                collection?.Add(value);
+                if (collection == null)
+                    throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
+
+                collection.Add(value);
                 cacheEntry.Value = collection;
                 cacheEntry.ExpiresAt = expiresAt;
                 return cacheEntry;
@@ -255,6 +276,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
                 _logger.Trace("Removing expired key {0}", key);
@@ -280,10 +304,16 @@ namespace Foundatio.Caching {
         }
 
         public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return GetAsync<ICollection<T>>(key);
         }
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("SetInternalAsync: Key cannot be null or empty.");
+
             if (entry.ExpiresAt < DateTime.UtcNow) {
                 _logger.Trace("SetInternalAsync: Removing expired key {0}", key);
 
@@ -327,6 +357,9 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (!_memory.ContainsKey(key))
                 return Task.FromResult(false);
 
@@ -334,6 +367,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 await OnItemExpiredAsync(key).AnyContext();
@@ -367,10 +403,16 @@ namespace Foundatio.Caching {
         }
         
         public Task<bool> ExistsAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return Task.FromResult(_memory.ContainsKey(key));
         }
 
         public async Task<TimeSpan?> GetExpirationAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             CacheEntry value;
             if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
                 return null;
@@ -386,6 +428,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             DateTime expiresAt = DateTime.UtcNow.Add(expiresIn);
             if (expiresAt < DateTime.UtcNow) {
                 await this.RemoveAsync(key).AnyContext();

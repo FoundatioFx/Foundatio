@@ -323,6 +323,15 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1).AnyContext()).AnyContext();
+
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1).AnyContext()).AnyContext();
+
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty).AnyContext()).AnyContext();
+
                 await cache.SetAddAsync("test1", 1).AnyContext();
                 await cache.SetAddAsync("test1", 2).AnyContext();
                 await cache.SetAddAsync("test1", 3).AnyContext();

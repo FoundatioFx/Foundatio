@@ -75,6 +75,9 @@ namespace Foundatio.Caching {
         private static readonly RedisValue _nullValue = "@@NULL";
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             var redisValue = await Database.StringGetAsync(key).AnyContext();
             
             return await RedisValueToCacheValueAsync<T>(redisValue).AnyContext();
@@ -126,11 +129,17 @@ namespace Foundatio.Caching {
         }
 
         public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             var set = await Database.SetMembersAsync(key).AnyContext();
             return await RedisValuesToCacheValueAsync<T>(set).AnyContext();
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 _logger.Trace("Removing expired key: {key}", key);
 
@@ -142,6 +151,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 _logger.Trace("Removing expired key: {key}", key);
 
@@ -159,6 +171,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 _logger.Trace("Removing expired key: {key}", key);
 
@@ -176,10 +191,16 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return InternalSetAsync(key, value, expiresIn);
         }
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             await LoadScriptsAsync().AnyContext();
 
             var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
@@ -187,6 +208,9 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             await LoadScriptsAsync().AnyContext();
 
             var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
@@ -213,10 +237,16 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return InternalSetAsync(key, value, expiresIn, When.Exists);
         }
 
         public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn?.Ticks < 0) {
                 await this.RemoveAsync(key).AnyContext();
                 return -1;
@@ -232,14 +262,23 @@ namespace Foundatio.Caching {
         }
         
         public Task<bool> ExistsAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return Database.KeyExistsAsync(key);
         }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             return Database.KeyTimeToLiveAsync(key);
         }
 
         public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
             if (expiresIn.Ticks < 0)
                 return this.RemoveAsync(key);
 
