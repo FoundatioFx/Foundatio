@@ -171,6 +171,20 @@ namespace Foundatio.Caching {
             return _distributedCache.SetIfLowerAsync(key, value, expiresIn);
         }
 
+        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            await _localCache.SetAddAsync(key, value, expiresIn).AnyContext();
+            return await _distributedCache.SetAddAsync(key, value, expiresIn).AnyContext();
+        }
+
+        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            await _localCache.SetRemoveAsync(key, value, expiresIn).AnyContext();
+            return await _distributedCache.SetRemoveAsync(key, value, expiresIn).AnyContext();
+        }
+
+        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            return GetAsync<ICollection<T>>(key);
+        }
+
         private bool TypeRequiresSerialization(Type t) {
             if (t == typeof(Int16) || t == typeof(Int32) || t == typeof(Int64) ||
                 t == typeof(bool) || t == typeof(double) || t == typeof(string) ||

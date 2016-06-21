@@ -11,6 +11,7 @@ using Xunit.Abstractions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
 using System.Linq;
+using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
@@ -312,6 +313,45 @@ namespace Foundatio.Tests.Caching {
                 await Task.Delay(1500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
             }
+        }
+
+        public virtual async Task CanManageSets() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1).AnyContext()).AnyContext();
+
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1).AnyContext()).AnyContext();
+
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty).AnyContext()).AnyContext();
+
+                await cache.SetAddAsync("test1", 1).AnyContext();
+                await cache.SetAddAsync("test1", 2).AnyContext();
+                await cache.SetAddAsync("test1", 3).AnyContext();
+                var result = await cache.GetSetAsync<int>("test1").AnyContext();
+                Assert.NotNull(result);
+                Assert.Equal(3, result.Value.Count);
+
+                await cache.SetRemoveAsync("test1", 2).AnyContext();
+                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                Assert.NotNull(result);
+                Assert.Equal(2, result.Value.Count);
+
+                await cache.SetRemoveAsync("test1", 1).AnyContext();
+                await cache.SetRemoveAsync("test1", 3).AnyContext();
+                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                Assert.NotNull(result);
+                Assert.Equal(0, result.Value.Count);
+                
+            }
+            
         }
 
         public virtual async Task MeasureThroughput() {

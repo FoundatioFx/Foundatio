@@ -20,6 +20,9 @@ namespace Foundatio.Caching {
         Task SetExpirationAsync(string key, TimeSpan expiresIn);
         Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null);
         Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null);
+        Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key);
     }
 
     public static class CacheClientExtensions {
