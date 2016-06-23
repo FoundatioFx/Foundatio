@@ -6,7 +6,7 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 
 namespace Foundatio.Utility {
-    internal static class Run {
+    public static class Run {
         public static async Task DelayedAsync(TimeSpan delay, Func<Task> action) {
             await Task.Run(async () => {
                 await Task.Delay(delay).AnyContext();

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Nito.AsyncEx;
 
 namespace Foundatio.Extensions {
-    internal static class TaskExtensions {
+    public static class TaskExtensions {
         public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.WhenAny(countdownEvent.WaitAsync(), cancellationToken.AsTask());
         }
