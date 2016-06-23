@@ -7,7 +7,7 @@
     },
     "dependencies": {
         "StackExchange.Redis": "1.0.488",
-        "Foundatio": {
+        "Foundatio.Redis": {
             "target": "project"
         }
     },

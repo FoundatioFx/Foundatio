@@ -10,7 +10,7 @@
         "NLog.Schema": "4.3.4",
         "SimpleInjector": "3.1.5",
         "Topshelf": "4.0.1",
-        "Foundatio": {
+        "Foundatio.Logging.NLog": {
             "target": "project"
         }
     },

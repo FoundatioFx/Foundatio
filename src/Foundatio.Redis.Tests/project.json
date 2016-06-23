@@ -13,7 +13,13 @@
         "Newtonsoft.Json": "8.0.3",
         "Nito.AsyncEx": "3.0.1",
         "StackExchange.Redis": "1.0.488",
-        "Foundatio": {
+        "Foundatio.Redis": {
+            "target": "project"
+        },
+        "Foundatio.Logging.Xunit": {
+            "target": "project"
+        },
+        "Foundatio.Tests": {
             "target": "project"
         },
         "dotnet-test-xunit": "1.0.0-rc2-*",

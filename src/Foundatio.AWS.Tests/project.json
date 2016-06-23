@@ -12,7 +12,13 @@
         "AWSSDK.Core": "3.1.5.3",
         "AWSSDK.S3": "3.1.5.0",
         "Nito.AsyncEx": "3.0.1",
-        "Foundatio": {
+        "Foundatio.AWS": {
+            "target": "project"
+        },
+        "Foundatio.Logging.Xunit": {
+            "target": "project"
+        },
+        "Foundatio.Tests": {
             "target": "project"
         },
         "dotnet-test-xunit": "1.0.0-rc2-*",

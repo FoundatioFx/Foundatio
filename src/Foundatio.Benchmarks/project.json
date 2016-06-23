@@ -6,9 +6,9 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "BenchmarkDotNet": "0.9.4",
+        "BenchmarkDotNet": "0.9.7",
         "StackExchange.Redis": "1.0.488",
-        "Foundatio": {
+        "Foundatio.Redis": {
             "target": "project"
         }
     },

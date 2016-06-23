@@ -20,7 +20,16 @@
         "System.Spatial": "5.7.0",
         "WindowsAzure.ServiceBus": "3.1.7",
         "WindowsAzure.Storage": "6.2.0",
-        "Foundatio": {
+        "Foundatio.AzureServiceBus": {
+            "target": "project"
+        },
+        "Foundatio.AzureStorage": {
+            "target": "project"
+        },
+        "Foundatio.Logging.Xunit": {
+            "target": "project"
+        },
+        "Foundatio.Tests": {
             "target": "project"
         },
         "dotnet-test-xunit": "1.0.0-rc2-*",

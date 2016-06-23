@@ -12,7 +12,7 @@
         "Exceptionless.DateTimeExtensions": "3.1.45",
         "Newtonsoft.Json": "8.0.3",
         "Nito.AsyncEx": "3.0.1",
-        "Foundatio": {
+        "Foundatio.Logging.Xunit": {
             "target": "project"
         },
         "dotnet-test-xunit": "1.0.0-rc2-*",
@@ -27,6 +27,7 @@
                 "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
+                "System.Configuration": "", 
                 "System.Threading.Tasks": "",
                 "System.Runtime": ""
             }
