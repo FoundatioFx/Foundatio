@@ -1,13 +1,36 @@
 ﻿{
-  "version": "1.0.0-*",
-
-  "dependencies": {
-    "NETStandard.Library": "1.5.0-rc2-24027"
-  },
-
-  "frameworks": {
-    "netstandard1.5": {
-      "imports": "dnxcore50"
+    "testRunner": "xunit",
+    "buildOptions": {
+        "debugType": "portable",
+        "optimize": true,
+        "warningsAsErrors": true,
+        "copyToOutput": {
+            "include": [ "xunit.runner.json" ]
+        }
+    },
+    "dependencies": {
+        "Exceptionless.RandomData": "1.0.22.0",
+        "Newtonsoft.Json": "8.0.3",
+        "Nito.AsyncEx": "3.0.1",
+        "StackExchange.Redis": "1.0.488",
+        "Foundatio": {
+            "target": "project"
+        },
+        "dotnet-test-xunit": "1.0.0-rc2-*",
+        "xunit": "2.1.0",
+        "xunit.extensibility.execution": "2.1.0",
+        "xunit.extensibility.core": "2.1.0",
+        "xunit.runner.visualstudio": "2.1.0"
+    },
+    "frameworks": {
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": "",
+                "System.Runtime": ""
+            }
+        }
     }
-  }
 }
