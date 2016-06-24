@@ -1,39 +1,59 @@
-version: 4.1.{build}
+version: 4.2.{build}
+os: Visual Studio 2015
 clone_depth: 2
 configuration: Release
-os: Visual Studio 2015
 
-init:
-  - ps: $env:GIT_HASH = $env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
+pull_requests:
+  do_not_increment_build_number: true
+  
+environment:
+  VERSION_SUFFIX: -beta
+
+init: 
+  - git config --global core.autocrlf true
+  - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:VERSION_SUFFIX="-pre" }
-
-install:
-  - choco install gitlink
 
 assembly_info:
   patch: true
   file: AssemblyInfo.*
-  assembly_version: "4.1.0.0"
+  assembly_version: "{version}.0"
   assembly_file_version: "{version}.0"
   assembly_informational_version: "{version}$(VERSION_SUFFIX) $(GIT_HASH)"
 
 before_build:
-  - appveyor-retry nuget restore -verbosity quiet
-  - ps: .\Build\Replace-FileString -Pattern '\$version\$' -Replacement "$($env:appveyor_build_version)$($env:VERSION_SUFFIX)" -Path src\**\*.nuspec -Overwrite
+  - ps: >-
+      Get-ChildItem -Path .\ -Filter project.json -Recurse -Name |
+      ForEach {
+          $content = Get-Content "$_"
+          $content = $content.Replace("99.99.99-dev", "$($env:APPVEYOR_BUILD_VERSION)$($env:VERSION_SUFFIX)")
+          Set-Content "$_" $content -Encoding UTF8
+      }
+  - dotnet restore -v Minimal
 
-build:
-  project: Foundatio.sln
-  verbosity: minimal
-  publish_nuget: true
-
-before_package:
-  - ps: if ((-not $env:APPVEYOR_PULL_REQUEST_NUMBER) -and ($env:APPVEYOR_REPO_BRANCH -eq 'master')) { & "GitLink" .\ }
+build_script:
+  - dotnet build **/project.json -c Release
 
 before_test:
   - nuget install redis-64 -excludeversion
   - redis-64\tools\redis-server.exe --service-install
   - redis-64\tools\redis-server.exe --service-start
-  #- ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
+test_script:
+  - ps: >-
+      DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
+            dotnet test "$_"
+      }
+
+after_test:
+  - ps: >-
+      DIR "src/*" | Where {$_.PsIsContainer} | ForEach {
+            dotnet pack "$_" -c Release -o .\artifacts\
+      }
+
+artifacts:
+  - path: artifacts\*.nupkg
+    name: ReleaseArtifacts
 
 deploy:
   - provider: Environment

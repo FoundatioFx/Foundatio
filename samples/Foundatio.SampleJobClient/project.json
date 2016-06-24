@@ -1,0 +1,25 @@
+﻿{
+    "buildOptions": {
+        "debugType": "portable",
+        "emitEntryPoint": true,
+        "optimize": true,
+        "warningsAsErrors": true
+    },
+    "dependencies": {
+        "StackExchange.Redis": "1.0.488",
+        "Foundatio.Redis": {
+            "target": "project"
+        }
+    },
+    "frameworks": {
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": "",
+                "System.Runtime": ""
+            }
+        }
+    }
+}
