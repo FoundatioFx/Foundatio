@@ -17,6 +17,7 @@
         }
     },
     "buildOptions": {
+        "debugType": "portable",
         "nowarn": [
             "CS1591"
         ],
@@ -25,19 +26,21 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Newtonsoft.Json": "8.0.3",
-        "Nito.AsyncEx": "3.0.1",
-        "StackExchange.Redis": "1.0.488",
         "Foundatio": {
             "target": "project"
-        }
+        },
+        "StackExchange.Redis": "1.1.604-alpha"
     },
     "frameworks": {
-        "net451": {
+        "netstandard1.5": {
             "buildOptions": {
-                "define": [ "NET45" ]
+                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
             },
-            "frameworkAssemblies": {
+            "imports": "netcore50"
+        },
+        "net46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
             }
         }
     }

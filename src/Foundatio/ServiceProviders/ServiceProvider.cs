@@ -23,7 +23,7 @@ namespace Foundatio.ServiceProviders {
                 return null;
 
             if (!typeof(IServiceProvider).IsAssignableFrom(relativeType))
-                return FindAndGetServiceProvider(loggerFactory, relativeType.Assembly);
+                return FindAndGetServiceProvider(loggerFactory, relativeType.GetTypeInfo().Assembly);
 
             return GetServiceProvider(relativeType, loggerFactory);
         }
@@ -46,7 +46,7 @@ namespace Foundatio.ServiceProviders {
 
             // try to find bootstrapped service providers first
             var serviceProviderTypes = assemblies.SelectMany(a =>
-                a.GetTypes().Where(t => !t.IsInterface && !t.IsAbstract && typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
+                a.GetTypes().Where(t => !t.GetTypeInfo().IsInterface && !t.GetTypeInfo().IsAbstract && typeof(IBootstrappedServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
                 var serviceProvider = GetServiceProvider(serviceProviderType, loggerFactory);
@@ -56,7 +56,7 @@ namespace Foundatio.ServiceProviders {
 
             // find any service providers
             serviceProviderTypes = assemblies.SelectMany(a => a.GetTypes()
-                .Where(t => !t.IsInterface && !t.IsAbstract && typeof(IServiceProvider).IsAssignableFrom(t)));
+                .Where(t => !t.GetTypeInfo().IsInterface && !t.GetTypeInfo().IsAbstract && typeof(IServiceProvider).IsAssignableFrom(t)));
 
             foreach (var serviceProviderType in serviceProviderTypes) {
                 var serviceProvider = GetServiceProvider(serviceProviderType, loggerFactory);

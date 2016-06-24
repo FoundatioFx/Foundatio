@@ -1,43 +1,14 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Reflection;
 
-namespace Foundatio.Extensions
-{
-    public static class TypeExtensions
-    {
-        public static IList<Type> SortByPriority(this IEnumerable<Type> types)
-        {
-            return types.OrderBy(t => {
-                var priorityAttribute = t.GetCustomAttributes(typeof(PriorityAttribute), true).FirstOrDefault() as PriorityAttribute;
-                return priorityAttribute?.Priority ?? 0;
-            }).ToList();
-        }
-
-        public static bool IsNullable(this Type type)
-        {
-            if (type.IsValueType)
-                return false;
-
-            return type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(Nullable<>));
-        }
-
-        private static readonly ConcurrentDictionary<Type, object> _defaultValues = new ConcurrentDictionary<Type, object>();
-        public static object GetDefaultValue(this Type type)
-        {
-            return _defaultValues.GetOrAdd(type, t => type.IsValueType ? Activator.CreateInstance(type) : null);
-        }
-
-        public static bool IsNumeric(this Type type)
-        {
+namespace Foundatio.Extensions {
+    public static class TypeExtensions {
+        public static bool IsNumeric(this Type type) {
             if (type.IsArray)
                 return false;
 
-            switch (Type.GetTypeCode(type))
-            {
+            switch (Type.GetTypeCode(type)) {
                 case TypeCode.Byte:
                 case TypeCode.Decimal:
                 case TypeCode.Double:
@@ -55,8 +26,7 @@ namespace Foundatio.Extensions
             return false;
         }
 
-        public static T ToType<T>(this object value)
-        {
+        public static T ToType<T>(this object value) {
             if (value == null)
                 throw new ArgumentNullException(nameof(value));
 
@@ -67,11 +37,9 @@ namespace Foundatio.Extensions
             if (targetType.IsAssignableFrom(valueType))
                 return (T)value;
 
-            if ((valueType.IsEnum || value is string) && targetType.IsEnum)
-            {
+            if ((valueType.GetTypeInfo().IsEnum || value is string) && targetType.GetTypeInfo().IsEnum) {
                 // attempt to match enum by name.
-                if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString()))
-                {
+                if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString())) {
                     object parsedValue = Enum.Parse(targetType, value.ToString(), false);
                     return (T)parsedValue;
                 }
@@ -80,71 +48,22 @@ namespace Foundatio.Extensions
                 throw new ArgumentException(message);
             }
 
-            if (valueType.IsNumeric() && targetType.IsEnum)
+            if (valueType.IsNumeric() && targetType.GetTypeInfo().IsEnum)
                 return (T)Enum.ToObject(targetType, value);
 
-            if (converter.CanConvertFrom(valueType))
-            {
+            if (converter.CanConvertFrom(valueType)) {
                 object convertedValue = converter.ConvertFrom(value);
                 return (T)convertedValue;
             }
 
             if (!(value is IConvertible))
-                throw new ArgumentException(
-                    $"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}",
-                    nameof(value));
-            try
-            {
+                throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value));
+            try {
                 object convertedValue = Convert.ChangeType(value, targetType);
                 return (T)convertedValue;
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value), e);
             }
         }
-
-        public static PropertyInfo[] GetPublicProperties(this Type type)
-        {
-            if (!type.IsInterface)
-                return type.GetProperties(BindingFlags.FlattenHierarchy | BindingFlags.Public | BindingFlags.Instance);
-
-            var propertyInfos = new List<PropertyInfo>();
-
-            var considered = new List<Type>();
-            var queue = new Queue<Type>();
-            considered.Add(type);
-            queue.Enqueue(type);
-            while (queue.Count > 0)
-            {
-                var subType = queue.Dequeue();
-                foreach (var subInterface in subType.GetInterfaces())
-                {
-                    if (considered.Contains(subInterface))
-                        continue;
-
-                    considered.Add(subInterface);
-                    queue.Enqueue(subInterface);
-                }
-
-                var typeProperties = subType.GetProperties(BindingFlags.FlattenHierarchy | BindingFlags.Public | BindingFlags.Instance);
-
-                var newPropertyInfos = typeProperties.Where(x => !propertyInfos.Contains(x));
-
-                propertyInfos.InsertRange(0, newPropertyInfos);
-            }
-
-            return propertyInfos.ToArray();
-        }
-    }
-
-    public class PriorityAttribute : Attribute
-    {
-        public PriorityAttribute(int priority)
-        {
-            Priority = priority;
-        }
-
-        public int Priority { get; private set; }
     }
 }

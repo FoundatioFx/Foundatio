@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.Benchmarks.Queues {
     public class QueueBenchmarks {
-        private const int _itemCount = 100;
+        private const int ITEM_COUNT = 100;
         private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>();
         private readonly IQueue<QueueItem> _redisQueue;
 
@@ -18,14 +18,14 @@ namespace Foundatio.Benchmarks.Queues {
         [Benchmark]
         public void ProcessInMemoryQueue() {
             try {
-                for (int i = 0; i < _itemCount; i++)
+                for (int i = 0; i < ITEM_COUNT; i++)
                     _inMemoryQueue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
             } catch (Exception ex) {
                 Console.WriteLine(ex);
             }
 
             try {
-                for (int i = 0; i < _itemCount; i++) {
+                for (int i = 0; i < ITEM_COUNT; i++) {
                     var entry = _inMemoryQueue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
                     entry.CompleteAsync().GetAwaiter().GetResult();
                 }
@@ -37,14 +37,14 @@ namespace Foundatio.Benchmarks.Queues {
         [Benchmark]
         public void ProcessRedisQueue() {
             try {
-                for (int i = 0; i < _itemCount; i++)
+                for (int i = 0; i < ITEM_COUNT; i++)
                     _redisQueue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
             } catch (Exception ex) {
                 Console.WriteLine(ex);
             }
 
             try {
-                for (int i = 0; i < _itemCount; i++) {
+                for (int i = 0; i < ITEM_COUNT; i++) {
                     var entry = _redisQueue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
                     entry.CompleteAsync().GetAwaiter().GetResult();
                 }

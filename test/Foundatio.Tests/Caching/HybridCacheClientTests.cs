@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
+using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
@@ -148,7 +148,7 @@ namespace Foundatio.Tests.Caching {
             var sw = Stopwatch.StartNew();
             await countdownEvent.WaitAsync(new CancellationTokenSource(500).Token);
             sw.Stop();
-            Trace.WriteLine(sw.Elapsed);
+            _logger.Trace("Time {0}", sw.Elapsed);
             Assert.Equal(0, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             //Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 200);

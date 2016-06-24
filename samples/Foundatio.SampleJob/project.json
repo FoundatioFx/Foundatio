@@ -1,4 +1,4 @@
-﻿{
+{
     "buildOptions": {
         "debugType": "portable",
         "emitEntryPoint": true,
@@ -6,17 +6,18 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "Exceptionless.RandomData": "1.0.22.0",
-        "Nito.AsyncEx": "3.0.1",
-        "SimpleInjector": "3.1.3",
-        "StackExchange.Redis": "1.0.488",
-        "Topshelf": "3.3.1",
+        "Exceptionless.RandomData": "1.1.23",
+        "Foundatio": {
+            "target": "project"
+        },
         "Foundatio.Logging.NLog": {
             "target": "project"
         },
         "Foundatio.Redis": {
             "target": "project"
-        }
+        },
+        "SimpleInjector": "3.1.5",
+        "Topshelf": "4.0.1"
     },
     "frameworks": {
         "NET46": {

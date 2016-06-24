@@ -79,7 +79,7 @@ namespace Foundatio.Queues {
             _logger.Trace("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString());
         }
 
-        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) => TaskHelper.Completed;
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) => Task.CompletedTask;
 
         private async Task EnsureMaintenanceRunningAsync() {
             if (!_runMaintenanceTasks || _maintenanceTask != null)

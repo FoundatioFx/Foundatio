@@ -27,7 +27,7 @@ namespace Foundatio.Utility {
         public IDisposable AddSyncHandler(Action<object, TEventArgs> callback) {
             return AddHandler((sender, args) => {
                 callback(sender, args);
-                return TaskHelper.Completed;
+                return Task.CompletedTask;
             });
         }
 

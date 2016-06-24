@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Azure.Tests.Queue {
     [Collection("AzureStorageIntegrationTests")]
     public class AzureStorageQueueTests : QueueTestBase {
-        private static readonly string QueueName = Guid.NewGuid().ToString("N");
+        private static readonly string _queueName = Guid.NewGuid().ToString("N");
 
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
 
@@ -23,7 +23,7 @@ namespace Foundatio.Azure.Tests.Queue {
             
             return new AzureStorageQueue<SimpleWorkItem>(
                 Configuration.GetConnectionString("StorageConnectionString"),
-                QueueName,
+                _queueName,
                 retries,
                 workItemTimeout,
                 TimeSpan.FromMilliseconds(50),

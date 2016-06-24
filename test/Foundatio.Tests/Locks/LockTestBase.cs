@@ -153,20 +153,20 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            _logger.Info(sw.Elapsed.ToString());
+            _logger.Info("Time {0}", sw.Elapsed);
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             sw.Stop();
             Assert.Null(result);
-            _logger.Info(sw.Elapsed.ToString());
-            
+            _logger.Info("Time {0}", sw.Elapsed);
+
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
             sw.Stop();
             Assert.NotNull(result);
-            _logger.Info(sw.Elapsed.ToString());
+            _logger.Info("Time {0}", sw.Elapsed);
         }
     }
 }

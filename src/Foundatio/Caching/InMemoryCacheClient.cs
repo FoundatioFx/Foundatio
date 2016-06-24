@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,7 +36,7 @@ namespace Foundatio.Caching {
                 Key = key
             };
 
-            await (ItemExpired?.InvokeAsync(this, args) ?? TaskHelper.Completed).AnyContext();
+            await (ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
         }
 
         public ICollection<string> Keys {
@@ -56,7 +57,7 @@ namespace Foundatio.Caching {
             }
 
             if (!keys.Any())
-                return TaskHelper.FromResult(0);
+                return Task.FromResult(0);
 
             int removed = 0;
             foreach (var key in keys) {
@@ -538,7 +539,7 @@ namespace Foundatio.Caching {
                     t == typeof(bool?) || t == typeof(double?))
                     return false;
 
-                return !t.IsValueType;
+                return !t.GetTypeInfo().IsValueType;
             }
         }
     }

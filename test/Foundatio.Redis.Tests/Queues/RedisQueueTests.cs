@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Extensions;
+using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
@@ -284,21 +284,21 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 for (int i = 0; i < 10; i++) {
                     var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
-                    Trace.WriteLine(id);
+                    _logger.Trace(id);
                     workItemIds.Add(id);
                 }
 
                 for (int i = 0; i < 10; i++) {
                     var workItem = await queue.DequeueAsync();
                     await workItem.AbandonAsync();
-                    Trace.WriteLine("Abandoning: " + workItem.Id);
+                    _logger.Trace("Abandoning: " + workItem.Id);
                 }
 
                 workItemIds.Reverse();
                 await queue.DoMaintenanceWorkAsync();
 
                 foreach (var id in workItemIds.Take(3)) {
-                    Trace.WriteLine("Checking: " + id);
+                    _logger.Trace("Checking: " + id);
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 }
 
@@ -349,7 +349,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed + stats.Deadletter);
                 Assert.Equal(0, stats.Queued);
 
-                Trace.WriteLine(CountAllKeys());
+                _logger.Trace("# Keys: {0}", CountAllKeys());
             }
         }
 
@@ -386,7 +386,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
 
-                Trace.WriteLine(CountAllKeys());
+                _logger.Trace("# Keys: {0}", CountAllKeys());
             }
         }
 
@@ -424,7 +424,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
 
-                Trace.WriteLine(CountAllKeys());
+                _logger.Trace("# Keys: {0}", CountAllKeys());
             }
         }
 

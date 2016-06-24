@@ -17,6 +17,7 @@
         }
     },
     "buildOptions": {
+        "debugType": "portable",
         "nowarn": [
             "CS1591"
         ],
@@ -25,18 +26,18 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Metrics.NET": "0.3.5",
-        "Nito.AsyncEx": "3.0.1",
         "Foundatio": {
             "target": "project"
-        }
+        },
+        "Metrics.NET": "0.3.7"
     },
     "frameworks": {
-        "net451": {
+        "net46": {
             "buildOptions": {
-                "define": [ "NET45" ]
+                "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
+                "System.Xml": ""
             }
         }
     }

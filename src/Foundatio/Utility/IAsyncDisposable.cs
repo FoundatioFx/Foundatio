@@ -35,14 +35,14 @@ namespace Foundatio.Utility {
         public static Task Using<TResource>(TResource resource, Action body) where TResource : IAsyncDisposable {
             return Using(resource, r => {
                 body();
-                return TaskHelper.Completed;
+                return Task.CompletedTask;
             });
         }
 
         public static Task Using<TResource>(TResource resource, Func<TResource, Task> body) where TResource : IAsyncDisposable {
             return Using(resource, async r => {
                 await body(resource).AnyContext();
-                return TaskHelper.Completed;
+                return Task.CompletedTask;
             });
         }
 

@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio Azure ServiceBus Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -25,20 +25,16 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
-        "Newtonsoft.Json": "8.0.3",
-        "Nito.AsyncEx": "3.0.1",
-        "WindowsAzure.ServiceBus": "3.1.7",
         "Foundatio": {
             "target": "project"
-        }
+        },
+        "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
+        "WindowsAzure.ServiceBus": "3.2.4"
     },
     "frameworks": {
-        "net451": {
+        "net46": {
             "buildOptions": {
-                "define": [ "NET45" ]
-            },
-            "frameworkAssemblies": {
+                "define": [ "NET46" ]
             }
         }
     }

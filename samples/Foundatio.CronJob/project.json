@@ -1,4 +1,4 @@
-﻿{
+{
     "buildOptions": {
         "debugType": "portable",
         "emitEntryPoint": true,
@@ -6,13 +6,16 @@
         "warningsAsErrors": true
     },
     "dependencies": {
+        "Foundatio": {
+            "target": "project"
+        },
+        "Foundatio.Logging.NLog": {
+            "target": "project"
+        },
         "ncrontab": "3.1.0",
         "NLog.Schema": "4.3.4",
         "SimpleInjector": "3.1.5",
-        "Topshelf": "4.0.1",
-        "Foundatio.Logging.NLog": {
-            "target": "project"
-        }
+        "Topshelf": "4.0.1"
     },
     "frameworks": {
         "NET46": {

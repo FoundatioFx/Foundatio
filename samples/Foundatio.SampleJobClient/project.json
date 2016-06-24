@@ -1,4 +1,4 @@
-﻿{
+{
     "buildOptions": {
         "debugType": "portable",
         "emitEntryPoint": true,
@@ -6,7 +6,9 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "StackExchange.Redis": "1.0.488",
+        "Foundatio": {
+            "target": "project"
+        },
         "Foundatio.Redis": {
             "target": "project"
         }

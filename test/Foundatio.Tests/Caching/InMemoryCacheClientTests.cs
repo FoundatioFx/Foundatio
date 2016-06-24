@@ -1,10 +1,9 @@
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
@@ -73,10 +72,10 @@ namespace Foundatio.Tests.Caching {
                 for (int i = 0; i < cache.MaxItems; i++)
                     await cache.SetAsync("test" + i, i);
 
-                Trace.WriteLine(String.Join(",", cache.Keys));
+                _logger.Trace(String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
                 await cache.SetAsync("next", 1);
-                Trace.WriteLine(String.Join(",", cache.Keys));
+                _logger.Trace(String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
                 Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                 Assert.Equal(1, cache.Misses);
@@ -84,7 +83,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(await cache.GetAsync<int?>("test1"));
                 Assert.Equal(1, cache.Hits);
                 await cache.SetAsync("next2", 2);
-                Trace.WriteLine(String.Join(",", cache.Keys));
+                _logger.Trace(String.Join(",", cache.Keys));
                 Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                 Assert.Equal(2, cache.Misses);
                 Assert.True((await cache.GetAsync<int>("test1")).HasValue);
