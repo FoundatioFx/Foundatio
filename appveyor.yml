@@ -34,6 +34,7 @@ before_build:
 build_script:
   - ps: >-
       dotnet build **/project.json -c Release
+      
       If ($LASTEXITCODE -ne 0) {
         throw "One or more projects failed to build."
       }
@@ -47,6 +48,7 @@ test_script:
   - ps: >-
       DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
         dotnet test "$_"
+        
         If ($LASTEXITCODE -ne 0) {
           throw "One or more tests failed."
         }
