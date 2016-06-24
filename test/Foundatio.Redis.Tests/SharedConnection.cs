@@ -10,11 +10,11 @@ namespace Foundatio.Redis.Tests {
             if (String.IsNullOrEmpty(Configuration.GetConnectionString("RedisConnectionString")))
                 return null;
 
-            if (_muxer == null)
+            if (_muxer == null) {
                 _muxer = ConnectionMultiplexer.Connect(Configuration.GetConnectionString("RedisConnectionString"));
-           
-            _muxer.PreserveAsyncOrder = false;
-
+                _muxer.PreserveAsyncOrder = false;
+            }
+            
             return _muxer;
         }
     }
