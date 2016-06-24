@@ -25,17 +25,17 @@ namespace Foundatio.Metrics {
 
         public Task CounterAsync(string name, int value = 1) {
             Send(BuildMetric("c", name, value.ToString(CultureInfo.InvariantCulture)));
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task GaugeAsync(string name, double value) {
             Send(BuildMetric("g", name, value.ToString(CultureInfo.InvariantCulture)));
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task TimerAsync(string name, int milliseconds) {
             Send(BuildMetric("ms", name, milliseconds.ToString(CultureInfo.InvariantCulture)));
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         private string BuildMetric(string type, string statName, string value) {

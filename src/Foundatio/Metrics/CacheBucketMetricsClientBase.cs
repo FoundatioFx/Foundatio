@@ -43,7 +43,7 @@ namespace Foundatio.Metrics {
 
             _queue.Enqueue(entry);
 
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task GaugeAsync(string name, double value) {
@@ -54,7 +54,7 @@ namespace Foundatio.Metrics {
 
             _queue.Enqueue(entry);
 
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task TimerAsync(string name, int milliseconds) {
@@ -65,7 +65,7 @@ namespace Foundatio.Metrics {
 
             _queue.Enqueue(entry);
 
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         private void OnMetricsTimer(object state) {
@@ -204,7 +204,7 @@ namespace Foundatio.Metrics {
         }
 
         public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
-            return WaitForCounterAsync(statName, () => TaskHelper.Completed, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
+            return WaitForCounterAsync(statName, () => Task.CompletedTask, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
         }
 
         public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {

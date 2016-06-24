@@ -356,7 +356,7 @@ namespace Foundatio.Tests.Queue {
                 var resetEvent = new AsyncManualResetEvent(false);
                 await queue.StartWorkingAsync(w => {
                     Assert.Equal("Hello", w.Value.Data);
-                    return TaskHelper.Completed;
+                    return Task.CompletedTask;
                 }, true);
                 queue.Completed.AddSyncHandler((s, e) => {
                     resetEvent.Set();
@@ -489,7 +489,7 @@ namespace Foundatio.Tests.Queue {
             var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior }, loggerFactory: Log);
             queue.Completed.AddHandler((sender, e) => {
                 completedCount++;
-                return TaskHelper.Completed;
+                return Task.CompletedTask;
             });
 
             _logger.Trace("Before enqueue");

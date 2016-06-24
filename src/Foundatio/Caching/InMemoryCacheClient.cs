@@ -36,7 +36,7 @@ namespace Foundatio.Caching {
                 Key = key
             };
 
-            await (ItemExpired?.InvokeAsync(this, args) ?? TaskHelper.Completed).AnyContext();
+            await (ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
         }
 
         public ICollection<string> Keys {
@@ -57,7 +57,7 @@ namespace Foundatio.Caching {
             }
 
             if (!keys.Any())
-                return TaskHelper.FromResult(0);
+                return Task.FromResult(0);
 
             int removed = 0;
             foreach (var key in keys) {

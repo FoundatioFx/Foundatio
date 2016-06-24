@@ -61,7 +61,7 @@ namespace Foundatio.Tests.Logging {
         private Task BlahAsync(ILogger logger) {
             logger.Info("Task hello");
 
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
     }
 }

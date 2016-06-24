@@ -83,7 +83,7 @@ namespace Foundatio.Lock {
         public static Task<bool> TryUsingAsync(this ILockProvider locker, string name, Action work, TimeSpan? lockTimeout = null, TimeSpan? acquireTimeout = null) {
             return locker.TryUsingAsync(name, () => {
                 work();
-                return TaskHelper.Completed;
+                return Task.CompletedTask;
             }, lockTimeout, acquireTimeout);
         }
     }

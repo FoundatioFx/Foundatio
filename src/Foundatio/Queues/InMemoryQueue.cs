@@ -44,7 +44,7 @@ namespace Foundatio.Queues {
         }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         protected override Task<QueueStats> GetQueueStatsImplAsync() {
@@ -243,7 +243,7 @@ namespace Foundatio.Queues {
             _abandonedCount = 0;
             _workerErrorCount = 0;
 
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
         
         protected override async Task<DateTime> DoMaintenanceAsync() {

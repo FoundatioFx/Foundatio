@@ -9,15 +9,15 @@ namespace Foundatio.Utility {
 
     public class EmptyLock : ILock {
         public Task DisposeAsync() {
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task RenewAsync(TimeSpan? lockExtension = null) {
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
 
         public Task ReleaseAsync() {
-            return TaskHelper.Completed;
+            return Task.CompletedTask;
         }
     }
 
