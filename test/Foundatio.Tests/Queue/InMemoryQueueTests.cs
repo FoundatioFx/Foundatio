@@ -41,13 +41,13 @@ namespace Foundatio.Tests.Queue {
             var sw = Stopwatch.StartNew();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _logger.Trace(sw.Elapsed.ToString());
+            _logger.Trace("Time {0}", sw.Elapsed);
 
             e1.Dispose();
             sw.Restart();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            _logger.Trace(sw.Elapsed.ToString());
+            _logger.Trace("Time {0}", sw.Elapsed);
         }
 
         [Fact]

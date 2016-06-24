@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Queue {
                     await workItem.CompleteAsync();
                 }
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5));
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -216,7 +216,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
             }
@@ -470,7 +470,7 @@ namespace Foundatio.Tests.Queue {
 
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
-                Trace.WriteLine(sw.Elapsed);
+                _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(sw.Elapsed > TimeSpan.FromSeconds(.95));
                 await workItem.CompleteAsync();
@@ -675,26 +675,26 @@ namespace Foundatio.Tests.Queue {
         }
         
         protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
-            Trace.WriteLine($"Starting: {w.Value.Id}");
+            _logger.Trace($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 
             try {
                 // randomly complete, abandon or blowup.
                 if (RandomData.GetBool()) {
-                    Trace.WriteLine($"Completing: {w.Value.Id}");
+                    _logger.Trace($"Completing: {w.Value.Id}");
                     await w.CompleteAsync();
                     info.IncrementCompletedCount();
                 } else if (RandomData.GetBool()) {
-                    Trace.WriteLine($"Abandoning: {w.Value.Id}");
+                    _logger.Trace($"Abandoning: {w.Value.Id}");
                     await w.AbandonAsync();
                     info.IncrementAbandonCount();
                 } else {
-                    Trace.WriteLine($"Erroring: {w.Value.Id}");
+                    _logger.Trace($"Erroring: {w.Value.Id}");
                     info.IncrementErrorCount();
                     throw new ApplicationException();
                 }
             } finally {
-                Trace.WriteLine($"Signal {countdown.CurrentCount}");
+                _logger.Trace($"Signal {countdown.CurrentCount}");
                 countdown.Signal();
             }
         }
