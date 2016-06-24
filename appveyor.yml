@@ -31,16 +31,25 @@ before_build:
       }
   - dotnet restore -v Minimal
 
-build:
-  project: Foundatio.sln
-  verbosity: minimal
-  publish_nuget: true
+build_script:
+  - dotnet build **/project.json -c Release
 
 before_test:
   - nuget install redis-64 -excludeversion
   - redis-64\tools\redis-server.exe --service-install
   - redis-64\tools\redis-server.exe --service-start
-  #- ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
+test_script:
+  - ps: >-
+      DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
+            dotnet test "$_"
+      }
+
+after_test:
+  - ps: >-
+      DIR "src/*" | Where {$_.PsIsContainer} | ForEach {
+            dotnet pack "$_" -c Release -o .\artifacts\
+      }
 
 artifacts:
   - path: artifacts\*.nupkg
