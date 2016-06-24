@@ -9,16 +9,22 @@
         }
     },
     "dependencies": {
+        "dotnet-test-xunit": "1.0.0-rc2-*",
         "Exceptionless.DateTimeExtensions": "3.1.45",
-        "Newtonsoft.Json": "8.0.3",
-        "Nito.AsyncEx": "3.0.1",
+        "Foundatio": {
+            "target": "project"
+        },
         "Foundatio.Logging.Xunit": {
             "target": "project"
         },
-        "dotnet-test-xunit": "1.0.0-rc2-*",
+        "Microsoft.Extensions.Configuration": "1.0.0-rc2-final",
+        "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.0-rc2-final",
+        "Microsoft.Extensions.Configuration.Json": "1.0.0-rc2-final",
+        "Newtonsoft.Json": "8.0.3",
+        "Nito.AsyncEx": "3.0.1",
         "xunit": "2.1.0",
-        "xunit.extensibility.execution": "2.1.0",
         "xunit.extensibility.core": "2.1.0",
+        "xunit.extensibility.execution": "2.1.0",
         "xunit.runner.visualstudio": "2.1.0"
     },
     "frameworks": {
@@ -27,7 +33,6 @@
                 "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
-                "System.Configuration": "", 
                 "System.Threading.Tasks": "",
                 "System.Runtime": ""
             }

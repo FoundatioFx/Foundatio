@@ -7,11 +7,11 @@ namespace Foundatio.Redis.Tests {
         private static ConnectionMultiplexer _muxer;
 
         public static ConnectionMultiplexer GetMuxer() {
-            if (String.IsNullOrEmpty(ConnectionStrings.Get("RedisConnectionString")))
+            if (String.IsNullOrEmpty(Configuration.GetConnectionString("RedisConnectionString")))
                 return null;
 
             if (_muxer == null)
-                _muxer = ConnectionMultiplexer.Connect(ConnectionStrings.Get("RedisConnectionString"));
+                _muxer = ConnectionMultiplexer.Connect(Configuration.GetConnectionString("RedisConnectionString"));
            
             _muxer.PreserveAsyncOrder = false;
 

@@ -88,7 +88,7 @@ namespace Foundatio.Tests.Storage {
             if (storage == null)
                 return;
 
-            string readmeFile = Path.GetFullPath(@"..\..\..\..\..\README.md");
+            string readmeFile = Path.GetFullPath(@"..\..\..\..\..\..\README.md");
 
             using (storage) {
                 Assert.False(await storage.ExistsAsync("README.md"));

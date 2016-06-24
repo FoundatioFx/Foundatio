@@ -350,8 +350,11 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
                 
+                await Assert.ThrowsAnyAsync<Exception>(async () => {
+                    await cache.AddAsync("key1", 1).AnyContext();
+                    await cache.SetAddAsync("key1", 1).AnyContext();
+                }).AnyContext();
             }
-            
         }
 
         public virtual async Task MeasureThroughput() {

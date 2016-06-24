@@ -95,17 +95,6 @@ namespace Foundatio.Tests.Caching {
         [Fact]
         public override async Task CanManageSets() {
             await base.CanManageSets();
-
-            var cache = GetCacheClient();
-            if (cache == null)
-                return;
-
-            using (cache) {
-                await Assert.ThrowsAsync<InvalidOperationException>(async () => {
-                    await cache.AddAsync("key1", 1).AnyContext();
-                    await cache.SetAddAsync("key1", 1).AnyContext();
-                }).AnyContext();
-            }
         }
     }
 }

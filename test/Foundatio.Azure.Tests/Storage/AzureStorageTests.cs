@@ -12,10 +12,10 @@ namespace Foundatio.Azure.Tests.Storage {
         public AzureStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            if (String.IsNullOrEmpty(ConnectionStrings.Get("AzureStorageConnectionString")))
+            if (String.IsNullOrEmpty(Configuration.GetConnectionString("AzureStorageConnectionString")))
                 return null;
 
-            return new AzureFileStorage(ConnectionStrings.Get("AzureStorageConnectionString"));
+            return new AzureFileStorage(Configuration.GetConnectionString("AzureStorageConnectionString"));
         }
 
         [Fact]

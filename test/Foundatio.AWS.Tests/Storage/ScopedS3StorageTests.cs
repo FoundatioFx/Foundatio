@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
 using Foundatio.Storage;
+using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -11,8 +12,9 @@ namespace Foundatio.Tests.Storage {
         public ScopedS3StorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
-            var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
+            var section = Configuration.GetSection("AWS");
+            string accessKey = section["ACCESS_KEY_ID"];
+            string secretKey = section["SECRET_ACCESS_KEY"];
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 

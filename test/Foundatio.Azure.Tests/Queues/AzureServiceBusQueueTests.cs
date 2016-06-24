@@ -14,7 +14,7 @@ namespace Foundatio.Azure.Tests.Queue {
         public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
+            if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
                 return null;
 
             if (!retryDelay.HasValue)
@@ -24,7 +24,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 ? retryDelay.Value + retryDelay.Value
                 : TimeSpan.FromSeconds(1);
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
-            return new AzureServiceBusQueue<SimpleWorkItem>(ConnectionStrings.Get("ServiceBusConnectionString"),
+            return new AzureServiceBusQueue<SimpleWorkItem>(Configuration.GetConnectionString("ServiceBusConnectionString"),
                 QueueName, retries, workItemTimeout, retryPolicy, loggerFactory: Log);
         }
 

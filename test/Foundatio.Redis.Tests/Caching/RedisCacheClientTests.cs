@@ -71,17 +71,6 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact]
         public override async Task CanManageSets() {
             await base.CanManageSets();
-
-            var cache = GetCacheClient();
-            if (cache == null)
-                return;
-
-            using (cache) {
-                await Assert.ThrowsAsync<StackExchange.Redis.RedisServerException>(async () => {
-                    await cache.AddAsync("key1", 1).AnyContext();
-                    await cache.SetAddAsync("key1", 1).AnyContext();
-                }).AnyContext();
-            }
         }
 
         [Fact(Skip = "Performance Test")]

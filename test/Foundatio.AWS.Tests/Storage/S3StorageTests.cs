@@ -6,14 +6,16 @@ using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Tests.Utility;
 
 namespace Foundatio.AWS.Tests.Storage {
     public class S3StorageTests : FileStorageTestsBase {
         public S3StorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
-            var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
+            var section = Configuration.GetSection("AWS");
+            string accessKey = section["ACCESS_KEY_ID"];
+            string secretKey = section["SECRET_ACCESS_KEY"];
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 

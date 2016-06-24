@@ -16,10 +16,10 @@ namespace Foundatio.Azure.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            if (String.IsNullOrEmpty(ConnectionStrings.Get("ServiceBusConnectionString")))
+            if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
                 return null;
 
-            _messageBus = new AzureServiceBusMessageBus(ConnectionStrings.Get("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"), loggerFactory: Log);
+            _messageBus = new AzureServiceBusMessageBus(Configuration.GetConnectionString("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"), loggerFactory: Log);
             
             return _messageBus;
         }
