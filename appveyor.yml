@@ -25,14 +25,18 @@ before_build:
   - ps: >-
       Get-ChildItem -Path .\ -Filter project.json -Recurse -Name |
       ForEach {
-          $content = Get-Content "$_"
-          $content = $content.Replace("99.99.99-dev", "$($env:APPVEYOR_BUILD_VERSION)$($env:VERSION_SUFFIX)")
-          Set-Content "$_" $content -Encoding UTF8
+        $content = Get-Content "$_"
+        $content = $content.Replace("99.99.99-dev", "$($env:APPVEYOR_BUILD_VERSION)$($env:VERSION_SUFFIX)")
+        Set-Content "$_" $content -Encoding UTF8
       }
   - dotnet restore -v Minimal
 
 build_script:
-  - dotnet build **/project.json -c Release
+  - ps: >-
+      dotnet build **/project.json -c Release
+      If ($LASTEXITCODE -ne 0) {
+        throw "One or more projects failed to build."
+      }
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -42,13 +46,16 @@ before_test:
 test_script:
   - ps: >-
       DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
-            dotnet test "$_"
+        dotnet test "$_"
+        If ($LASTEXITCODE -ne 0) {
+          throw "One or more tests failed."
+        }
       }
 
 after_test:
   - ps: >-
       DIR "src/*" | Where {$_.PsIsContainer} | ForEach {
-            dotnet pack "$_" -c Release -o .\artifacts\
+        dotnet pack "$_" -c Release -o .\artifacts\
       }
 
 artifacts:
