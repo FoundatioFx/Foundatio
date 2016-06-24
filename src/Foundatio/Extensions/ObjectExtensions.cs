@@ -11,7 +11,7 @@ namespace Foundatio.Extensions {
                 return true;
 
             var typeInfo = type.GetTypeInfo();
-            return typeInfo.IsValueType & typeInfo.IsPrimitive;
+            return typeInfo.IsValueType && typeInfo.IsPrimitive;
         }
 
         public static object Copy(this object original) {

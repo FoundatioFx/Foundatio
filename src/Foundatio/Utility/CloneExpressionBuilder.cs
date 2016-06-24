@@ -253,16 +253,15 @@ namespace FastClone.Internal {
         /// <returns>All of the type's fields, including its base types</returns>
         public static FieldInfo[] GetFieldInfosIncludingBaseClasses(Type type, BindingFlags bindingFlags) {
             FieldInfo[] fieldInfos = type.GetFields(bindingFlags);
-            var typeInfo = type.GetTypeInfo();
 
             // If this class doesn't have a base, don't waste any time
-            if (typeInfo.BaseType == typeof(object))
+            if (type.GetTypeInfo().BaseType == typeof(object))
                 return fieldInfos;
 
             // Otherwise, collect all types up to the furthest base class
             List<FieldInfo> fieldInfoList = new List<FieldInfo>(fieldInfos);
-            while (type != null && typeInfo.BaseType != typeof(object)) {
-                type = typeInfo.BaseType;
+            while (type != null && type.GetTypeInfo().BaseType != typeof(object)) {
+                type = type.GetTypeInfo().BaseType;
                 if (type == null)
                     continue;
 
