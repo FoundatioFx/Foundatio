@@ -2,7 +2,6 @@
     "testRunner": "xunit",
     "buildOptions": {
         "debugType": "portable",
-        "optimize": true,
         "warningsAsErrors": true,
         "copyToOutput": {
             "include": [ "xunit.runner.json" ]
