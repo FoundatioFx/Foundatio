@@ -39,7 +39,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
-                Trace.WriteLine("Published one...");
+                _logger.Trace("Published one...");
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             }
@@ -53,14 +53,15 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<object>(msg => {
+                    resetEvent.Set();
                     throw new ApplicationException();
                 });
 
                 await Task.Delay(100);
                 await messageBus.PublishAsync<object>(null);
-                Trace.WriteLine("Published one...");
+                _logger.Trace("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(1));
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         
@@ -82,7 +83,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
                     Data = "Hello"
                 });
-                Trace.WriteLine("Published one...");
+                _logger.Trace("Published one...");
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             }
