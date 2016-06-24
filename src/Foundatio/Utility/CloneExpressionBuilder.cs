@@ -10,7 +10,12 @@ namespace FastClone.Internal {
         static readonly MethodInfo _arrayCloneMethodInfo = typeof(Array).GetMethod("Clone");
         static readonly MethodInfo _arrayGetLengthMethodInfo = typeof(Array).GetMethod("GetLength");
         static readonly MethodInfo _dictionaryAddMethodInfo = typeof(Dictionary<object, object>).GetMethod("Add");
+#if NETSTANDARD
+        static readonly MethodInfo _getUninitializedObjectMethodInfo = typeof(string).GetTypeInfo().Assembly.GetType("System.Runtime.Serialization.FormatterServices")
+            .GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+#else
         static readonly MethodInfo _getUninitializedObjectMethodInfo = typeof(FormatterServices).GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public);
+#endif
 
         readonly List<Expression> _expressions = new List<Expression>();
         readonly ParameterExpression _objectDictionary = Expression.Parameter(typeof(Dictionary<object, object>), "objectDictionary");
@@ -45,7 +50,7 @@ namespace FastClone.Internal {
                 resultExpression = Expression.Block(_variables, _expressions);
             }
 
-            if (_type.IsValueType)
+            if (_type.GetTypeInfo().IsValueType)
                 resultExpression = Expression.Convert(resultExpression, typeof(object));
 
             var expr = Expression.Lambda<Func<object, Dictionary<object, object>, object>>(resultExpression, _original, _objectDictionary);
@@ -68,7 +73,7 @@ namespace FastClone.Internal {
 
             _expressions.Add(Expression.Assign(_clone, Expression.Convert(Expression.Call(_getUninitializedObjectMethodInfo, Expression.Constant(_type)), _type)));
 
-            if (!_type.IsValueType)
+            if (!_type.GetTypeInfo().IsValueType)
                 _expressions.Add(Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, typeof(object))));
 
             // Generate the expressions required to transfer the type field by field
@@ -78,7 +83,7 @@ namespace FastClone.Internal {
             _expressions.Add(_clone);
         }
 
-        static bool TypeIsPrimitiveOrString(Type type) { return type.IsPrimitive || (type == typeof(string)); }
+        static bool TypeIsPrimitiveOrString(Type type) { return type.GetTypeInfo().IsPrimitive || (type == typeof(string)); }
 
         /// <summary>
         /// Generates state transfer expressions to copy an array of primitive types
@@ -144,7 +149,7 @@ namespace FastClone.Internal {
                 if (innerLoop == null) // The innermost loop clones an actual array element
                     if (TypeIsPrimitiveOrString(elementType))
                         loopExpressions.Add(Expression.Assign(Expression.ArrayAccess(arrayClone, indexes), Expression.ArrayAccess(originalArray, indexes)));
-                    else if (elementType.IsValueType)
+                    else if (elementType.GetTypeInfo().IsValueType)
                         GenerateFieldBasedComplexTypeTransferExpressions(elementType, Expression.ArrayAccess(originalArray, indexes), Expression.ArrayAccess(arrayClone, indexes), loopExpressions);
                     else {
                         var nestedVariables = new List<ParameterExpression>();
@@ -202,7 +207,7 @@ namespace FastClone.Internal {
 
                 if (TypeIsPrimitiveOrString(fieldType))
                     expression.Add(CloneExpressionHelper.CreateCopyFieldExpression(source, target, fieldInfo));
-                else if (fieldType.IsValueType) // A nested value type is part of the parent and will have its fields directly assigned without boxing, new instance creation or anything like that.
+                else if (fieldType.GetTypeInfo().IsValueType) // A nested value type is part of the parent and will have its fields directly assigned without boxing, new instance creation or anything like that.
                     GenerateFieldBasedComplexTypeTransferExpressions(fieldType, Expression.Field(source, fieldInfo), Expression.Field(target, fieldInfo), expression);
                 else
                     GenerateFieldBasedReferenceTypeTransferExpressions(source, target, expression, fieldInfo);
@@ -248,15 +253,16 @@ namespace FastClone.Internal {
         /// <returns>All of the type's fields, including its base types</returns>
         public static FieldInfo[] GetFieldInfosIncludingBaseClasses(Type type, BindingFlags bindingFlags) {
             FieldInfo[] fieldInfos = type.GetFields(bindingFlags);
+            var typeInfo = type.GetTypeInfo();
 
             // If this class doesn't have a base, don't waste any time
-            if (type.BaseType == typeof(object))
+            if (typeInfo.BaseType == typeof(object))
                 return fieldInfos;
 
             // Otherwise, collect all types up to the furthest base class
             List<FieldInfo> fieldInfoList = new List<FieldInfo>(fieldInfos);
-            while (type != null && type.BaseType != typeof(object)) {
-                type = type.BaseType;
+            while (type != null && typeInfo.BaseType != typeof(object)) {
+                type = typeInfo.BaseType;
                 if (type == null)
                     continue;
 

@@ -7,7 +7,6 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T> : MaintenanceBase, IQueue<T> where T : class {
@@ -41,7 +40,7 @@ namespace Foundatio.Queues {
             return await DequeueImplAsync(cancellationToken).AnyContext();
         }
         public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
-            => this.DequeueAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30)).ToCancellationToken());
+            => DequeueAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30)).ToCancellationToken());
 
         public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
 

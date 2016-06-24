@@ -1,4 +1,4 @@
-﻿{
+{
     "testRunner": "xunit",
     "buildOptions": {
         "debugType": "portable",
@@ -9,17 +9,10 @@
         }
     },
     "dependencies": {
-        "Microsoft.Azure.KeyVault.Core": "1.0.0",
-        "Microsoft.Data.Edm": "5.7.0",
-        "Microsoft.Data.OData": "5.7.0",
-        "Microsoft.Data.Services.Client": "5.7.0",
-        "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
-        "Newtonsoft.Json": "8.0.3",
-        "Nito.AsyncEx": "3.0.1",
-        "RimDev.Automation.StorageEmulator": "0.1.0",
-        "System.Spatial": "5.7.0",
-        "WindowsAzure.ServiceBus": "3.1.7",
-        "WindowsAzure.Storage": "6.2.0",
+        "dotnet-test-xunit": "1.0.0-rc2-*",
+        "Foundatio": {
+            "target": "project"
+        },
         "Foundatio.AzureServiceBus": {
             "target": "project"
         },
@@ -32,10 +25,18 @@
         "Foundatio.Tests": {
             "target": "project"
         },
-        "dotnet-test-xunit": "1.0.0-rc2-*",
+        "Microsoft.Azure.KeyVault.Core": "1.0.0",
+        "Microsoft.Data.Edm": "5.7.0",
+        "Microsoft.Data.OData": "5.7.0",
+        "Microsoft.Data.Services.Client": "5.7.0",
+        "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
+        "RimDev.Automation.StorageEmulator": "0.1.0",
+        "System.Spatial": "5.7.0",
+        "WindowsAzure.ServiceBus": "3.2.4",
+        "WindowsAzure.Storage": "6.2.0",
         "xunit": "2.1.0",
-        "xunit.extensibility.execution": "2.1.0",
         "xunit.extensibility.core": "2.1.0",
+        "xunit.extensibility.execution": "2.1.0",
         "xunit.runner.visualstudio": "2.1.0"
     },
     "frameworks": {

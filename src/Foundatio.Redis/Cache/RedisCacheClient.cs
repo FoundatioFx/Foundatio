@@ -165,7 +165,7 @@ namespace Foundatio.Caching {
             
             var result = await Database.SetAddAsync(key, redisValue).AnyContext();
             if (result && expiresIn.HasValue)
-                await this.SetExpirationAsync(key, expiresIn.Value).AnyContext();
+                await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
         }
@@ -185,7 +185,7 @@ namespace Foundatio.Caching {
 
             var result = await Database.SetRemoveAsync(key, redisValue).AnyContext();
             if (result && expiresIn.HasValue)
-                await this.SetExpirationAsync(key, expiresIn.Value).AnyContext();
+                await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
         }

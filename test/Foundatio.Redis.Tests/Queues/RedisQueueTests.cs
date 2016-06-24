@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Extensions;
+using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;

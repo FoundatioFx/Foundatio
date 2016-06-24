@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -538,7 +539,7 @@ namespace Foundatio.Caching {
                     t == typeof(bool?) || t == typeof(double?))
                     return false;
 
-                return !t.IsValueType;
+                return !t.GetTypeInfo().IsValueType;
             }
         }
     }

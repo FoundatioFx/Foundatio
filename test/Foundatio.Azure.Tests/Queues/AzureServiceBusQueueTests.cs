@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
-        private static readonly string QueueName = Guid.NewGuid().ToString("N");
+        private static readonly string _queueName = Guid.NewGuid().ToString("N");
 
         public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
@@ -25,7 +25,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 : TimeSpan.FromSeconds(1);
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
             return new AzureServiceBusQueue<SimpleWorkItem>(Configuration.GetConnectionString("ServiceBusConnectionString"),
-                QueueName, retries, workItemTimeout, retryPolicy, loggerFactory: Log);
+                _queueName, retries, workItemTimeout, retryPolicy, loggerFactory: Log);
         }
 
         [Fact]

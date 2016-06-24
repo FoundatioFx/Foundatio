@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -23,7 +24,7 @@ namespace Foundatio.Messaging {
             if (message == null)
                 return;
 
-            var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.IsAssignableFrom(messageType));
+            var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.GetTypeInfo().IsAssignableFrom(messageType));
             foreach (var subscriber in messageTypeSubscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested)
                     continue;

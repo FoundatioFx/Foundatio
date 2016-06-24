@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using System.Runtime.Remoting.Messaging;
+using System.Threading;
 using Foundatio.Utility;
 
 namespace Foundatio.Logging.Xunit {
@@ -69,24 +69,16 @@ namespace Foundatio.Logging.Xunit {
 
             return Push(scopeFactory(state));
         }
+        
+        private static readonly AsyncLocal<Wrapper> _currentScopeStack = new AsyncLocal<Wrapper>();
 
-        private static readonly string _name = Guid.NewGuid().ToString("N");
-
-        private sealed class Wrapper : MarshalByRefObject {
+        private sealed class Wrapper {
             public ImmutableStack<object> Value { get; set; }
         }
 
-        private static ImmutableStack<object> CurrentScopeStack
-        {
-            get
-            {
-                var ret = CallContext.LogicalGetData(_name) as Wrapper;
-                return ret == null ? ImmutableStack.Create<object>() : ret.Value;
-            }
-            set
-            {
-                CallContext.LogicalSetData(_name, new Wrapper { Value = value });
-            }
+        private static ImmutableStack<object> CurrentScopeStack {
+            get { return _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>(); }
+            set { _currentScopeStack.Value = new Wrapper { Value = value }; }
         }
 
         private static IDisposable Push(object state) {

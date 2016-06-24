@@ -11,7 +11,10 @@
     "dependencies": {
         "AWSSDK.Core": "3.1.5.3",
         "AWSSDK.S3": "3.1.5.0",
-        "Nito.AsyncEx": "3.0.1",
+        "dotnet-test-xunit": "1.0.0-rc2-*",
+        "Foundatio": {
+            "target": "project"
+        },
         "Foundatio.AWS": {
             "target": "project"
         },
@@ -21,10 +24,9 @@
         "Foundatio.Tests": {
             "target": "project"
         },
-        "dotnet-test-xunit": "1.0.0-rc2-*",
         "xunit": "2.1.0",
-        "xunit.extensibility.execution": "2.1.0",
         "xunit.extensibility.core": "2.1.0",
+        "xunit.extensibility.execution": "2.1.0",
         "xunit.runner.visualstudio": "2.1.0"
     },
     "frameworks": {

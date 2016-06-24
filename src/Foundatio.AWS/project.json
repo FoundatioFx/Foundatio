@@ -17,6 +17,7 @@
         }
     },
     "buildOptions": {
+        "debugType": "portable",
         "nowarn": [
             "CS1591"
         ],
@@ -27,17 +28,14 @@
     "dependencies": {
         "AWSSDK.Core": "3.1.5.3",
         "AWSSDK.S3": "3.1.5.0",
-        "Nito.AsyncEx": "3.0.1",
         "Foundatio": {
             "target": "project"
         }
     },
     "frameworks": {
-        "net451": {
+        "net46": {
             "buildOptions": {
-                "define": [ "NET45" ]
-            },
-            "frameworkAssemblies": {
+                "define": [ "NET46" ]
             }
         }
     }

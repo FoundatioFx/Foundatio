@@ -153,7 +153,7 @@ namespace Foundatio.Queues {
             info.DequeuedTimeUtc = DateTime.UtcNow;
 
             if (!_dequeued.TryAdd(info.Id, info))
-                throw new ApplicationException("Unable to add item to the dequeued list.");
+                throw new Exception("Unable to add item to the dequeued list.");
 
             Interlocked.Increment(ref _dequeuedCount);
             _logger.Trace("Dequeue: Got Item");
@@ -184,7 +184,7 @@ namespace Foundatio.Queues {
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
-                throw new ApplicationException("Unable to remove item from the dequeued list.");
+                throw new Exception("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(entry).AnyContext();
@@ -196,7 +196,7 @@ namespace Foundatio.Queues {
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
-                throw new ApplicationException("Unable to remove item from the dequeued list.");
+                throw new Exception("Unable to remove item from the dequeued list.");
             
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
