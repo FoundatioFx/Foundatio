@@ -1,6 +1,6 @@
 ﻿{
     "version": "99.99.99-dev",
-    "title": "Pluggable foundation blocks for building distributed apps.",
+    "title": "Foundatio",
     "description": "Pluggable foundation blocks for building distributed apps.",
     "authors": [ "bniemyjski", "ejsmith" ],
     "copyright": "Copyright (c) 2016 Exceptionless.  All rights reserved.",
@@ -17,6 +17,7 @@
         }
     },
     "buildOptions": {
+        "debugType": "portable",
         "nowarn": [
             "CS1591"
         ],
@@ -25,17 +26,37 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Newtonsoft.Json": "8.0.3",
-        "Nito.AsyncEx": "3.0.1" 
+        "Newtonsoft.Json": "9.0.1-beta1",
+        "Nito.AsyncEx.Coordination": "1.0.0-beta-1"
     },
     "frameworks": {
-        "net451": {
+        "netstandard1.5": {
             "buildOptions": {
-                "define": [ "NET45" ]
+                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
+            },
+            "dependencies": {
+                "System.AppDomain": "2.0.10",
+                "System.Collections.Concurrent": "4.0.12-rc2-24027",
+                "System.ComponentModel": "4.0.1-rc2-24027",
+                "System.ComponentModel.TypeConverter": "4.0.1-rc2-24027",
+                "System.Console": "4.0.0-rc2-24027",
+                "System.Diagnostics.TraceSource": "4.0.0-rc2-24027",
+                "System.IO.FileSystem": "4.0.1-rc2-24027",
+                "System.IO.FileSystem.Watcher": "4.0.0-rc2-24027",
+                "System.Net.Primitives": "4.0.11-rc2-24027",
+                "System.Net.Sockets": "4.1.0-rc2-24027",
+                "System.Runtime": "4.1.0-rc2-24027",
+                "System.Runtime.InteropServices": "4.1.0-rc2-24027",
+                "System.Threading.Timer": "4.0.1-rc2-24027"
+            },
+            "imports": "netcore50"
+        },
+        "net46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
-                "System.Runtime": "",
-                "System.Threading.Tasks": ""  
+                "System.Runtime": ""
             }
         }
     }
