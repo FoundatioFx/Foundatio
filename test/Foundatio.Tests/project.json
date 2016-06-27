@@ -16,9 +16,9 @@
         "Foundatio.Logging.Xunit": {
             "target": "project"
         },
-        "Microsoft.Extensions.Configuration": "1.0.0-rc2-final",
-        "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.0-rc2-final",
-        "Microsoft.Extensions.Configuration.Json": "1.0.0-rc2-final",
+        "Microsoft.Extensions.Configuration": "1.0.0",
+        "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.0",
+        "Microsoft.Extensions.Configuration.Json": "1.0.0",
         "xunit": "2.1.0",
         "xunit.extensibility.core": "2.1.0",
         "xunit.extensibility.execution": "2.1.0",
