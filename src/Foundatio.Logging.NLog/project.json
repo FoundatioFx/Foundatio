@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio NLog Logging Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -29,7 +29,7 @@
         "Foundatio": {
             "target": "project"
         },
-        "NLog": "4.4.0-beta11",
+        "NLog": "4.4.0-beta12",
         "System.Collections.Immutable": "1.2.0"
     },
     "frameworks": {
@@ -39,8 +39,7 @@
             },
             "dependencies": {
                 "System.Threading": "4.0.11"
-            },
-            "imports": "netcore50"
+            }
         },
         "net46": {
             "buildOptions": {

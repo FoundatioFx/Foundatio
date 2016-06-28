@@ -34,12 +34,21 @@ namespace Foundatio.Tests.Utility {
                     return;
 
                 try {
+#if NETSTANDARD
+                    byte[] data = _listener.ReceiveAsync().GetAwaiter().GetResult().Buffer;
+#else
                     byte[] data = _listener.Receive(ref _remoteEndPoint);
+#endif
                     _receivedMessages.Add(Encoding.ASCII.GetString(data, 0, data.Length));
                 } catch (SocketException ex) {
                     // If we timeout, stop listening.
+#if NETSTANDARD
+                    if (ex.SocketErrorCode == SocketError.TimedOut)
+                        continue;
+#else
                     if (ex.ErrorCode == 10060)
                         continue;
+#endif
 
                     throw;
                 }
@@ -61,7 +70,11 @@ namespace Foundatio.Tests.Utility {
                 return;
 
             lock (_lock) {
+#if NETSTANDARD
+                _listener.Dispose();
+#else
                 _listener.Close();
+#endif
                 _listener = null;
             }
         }

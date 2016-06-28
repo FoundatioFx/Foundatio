@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;
@@ -87,8 +88,11 @@ namespace Foundatio.Tests.Storage {
             IFileStorage storage = GetStorage();
             if (storage == null)
                 return;
-
+#if NETSTANDARD
+            string readmeFile = Path.GetFullPath(@"..\..\README.md");
+#else
             string readmeFile = Path.GetFullPath(@"..\..\..\..\..\..\README.md");
+#endif
 
             using (storage) {
                 Assert.False(await storage.ExistsAsync("README.md"));

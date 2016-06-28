@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.Tests.Utility;
 using Foundatio.Logging;
 
 namespace Foundatio.Tests.Jobs {
@@ -22,7 +22,7 @@ namespace Foundatio.Tests.Jobs {
 
             if (RandomData.GetBool(10)) {
                 await _metrics.CounterAsync("errors").AnyContext();
-                throw new ApplicationException("Boom!");
+                throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
@@ -74,7 +74,7 @@ namespace Foundatio.Tests.Jobs {
 
             if (RandomData.GetBool(10)) {
                 await _metrics.CounterAsync("errors").AnyContext();
-                throw new ApplicationException("Boom!");
+                throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {

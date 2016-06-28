@@ -35,8 +35,7 @@
         "WindowsAzure.Storage": "6.2.0",
         "Foundatio": {
             "target": "project"
-        },
-        "StackExchange.Redis": "1.1.603"
+        }
     },
     "frameworks": {
         "net46": {

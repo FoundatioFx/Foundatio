@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
@@ -12,7 +13,6 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
-using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
@@ -276,7 +276,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.StartWorkingAsync(w => {
                     Debug.WriteLine("WorkAction");
                     Assert.Equal("Hello", w.Value.Data);
-                    throw new ApplicationException();
+                    throw new Exception();
                 });
 
                 await Task.Delay(1);
@@ -707,7 +707,7 @@ namespace Foundatio.Tests.Queue {
                 } else {
                     _logger.Trace($"Erroring: {w.Value.Id}");
                     info.IncrementErrorCount();
-                    throw new ApplicationException();
+                    throw new Exception();
                 }
             } finally {
                 _logger.Trace($"Signal {countdown.CurrentCount}");

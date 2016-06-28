@@ -24,18 +24,22 @@ namespace Foundatio.Utility {
             if (c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar)
                 relativePath = relativePath.Substring(1);
 
-            string fullPath = Path.Combine(dataDirectory, relativePath);
+            string fullPath = Path.Combine(dataDirectory ?? String.Empty, relativePath);
             fullPath = Path.GetFullPath(fullPath);
 
             return fullPath;
         }
 
         public static string GetDataDirectory() {
-            string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
-            if (String.IsNullOrEmpty(dataDirectory))
-                dataDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            try {
+                string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
+                if (String.IsNullOrEmpty(dataDirectory))
+                    dataDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
-            return Path.GetFullPath(dataDirectory);
+                return Path.GetFullPath(dataDirectory);
+            } catch (Exception) {
+                return null;
+            }
         }
     }
 }

@@ -8,8 +8,8 @@
         }
     },
     "dependencies": {
-        "dotnet-test-xunit": "1.0.0-rc2-*",
-        "Exceptionless.RandomData": "1.1.23",
+        "dotnet-test-xunit": "2.2.0-preview2-build1029",
+        "Exceptionless.RandomData": "1.1.24",
         "Foundatio": {
             "target": "project"
         },
@@ -22,10 +22,10 @@
         "Foundatio.Tests": {
             "target": "project"
         },
-        "xunit": "2.1.0",
-        "xunit.extensibility.core": "2.1.0",
-        "xunit.extensibility.execution": "2.1.0",
-        "xunit.runner.visualstudio": "2.1.0"
+        "xunit": "2.2.0-beta2-build3300",
+        "xunit.extensibility.core": "2.2.0-beta2-build3300",
+        "xunit.extensibility.execution": "2.2.0-beta2-build3300",
+        "xunit.runner.visualstudio": "2.2.0-beta2-build1149"
     },
     "frameworks": {
         "NET46": {

@@ -2,11 +2,11 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Extensions;
 using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
-using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Xunit;
 using Foundatio.Utility;
@@ -54,7 +54,7 @@ namespace Foundatio.Tests.Messaging {
                 var resetEvent = new AsyncManualResetEvent(false);
                 messageBus.Subscribe<object>(msg => {
                     resetEvent.Set();
-                    throw new ApplicationException();
+                    throw new Exception();
                 });
 
                 await Task.Delay(100);
@@ -160,7 +160,7 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(2);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
-                    throw new ApplicationException();
+                    throw new Exception();
                 });
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);

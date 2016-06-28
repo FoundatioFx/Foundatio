@@ -47,7 +47,9 @@ before_test:
 test_script:
   - ps: >-
       DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
-        dotnet test "$_" -c Release
+        Push-Location -Path "$_"
+        dotnet test -c Release
+        Pop-Location
         
         If ($LASTEXITCODE -ne 0) {
           throw "One or more tests failed."

@@ -4,14 +4,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Exceptionless;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.ServiceProviders;
-using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -81,7 +80,7 @@ namespace Foundatio.Tests.Jobs {
 
                 if (RandomData.GetBool(1)) {
                     Interlocked.Increment(ref errors);
-                    throw new ApplicationException("Boom!");
+                    throw new Exception("Boom!");
                 }
             });
 
@@ -200,7 +199,7 @@ namespace Foundatio.Tests.Jobs {
             handlerRegistry.Register<MyWorkItem>(ctx => {
                 var jobData = ctx.GetData<MyWorkItem>();
                 Assert.Equal("Test", jobData.SomeData);
-                throw new ApplicationException();
+                throw new Exception();
             });
 
             var jobId = await queue.EnqueueAsync(new MyWorkItem {

@@ -35,8 +35,7 @@
         "netstandard1.5": {
             "buildOptions": {
                 "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            },
-            "imports": "netcore50"
+            }
         },
         "net46": {
             "buildOptions": {

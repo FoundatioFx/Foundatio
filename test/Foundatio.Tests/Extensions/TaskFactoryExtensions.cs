@@ -20,9 +20,9 @@ namespace Foundatio.Tests.Extensions {
             var timer = new Timer(self => {
                 // Clean up both the cancellation token and the timer, and try to transition to completed
                 ctr.Dispose();
-                ((Timer)self).Dispose();
+                (self as Timer)?.Dispose();
                 tcs.TrySetResult(null);
-            });
+            }, null, -1, -1);
 
             // Register with the cancellation token.
             if (cancellationToken.CanBeCanceled) {
