@@ -146,9 +146,10 @@ namespace Foundatio.Tests.Caching {
             Assert.Equal(1, secondCache.LocalCacheHits);
 
             var sw = Stopwatch.StartNew();
-            await countdownEvent.WaitAsync(new CancellationTokenSource(500).Token);
+            await countdownEvent.WaitAsync(TimeSpan.FromMilliseconds(500));
             sw.Stop();
             _logger.Trace("Time {0}", sw.Elapsed);
+            Assert.Equal(0, countdownEvent.CurrentCount);
             Assert.Equal(0, firstCache.LocalCache.Count);
             Assert.Equal(0, secondCache.LocalCache.Count);
             //Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 200);

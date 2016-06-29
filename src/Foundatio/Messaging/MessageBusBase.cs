@@ -78,16 +78,18 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
         
-        protected override async Task<DateTime> DoMaintenanceAsync() {
+        protected override async Task<DateTime?> DoMaintenanceAsync() {
 	        if (_delayedMessages == null || _delayedMessages.Count == 0)
                 return DateTime.MaxValue;
-
+            
             DateTime nextMessageSendTime = DateTime.MaxValue;
-            var now = DateTime.UtcNow;
             var messagesToSend = new List<Guid>();
 
+            // Add 50ms to the current time so we can batch up any other messages that will 
+            // happen very shortly. Also the timer may run earilier than requested.
+            var sendTime = DateTime.UtcNow.AddMilliseconds(50);
             foreach (var pair in _delayedMessages) {
-                if (pair.Value.SendTime <= now)
+                if (pair.Value.SendTime <= sendTime)
                     messagesToSend.Add(pair.Key);
                 else if (pair.Value.SendTime < nextMessageSendTime)
                     nextMessageSendTime = pair.Value.SendTime;
@@ -97,12 +99,18 @@ namespace Foundatio.Messaging {
                 DelayedMessage message;
                 if (!_delayedMessages.TryRemove(messageId, out message))
                     continue;
-
-                _logger.Trace("DoMaintenance Send Delayed: {0}", message.MessageType);
+                
+                _logger.Trace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
 
+            _logger.Trace("DoMaintenance next message send time: {0}", nextMessageSendTime.ToString("o"));
             return nextMessageSendTime;
+        }
+
+        public override void Dispose() {
+            _delayedMessages?.Clear();
+            base.Dispose();
         }
 
         protected class DelayedMessage {

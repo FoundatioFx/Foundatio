@@ -56,13 +56,14 @@ namespace Foundatio.Messaging {
             if (message == null)
                 return;
 
-            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
-
+            
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
             }
 
+            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
             var data = await _serializer.SerializeAsync(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
@@ -77,7 +78,11 @@ namespace Foundatio.Messaging {
         }
 
         public override void Dispose() {
-            _subscriber.Unsubscribe(_topic);
+            if (_isSubscribed) {
+                _subscriber.Unsubscribe(_topic);
+                _isSubscribed = false;
+            }
+
             base.Dispose();
         }
     }

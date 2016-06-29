@@ -246,7 +246,7 @@ namespace Foundatio.Queues {
             return Task.CompletedTask;
         }
         
-        protected override async Task<DateTime> DoMaintenanceAsync() {
+        protected override async Task<DateTime?> DoMaintenanceAsync() {
             DateTime utcNow = DateTime.UtcNow;
             DateTime minAbandonAt = DateTime.MaxValue;
 

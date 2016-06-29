@@ -446,7 +446,7 @@ namespace Foundatio.Caching {
             }
         }
         
-        protected override async Task<DateTime> DoMaintenanceAsync() {
+        protected override async Task<DateTime?> DoMaintenanceAsync() {
             var expiredKeys = new List<string>();
 
             DateTime utcNow = DateTime.UtcNow;

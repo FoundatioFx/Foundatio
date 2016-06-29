@@ -417,6 +417,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromMinutes(1));
+                Assert.Equal(0, countdown.CurrentCount);
                 _logger.Trace((await metrics.GetCounterStatsAsync("work")).ToString());
 
                 var stats = await queue.GetQueueStatsAsync();

@@ -30,11 +30,11 @@ namespace Foundatio.Utility {
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
-            var now = DateTime.UtcNow;
-            if (!utcDate.HasValue || utcDate.Value < now)
-                utcDate = now;
+            var utcNow = DateTime.UtcNow;
+            if (!utcDate.HasValue || utcDate.Value < utcNow)
+                utcDate = utcNow;
 
-            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value}");
+            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value.ToString("O")}");
 
             if (utcDate == DateTime.MaxValue) {
                 _logger.Trace("Ignoring MaxValue");
@@ -43,7 +43,7 @@ namespace Foundatio.Utility {
 
             using (_lock.Lock()) {
                 // already have an earlier scheduled time
-                if (_next > now && utcDate > _next) {
+                if (_next > utcNow && utcDate > _next) {
                     _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
                     return;
                 }
@@ -54,7 +54,7 @@ namespace Foundatio.Utility {
                     return;
                 }
 
-                int delay = Math.Max((int)utcDate.Value.Subtract(now).TotalMilliseconds, 0);
+                int delay = Math.Max((int)Math.Ceiling(utcDate.Value.Subtract(utcNow).TotalMilliseconds), 0);
                 _next = utcDate.Value;
                 if (_last == DateTime.MinValue)
                     _last = _next;

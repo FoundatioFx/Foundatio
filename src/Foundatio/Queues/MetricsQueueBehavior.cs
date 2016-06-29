@@ -122,5 +122,10 @@ namespace Foundatio.Queues {
         protected string GetFullMetricName(string customMetricName, string name) {
             return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
         }
+
+        public override void Dispose() {
+            _timer?.Dispose();
+            base.Dispose();
+        }
     }
 }

@@ -90,7 +90,7 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual async Task CanSendDelayedMessage() {
-            const int numConcurrentMessages = 10000;
+            const int numConcurrentMessages = 1000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -120,7 +120,8 @@ namespace Foundatio.Tests.Messaging {
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 sw.Stop();
-                
+
+                Assert.Equal(0, countdown.CurrentCount);
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
             }
         }
@@ -149,6 +150,7 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
             }
         }
 
@@ -223,6 +225,7 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown.CurrentCount);
             }
         }
 
@@ -247,6 +250,7 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
             }
         }
 

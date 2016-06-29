@@ -47,7 +47,7 @@ namespace Foundatio.Queues {
             return Task.CompletedTask;
         }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             foreach (var disposable in _disposables)
                 disposable.Dispose();
         }

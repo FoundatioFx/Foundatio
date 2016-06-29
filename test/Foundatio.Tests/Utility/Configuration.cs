@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Utility {
         private static readonly IConfiguration _configuration;
         static Configuration() {
             _configuration = new ConfigurationBuilder()
-                .SetBasePath(Path.GetFullPath("../../../../"))
+                .SetBasePath(Path.GetFullPath("."))
                 .AddJsonFile("appsettings.json", true, true)
                 .AddEnvironmentVariables()
                 .Build();
