@@ -3,14 +3,15 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace FastClone.Internal {
     internal static class CloneExpressionHelper {
-        static readonly MethodInfo _fieldInfoSetValueMethod = typeof(FieldInfo).GetMethod("SetValue", new[] { typeof(object), typeof(object) });
+        static readonly MethodInfo _fieldInfoSetValueMethod = typeof(FieldInfo).GetMethod("SetValue", new[] { TypeHelper.ObjectType, TypeHelper.ObjectType });
         static readonly MethodInfo _dictionaryContainsKey = typeof(Dictionary<object, object>).GetMethod("ContainsKey");
         static readonly MethodInfo _dictionaryGetItem = typeof(Dictionary<object, object>).GetMethod("get_Item");
         static readonly MethodInfo _getTypeClonerMethodInfo = typeof(ObjectExtensions).GetMethod("GetTypeCloner", BindingFlags.NonPublic | BindingFlags.Static);
-        static readonly MethodInfo _getTypeMethodInfo = typeof(object).GetMethod("GetType");
+        static readonly MethodInfo _getTypeMethodInfo = TypeHelper.ObjectType.GetMethod("GetType");
         static readonly MethodInfo _invokeMethodInfo = typeof(Func<object, Dictionary<object, object>, object>).GetMethod("Invoke");
 
         /// <summary>
@@ -27,7 +28,7 @@ namespace FastClone.Internal {
         internal static Expression CreateSetFieldExpression(Expression clone, Expression value, FieldInfo fieldInfo) {
             // workaround for readonly fields: use reflection, this is a lot slower but the only way except using il directly
             if (fieldInfo.IsInitOnly)
-                return Expression.Call(Expression.Constant(fieldInfo), _fieldInfoSetValueMethod, clone, Expression.Convert(value, typeof(object)));
+                return Expression.Call(Expression.Constant(fieldInfo), _fieldInfoSetValueMethod, clone, Expression.Convert(value, TypeHelper.ObjectType));
 
             return Expression.Assign(Expression.Field(clone, fieldInfo), value);
         }

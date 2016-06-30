@@ -12,7 +12,6 @@ using Nito.AsyncEx;
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T> where T : class {
         private readonly string _connectionString;
-        private readonly string _queueName;
         private readonly NamespaceManager _namespaceManager;
         private QueueClient _queueClient;
         private long _enqueuedCount;
@@ -29,7 +28,7 @@ namespace Foundatio.Queues {
 
         public AzureServiceBusQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, RetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null, TimeSpan? autoDeleteOnIdle = null, TimeSpan? defaultMessageTimeToLive = null) : base(serializer, behaviors, loggerFactory) {
             _connectionString = connectionString;
-            _queueName = queueName ?? typeof(T).Name;
+            _queueName = queueName ?? _queueName;
             _namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
             _retries = retries;
             _retryPolicy = retryPolicy;

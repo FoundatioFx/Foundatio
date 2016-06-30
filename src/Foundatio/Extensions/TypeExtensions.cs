@@ -1,13 +1,27 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Reflection;
+using Foundatio.Utility;
 
 namespace Foundatio.Extensions {
     public static class TypeExtensions {
         public static bool IsNumeric(this Type type) {
             if (type.IsArray)
                 return false;
-
+            
+            if (type == TypeHelper.ByteType ||
+                type == TypeHelper.DecimalType ||
+                type == TypeHelper.DoubleType ||
+                type == TypeHelper.Int16Type ||
+                type == TypeHelper.Int32Type ||
+                type == TypeHelper.Int64Type ||
+                type == TypeHelper.SByteType ||
+                type == TypeHelper.SingleType ||
+                type == TypeHelper.UInt16Type ||
+                type == TypeHelper.UInt32Type ||
+                type == TypeHelper.UInt64Type)
+                return true;
+            
             switch (Type.GetTypeCode(type)) {
                 case TypeCode.Byte:
                 case TypeCode.Decimal:
@@ -26,6 +40,15 @@ namespace Foundatio.Extensions {
             return false;
         }
 
+
+        public static bool IsNullableNumeric(this Type type) {
+            if (type.IsArray)
+                return false;
+
+            var t = Nullable.GetUnderlyingType(type);
+            return t != null && t.IsNumeric();
+        }
+
         public static T ToType<T>(this object value) {
             if (value == null)
                 throw new ArgumentNullException(nameof(value));
@@ -37,7 +60,8 @@ namespace Foundatio.Extensions {
             if (targetType.IsAssignableFrom(valueType))
                 return (T)value;
 
-            if ((valueType.GetTypeInfo().IsEnum || value is string) && targetType.GetTypeInfo().IsEnum) {
+            TypeInfo targetTypeInfo = targetType.GetTypeInfo();
+            if (targetTypeInfo.IsEnum && (value is string || valueType.GetTypeInfo().IsEnum)) {
                 // attempt to match enum by name.
                 if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString())) {
                     object parsedValue = Enum.Parse(targetType, value.ToString(), false);
@@ -48,7 +72,7 @@ namespace Foundatio.Extensions {
                 throw new ArgumentException(message);
             }
 
-            if (valueType.IsNumeric() && targetType.GetTypeInfo().IsEnum)
+            if (targetTypeInfo.IsEnum && valueType.IsNumeric())
                 return (T)Enum.ToObject(targetType, value);
 
             if (converter.CanConvertFrom(valueType)) {

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.Serialization;
+using Foundatio.Utility;
 
 namespace FastClone.Internal {
     internal class CloneExpressionBuilder {
@@ -11,7 +12,7 @@ namespace FastClone.Internal {
         static readonly MethodInfo _arrayGetLengthMethodInfo = typeof(Array).GetMethod("GetLength");
         static readonly MethodInfo _dictionaryAddMethodInfo = typeof(Dictionary<object, object>).GetMethod("Add");
 #if NETSTANDARD
-        static readonly MethodInfo _getUninitializedObjectMethodInfo = typeof(string).GetTypeInfo().Assembly.GetType("System.Runtime.Serialization.FormatterServices")
+        static readonly MethodInfo _getUninitializedObjectMethodInfo = TypeHelper.StringType.GetTypeInfo().Assembly.GetType("System.Runtime.Serialization.FormatterServices")
             .GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 #else
         static readonly MethodInfo _getUninitializedObjectMethodInfo = typeof(FormatterServices).GetMethod("GetUninitializedObject", BindingFlags.Static | BindingFlags.Public);
@@ -19,7 +20,7 @@ namespace FastClone.Internal {
 
         readonly List<Expression> _expressions = new List<Expression>();
         readonly ParameterExpression _objectDictionary = Expression.Parameter(typeof(Dictionary<object, object>), "objectDictionary");
-        readonly ParameterExpression _original = Expression.Parameter(typeof(object), "original");
+        readonly ParameterExpression _original = Expression.Parameter(TypeHelper.ObjectType, "original");
         readonly Type _type;
         readonly List<ParameterExpression> _variables = new List<ParameterExpression>();
 
@@ -51,7 +52,7 @@ namespace FastClone.Internal {
             }
 
             if (_type.GetTypeInfo().IsValueType)
-                resultExpression = Expression.Convert(resultExpression, typeof(object));
+                resultExpression = Expression.Convert(resultExpression, TypeHelper.ObjectType);
 
             var expr = Expression.Lambda<Func<object, Dictionary<object, object>, object>>(resultExpression, _original, _objectDictionary);
             return expr.Compile();
@@ -74,7 +75,7 @@ namespace FastClone.Internal {
             _expressions.Add(Expression.Assign(_clone, Expression.Convert(Expression.Call(_getUninitializedObjectMethodInfo, Expression.Constant(_type)), _type)));
 
             if (!_type.GetTypeInfo().IsValueType)
-                _expressions.Add(Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, typeof(object))));
+                _expressions.Add(Expression.Call(_objectDictionary, _dictionaryAddMethodInfo, _original, Expression.Convert(_clone, TypeHelper.ObjectType)));
 
             // Generate the expressions required to transfer the type field by field
             GenerateFieldBasedComplexTypeTransferExpressions(_type, _typedOriginal, _clone, _expressions);
@@ -83,7 +84,7 @@ namespace FastClone.Internal {
             _expressions.Add(_clone);
         }
 
-        static bool TypeIsPrimitiveOrString(Type type) { return type.GetTypeInfo().IsPrimitive || (type == typeof(string)); }
+        static bool TypeIsPrimitiveOrString(Type type) { return type.GetTypeInfo().IsPrimitive || (type == TypeHelper.StringType); }
 
         /// <summary>
         /// Generates state transfer expressions to copy an array of primitive types
@@ -118,12 +119,12 @@ namespace FastClone.Internal {
             // Retrieve the length of each of the array's dimensions
             for (int index = 0; index < dimensionCount; ++index) {
                 // Obtain the length of the array in the current dimension
-                lengths.Add(Expression.Variable(typeof(int)));
+                lengths.Add(Expression.Variable(TypeHelper.Int32Type));
                 arrayVariables.Add(lengths[index]);
                 arrayExpressions.Add(Expression.Assign(lengths[index], Expression.Call(originalArray, _arrayGetLengthMethodInfo, Expression.Constant(index))));
 
                 // Set up a variable to index the array in this dimension
-                indexes.Add(Expression.Variable(typeof(int)));
+                indexes.Add(Expression.Variable(TypeHelper.Int32Type));
                 arrayVariables.Add(indexes[index]);
 
                 // Also set up a label than can be used to break out of the dimension's transfer loop
@@ -256,12 +257,12 @@ namespace FastClone.Internal {
 
             var typeInfo = type.GetTypeInfo();
             // If this class doesn't have a base, don't waste any time
-            if (typeInfo.BaseType == typeof(object))
+            if (typeInfo.BaseType == TypeHelper.ObjectType)
                 return fieldInfos;
 
             // Otherwise, collect all types up to the furthest base class
             List<FieldInfo> fieldInfoList = new List<FieldInfo>(fieldInfos);
-            while (type != null && typeInfo.BaseType != typeof(object)) {
+            while (type != null && typeInfo.BaseType != TypeHelper.ObjectType) {
                 type = typeInfo.BaseType;
                 if (type == null)
                     continue;

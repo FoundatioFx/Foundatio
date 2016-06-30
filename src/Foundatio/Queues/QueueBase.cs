@@ -10,6 +10,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T> : MaintenanceBase, IQueue<T> where T : class {
+        protected string _queueName = typeof(T).Name;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
 
@@ -140,7 +141,7 @@ namespace Foundatio.Queues {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public override void Dispose() {
-            _logger.Trace("Queue {0} dispose", typeof(T).Name);
+            _logger.Trace("Queue {0} dispose", _queueName);
 
             base.Dispose();
 

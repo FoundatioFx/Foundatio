@@ -17,7 +17,6 @@ using StackExchange.Redis;
 
 namespace Foundatio.Queues {
     public class RedisQueue<T> : QueueBase<T> where T : class {
-        private readonly string _queueName;
         protected readonly ConnectionMultiplexer _connectionMultiplexer;
         protected readonly ISubscriber _subscriber;
         protected readonly RedisCacheClient _cache;
@@ -48,7 +47,7 @@ namespace Foundatio.Queues {
             _connectionMultiplexer = connection;
             _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _cache = new RedisCacheClient(connection, _serializer);
-            _queueName = queueName ?? typeof(T).Name;
+            _queueName = queueName ?? _queueName;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
             QueueListName = "q:" + _queueName + ":in";
             WorkListName = "q:" + _queueName + ":work";

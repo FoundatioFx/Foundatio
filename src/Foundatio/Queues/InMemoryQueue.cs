@@ -63,7 +63,7 @@ namespace Foundatio.Queues {
 
         protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
-            _logger.Trace("Queue {0} enqueue item: {1}", typeof(T).Name, id);
+            _logger.Trace("Queue {0} enqueue item: {1}", _queueName, id);
 
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
@@ -86,15 +86,15 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            _logger.Trace("Queue {0} start working", typeof(T).Name);
+            _logger.Trace("Queue {0} start working", _queueName);
 
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken).Token;
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {0}", typeof(T).Name);
+                _logger.Trace("WorkerLoop Start {0}", _queueName);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {0}", typeof(T).Name);
+                    _logger.Trace("WorkerLoop Signaled {0}", _queueName);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
@@ -124,7 +124,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
-            _logger.Trace("Queue {type} dequeuing item...", typeof(T).Name);
+            _logger.Trace("Queue {type} dequeuing item...", _queueName);
             _logger.Trace("Queue count: {0}", _queue.Count);
 
             if (_queue.Count == 0 && !cancellationToken.IsCancellationRequested) {
@@ -166,7 +166,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} renew lock item: {1}", typeof(T).Name, entry.Id);
+            _logger.Trace("Queue {0} renew lock item: {1}", _queueName, entry.Id);
             var item = entry as QueueEntry<T>;
 
             _dequeued.AddOrUpdate(entry.Id, item, (key, value) => {
@@ -180,7 +180,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} complete item: {1}", typeof(T).Name, entry.Id);
+            _logger.Trace("Queue {0} complete item: {1}", _queueName, entry.Id);
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
@@ -192,7 +192,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} abandon item: {1}", typeof(T).Name, entry.Id);
+            _logger.Trace("Queue {0} abandon item: {1}", _queueName, entry.Id);
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
@@ -233,7 +233,7 @@ namespace Foundatio.Queues {
         }
 
         public override Task DeleteQueueAsync() {
-            _logger.Trace("Deleting queue: {type}", typeof(T).Name);
+            _logger.Trace("Deleting queue: {type}", _queueName);
             _queue.Clear();
             _deadletterQueue.Clear();
             _dequeued.Clear();

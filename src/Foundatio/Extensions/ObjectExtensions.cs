@@ -3,11 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using FastClone.Internal;
+using Foundatio.Utility;
 
 namespace Foundatio.Extensions {
     public static class ObjectExtensions {
         public static bool IsPrimitive(this Type type) {
-            if (type == typeof(string))
+            if (type == TypeHelper.StringType)
                 return true;
 
             var typeInfo = type.GetTypeInfo();
