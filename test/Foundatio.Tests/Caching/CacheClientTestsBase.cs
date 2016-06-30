@@ -358,98 +358,104 @@ namespace Foundatio.Tests.Caching {
         }
 
         public virtual async Task MeasureThroughput() {
-            var cacheClient = GetCacheClient();
-            if (cacheClient == null)
+            var cache = GetCacheClient();
+            if (cache == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            using (cache) {
+                await cache.RemoveAllAsync();
 
-            var start = DateTime.UtcNow;
-            const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++) {
-                await cacheClient.SetAsync("test", 13422);
-                await cacheClient.SetAsync("flag", true);
-                Assert.Equal(13422, (await cacheClient.GetAsync<int>("test")).Value);
-                Assert.Null(await cacheClient.GetAsync<int>("test2"));
-                Assert.True((await cacheClient.GetAsync<bool>("flag")).Value);
-                await metrics.CounterAsync("work");
+                var start = DateTime.UtcNow;
+                const int itemCount = 10000;
+                var metrics = new InMemoryMetricsClient();
+                for (int i = 0; i < itemCount; i++) {
+                    await cache.SetAsync("test", 13422);
+                    await cache.SetAsync("flag", true);
+                    Assert.Equal(13422, (await cache.GetAsync<int>("test")).Value);
+                    Assert.Null(await cache.GetAsync<int>("test2"));
+                    Assert.True((await cache.GetAsync<bool>("flag")).Value);
+                    await metrics.CounterAsync("work");
+                }
+
+                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         public virtual async Task MeasureSerializerSimpleThroughput() {
-            var cacheClient = GetCacheClient();
-            if (cacheClient == null)
+            var cache = GetCacheClient();
+            if (cache == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            using (cache) {
+                await cache.RemoveAllAsync();
 
-            var start = DateTime.UtcNow;
-            const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++) {
-                await cacheClient.SetAsync("test", new SimpleModel {
-                    Data1 = "Hello",
-                    Data2 = 12
-                });
-                var model = await cacheClient.GetAsync<SimpleModel>("test");
-                Assert.True(model.HasValue);
-                Assert.Equal("Hello", model.Value.Data1);
-                Assert.Equal(12, model.Value.Data2);
-                await metrics.CounterAsync("work");
+                var start = DateTime.UtcNow;
+                const int itemCount = 10000;
+                var metrics = new InMemoryMetricsClient();
+                for (int i = 0; i < itemCount; i++) {
+                    await cache.SetAsync("test", new SimpleModel {
+                                             Data1 = "Hello",
+                                             Data2 = 12
+                                         });
+                    var model = await cache.GetAsync<SimpleModel>("test");
+                    Assert.True(model.HasValue);
+                    Assert.Equal("Hello", model.Value.Data1);
+                    Assert.Equal(12, model.Value.Data2);
+                    await metrics.CounterAsync("work");
+                }
+
+                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         public virtual async Task MeasureSerializerComplexThroughput() {
-            var cacheClient = GetCacheClient();
-            if (cacheClient == null)
+            var cache = GetCacheClient();
+            if (cache == null)
                 return;
 
-            await cacheClient.RemoveAllAsync();
+            using (cache) {
+                await cache.RemoveAllAsync();
 
-            var start = DateTime.UtcNow;
-            const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient();
-            for (int i = 0; i < itemCount; i++) {
-                await cacheClient.SetAsync("test", new ComplexModel {
-                    Data1 = "Hello",
-                    Data2 = 12,
-                    Data3 = true,
-                    Simple = new SimpleModel {
-                        Data1 = "hi",
-                        Data2 = 13
-                    },
-                    Simples = new List<SimpleModel> {
-                        new SimpleModel {
-                            Data1 = "hey",
-                            Data2 = 45
+                var start = DateTime.UtcNow;
+                const int itemCount = 10000;
+                var metrics = new InMemoryMetricsClient();
+                for (int i = 0; i < itemCount; i++) {
+                    await cache.SetAsync("test", new ComplexModel {
+                        Data1 = "Hello",
+                        Data2 = 12,
+                        Data3 = true,
+                        Simple = new SimpleModel {
+                            Data1 = "hi",
+                            Data2 = 13
                         },
-                        new SimpleModel {
-                            Data1 = "next",
-                            Data2 = 3423
+                        Simples = new List<SimpleModel> {
+                            new SimpleModel {
+                                Data1 = "hey",
+                                Data2 = 45
+                            },
+                            new SimpleModel {
+                                Data1 = "next",
+                                Data2 = 3423
+                            }
+                        },
+                        DictionarySimples = new Dictionary<string, SimpleModel> {
+                            { "sdf", new SimpleModel { Data1 = "Sachin" } }
+                        },
+
+                        DerivedDictionarySimples = new SampleDictionary<string, SimpleModel> {
+                            { "sdf", new SimpleModel { Data1 = "Sachin" } }
                         }
-                    },
-                    DictionarySimples = new Dictionary<string, SimpleModel> {
-                        { "sdf", new SimpleModel { Data1 = "Sachin" } }
-                    },
+                    });
 
-                    DerivedDictionarySimples = new SampleDictionary<string, SimpleModel> {
-                        { "sdf", new SimpleModel { Data1 = "Sachin" } }
-                    }
-                });
+                    var model = await cache.GetAsync<ComplexModel>("test");
+                    Assert.True(model.HasValue);
+                    Assert.Equal("Hello", model.Value.Data1);
+                    Assert.Equal(12, model.Value.Data2);
+                    await metrics.CounterAsync("work");
+                }
 
-                var model = await cacheClient.GetAsync<ComplexModel>("test");
-                Assert.True(model.HasValue);
-                Assert.Equal("Hello", model.Value.Data1);
-                Assert.Equal(12, model.Value.Data2);
-                await metrics.CounterAsync("work");
+                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
         }
 
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {}
