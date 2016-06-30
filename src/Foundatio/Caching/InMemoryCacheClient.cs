@@ -30,10 +30,11 @@ namespace Foundatio.Caching {
 
         public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
 
-        protected virtual async Task OnItemExpiredAsync(string key) {
+        private async Task OnItemExpiredAsync(string key, bool sendNotification = true) {
             var args = new ItemExpiredEventArgs {
                 Client = this,
-                Key = key
+                Key = key,
+                SendNotification = sendNotification
             };
 
             await (ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
@@ -55,17 +56,13 @@ namespace Foundatio.Caching {
                 _memory.Clear();
                 return Task.FromResult(count);
             }
-
-            if (!keys.Any())
-                return Task.FromResult(0);
-
+            
             int removed = 0;
             foreach (var key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
 
                 _logger.Trace("RemoveAllAsync: Removing key {0}", key);
-
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
                     removed++;
@@ -77,18 +74,23 @@ namespace Foundatio.Caching {
         public Task<int> RemoveByPrefixAsync(string prefix) {
             var keysToRemove = new List<string>();
             var regex = new Regex(String.Concat(prefix, "*").Replace("*", ".*").Replace("?", ".+"));
-            var enumerator = _memory.GetEnumerator();
             try {
-                while (enumerator.MoveNext()) {
-                    var current = enumerator.Current;
-                    if (regex.IsMatch(current.Key) || current.Value.ExpiresAt < DateTime.UtcNow)
-                        keysToRemove.Add(current.Key);
-                }
+                foreach (var key in _memory.Keys.ToList())
+                    if (regex.IsMatch(key))
+                        keysToRemove.Add(key);
             } catch (Exception ex) {
                 _logger.Error(ex, "Error trying to remove items from cache with this {0} prefix", prefix);
             }
 
             return RemoveAllAsync(keysToRemove);
+        }
+        
+        internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
+            _logger.Trace("Removing expired key {0}", key);
+
+            CacheEntry cacheEntry;
+            _memory.TryRemove(key, out cacheEntry);
+            return OnItemExpiredAsync(key, sendNotification);
         }
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
@@ -102,10 +104,7 @@ namespace Foundatio.Caching {
             }
 
             if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
-                _logger.Trace("TryGetAsync: Removing expired key {0}", key);
-
-                _memory.TryRemove(key, out cacheEntry);
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 Interlocked.Increment(ref _misses);
                 return CacheValue<T>.NoValue;
             }
@@ -151,8 +150,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentException("Key cannot be null or empty.");
 
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return -1;
             }
 
@@ -181,18 +179,17 @@ namespace Foundatio.Caching {
             if (expiresIn.HasValue)
                 ScheduleNextMaintenance(expiresAt);
 
-            Cleanup();
+            await CleanupAsync().AnyContext();
 
             return difference;
         }
-
+        
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return -1;
             }
 
@@ -221,7 +218,7 @@ namespace Foundatio.Caching {
             if (expiresIn.HasValue)
                 ScheduleNextMaintenance(expiresAt);
 
-            Cleanup();
+            await CleanupAsync().AnyContext();
 
             return difference;
         }
@@ -233,17 +230,12 @@ namespace Foundatio.Caching {
             // TODO: Look up the existing expiration if expiresIn is null.
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
-                _logger.Trace("Removing expired key {0}", key);
-
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
-
-
+            
             var entry = new CacheEntry(new List<T> { value }, expiresAt, ShouldCloneValues);
-            _memory.AddOrUpdate(key, entry, (k, cacheEntry) =>
-            {
+            _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
                 var collection = cacheEntry.Value as ICollection<T>;
                 if (collection == null)
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
@@ -255,14 +247,14 @@ namespace Foundatio.Caching {
             });
 
             ScheduleNextMaintenance(expiresAt);
-
-            Cleanup();
+            await CleanupAsync().AnyContext();
 
             return true;
         }
 
-        private void Cleanup() {
-            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value) return;
+        private async Task CleanupAsync() {
+            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
+                return;
 
             string oldest = _memory.ToArray()
                                    .OrderBy(kvp => kvp.Value.LastAccessTicks)
@@ -274,6 +266,8 @@ namespace Foundatio.Caching {
 
             CacheEntry cacheEntry;
             _memory.TryRemove(oldest, out cacheEntry);
+            if (cacheEntry != null && cacheEntry.ExpiresAt < DateTime.UtcNow)
+                await OnItemExpiredAsync(oldest).AnyContext();
         }
 
         public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -282,10 +276,7 @@ namespace Foundatio.Caching {
 
             DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < DateTime.UtcNow) {
-                _logger.Trace("Removing expired key {0}", key);
-
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
             
@@ -316,10 +307,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentException("SetInternalAsync: Key cannot be null or empty.");
 
             if (entry.ExpiresAt < DateTime.UtcNow) {
-                _logger.Trace("SetInternalAsync: Removing expired key {0}", key);
-
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
 
@@ -339,8 +327,7 @@ namespace Foundatio.Caching {
             }
 
             ScheduleNextMaintenance(entry.ExpiresAt);
-
-            Cleanup();
+            await CleanupAsync().AnyContext();
 
             return true;
         }
@@ -372,8 +359,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentException("Key cannot be null or empty.");
 
             if (expiresIn?.Ticks < 0) {
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return -1;
             }
             
@@ -421,10 +407,7 @@ namespace Foundatio.Caching {
             if (value.ExpiresAt >= DateTime.UtcNow)
                 return value.ExpiresAt.Subtract(DateTime.UtcNow);
 
-            _logger.Trace("GetExpirationAsync: Removing expired key {key}", key);
-
-            _memory.TryRemove(key, out value);
-            await OnItemExpiredAsync(key).AnyContext();
+            await RemoveExpiredKeyAsync(key).AnyContext();
             return null;
         }
 
@@ -434,8 +417,7 @@ namespace Foundatio.Caching {
 
             DateTime expiresAt = DateTime.UtcNow.Add(expiresIn);
             if (expiresAt < DateTime.UtcNow) {
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
+                await RemoveExpiredKeyAsync(key).AnyContext();
                 return;
             }
 
@@ -447,19 +429,17 @@ namespace Foundatio.Caching {
         }
         
         protected override async Task<DateTime?> DoMaintenanceAsync() {
+            _logger.Trace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
-            DateTime utcNow = DateTime.UtcNow;
+            DateTime utcNow = DateTime.UtcNow.AddMilliseconds(50);
             DateTime minExpiration = DateTime.MaxValue;
-
-            var enumerator = _memory.GetEnumerator();
+            
             try {
-                while (enumerator.MoveNext()) {
-                    var current = enumerator.Current;
-
-                    var expiresAt = current.Value.ExpiresAt;
+                foreach (var kvp in _memory) {
+                    var expiresAt = kvp.Value.ExpiresAt;
                     if (expiresAt <= utcNow)
-                        expiredKeys.Add(current.Key);
+                        expiredKeys.Add(kvp.Key);
                     else if (expiresAt < minExpiration)
                         minExpiration = expiresAt;
                 }
@@ -467,12 +447,8 @@ namespace Foundatio.Caching {
                 _logger.Error(ex, "Error trying to find expired cache items.");
             }
 
-            foreach (var key in expiredKeys) {
-                _logger.Trace("Removing expired key: key={key}", key);
-
-                await this.RemoveAsync(key).AnyContext();
-                await OnItemExpiredAsync(key).AnyContext();
-            }
+            foreach (var key in expiredKeys)
+                await RemoveExpiredKeyAsync(key).AnyContext();
 
             return minExpiration;
         }
@@ -517,14 +493,14 @@ namespace Foundatio.Caching {
             }
 
             public T GetValue<T>() {
-                var val = Value;
-                if (typeof(T) == typeof(Int16) || typeof(T) == typeof(Int32) || typeof(T) == typeof(Int64) ||
-                    typeof(T) == typeof(bool) || typeof(T) == typeof(double))
-                    return (T)Convert.ChangeType(val, typeof(T));
+                object val = Value;
+                Type t = typeof(T);
+                
+                if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t == TypeHelper.ObjectType || t.IsNumeric())
+                    return (T)Convert.ChangeType(val, t);
 
-                if (typeof(T) == typeof(Int16?) || typeof(T) == typeof(Int32?) || typeof(T) == typeof(Int64?) ||
-                    typeof(T) == typeof(bool?) || typeof(T) == typeof(double?))
-                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(typeof(T)));
+                if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
+                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t));
 
                 return (T)val;
             }
@@ -533,10 +509,13 @@ namespace Foundatio.Caching {
                 if (t == null)
                     return true;
 
-                if (t == typeof(Int16) || t == typeof(Int32) || t == typeof(Int64) ||
-                    t == typeof(bool) || t == typeof(double) || t == typeof(string) ||
-                    t == typeof(Int16?) || t == typeof(Int32?) || t == typeof(Int64?) ||
-                    t == typeof(bool?) || t == typeof(double?))
+                if (t == TypeHelper.BoolType ||
+                    t == TypeHelper.NullableBoolType || 
+                    t == TypeHelper.StringType || 
+                    t == TypeHelper.CharType || 
+                    t == TypeHelper.NullableCharType || 
+                    t.IsNumeric() || 
+                    t.IsNullableNumeric())
                     return false;
 
                 return !t.GetTypeInfo().IsValueType;
@@ -547,5 +526,6 @@ namespace Foundatio.Caching {
     public class ItemExpiredEventArgs : EventArgs {
         public InMemoryCacheClient Client { get; set; }
         public string Key { get; set; }
+        public bool SendNotification { get; set; }
     }
 }
