@@ -255,8 +255,6 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual async Task WontKeepMessagesWithNoSubscribers() {
-            Log.MinimumLevel = LogLevel.Trace;
-
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Tests.Caching;
 using Xunit;
@@ -56,8 +55,7 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanIncrementAndExpire() {
             return base.CanIncrementAndExpire();
         }
-
-
+        
         [Fact]
         public override Task CanRemoveByPrefix() {
             return base.CanRemoveByPrefix();

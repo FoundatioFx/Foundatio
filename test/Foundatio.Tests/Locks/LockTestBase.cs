@@ -131,8 +131,6 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task WillThrottleCalls() {
-            Log.MinimumLevel = LogLevel.Trace;
-
             const int allowedLocks = 25;
             var period = TimeSpan.FromSeconds(1);
             var locker = GetThrottlingLockProvider(allowedLocks, period);

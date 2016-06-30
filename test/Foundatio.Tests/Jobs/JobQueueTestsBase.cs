@@ -48,9 +48,7 @@ namespace Foundatio.Tests.Jobs {
             const int allowedLockCount = 5;
             var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero);
             await queue.DeleteQueueAsync();
-
-            Log.MinimumLevel = LogLevel.Trace;
-
+            
             var enqueueTask = Run.InParallel(workItemCount, async index => {
                 await queue.EnqueueAsync(new SampleQueueWorkItem {
                     Created = DateTime.Now,

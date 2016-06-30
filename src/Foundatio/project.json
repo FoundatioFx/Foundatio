@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -27,7 +27,7 @@
     },
     "dependencies": {
         "Newtonsoft.Json": "9.0.1",
-        "Nito.AsyncEx.Coordination": "1.0.0-beta-2"
+        "Nito.AsyncEx.Coordination": "1.0.0-delta-2"
     },
     "frameworks": {
         "netstandard1.5": {

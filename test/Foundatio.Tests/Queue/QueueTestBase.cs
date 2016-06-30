@@ -494,9 +494,9 @@ namespace Foundatio.Tests.Queue {
 
         public virtual async Task CanRunWorkItemWithMetrics() {
             int completedCount = 0;
-            Log.MinimumLevel = LogLevel.Trace;
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
-            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
+            //Log.MinimumLevel = LogLevel.Trace;
+            //Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
+            //Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
 
             var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log);
             var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
