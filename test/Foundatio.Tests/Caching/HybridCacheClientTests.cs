@@ -123,7 +123,7 @@ namespace Foundatio.Tests.Caching {
 
                     string cacheKey = "willexpireremote";
                     _logger.Trace("First Set");
-                    await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150));
+                    Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150)));
                     _logger.Trace("Done First Set");
                     Assert.Equal(1, firstCache.LocalCache.Count);
             
