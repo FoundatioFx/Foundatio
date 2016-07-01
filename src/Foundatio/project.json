@@ -27,7 +27,7 @@
     },
     "dependencies": {
         "Newtonsoft.Json": "9.0.1",
-        "Nito.AsyncEx.Coordination": "1.0.0-delta-2"
+        "Nito.AsyncEx.Coordination": "1.0.0-delta-4"
     },
     "frameworks": {
         "netstandard1.5": {
