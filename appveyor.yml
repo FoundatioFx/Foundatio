@@ -52,8 +52,12 @@ test_script:
         Pop-Location
         
         If ($LASTEXITCODE -ne 0) {
-          throw "One or more tests failed."
+          $testFailure = $True
         }
+      }
+      
+      If ($testFailure) {
+        throw "One or more tests failed."
       }
 
 after_test:
