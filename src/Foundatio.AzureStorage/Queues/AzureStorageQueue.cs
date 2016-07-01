@@ -13,7 +13,6 @@ using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
-        private readonly string _queueName;
         private readonly CloudQueue _queueReference;
         private readonly CloudQueue _deadletterQueueReference;
         private long _enqueuedCount;
@@ -34,7 +33,9 @@ namespace Foundatio.Queues {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudQueueClient();
 
-            _queueName = queueName;
+            if (!String.IsNullOrEmpty(queueName))
+                _queueName = queueName;
+
             _queueReference = client.GetQueueReference(queueName);
             _deadletterQueueReference = client.GetQueueReference($"{queueName}-deadletter");
             

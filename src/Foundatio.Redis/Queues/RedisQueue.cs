@@ -47,7 +47,9 @@ namespace Foundatio.Queues {
             _connectionMultiplexer = connection;
             _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _cache = new RedisCacheClient(connection, _serializer);
-            _queueName = queueName ?? _queueName;
+
+            if (!String.IsNullOrEmpty(queueName))
+                _queueName = queueName;
             _queueName = _queueName.RemoveWhiteSpace().Replace(':', '-');
             QueueListName = "q:" + _queueName + ":in";
             WorkListName = "q:" + _queueName + ":work";

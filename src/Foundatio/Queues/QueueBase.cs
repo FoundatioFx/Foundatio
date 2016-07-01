@@ -142,9 +142,15 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
-
             base.Dispose();
 
+            Abandoned?.Dispose();
+            Completed?.Dispose();
+            Dequeued?.Dispose();
+            Enqueued?.Dispose();
+            Enqueuing?.Dispose();
+            LockRenewed?.Dispose();
+            
             // ReSharper disable once SuspiciousTypeConversion.Global
             var disposableSerializer = _serializer as IDisposable;
             disposableSerializer?.Dispose();

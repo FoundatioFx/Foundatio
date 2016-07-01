@@ -623,9 +623,9 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
                 await workItem.AbandonAsync();
-                Assert.ThrowsAny<Exception>(() => workItem.AbandonAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => workItem.CompleteAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => workItem.CompleteAsync().GetAwaiter().GetResult());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.AbandonAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.CompleteAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.CompleteAsync());
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Abandoned);
@@ -646,10 +646,10 @@ namespace Foundatio.Tests.Queue {
                 workItem = await queue.DequeueAsync(TimeSpan.Zero);
 
                 await queue.AbandonAsync(workItem);
-                Assert.ThrowsAny<Exception>(() => workItem.CompleteAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => workItem.AbandonAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => queue.AbandonAsync(workItem).GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => queue.CompleteAsync(workItem).GetAwaiter().GetResult());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.CompleteAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.AbandonAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await queue.AbandonAsync(workItem));
+                await Assert.ThrowsAnyAsync<Exception>(async () => await queue.CompleteAsync(workItem));
             }
         }
         
@@ -670,9 +670,9 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
                 await workItem.CompleteAsync();
-                Assert.ThrowsAny<Exception>(() => workItem.CompleteAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => workItem.AbandonAsync().GetAwaiter().GetResult());
-                Assert.ThrowsAny<Exception>(() => workItem.AbandonAsync().GetAwaiter().GetResult());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.CompleteAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.AbandonAsync());
+                await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.AbandonAsync());
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Abandoned);
                 Assert.Equal(1, stats.Completed);

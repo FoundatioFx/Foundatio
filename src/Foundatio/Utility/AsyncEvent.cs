@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 
 namespace Foundatio.Utility {
-    public class AsyncEvent<TEventArgs> : IObservable<TEventArgs> where TEventArgs : EventArgs {
+    public class AsyncEvent<TEventArgs> : IObservable<TEventArgs>, IDisposable where TEventArgs : EventArgs {
         private readonly List<Func<object, TEventArgs, Task>> _invocationList = new List<Func<object, TEventArgs, Task>>();
         private readonly object _lockObject = new object();
         private readonly bool _parallelInvoke;
@@ -54,6 +54,11 @@ namespace Foundatio.Utility {
 
         public IDisposable Subscribe(IObserver<TEventArgs> observer) {
             return AddSyncHandler((sender, args) => observer.OnNext(args));
+        }
+
+        public void Dispose() {
+            lock (_lockObject)
+                _invocationList.Clear();
         }
 
         private class EventHandlerDisposable<T> : IDisposable where T : EventArgs {

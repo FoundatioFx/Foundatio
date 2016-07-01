@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Exceptionless;
@@ -126,6 +125,7 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
+                Assert.Equal(0, CountAllKeys());
 
                 string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -165,6 +165,7 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
+                Assert.Equal(0, CountAllKeys());
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 var workItem = await queue.DequeueAsync();
@@ -224,6 +225,7 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
+                Assert.Equal(0, CountAllKeys());
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 var workItem = await queue.DequeueAsync();
@@ -280,8 +282,9 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
-                var workItemIds = new List<string>();
+                Assert.Equal(0, CountAllKeys());
 
+                var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
                     var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
                     _logger.Trace(id);
@@ -461,7 +464,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     count += keys.Length;
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Error getting redis key count");
+                    _logger.Error(ex, "Error getting redis key count: {0}", ex.Message);
                 }
             }
 
