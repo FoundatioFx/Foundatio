@@ -316,7 +316,9 @@ namespace Foundatio.Caching {
             _scriptsLoaded = false;
         }
 
-        public void Dispose() {}
+        public void Dispose() {
+            _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+        }
         
         ISerializer IHaveSerializer.Serializer => _serializer;
 

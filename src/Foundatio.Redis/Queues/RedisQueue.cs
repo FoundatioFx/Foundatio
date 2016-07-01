@@ -568,9 +568,12 @@ namespace Foundatio.Queues {
         public override async void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
 
+            _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+            
             await _subscriber.UnsubscribeAllAsync().AnyContext();
             _queueDisposedCancellationTokenSource?.Cancel();
 
+            _cache.Dispose();
             base.Dispose();
         }
     }
