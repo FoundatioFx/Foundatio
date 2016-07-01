@@ -37,7 +37,9 @@
                 "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
-                "System.Xml": ""
+                "System.Xml": {
+                    "type": "build"
+                }
             }
         }
     }

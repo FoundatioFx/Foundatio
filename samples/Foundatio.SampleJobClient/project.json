@@ -19,8 +19,12 @@
                 "define": [ "NET46" ]
             },
             "frameworkAssemblies": {
-                "System.Threading.Tasks": "",
-                "System.Runtime": ""
+                "System.Threading.Tasks": {
+                    "type": "build"
+                },
+                "System.Runtime": {
+                    "type": "build"
+                }
             }
         }
     }
