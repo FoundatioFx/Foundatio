@@ -206,6 +206,7 @@ namespace Foundatio.Caching {
 
         public void Dispose() {
             _localCache.ItemExpired.RemoveHandler(OnItemExpired);
+            _localCache.Dispose();
             _messageBus.Dispose();
         }
 

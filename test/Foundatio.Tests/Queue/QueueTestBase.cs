@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Logging;

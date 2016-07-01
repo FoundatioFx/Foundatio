@@ -89,8 +89,10 @@ namespace Foundatio.Caching {
             _logger.Trace("Removing expired key {0}", key);
 
             CacheEntry cacheEntry;
-            _memory.TryRemove(key, out cacheEntry);
-            return OnItemExpiredAsync(key, sendNotification);
+            if (_memory.TryRemove(key, out cacheEntry))
+                return OnItemExpiredAsync(key, sendNotification);
+
+            return Task.CompletedTask;
         }
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {

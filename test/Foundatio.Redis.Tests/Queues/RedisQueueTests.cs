@@ -16,8 +16,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
         public RedisQueueTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
-            Assert.Equal(0, CountAllKeys());
+            while (CountAllKeys() != 0)
+                FlushAll();
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
@@ -125,7 +125,6 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
-                Assert.Equal(0, CountAllKeys());
 
                 string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -165,7 +164,6 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
-                Assert.Equal(0, CountAllKeys());
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 var workItem = await queue.DequeueAsync();
@@ -225,7 +223,6 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
-                Assert.Equal(0, CountAllKeys());
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 var workItem = await queue.DequeueAsync();
@@ -282,7 +279,6 @@ namespace Foundatio.Redis.Tests.Queues {
             
             using (queue) {
                 var db = SharedConnection.GetMuxer().GetDatabase();
-                Assert.Equal(0, CountAllKeys());
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
@@ -443,7 +439,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 try {
                     server.FlushAllDatabases();
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
+                    _logger.Error(ex, "Error flushing redis: {0}", ex.Message);
                 }
             }
         }
