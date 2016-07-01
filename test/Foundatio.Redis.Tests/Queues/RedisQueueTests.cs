@@ -166,6 +166,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 var db = SharedConnection.GetMuxer().GetDatabase();
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
+                _logger.Trace("SimpleWorkItem Id: {0}", id);
+
                 var workItem = await queue.DequeueAsync();
                 await workItem.AbandonAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -187,8 +189,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.Equal(6, CountAllKeys());
 
-                // let the work item timeout
-                await Task.Delay(1000);
+                // let the work item timeout and become auto abandoned.
+                await Task.Delay(250);
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
@@ -451,12 +453,13 @@ namespace Foundatio.Redis.Tests.Queues {
 
             int count = 0;
             foreach (var endpoint in endpoints) {
+                _logger.Info("Keys for server: {0}", endpoint);
                 var server = SharedConnection.GetMuxer().GetServer(endpoint);
 
                 try {
                     var keys = server.Keys().ToArray();
                     for (int index = 0; index < keys.Length; index++)
-                        _logger.Info($"Server: {server.EndPoint} Key {index}: {keys[index]}");
+                        _logger.Info($"Key {index}: {keys[index]}");
 
                     count += keys.Length;
                 } catch (Exception ex) {

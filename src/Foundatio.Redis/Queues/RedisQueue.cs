@@ -495,7 +495,7 @@ namespace Foundatio.Queues {
 
         internal async Task DoMaintenanceWorkAsync() {
             _logger.Trace("DoMaintenance: Name={0} Id={1}", _queueName, QueueId);
-            var now = DateTime.UtcNow;
+            var utcNow = DateTime.UtcNow;
 
             try {
                 var workIds = await Database.ListRangeAsync(WorkListName).AnyContext();
@@ -505,12 +505,12 @@ namespace Foundatio.Queues {
                         continue;
 
                     var renewedTime = new DateTime(renewedTimeTicks.Value);
-                    _logger.Trace("Renewed time {0}", renewedTime);
+                    _logger.Trace(() => $"Renewed time {renewedTime.ToString("o")}");
 
-                    if (now.Subtract(renewedTime) <= _workItemTimeout)
+                    if (utcNow.Subtract(renewedTime) <= _workItemTimeout)
                         continue;
 
-                    _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime} current: {now} timeout: {_workItemTimeout}");
+                    _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime.ToString("o")} current: {utcNow.ToString("o")} timeout: {_workItemTimeout}");
 
                     var entry = await GetQueueEntry(workId).AnyContext();
                     if (entry == null)
@@ -530,7 +530,7 @@ namespace Foundatio.Queues {
 
                     _logger.Trace("Wait time: {0}", waitTimeTicks);
 
-                    if (waitTimeTicks.HasValue && waitTimeTicks.Value > now.Ticks)
+                    if (waitTimeTicks.HasValue && waitTimeTicks.Value > utcNow.Ticks)
                         continue;
 
                     _logger.Trace("Getting retry lock");
