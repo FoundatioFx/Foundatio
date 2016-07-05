@@ -12,18 +12,9 @@ namespace Foundatio.Extensions {
 
             return default(CancellationToken);
         }
-
-        public static CancellationToken ToCancellationToken(this TimeSpan? timeout, TimeSpan defaultTimeout) {
-            return (timeout ?? defaultTimeout).ToCancellationToken();
-        }
-
+        
         public static TimeSpan Min(this TimeSpan source, TimeSpan other) {
             return source.Ticks > other.Ticks ? other : source;
         }
-
-        public static TimeSpan Max(this TimeSpan source, TimeSpan other) {
-            return source.Ticks < other.Ticks ? other : source;
-        }
-
     }
 }

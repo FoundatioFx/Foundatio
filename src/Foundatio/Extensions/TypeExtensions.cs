@@ -4,7 +4,7 @@ using System.Reflection;
 using Foundatio.Utility;
 
 namespace Foundatio.Extensions {
-    public static class TypeExtensions {
+    internal static class TypeExtensions {
         public static bool IsNumeric(this Type type) {
             if (type.IsArray)
                 return false;

@@ -6,7 +6,7 @@ using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Redis {
-    public static class RedisValueExtensions {
+    internal static class RedisValueExtensions {
         private static readonly RedisValue _nullValue = "@@NULL";
 
         public static Task<T> ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer) {

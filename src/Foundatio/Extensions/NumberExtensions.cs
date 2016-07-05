@@ -1,7 +1,7 @@
 ﻿using System;
 
 namespace Foundatio.Extensions {
-    public static class NumericExtensions {
+    internal static class NumericExtensions {
         public static string ToFileSizeDisplay(this int i) {
             return ToFileSizeDisplay((long)i, 2);
         }
@@ -30,15 +30,7 @@ namespace Foundatio.Extensions {
                 return String.Concat(value, " GB");
             }
         }
-
-        public static TimeSpan Min(this TimeSpan source, TimeSpan other) {
-            return source.Ticks > other.Ticks ? other : source;
-        }
-
-        public static TimeSpan Max(this TimeSpan source, TimeSpan other) {
-            return source.Ticks < other.Ticks ? other : source;
-        }
-
+        
         public static string ToOrdinal(this int num) {
             switch (num % 100) {
                 case 11:

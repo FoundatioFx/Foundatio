@@ -2,7 +2,7 @@
 using System.Reflection;
 
 namespace Foundatio.Extensions {
-    public static class EnumExtensions {
+    internal static class EnumExtensions {
         /// <summary>
         /// Will try and parse an enum and it's default type.
         /// </summary>
