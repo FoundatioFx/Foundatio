@@ -77,17 +77,14 @@ namespace Foundatio.Tests.Utility {
                 timer.ScheduleNext();
 
                 await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
-                var sw = Stopwatch.StartNew();
                 Assert.Equal(1, hits);
 
-                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
-                sw.Stop();
+                await resetEvent.WaitAsync(new CancellationTokenSource(125).Token);
                 Assert.Equal(2, hits);
 
-                Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(100).Token); });
-
-                await Task.Delay(110);
-                Assert.Equal(2, hits);
+                Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(50).Token); });
+                await Task.Delay(75);
+                Assert.Equal(3, hits);
             }
         }
 
@@ -104,6 +101,7 @@ namespace Foundatio.Tests.Utility {
 
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
                 for (int i = 0; i < 5; i++) {
+                    _logger.Info($"Scheduling #{i}");
                     timer.ScheduleNext();
                     await Task.Delay(5);
                 }

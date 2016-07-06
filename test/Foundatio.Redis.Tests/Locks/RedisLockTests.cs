@@ -9,17 +9,22 @@ using Foundatio.Messaging;
 using Foundatio.Tests.Locks;
 
 namespace Foundatio.Redis.Tests.Locks {
-    public class RedisLockTests : LockTestBase {
+    public class RedisLockTests : LockTestBase, IDisposable {
+        private readonly ICacheClient _cache;
+        private readonly IMessageBus _messageBus;
+
         public RedisLockTests(ITestOutputHelper output) : base(output) {
             FlushAll();
+            _cache = new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log);
+            _messageBus = new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), loggerFactory: Log);
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log), maxHits, period, Log);
+            return new ThrottlingLockProvider(_cache, maxHits, period, Log);
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log), new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), loggerFactory: Log), Log);
+            return new CacheLockProvider(_cache, _messageBus, Log);
         }
 
         [Fact]
@@ -56,6 +61,12 @@ namespace Foundatio.Redis.Tests.Locks {
                     _logger.Error(ex, "Error flushing redis");
                 }
             }
+        }
+        
+        public void Dispose() {
+            _cache.Dispose();
+            _messageBus.Dispose();
+            FlushAll();
         }
     }
 }

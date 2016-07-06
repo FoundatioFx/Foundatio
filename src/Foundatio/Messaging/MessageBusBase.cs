@@ -109,8 +109,9 @@ namespace Foundatio.Messaging {
         }
 
         public override void Dispose() {
-            _delayedMessages?.Clear();
             base.Dispose();
+            _delayedMessages?.Clear();
+            _subscribers?.Clear();
         }
 
         protected class DelayedMessage {

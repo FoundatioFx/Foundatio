@@ -269,8 +269,11 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            base.Dispose();
             _disposeTokenSource?.Cancel();
+            base.Dispose();
+            _queue.Clear();
+            _deadletterQueue.Clear();
+            _dequeued.Clear();
         }
     }
 }

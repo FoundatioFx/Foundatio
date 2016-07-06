@@ -151,10 +151,6 @@ namespace Foundatio.Queues {
             Enqueuing?.Dispose();
             LockRenewed?.Dispose();
             
-            // ReSharper disable once SuspiciousTypeConversion.Global
-            var disposableSerializer = _serializer as IDisposable;
-            disposableSerializer?.Dispose();
-
             _behaviors.OfType<IDisposable>().ForEach(b => b.Dispose());
         }
     }

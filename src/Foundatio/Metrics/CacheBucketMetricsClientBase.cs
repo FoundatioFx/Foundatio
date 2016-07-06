@@ -22,7 +22,7 @@ namespace Foundatio.Metrics {
         private readonly string _prefix;
         private readonly Timer _flushTimer;
         private readonly bool _buffered;
-        private readonly ICacheClient _cache;
+        protected readonly ICacheClient _cache;
         protected readonly ILogger _logger;
 
         public CacheBucketMetricsClientBase(ICacheClient cache, bool buffered = true, string prefix = null, ILoggerFactory loggerFactory = null) {
@@ -402,9 +402,11 @@ namespace Foundatio.Metrics {
             return keys;
         }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             _flushTimer?.Dispose();
             FlushAsync().GetAwaiter().GetResult();
+            _queue?.Clear();
+            _counterEvents?.Clear();
         }
 
         private struct BucketSettings {

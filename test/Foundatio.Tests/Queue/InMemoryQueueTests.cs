@@ -16,6 +16,7 @@ namespace Foundatio.Tests.Queue {
             if (_queue == null)
                 _queue = new InMemoryQueue<SimpleWorkItem>(retries, retryDelay, workItemTimeout: workItemTimeout, loggerFactory: Log);
 
+            _logger.Debug("Queue Id: {queueId}", _queue.QueueId);
             return _queue;
         }
 

@@ -429,11 +429,11 @@ namespace Foundatio.Caching {
                 ScheduleNextMaintenance(expiresAt);
             }
         }
-
-        /// <summary>Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.</summary>
+        
         public override void Dispose() {
-            ItemExpired?.Dispose();
             base.Dispose();
+            _memory.Clear();
+            ItemExpired?.Dispose();
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {

@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
-using Xunit;
-using System.Threading.Tasks;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
@@ -12,7 +13,7 @@ namespace Foundatio.Azure.Tests.Queue {
     public class AzureStorageQueueTests : QueueTestBase {
         private static readonly string _queueName = Guid.NewGuid().ToString("N");
 
-        public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
+        public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (String.IsNullOrEmpty(Configuration.GetConnectionString("StorageConnectionString")))
@@ -20,18 +21,11 @@ namespace Foundatio.Azure.Tests.Queue {
 
             if (!retryDelay.HasValue)
                 retryDelay = TimeSpan.Zero;
-            
-            return new AzureStorageQueue<SimpleWorkItem>(
-                Configuration.GetConnectionString("StorageConnectionString"),
-                _queueName,
-                retries,
-                workItemTimeout,
-                TimeSpan.FromMilliseconds(50),
-                new ExponentialRetry(retryDelay.Value, retries),
-                loggerFactory: Log
-            );
+
+            _logger.Debug("Queue Id: {queueId}", _queueName);
+            return new AzureStorageQueue<SimpleWorkItem>(Configuration.GetConnectionString("StorageConnectionString"), _queueName, retries, workItemTimeout, TimeSpan.FromMilliseconds(50), new ExponentialRetry(retryDelay.Value, retries), loggerFactory: Log);
         }
-        
+
         [Fact]
         public override Task CanQueueAndDequeueWorkItem() {
             return base.CanQueueAndDequeueWorkItem();
@@ -91,7 +85,7 @@ namespace Foundatio.Azure.Tests.Queue {
         public override Task CanRunWorkItemWithMetrics() {
             return base.CanRunWorkItemWithMetrics();
         }
-        
+
         [Fact]
         public override Task CanRenewLock() {
             return base.CanRenewLock();

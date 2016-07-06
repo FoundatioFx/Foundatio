@@ -4,6 +4,7 @@ using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Microsoft.ServiceBus;
 using Xunit.Abstractions;
 
@@ -24,6 +25,8 @@ namespace Foundatio.Azure.Tests.Queue {
                 ? retryDelay.Value + retryDelay.Value
                 : TimeSpan.FromSeconds(1);
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
+
+            _logger.Debug("Queue Id: {queueId}", _queueName);
             return new AzureServiceBusQueue<SimpleWorkItem>(Configuration.GetConnectionString("ServiceBusConnectionString"),
                 _queueName, retries, workItemTimeout, retryPolicy, loggerFactory: Log);
         }

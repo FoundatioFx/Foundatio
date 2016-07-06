@@ -63,8 +63,6 @@ namespace Foundatio.Storage {
             return files;
         }
 
-        public void Dispose() {
-            UnscopedStorage?.Dispose();
-        }
+        public void Dispose() { }
     }
 }

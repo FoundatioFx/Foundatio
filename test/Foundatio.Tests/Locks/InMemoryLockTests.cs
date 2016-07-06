@@ -10,15 +10,21 @@ using Xunit.Abstractions;
 using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Locks {
-    public class InMemoryLockTests : LockTestBase {
-        public InMemoryLockTests(ITestOutputHelper output) : base(output) {}
+    public class InMemoryLockTests : LockTestBase, IDisposable {
+        private readonly ICacheClient _cache;
+        private readonly IMessageBus _messageBus;
+
+        public InMemoryLockTests(ITestOutputHelper output) : base(output) {
+            _cache = new InMemoryCacheClient(Log);
+            _messageBus = new InMemoryMessageBus(Log);
+        }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(new InMemoryCacheClient(), maxHits, period);
+            return new ThrottlingLockProvider(_cache, maxHits, period);
         }
 
         protected override ILockProvider GetLockProvider() {
-            return new CacheLockProvider(new InMemoryCacheClient(Log), new InMemoryMessageBus(Log), Log);
+            return new CacheLockProvider(_cache, _messageBus, Log);
         }
 
         [Fact]
@@ -63,6 +69,11 @@ namespace Foundatio.Tests.Locks {
         [Fact]
         public override Task WillThrottleCalls() {
             return base.WillThrottleCalls();
+        }
+        
+        public void Dispose() {
+            _cache.Dispose();
+            _messageBus.Dispose();
         }
     }
 }

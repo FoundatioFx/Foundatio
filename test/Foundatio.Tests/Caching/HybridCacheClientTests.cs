@@ -10,7 +10,7 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
-    public class HybridCacheClientTests: CacheClientTestsBase {
+    public class HybridCacheClientTests: CacheClientTestsBase, IDisposable {
         private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
         private readonly IMessageBus _messageBus = new InMemoryMessageBus();
 
@@ -142,6 +142,11 @@ namespace Foundatio.Tests.Caching {
                     Assert.Equal(0, secondCache.LocalCache.Count);
                 }
             }
+        }
+
+        public void Dispose() {
+            _distributedCache.Dispose();
+            _messageBus.Dispose();
         }
     }
 }

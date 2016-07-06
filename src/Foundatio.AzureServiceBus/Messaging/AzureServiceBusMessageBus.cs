@@ -61,5 +61,11 @@ namespace Foundatio.Messaging {
 
             await _topicClient.SendAsync(brokeredMessage).AnyContext();
         }
+
+        public override void Dispose() {
+            base.Dispose();
+            _subscriptionClient.Close();
+            _topicClient.Close();
+        }
     }
 }

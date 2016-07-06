@@ -50,7 +50,5 @@ namespace Foundatio.Logging.Xunit {
         public void SetLogLevel(string category, LogLevel minLogLevel) {
             _logLevels[category] = minLogLevel;
         }
-
-        public void Dispose() {}
     }
 }

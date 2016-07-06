@@ -11,9 +11,9 @@ using Foundatio.Utility;
 namespace Foundatio.Caching {
     public class HybridCacheClient : ICacheClient {
         private readonly string _cacheId = Guid.NewGuid().ToString("N");
-        private readonly ICacheClient _distributedCache;
+        protected readonly ICacheClient _distributedCache;
         private readonly InMemoryCacheClient _localCache;
-        private readonly IMessageBus _messageBus;
+        protected readonly IMessageBus _messageBus;
         private readonly ILogger _logger;
         private long _localCacheHits;
         private long _invalidateCacheCalls;
@@ -21,9 +21,9 @@ namespace Foundatio.Caching {
         public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
             _logger = loggerFactory.CreateLogger<HybridCacheClient>();
             _distributedCache = distributedCacheClient;
-            _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
+            _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
             _localCache.ItemExpired.AddHandler(OnItemExpired);
         }
 
@@ -204,10 +204,11 @@ namespace Foundatio.Caching {
             return true;
         }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             _localCache.ItemExpired.RemoveHandler(OnItemExpired);
             _localCache.Dispose();
-            _messageBus.Dispose();
+
+            // TODO: unsubscribe handler from messagebus. 
         }
 
         public class InvalidateCache {

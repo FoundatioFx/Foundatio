@@ -141,8 +141,6 @@ namespace Foundatio.Lock {
 
             await Run.WithRetriesAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value)).AnyContext();
         }
-
-        public void Dispose() { }
     }
 
     internal class CacheLockReleased {

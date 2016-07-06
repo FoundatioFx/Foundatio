@@ -99,34 +99,42 @@ namespace Foundatio.Tests.Locks {
                 return;
 
             int successCount = 0;
-            var configTask1 = Task.Run(() => {
-                if (DoLockedWork(locker).GetAwaiter().GetResult())
+            var lockTask1 = Task.Run(async () => {
+                if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
+                    _logger.Info("LockTask1 Success");
+                }
             });
-            var configTask2 = Task.Run(() => {
-                if (DoLockedWork(locker).GetAwaiter().GetResult())
+            var lockTask2 = Task.Run(async () => {
+                if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
+                    _logger.Info("LockTask2 Success");
+                }
             });
-            var configTask3 = Task.Run(() => {
-                if (DoLockedWork(locker).GetAwaiter().GetResult())
+            var lockTask3 = Task.Run(async () => {
+                if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
+                    _logger.Info("LockTask3 Success");
+                }
             });
-            var configTask4 = Task.Run(() => {
-                if (DoLockedWork(locker).GetAwaiter().GetResult())
+            var lockTask4 = Task.Run(async () => {
+                if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
+                    _logger.Info("LockTask4 Success");
+                }
             });
 
-            await Task.WhenAll(configTask1, configTask2, configTask3, configTask4);
+            await Task.WhenAll(lockTask1, lockTask2, lockTask3, lockTask4);
             Assert.Equal(1, successCount);
 
-            await Task.Run(() => {
-                if (DoLockedWork(locker).GetAwaiter().GetResult())
+            await Task.Run(async () => {
+                if (await DoLockedWorkAsync(locker))
                     Interlocked.Increment(ref successCount);
             });
             Assert.Equal(2, successCount);
         }
 
-        private async Task<bool> DoLockedWork(ILockProvider locker) {
+        private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
             return await locker.TryUsingAsync("DoLockedWork", () => Thread.Sleep(500), TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext();
         }
 

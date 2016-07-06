@@ -90,35 +90,34 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
             
-            var metrics = new InMemoryMetricsClient();
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
-
             using (queue) {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                Task.Run(async () => {
+                using (var metrics = new InMemoryMetricsClient()) {
+                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
+
+                    Task.Run(async () => {
+                                 for (int index = 0; index < iterations; index++) {
+                                     await Task.Delay(RandomData.GetInt(10, 30));
+                                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                                 }
+                                 _logger.Trace("Done enqueuing.");
+                             });
+
+                    _logger.Trace("Starting dequeue loop.");
+                    var sw = Stopwatch.StartNew();
                     for (int index = 0; index < iterations; index++) {
-                        await Task.Delay(RandomData.GetInt(10, 50));
-                        await queue.EnqueueAsync(new SimpleWorkItem {
-                            Data = "Hello"
-                        });
+                        var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
+                        Assert.NotNull(item);
+                        await item.CompleteAsync();
                     }
-                    _logger.Trace("Done enqueuing.");
-                });
+                    sw.Stop();
 
-                _logger.Trace("Starting dequeue loop.");
-                var sw = Stopwatch.StartNew();
-                for (int index = 0; index < iterations; index++) {
-                    var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                    Assert.NotNull(item);
-                    await item.CompleteAsync();
+                    Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 40);
+                    var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
+                    Assert.InRange(timing.AverageDuration, 0, 25);
                 }
-                sw.Stop();
-
-                Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 50);
-                var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                Assert.InRange(timing.AverageDuration, 0, 25);
             }
         }
 
@@ -265,31 +264,32 @@ namespace Foundatio.Tests.Queue {
             Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Trace);
             Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
-            var metrics = new InMemoryMetricsClient(false, loggerFactory: Log);
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
-
             using (queue) {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                await queue.StartWorkingAsync(w => {
-                    Debug.WriteLine("WorkAction");
-                    Assert.Equal("Hello", w.Value.Data);
-                    throw new Exception();
-                });
+                using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
-                await Task.Delay(1);
-                var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
-                Assert.True(success);
-                await Task.Delay(1);
+                    await queue.StartWorkingAsync(w => {
+                        Debug.WriteLine("WorkAction");
+                        Assert.Equal("Hello", w.Value.Data);
+                        throw new Exception();
+                    });
 
-                var stats = await queue.GetQueueStatsAsync();
-                _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
-                Assert.Equal(0, stats.Completed);
-                Assert.Equal(1, stats.Errors);
-                Assert.Equal(1, stats.Deadletter);
+                    await Task.Delay(1);
+                    var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
+                        Data = "Hello"
+                    }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
+                    Assert.True(success);
+                    await Task.Delay(1);
+
+                    var stats = await queue.GetQueueStatsAsync();
+                    _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    Assert.Equal(0, stats.Completed);
+                    Assert.Equal(1, stats.Errors);
+                    Assert.Equal(1, stats.Deadletter);
+                }
             }
         }
 
@@ -393,7 +393,6 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             using (queue) {
-                _logger.Trace("Queue Id: {0}", queue.QueueId);
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
@@ -401,60 +400,65 @@ namespace Foundatio.Tests.Queue {
                 const int workerCount = 3;
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var info = new WorkInfo();
-                var workers = new List<IQueue<SimpleWorkItem>> {queue};
+                var workers = new List<IQueue<SimpleWorkItem>> { queue };
 
-                for (int i = 0; i < workerCount; i++) {
-                    var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
-                    await q.StartWorkingAsync(async w => await DoWorkAsync(w, countdown, info));
-                    workers.Add(q);
-                }
-
-                await Run.InParallel(workItemCount, async i => {
-                        var id = await queue.EnqueueAsync(new SimpleWorkItem {
-                        Data = "Hello",
-                        Id = i
-                        });
-                    _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
-                });
-
-                await countdown.WaitAsync();
-                await Task.Delay(50);
-                _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}",
-                    info.CompletedCount,
-                    info.AbandonCount,
-                    info.ErrorCount);
-
-
-                _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
-                Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
-                
-                // In memory queue doesn't share state.
-                if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
-                    var stats = await queue.GetQueueStatsAsync();
-                    Assert.Equal(0, stats.Working);
-                    Assert.Equal(0, stats.Timeouts);
-                    Assert.Equal(workItemCount, stats.Enqueued);
-                    Assert.Equal(workItemCount, stats.Dequeued);
-                    Assert.Equal(info.CompletedCount, stats.Completed);
-                    Assert.Equal(info.ErrorCount, stats.Errors);
-                    Assert.Equal(info.AbandonCount, stats.Abandoned - info.ErrorCount);
-                    Assert.Equal(info.AbandonCount + stats.Errors, stats.Deadletter);
-                } else {
-                    var workerStats = new List<QueueStats>();
-                    for (int i = 0; i < workers.Count; i++) {
-                        var stats = await workers[i].GetQueueStatsAsync();
-                        _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
-                        workerStats.Add(stats);
+                try {
+                    for (int i = 0; i < workerCount; i++) {
+                        var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                        _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
+                        await q.StartWorkingAsync(async w => await DoWorkAsync(w, countdown, info));
+                        workers.Add(q);
                     }
 
-                    Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
-                    Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
-                    Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
-                    Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.LastOrDefault()?.Deadletter ?? 0));
-                }
+                    await Run.InParallel(workItemCount, async i => {
+                            var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                            Data = "Hello",
+                            Id = i
+                            });
+                        _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
+                    });
 
-                workers.ForEach(w => w.Dispose());
+                    await countdown.WaitAsync();
+                    await Task.Delay(50);
+                    _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}",
+                        info.CompletedCount,
+                        info.AbandonCount,
+                        info.ErrorCount);
+
+
+                    _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                    Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
+                
+                    // In memory queue doesn't share state.
+                    if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
+                        var stats = await queue.GetQueueStatsAsync();
+                        Assert.Equal(0, stats.Working);
+                        Assert.Equal(0, stats.Timeouts);
+                        Assert.Equal(workItemCount, stats.Enqueued);
+                        Assert.Equal(workItemCount, stats.Dequeued);
+                        Assert.Equal(info.CompletedCount, stats.Completed);
+                        Assert.Equal(info.ErrorCount, stats.Errors);
+                        Assert.Equal(info.AbandonCount, stats.Abandoned - info.ErrorCount);
+                        Assert.Equal(info.AbandonCount + stats.Errors, stats.Deadletter);
+                    } else {
+                        var workerStats = new List<QueueStats>();
+                        for (int i = 0; i < workers.Count; i++) {
+                            var stats = await workers[i].GetQueueStatsAsync();
+                            _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                            workerStats.Add(stats);
+                        }
+
+                        Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
+                        Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
+                        Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
+                        Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.LastOrDefault()?.Deadletter ?? 0));
+                    }
+                } finally {
+                    foreach (var q in workers) {
+                        await q.DeleteQueueAsync();
+                        q.Dispose();
+                    }
+                }
             }
         }
 
@@ -497,74 +501,76 @@ namespace Foundatio.Tests.Queue {
             //Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
             //Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
 
-            var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log);
-            var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
-            var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior }, loggerFactory: Log);
-            queue.Completed.AddHandler((sender, e) => {
-                completedCount++;
-                return Task.CompletedTask;
-            });
+            using (var metricsClient = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+                var behavior = new MetricsQueueBehavior<WorkItemData>(metricsClient, "metric", loggerFactory: Log, reportCountsInterval: TimeSpan.Zero);
+                using (var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior }, loggerFactory: Log)) {
+                    queue.Completed.AddHandler((sender, e) => {
+                        completedCount++;
+                        return Task.CompletedTask;
+                    });
 
-            _logger.Trace("Before enqueue");
-            await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
-            await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
-            await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
+                    _logger.Trace("Before enqueue");
+                    await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
+                    await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
+                    await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await Task.Delay(100);
+                    await Task.Delay(100);
 
-            _logger.Trace("Before dequeue");
-            var item = await queue.DequeueAsync();
-            await item.CompleteAsync();
+                    _logger.Trace("Before dequeue");
+                    var item = await queue.DequeueAsync();
+                    await item.CompleteAsync();
 
-            item = await queue.DequeueAsync();
-            await item.CompleteAsync();
+                    item = await queue.DequeueAsync();
+                    await item.CompleteAsync();
 
-            item = await queue.DequeueAsync();
-            await item.AbandonAsync();
+                    item = await queue.DequeueAsync();
+                    await item.AbandonAsync();
 
-            _logger.Trace("Before asserts");
-            Assert.Equal(2, completedCount);
+                    _logger.Trace("Before asserts");
+                    Assert.Equal(2, completedCount);
 
-            await Task.Delay(100);
+                    await Task.Delay(100);
 
-            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
-            Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
+                    Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
+                    Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
 
-            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
-            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.enqueued"));
+                    Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
+                    Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.enqueued"));
 
-            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
-            Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.dequeued"));
+                    Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
+                    Assert.Equal(3, await metricsClient.GetCounterCountAsync("metric.workitemdata.dequeued"));
 
-            Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.completed"));
-            Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.completed"));
+                    Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.completed"));
+                    Assert.Equal(2, await metricsClient.GetCounterCountAsync("metric.workitemdata.completed"));
 
-            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
-            Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.abandoned"));
+                    Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
+                    Assert.Equal(1, await metricsClient.GetCounterCountAsync("metric.workitemdata.abandoned"));
 
-            var queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
-            Assert.Equal(3, queueTiming.Count);
-            queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.queuetime");
-            Assert.Equal(3, queueTiming.Count);
+                    var queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
+                    Assert.Equal(3, queueTiming.Count);
+                    queueTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.queuetime");
+                    Assert.Equal(3, queueTiming.Count);
 
-            var processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
-            Assert.Equal(3, processTiming.Count);
-            processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.processtime");
-            Assert.Equal(3, processTiming.Count);
+                    var processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
+                    Assert.Equal(3, processTiming.Count);
+                    processTiming = await metricsClient.GetTimerStatsAsync("metric.workitemdata.processtime");
+                    Assert.Equal(3, processTiming.Count);
 
-            var queueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata");
-            Assert.Equal(3, queueStats.Enqueued.Count);
-            Assert.Equal(3, queueStats.Dequeued.Count);
-            Assert.Equal(2, queueStats.Completed.Count);
-            Assert.Equal(1, queueStats.Abandoned.Count);
-            Assert.InRange(queueStats.Count.Max, 1, 3);
-            Assert.InRange(queueStats.Working.Max, 0, 1);
+                    var queueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata");
+                    Assert.Equal(3, queueStats.Enqueued.Count);
+                    Assert.Equal(3, queueStats.Dequeued.Count);
+                    Assert.Equal(2, queueStats.Completed.Count);
+                    Assert.Equal(1, queueStats.Abandoned.Count);
+                    Assert.InRange(queueStats.Count.Max, 1, 3);
+                    Assert.InRange(queueStats.Working.Max, 0, 1);
 
-            var subQueueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata", "simple");
-            Assert.Equal(3, subQueueStats.Enqueued.Count);
-            Assert.Equal(3, subQueueStats.Dequeued.Count);
-            Assert.Equal(2, subQueueStats.Completed.Count);
-            Assert.Equal(1, subQueueStats.Abandoned.Count);
+                    var subQueueStats = await metricsClient.GetQueueStatsAsync("metric.workitemdata", "simple");
+                    Assert.Equal(3, subQueueStats.Enqueued.Count);
+                    Assert.Equal(3, subQueueStats.Dequeued.Count);
+                    Assert.Equal(2, subQueueStats.Completed.Count);
+                    Assert.Equal(1, subQueueStats.Abandoned.Count);
+                }
+            }
         }
 
         public virtual async Task CanRenewLock() {
@@ -714,15 +720,6 @@ namespace Foundatio.Tests.Queue {
             }
         }
         
-        public async void Dispose() {
-            var queue = GetQueue();
-            if (queue == null)
-                return;
-
-            using (queue)
-                await queue.DeleteQueueAsync();
-        }
-
         private async Task AssertEmptyQueueAsync(IQueue<SimpleWorkItem> queue) {
             var stats = await queue.GetQueueStatsAsync();
             Assert.Equal(0, stats.Abandoned);
@@ -734,6 +731,15 @@ namespace Foundatio.Tests.Queue {
             Assert.Equal(0, stats.Queued);
             Assert.Equal(0, stats.Timeouts);
             Assert.Equal(0, stats.Working);
+        }
+        
+        public virtual async void Dispose() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            using (queue)
+                await queue.DeleteQueueAsync();
         }
     }
 
