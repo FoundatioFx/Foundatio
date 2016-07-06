@@ -579,7 +579,7 @@ namespace Foundatio.Tests.Queue {
             // Need large value to reproduce this test
             var workItemTimeout = TimeSpan.FromSeconds(1);
             // Slightly shorter than the timeout to ensure we haven't lost the lock
-            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .75d);
+            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .50d);
 
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
             if (queue == null)
