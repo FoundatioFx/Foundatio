@@ -67,7 +67,7 @@ namespace Foundatio.Tests.Utility {
                 resetEvent.Set();
                 return Task.FromResult<DateTime?>(null);
             };
-
+            
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
                 timer.ScheduleNext();
                 await Task.Delay(1);
@@ -78,11 +78,11 @@ namespace Foundatio.Tests.Utility {
                 await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
                 Assert.Equal(1, hits);
 
-                await resetEvent.WaitAsync(new CancellationTokenSource(150).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
                 Assert.Equal(2, hits);
 
                 Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(50).Token); });
-                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
                 Assert.Equal(3, hits);
             }
         }
