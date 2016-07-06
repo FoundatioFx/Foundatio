@@ -75,7 +75,7 @@ namespace Foundatio.Tests.Utility {
                 await Task.Delay(1);
                 timer.ScheduleNext();
 
-                await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
                 Assert.Equal(1, hits);
 
                 await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
