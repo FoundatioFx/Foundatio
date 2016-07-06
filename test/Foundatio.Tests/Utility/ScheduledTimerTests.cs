@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -60,7 +61,7 @@ namespace Foundatio.Tests.Utility {
         public async Task CanRunWithMinimumInterval() {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             var resetEvent = new AsyncAutoResetEvent(false);
-
+            
             int hits = 0;
             Func<Task<DateTime?>> callback = () => {
                 Interlocked.Increment(ref hits);
@@ -69,21 +70,21 @@ namespace Foundatio.Tests.Utility {
             };
             
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
+                var sw = Stopwatch.StartNew();
                 timer.ScheduleNext();
                 await Task.Delay(1);
                 timer.ScheduleNext();
                 await Task.Delay(1);
                 timer.ScheduleNext();
 
-                await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
                 Assert.Equal(1, hits);
-
+                
                 await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
+                sw.Stop();
+
                 Assert.Equal(2, hits);
-
-                Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(50).Token); });
-                await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
-                Assert.Equal(3, hits);
+                Assert.InRange(sw.ElapsedMilliseconds, 100, 2000);
             }
         }
         
