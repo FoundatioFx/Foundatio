@@ -86,19 +86,31 @@ namespace Foundatio.Utility {
 
             try {
                 _isRunning = true;
-                var next = await _timerCallback().AnyContext();
-                if (_minimumInterval > TimeSpan.Zero)
-                    await Task.Delay(_minimumInterval).AnyContext();
+                DateTime? next = null;
 
-                if (_shouldRunAgainImmediately)
-                    ScheduleNext();
+                try {
+                    next = await _timerCallback().AnyContext();
+                } catch (Exception ex) {
+                    _logger.Error(ex, () => $"Error running scheduled timer callback: {ex.Message}");
+                    _shouldRunAgainImmediately = true;
+                }
+
+                if (_minimumInterval > TimeSpan.Zero) {
+                    _logger.Trace("Sleeping for minimum interval: {interval}", _minimumInterval);
+                    await Task.Delay(_minimumInterval).AnyContext();
+                    _logger.Trace("Finished sleeping");
+                }
+
+                var nextRun = DateTime.UtcNow.AddMilliseconds(10);
+                if (_shouldRunAgainImmediately || next.HasValue && next.Value <= nextRun)
+                    ScheduleNext(nextRun);
                 else if (next.HasValue)
                     ScheduleNext(next.Value);
             } catch (Exception ex) {
-                _logger.Error(ex, () => $"Error running scheduled timer callback: {ex.Message}");
+                _logger.Error(ex, () => $"Error running schedule next callback: {ex.Message}");
             } finally {
-                _shouldRunAgainImmediately = false;
                 _isRunning = false;
+                _shouldRunAgainImmediately = false;
             }
         }
 

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -79,12 +78,36 @@ namespace Foundatio.Tests.Utility {
                 await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
                 Assert.Equal(1, hits);
 
-                await resetEvent.WaitAsync(new CancellationTokenSource(125).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(150).Token);
                 Assert.Equal(2, hits);
 
                 Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(50).Token); });
-                await Task.Delay(75);
+                await resetEvent.WaitAsync(new CancellationTokenSource(150).Token);
                 Assert.Equal(3, hits);
+            }
+        }
+        
+        [Fact]
+        public async Task CanRecoverFromError() {
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+            var resetEvent = new AsyncAutoResetEvent(false);
+
+            int hits = 0;
+            Func<Task<DateTime?>> callback = () => {
+                Interlocked.Increment(ref hits);
+                _logger.Info("Callback called for the #{time} time", hits);
+                if (hits == 1)
+                    throw new Exception("Error in callback");
+
+                resetEvent.Set();
+                return Task.FromResult<DateTime?>(null);
+            };
+
+            using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
+                timer.ScheduleNext();
+
+                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+                Assert.Equal(2, hits);
             }
         }
 
@@ -100,7 +123,7 @@ namespace Foundatio.Tests.Utility {
             };
 
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
-                for (int i = 0; i < 5; i++) {
+                for (int i = 1; i <= 5; i++) {
                     _logger.Info($"Scheduling #{i}");
                     timer.ScheduleNext();
                     await Task.Delay(5);

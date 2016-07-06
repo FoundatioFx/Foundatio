@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
@@ -68,26 +69,28 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task LockWillTimeout() {
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
+
             var locker = GetLockProvider();
             if (locker == null)
                 return;
-
+            
             _logger.Info("Releasing lock");
             await locker.ReleaseAsync("test");
                 
             _logger.Info("Acquiring lock #1");
-            var testLock = await locker.AcquireAsync("test", lockTimeout: TimeSpan.FromMilliseconds(150));
-            _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
+            var testLock = await locker.AcquireAsync("test", lockTimeout: TimeSpan.FromMilliseconds(250));
+            _logger.Info(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
             Assert.NotNull(testLock);
 
             _logger.Info("Acquiring lock #2");
-            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
-            _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
+            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(50));
+            _logger.Info(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
             Assert.Null(testLock);
 
             _logger.Info("Acquiring lock #3");
-            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100));
-            _logger.Info(testLock != null ? "Acquired lock" : "Unable to acquire lock");
+            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(300));
+            _logger.Info(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
             Assert.NotNull(testLock);
         }
 
@@ -97,6 +100,8 @@ namespace Foundatio.Tests.Locks {
             var locker = GetLockProvider();
             if (locker == null)
                 return;
+
+            await locker.ReleaseAsync("DoLockedWork");
 
             int successCount = 0;
             var lockTask1 = Task.Run(async () => {
@@ -140,19 +145,20 @@ namespace Foundatio.Tests.Locks {
 
         public virtual async Task WillThrottleCalls() {
             const int allowedLocks = 25;
+
             var period = TimeSpan.FromSeconds(1);
             var locker = GetThrottlingLockProvider(allowedLocks, period);
             if (locker == null)
                 return;
 
             var lockName = Guid.NewGuid().ToString("N").Substring(10);
-            await locker.ReleaseAsync(lockName);
 
             // sleep until start of throttling period
-            await Task.Delay(DateTime.Now.Ceiling(period) - DateTime.Now);
+            var utcNow = DateTime.UtcNow;
+            await Task.Delay(utcNow.Ceiling(period) - utcNow);
 
             var sw = Stopwatch.StartNew();
-            for (int i = 0; i < allowedLocks; i++) {
+            for (int i = 1; i <= allowedLocks; i++) {
                 _logger.Info($"Allowed Locks: {i}");
                 var l = await locker.AcquireAsync(lockName);
                 Assert.NotNull(l);
