@@ -82,7 +82,7 @@ namespace Foundatio.Tests.Utility {
                 Assert.Equal(2, hits);
 
                 Assert.Throws<TaskCanceledException>(() => { resetEvent.Wait(new CancellationTokenSource(50).Token); });
-                await resetEvent.WaitAsync(new CancellationTokenSource(150).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
                 Assert.Equal(3, hits);
             }
         }
