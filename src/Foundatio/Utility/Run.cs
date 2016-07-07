@@ -9,7 +9,9 @@ namespace Foundatio.Utility {
     public static class Run {
         public static async Task DelayedAsync(TimeSpan delay, Func<Task> action) {
             await Task.Run(async () => {
-                await Task.Delay(delay).AnyContext();
+                if (delay.Ticks > 0)
+                    await Task.Delay(delay).AnyContext();
+
                 await action().AnyContext();
             }).AnyContext();
         }

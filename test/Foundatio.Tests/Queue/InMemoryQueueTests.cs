@@ -22,33 +22,34 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public async Task TestAsyncEvents() {
-            var q = new InMemoryQueue<SimpleWorkItem>(loggerFactory: Log);
-            q.Enqueuing.AddHandler(async (sender, args) => {
-                await Task.Delay(250);
-                _logger.Info("First Enqueuing.");
-            });
-            q.Enqueuing.AddHandler(async(sender, args) => {
-                await Task.Delay(250);
-                _logger.Info("Second Enqueuing.");
-            });
-            var e1 = q.Enqueued.AddHandler(async (sender, args) => {
-                await Task.Delay(250);
-                _logger.Info("First.");
-            });
-            q.Enqueued.AddHandler(async(sender, args) => {
-                await Task.Delay(250);
-                _logger.Info("Second.");
-            });
-            var sw = Stopwatch.StartNew();
-            await q.EnqueueAsync(new SimpleWorkItem());
-            sw.Stop();
-            _logger.Trace("Time {0}", sw.Elapsed);
+            using (var q = new InMemoryQueue<SimpleWorkItem>(loggerFactory: Log)) {
+                q.Enqueuing.AddHandler(async (sender, args) => {
+                    await Task.Delay(250);
+                    _logger.Info("First Enqueuing.");
+                });
+                q.Enqueuing.AddHandler(async(sender, args) => {
+                    await Task.Delay(250);
+                    _logger.Info("Second Enqueuing.");
+                });
+                var e1 = q.Enqueued.AddHandler(async (sender, args) => {
+                    await Task.Delay(250);
+                    _logger.Info("First.");
+                });
+                q.Enqueued.AddHandler(async(sender, args) => {
+                    await Task.Delay(250);
+                    _logger.Info("Second.");
+                });
+                var sw = Stopwatch.StartNew();
+                await q.EnqueueAsync(new SimpleWorkItem());
+                sw.Stop();
+                _logger.Trace("Time {0}", sw.Elapsed);
 
-            e1.Dispose();
-            sw.Restart();
-            await q.EnqueueAsync(new SimpleWorkItem());
-            sw.Stop();
-            _logger.Trace("Time {0}", sw.Elapsed);
+                e1.Dispose();
+                sw.Restart();
+                await q.EnqueueAsync(new SimpleWorkItem());
+                sw.Stop();
+                _logger.Trace("Time {0}", sw.Elapsed);
+            }
         }
 
         [Fact]
