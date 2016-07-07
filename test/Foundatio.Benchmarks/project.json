@@ -6,7 +6,7 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "BenchmarkDotNet": "0.9.7",
+        "BenchmarkDotNet": "0.9.8",
         "Foundatio": {
             "target": "project"
         },
@@ -15,6 +15,17 @@
         }
     },
     "frameworks": {
+        "netcoreapp1.0": {
+            "buildOptions": {
+                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
+            },
+            "dependencies": {
+                "Microsoft.NETCore.App": {
+                    "type": "platform",
+                    "version": "1.0.0"
+                }
+            }
+        },
         "NET46": {
             "buildOptions": {
                 "define": [ "NET46" ]
