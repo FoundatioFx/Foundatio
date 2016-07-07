@@ -86,7 +86,7 @@ namespace Foundatio.Metrics {
             try {
                 _sendingMetrics = true;
 
-                var startTime = DateTime.UtcNow;
+                var startTime = SystemClock.UtcNow;
                 var entries = new List<MetricEntry>();
                 MetricEntry entry;
                 while (_queue.TryDequeue(out entry)) {
@@ -211,7 +211,7 @@ namespace Foundatio.Metrics {
             if (count <= 0)
                 return true;
 
-            DateTime start = DateTime.UtcNow;
+            DateTime start = SystemClock.UtcNow;
             long startingCount = await this.GetCounterCountAsync(statName, start, start).AnyContext();
             long expectedCount = startingCount + count;
 
@@ -220,7 +220,7 @@ namespace Foundatio.Metrics {
             if (work != null)
                 await work().AnyContext();
 
-            long endingCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
+            long endingCount = await this.GetCounterCountAsync(statName, start, SystemClock.UtcNow).AnyContext();
             if (endingCount >= expectedCount)
                 return true;
 
@@ -232,13 +232,13 @@ namespace Foundatio.Metrics {
                     await resetEvent.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
-                currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
+                currentCount = await this.GetCounterCountAsync(statName, start, SystemClock.UtcNow).AnyContext();
                 _logger.Trace("Got signal: count={currentCount} expected={expectedCount}", currentCount, expectedCount);
 
                 resetEvent.Reset();
             } while (cancellationToken.IsCancellationRequested == false && currentCount < expectedCount);
 
-            currentCount = await this.GetCounterCountAsync(statName, start, DateTime.UtcNow).AnyContext();
+            currentCount = await this.GetCounterCountAsync(statName, start, SystemClock.UtcNow).AnyContext();
             _logger.Trace("Done waiting: count={currentCount} expected={expectedCount} success={isCancellationRequested}", currentCount, expectedCount, !cancellationToken.IsCancellationRequested);
 
             return !cancellationToken.IsCancellationRequested;
@@ -246,10 +246,10 @@ namespace Foundatio.Metrics {
 
         public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddHours(-4);
+                start = SystemClock.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = DateTime.UtcNow;
+                end = SystemClock.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 60 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -276,10 +276,10 @@ namespace Foundatio.Metrics {
 
         public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddHours(-4);
+                start = SystemClock.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = DateTime.UtcNow;
+                end = SystemClock.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 60 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -328,10 +328,10 @@ namespace Foundatio.Metrics {
 
         public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = DateTime.UtcNow.AddHours(-4);
+                start = SystemClock.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = DateTime.UtcNow;
+                end = SystemClock.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 60 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -377,7 +377,7 @@ namespace Foundatio.Metrics {
                 interval = _buckets[0].Size;
 
             if (dateTime == null)
-                dateTime = DateTime.UtcNow;
+                dateTime = SystemClock.UtcNow;
 
             dateTime = dateTime.Value.Floor(interval.Value);
 
@@ -415,7 +415,7 @@ namespace Foundatio.Metrics {
         }
 
         private class MetricEntry {
-            public DateTime EnqueuedDate { get; } = DateTime.UtcNow;
+            public DateTime EnqueuedDate { get; } = SystemClock.UtcNow;
             public string Name { get; set; }
             public MetricType Type { get; set; }
             public int Counter { get; set; }

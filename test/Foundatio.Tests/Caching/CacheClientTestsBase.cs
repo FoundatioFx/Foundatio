@@ -278,7 +278,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
+                var expiresAt = SystemClock.UtcNow.AddMilliseconds(300);
                 var success = await cache.SetAsync("test", 1, expiresAt);
                 Assert.True(success);
                 success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
@@ -286,7 +286,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
                 Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
 
-                await Task.Delay(500);
+                await SystemClock.SleepAsync(500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
                 Assert.Null(await cache.GetExpirationAsync("test"));
                 Assert.False((await cache.GetAsync<int>("test2")).HasValue);
@@ -310,7 +310,7 @@ namespace Foundatio.Tests.Caching {
 
                 Assert.Equal(1, newVal);
 
-                await Task.Delay(1500);
+                await SystemClock.SleepAsync(1500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
             }
         }
@@ -365,7 +365,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = DateTime.UtcNow;
+                var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient();
                 for (int i = 0; i < itemCount; i++) {
@@ -377,7 +377,7 @@ namespace Foundatio.Tests.Caching {
                     await metrics.CounterAsync("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
             }
         }
 
@@ -389,7 +389,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = DateTime.UtcNow;
+                var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient();
                 for (int i = 0; i < itemCount; i++) {
@@ -404,7 +404,7 @@ namespace Foundatio.Tests.Caching {
                     await metrics.CounterAsync("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
             }
         }
 
@@ -416,7 +416,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = DateTime.UtcNow;
+                var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient();
                 for (int i = 0; i < itemCount; i++) {
@@ -454,7 +454,7 @@ namespace Foundatio.Tests.Caching {
                     await metrics.CounterAsync("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, DateTime.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
             }
         }
 

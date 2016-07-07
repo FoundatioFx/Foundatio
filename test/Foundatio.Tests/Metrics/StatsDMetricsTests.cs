@@ -72,7 +72,7 @@ namespace Foundatio.Tests.Metrics {
             await StartListeningAsync(iterations);
 
             await Run.InParallel(iterations, async i =>{
-                await Task.Delay(50);
+                await SystemClock.SleepAsync(50);
                 await _client.CounterAsync("counter");
             });
             
@@ -108,7 +108,7 @@ namespace Foundatio.Tests.Metrics {
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
-            await Task.Delay(250);
+            await SystemClock.SleepAsync(250);
             var messages = GetMessages();
             int expected = iterations - (iterations / (iterations / 10));
             Assert.InRange(messages.Count, expected - 10, expected + 10);
@@ -126,7 +126,7 @@ namespace Foundatio.Tests.Metrics {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
 
-            await Task.Delay(75);
+            await SystemClock.SleepAsync(75);
         }
 
         private void StopListening() {

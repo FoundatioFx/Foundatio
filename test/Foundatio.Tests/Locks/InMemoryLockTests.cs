@@ -8,6 +8,7 @@ using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase, IDisposable {
@@ -54,7 +55,7 @@ namespace Foundatio.Tests.Locks {
             Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
 
             var t = Task.Run(async () => {
-                await Task.Delay(25);
+                await SystemClock.SleepAsync(25);
                 using (await monitor.EnterAsync())
                     monitor.Pulse();
             });

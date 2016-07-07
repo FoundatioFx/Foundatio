@@ -66,9 +66,9 @@ namespace Foundatio.Lock {
 
                 try {
                     if (lockTimeout.Value == TimeSpan.Zero) // no lock timeout
-                        gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow).AnyContext();
+                        gotLock = await _cacheClient.AddAsync(name, SystemClock.UtcNow).AnyContext();
                     else
-                        gotLock = await _cacheClient.AddAsync(name, DateTime.UtcNow, lockTimeout.Value).AnyContext();
+                        gotLock = await _cacheClient.AddAsync(name, SystemClock.UtcNow, lockTimeout.Value).AnyContext();
                 } catch { }
 
                 if (gotLock) {
@@ -84,10 +84,10 @@ namespace Foundatio.Lock {
                     break;
                 }
 
-                var keyExpiration = DateTime.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.Zero);
-                var delayAmount = keyExpiration.Subtract(DateTime.UtcNow).Max(TimeSpan.FromMilliseconds(50));
+                var keyExpiration = SystemClock.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.Zero);
+                var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow).Max(TimeSpan.FromMilliseconds(50));
 
-                _logger.Trace("Delay amount: {0} Delay until: {1}", delayAmount, DateTime.UtcNow.Add(delayAmount).ToString("mm:ss.fff"));
+                _logger.Trace("Delay amount: {0} Delay until: {1}", delayAmount, SystemClock.UtcNow.Add(delayAmount).ToString("mm:ss.fff"));
 
                 var delayCancellationTokenSource = new CancellationTokenSource(delayAmount);
                 var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token).Token;

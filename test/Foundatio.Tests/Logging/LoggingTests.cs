@@ -49,7 +49,7 @@ namespace Foundatio.Tests.Logging {
             var logger = Log.CreateLogger<LoggingTests>();
             var name = "Tester";
 
-            logger.Info(() => $"{name} at {DateTime.Now}.");
+            logger.Info(() => $"{name} at {SystemClock.UtcNow}.");
         }
 
         [Fact]

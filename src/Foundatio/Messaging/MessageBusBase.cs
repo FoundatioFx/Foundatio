@@ -67,7 +67,7 @@ namespace Foundatio.Messaging {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
             
-            var sendTime = DateTime.UtcNow.Add(delay);
+            var sendTime = SystemClock.UtcNow.Add(delay);
             _delayedMessages.TryAdd(Guid.NewGuid(), new DelayedMessage {
                 Message = message,
                 MessageType = messageType,
@@ -87,7 +87,7 @@ namespace Foundatio.Messaging {
 
             // Add 50ms to the current time so we can batch up any other messages that will 
             // happen very shortly. Also the timer may run earilier than requested.
-            var sendTime = DateTime.UtcNow.AddMilliseconds(50);
+            var sendTime = SystemClock.UtcNow.AddMilliseconds(50);
             foreach (var pair in _delayedMessages) {
                 if (pair.Value.SendTime <= sendTime)
                     messagesToSend.Add(pair.Key);

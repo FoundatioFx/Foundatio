@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
@@ -57,7 +58,7 @@ namespace Foundatio.Messaging {
             });
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
-                brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(delay.Value);
+                brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(delay.Value);
 
             await _topicClient.SendAsync(brokeredMessage).AnyContext();
         }

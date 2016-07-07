@@ -11,6 +11,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -30,7 +31,7 @@ namespace Foundatio.Tests.Jobs {
                         Assert.Equal("Test", jobData.SomeData);
 
                         for (int i = 0; i < 10; i++) {
-                            await Task.Delay(100);
+                            await SystemClock.SleepAsync(100);
                             await ctx.ReportProgressAsync(10 * i);
                         }
                     });
@@ -122,7 +123,7 @@ namespace Foundatio.Tests.Jobs {
 
                         try {
                             await Task.WhenAll(tasks);
-                            await Task.Delay(100);
+                            await SystemClock.SleepAsync(100);
                         } catch (TaskCanceledException) {}
 
                         _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
@@ -174,7 +175,7 @@ namespace Foundatio.Tests.Jobs {
                         Assert.Equal("Test", jobData.SomeData);
 
                         for (int i = 1; i < 10; i++) {
-                            await Task.Delay(100);
+                            await SystemClock.SleepAsync(100);
                             await ctx.ReportProgressAsync(10 * i);
                         }
                     }, Log.CreateLogger("MyWorkItem"));
@@ -241,7 +242,7 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 1; i < 10; i++) {
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 await context.ReportProgressAsync(10 * i);
             }
         }

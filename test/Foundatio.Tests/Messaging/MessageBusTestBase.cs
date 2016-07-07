@@ -35,7 +35,7 @@ namespace Foundatio.Tests.Messaging {
                     _logger.Trace("Set event");
                 });
 
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
@@ -57,7 +57,7 @@ namespace Foundatio.Tests.Messaging {
                     throw new Exception();
                 });
 
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
@@ -79,7 +79,7 @@ namespace Foundatio.Tests.Messaging {
                     _logger.Trace("Set event");
                 });
 
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
                     Data = "Hello"
                 });
@@ -264,7 +264,7 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 var resetEvent = new AsyncAutoResetEvent(false);
                 messageBus.Subscribe<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);

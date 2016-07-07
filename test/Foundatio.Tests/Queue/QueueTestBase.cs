@@ -99,7 +99,7 @@ namespace Foundatio.Tests.Queue {
 
                     Task.Run(async () => {
                                  for (int index = 0; index < iterations; index++) {
-                                     await Task.Delay(RandomData.GetInt(10, 30));
+                                     await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
                                      await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                                  }
                                  _logger.Trace("Done enqueuing.");
@@ -277,12 +277,12 @@ namespace Foundatio.Tests.Queue {
                         throw new Exception();
                     });
 
-                    await Task.Delay(1);
+                    await SystemClock.SleepAsync(1);
                     var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", async () => await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
                     Assert.True(success);
-                    await Task.Delay(1);
+                    await SystemClock.SleepAsync(1);
 
                     var stats = await queue.GetQueueStatsAsync();
                     _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
@@ -419,7 +419,7 @@ namespace Foundatio.Tests.Queue {
                     });
 
                     await countdown.WaitAsync();
-                    await Task.Delay(50);
+                    await SystemClock.SleepAsync(50);
                     _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}",
                         info.CompletedCount,
                         info.AbandonCount,
@@ -514,7 +514,7 @@ namespace Foundatio.Tests.Queue {
                     await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
                     await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-                    await Task.Delay(100);
+                    await SystemClock.SleepAsync(100);
 
                     _logger.Trace("Before dequeue");
                     var item = await queue.DequeueAsync();
@@ -529,7 +529,7 @@ namespace Foundatio.Tests.Queue {
                     _logger.Trace("Before asserts");
                     Assert.Equal(2, completedCount);
 
-                    await Task.Delay(100);
+                    await SystemClock.SleepAsync(100);
 
                     Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
                     Assert.InRange((await metricsClient.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
@@ -596,11 +596,11 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(entry);
                 Assert.Equal("Hello", entry.Value.Data);
 
-                await Task.Delay(renewWait);
+                await SystemClock.SleepAsync(renewWait);
 
                 await entry.RenewLockAsync();
 
-                await Task.Delay(renewWait);
+                await SystemClock.SleepAsync(renewWait);
                 
                 // We shouldn't get another item here if RenewLock works.
                 var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);

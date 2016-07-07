@@ -188,7 +188,7 @@ namespace Foundatio.Queues {
                 return null;
             }
 
-            var now = DateTime.UtcNow;
+            var now = SystemClock.UtcNow;
             bool success = await Run.WithRetriesAsync(() => _cache.AddAsync(GetPayloadKey(id), data, _payloadTtl), logger: _logger).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
@@ -249,7 +249,7 @@ namespace Foundatio.Queues {
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             _logger.Trace("Queue {_queueName} dequeuing item...", _queueName);
-            var now = DateTime.UtcNow.Ticks;
+            var now = SystemClock.UtcNow.Ticks;
 
             await EnsureMaintenanceRunningAsync().AnyContext();
             await EnsureTopicSubscriptionAsync().AnyContext();
@@ -303,7 +303,7 @@ namespace Foundatio.Queues {
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
             await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id),
-                DateTime.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+                SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
@@ -381,7 +381,7 @@ namespace Foundatio.Queues {
             } else if (retryDelay > TimeSpan.Zero) {
                 _logger.Trace("Adding item to wait list for future retry: {entryId}", entry.Id);
 
-                await Run.WithRetriesAsync(() => _cache.SetAsync(GetWaitTimeKey(entry.Id), DateTime.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()), logger: _logger).AnyContext();
+                await Run.WithRetriesAsync(() => _cache.SetAsync(GetWaitTimeKey(entry.Id), SystemClock.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()), logger: _logger).AnyContext();
                 await Run.WithRetriesAsync(() => _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()), logger: _logger).AnyContext();
 
                 var tx = Database.CreateTransaction();
@@ -495,7 +495,7 @@ namespace Foundatio.Queues {
 
         internal async Task DoMaintenanceWorkAsync() {
             _logger.Trace("DoMaintenance: Name={0} Id={1}", _queueName, QueueId);
-            var utcNow = DateTime.UtcNow;
+            var utcNow = SystemClock.UtcNow;
 
             try {
                 var workIds = await Database.ListRangeAsync(WorkListName).AnyContext();

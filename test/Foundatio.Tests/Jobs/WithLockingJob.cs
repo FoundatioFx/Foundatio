@@ -7,6 +7,7 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Utility;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs {
@@ -26,7 +27,7 @@ namespace Foundatio.Tests.Jobs {
         protected override async Task<JobResult> RunInternalAsync(JobContext context) {
             RunCount++;
 
-            await Task.Delay(150, context.CancellationToken).AnyContext();
+            await SystemClock.SleepAsync(150, context.CancellationToken).AnyContext();
             Assert.True(await _locker.IsLockedAsync("WithLockingJob").AnyContext());
 
             return JobResult.Success;

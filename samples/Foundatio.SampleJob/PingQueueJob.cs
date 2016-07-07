@@ -9,6 +9,7 @@ using Foundatio.Lock;
 using Foundatio.Queues;
 using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Utility;
 
 namespace Foundatio.SampleJob {
     public class PingQueueJob : QueueJobBase<PingRequest> {
@@ -33,7 +34,7 @@ namespace Foundatio.SampleJob {
 
             _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
 
-            await Task.Delay(TimeSpan.FromMilliseconds(1)).AnyContext();
+            await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(1)).AnyContext();
 
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
                 throw new ApplicationException("Boom!");

@@ -105,7 +105,7 @@ namespace Foundatio.Caching {
                 return CacheValue<T>.NoValue;
             }
 
-            if (cacheEntry.ExpiresAt < DateTime.UtcNow) {
+            if (cacheEntry.ExpiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 Interlocked.Increment(ref _misses);
                 return CacheValue<T>.NoValue;
@@ -134,7 +134,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
         }
 
@@ -143,7 +143,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentException("Key cannot be null or empty.");
 
             // TODO: Look up the existing expiration if expiresIn is null.
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
@@ -157,7 +157,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -196,7 +196,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -230,8 +230,8 @@ namespace Foundatio.Caching {
                 throw new ArgumentException("Key cannot be null or empty.");
 
             // TODO: Look up the existing expiration if expiresIn is null.
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < DateTime.UtcNow) {
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
@@ -268,7 +268,7 @@ namespace Foundatio.Caching {
 
             CacheEntry cacheEntry;
             _memory.TryRemove(oldest, out cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < DateTime.UtcNow)
+            if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 await OnItemExpiredAsync(oldest).AnyContext();
         }
 
@@ -276,8 +276,8 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < DateTime.UtcNow) {
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
@@ -308,7 +308,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("SetInternalAsync: Key cannot be null or empty.");
 
-            if (entry.ExpiresAt < DateTime.UtcNow) {
+            if (entry.ExpiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return false;
             }
@@ -316,7 +316,7 @@ namespace Foundatio.Caching {
             if (addOnly) {
                 if (!_memory.TryAdd(key, entry)) {
                     CacheEntry existingEntry;
-                    if (!_memory.TryGetValue(key, out existingEntry) || existingEntry.ExpiresAt >= DateTime.UtcNow)
+                    if (!_memory.TryGetValue(key, out existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
                         return false;
 
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
@@ -365,7 +365,7 @@ namespace Foundatio.Caching {
                 return -1;
             }
             
-            DateTime expiresAt = expiresIn.HasValue ? DateTime.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 double? currentValue = null;
                 try {
@@ -406,8 +406,8 @@ namespace Foundatio.Caching {
             if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
                 return null;
 
-            if (value.ExpiresAt >= DateTime.UtcNow)
-                return value.ExpiresAt.Subtract(DateTime.UtcNow);
+            if (value.ExpiresAt >= SystemClock.UtcNow)
+                return value.ExpiresAt.Subtract(SystemClock.UtcNow);
 
             await RemoveExpiredKeyAsync(key).AnyContext();
             return null;
@@ -417,8 +417,8 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
-            DateTime expiresAt = DateTime.UtcNow.Add(expiresIn);
-            if (expiresAt < DateTime.UtcNow) {
+            DateTime expiresAt = SystemClock.UtcNow.Add(expiresIn);
+            if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return;
             }
@@ -440,7 +440,7 @@ namespace Foundatio.Caching {
             _logger.Trace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
-            DateTime utcNow = DateTime.UtcNow.AddMilliseconds(50);
+            DateTime utcNow = SystemClock.UtcNow.AddMilliseconds(50);
             DateTime minExpiration = DateTime.MaxValue;
             
             try {
@@ -473,7 +473,7 @@ namespace Foundatio.Caching {
                 _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
                 Value = value;
                 ExpiresAt = expiresAt;
-                LastModifiedTicks = DateTime.UtcNow.Ticks;
+                LastModifiedTicks = SystemClock.UtcNow.Ticks;
                 InstanceNumber = Interlocked.Increment(ref _instanceCount);
             }
 
@@ -487,7 +487,7 @@ namespace Foundatio.Caching {
 
             internal object Value {
                 get {
-                    LastAccessTicks = DateTime.UtcNow.Ticks;
+                    LastAccessTicks = SystemClock.UtcNow.Ticks;
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
@@ -495,8 +495,8 @@ namespace Foundatio.Caching {
                 }
                 set {
                     _cacheValue = _shouldClone ? value.Copy() : value;
-                    LastAccessTicks = DateTime.UtcNow.Ticks;
-                    LastModifiedTicks = DateTime.UtcNow.Ticks;
+                    LastAccessTicks = SystemClock.UtcNow.Ticks;
+                    LastModifiedTicks = SystemClock.UtcNow.Ticks;
                 }
             }
 

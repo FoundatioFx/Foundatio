@@ -167,7 +167,7 @@ namespace Foundatio.Tests.Storage {
                         return;
 
                     if (RandomData.GetBool()) {
-                        await storage.CompleteEventPost(path, eventPost.ProjectId, DateTime.UtcNow, true, _logger);
+                        await storage.CompleteEventPost(path, eventPost.ProjectId, SystemClock.UtcNow, true, _logger);
                     } else
                         await storage.SetNotActiveAsync(path, _logger);
                 });

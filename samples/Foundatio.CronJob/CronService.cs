@@ -89,7 +89,7 @@ namespace Foundatio.CronJob {
             if (_cronSchedule == null)
                 throw new ArgumentException("Could not parse schedule.", nameof(schedule));
 
-            var dates = _cronSchedule.GetNextOccurrences(DateTime.UtcNow, DateTime.MaxValue).Take(2).ToList();
+            var dates = _cronSchedule.GetNextOccurrences(SystemClock.UtcNow, DateTime.MaxValue).Take(2).ToList();
             var interval = TimeSpan.FromDays(1);
             if (dates.Count == 2)
                 interval = dates[1].Subtract(dates[0]);
@@ -102,7 +102,7 @@ namespace Foundatio.CronJob {
         public Task RunTask { get; private set; }
 
         public Task<bool> StartIfScheduledAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            return StartIfScheduledAsync(DateTime.UtcNow, cancellationToken);
+            return StartIfScheduledAsync(SystemClock.UtcNow, cancellationToken);
         }
 
         internal async Task<bool> StartIfScheduledAsync(DateTime now, CancellationToken cancellationToken = default(CancellationToken)) {

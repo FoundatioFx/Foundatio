@@ -13,7 +13,7 @@ namespace Foundatio.Queues {
             _queue = queue;
             EnqueuedTimeUtc = enqueuedTimeUtc;
             Attempts = attempts;
-            DequeuedTimeUtc = RenewedTimeUtc = DateTime.UtcNow;
+            DequeuedTimeUtc = RenewedTimeUtc = SystemClock.UtcNow;
         }
 
         public string Id { get; }
@@ -28,7 +28,7 @@ namespace Foundatio.Queues {
         public DataDictionary Data { get; } = new DataDictionary();
 
         public Task RenewLockAsync() {
-            RenewedTimeUtc = DateTime.UtcNow;
+            RenewedTimeUtc = SystemClock.UtcNow;
             return _queue.RenewLockAsync(this);
         }
 

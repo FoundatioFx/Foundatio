@@ -6,7 +6,7 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "BenchmarkDotNet": "0.9.7",
+        "BenchmarkDotNet": "0.9.8",
         "Foundatio": {
             "target": "project"
         },
@@ -15,18 +15,29 @@
         }
     },
     "frameworks": {
-        "NET46": {
+        "netcoreapp1.0": {
             "buildOptions": {
-                "define": [ "NET46" ]
+                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
             },
-            "frameworkAssemblies": {
-                "System.Threading.Tasks": {
-                    "type": "build"
-                },
-                "System.Runtime": {
-                    "type": "build"
+            "dependencies": {
+                "Microsoft.NETCore.App": {
+                    "type": "platform",
+                    "version": "1.0.0"
                 }
             }
+        },
+      "NET46": {
+        "buildOptions": {
+          "define": [ "NET46" ]
+        },
+        "frameworkAssemblies": {
+          "System.Threading.Tasks": {
+            "type": "build"
+          },
+          "System.Runtime": {
+            "type": "build"
+          }
         }
+      }
     }
 }

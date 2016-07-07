@@ -68,7 +68,7 @@ namespace Foundatio.Queues {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
-            var entry = new QueueEntry<T>(id, data.Copy(), this, DateTime.UtcNow, 0);
+            var entry = new QueueEntry<T>(id, data.Copy(), this, SystemClock.UtcNow, 0);
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
@@ -150,7 +150,7 @@ namespace Foundatio.Queues {
                 return null;
 
             info.Attempts++;
-            info.DequeuedTimeUtc = DateTime.UtcNow;
+            info.DequeuedTimeUtc = SystemClock.UtcNow;
 
             if (!_dequeued.TryAdd(info.Id, info))
                 throw new Exception("Unable to add item to the dequeued list.");
@@ -160,7 +160,7 @@ namespace Foundatio.Queues {
 
             var entry = new QueueEntry<T>(info.Id, info.Value.Copy(), this, info.EnqueuedTimeUtc, info.Attempts);
             await OnDequeuedAsync(entry).AnyContext();
-            ScheduleNextMaintenance(DateTime.UtcNow.Add(_workItemTimeout));
+            ScheduleNextMaintenance(SystemClock.UtcNow.Add(_workItemTimeout));
 
             return entry;
         }
@@ -247,7 +247,7 @@ namespace Foundatio.Queues {
         }
         
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            DateTime utcNow = DateTime.UtcNow;
+            DateTime utcNow = SystemClock.UtcNow;
             DateTime minAbandonAt = DateTime.MaxValue;
 
             try {

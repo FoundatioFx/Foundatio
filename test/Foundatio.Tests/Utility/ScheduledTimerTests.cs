@@ -20,13 +20,13 @@ namespace Foundatio.Tests.Utility {
             int hits = 0;
             Func<Task<DateTime?>> callback = async () => {
                 Interlocked.Increment(ref hits);
-                await Task.Delay(50);
+                await SystemClock.SleepAsync(50);
                 return null;
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                await Task.Delay(50);
+                await SystemClock.SleepAsync(50);
                 Assert.Equal(1, hits);
             }
         }
@@ -39,20 +39,20 @@ namespace Foundatio.Tests.Utility {
             Func<Task<DateTime?>> callback = async () => {
                 _logger.Info("Starting work.");
                 Interlocked.Increment(ref hits);
-                await Task.Delay(1000);
+                await SystemClock.SleepAsync(1000);
                 _logger.Info("Finished work.");
                 return null;
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                await Task.Delay(1);
+                await SystemClock.SleepAsync(1);
                 timer.ScheduleNext();
 
-                await Task.Delay(50);
+                await SystemClock.SleepAsync(50);
                 Assert.Equal(1, hits);
 
-                await Task.Delay(1000);
+                await SystemClock.SleepAsync(1000);
                 Assert.Equal(2, hits);
             }
         }
@@ -72,9 +72,9 @@ namespace Foundatio.Tests.Utility {
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
                 var sw = Stopwatch.StartNew();
                 timer.ScheduleNext();
-                await Task.Delay(1);
+                await SystemClock.SleepAsync(1);
                 timer.ScheduleNext();
-                await Task.Delay(1);
+                await SystemClock.SleepAsync(1);
                 timer.ScheduleNext();
 
                 await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
@@ -127,13 +127,13 @@ namespace Foundatio.Tests.Utility {
                 for (int i = 1; i <= 5; i++) {
                     _logger.Info($"Scheduling #{i}");
                     timer.ScheduleNext();
-                    await Task.Delay(5);
+                    await SystemClock.SleepAsync(5);
                 }
 
-                await Task.Delay(250);
+                await SystemClock.SleepAsync(250);
                 Assert.Equal(2, hits);
 
-                await Task.Delay(100);
+                await SystemClock.SleepAsync(100);
                 Assert.Equal(2, hits);
             }
         }

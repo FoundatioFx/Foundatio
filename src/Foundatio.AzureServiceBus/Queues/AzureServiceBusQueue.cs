@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 using Nito.AsyncEx;
@@ -152,7 +153,7 @@ namespace Foundatio.Queues {
             var message = new BrokeredMessage(data);
             await _queueClient.SendAsync(message).AnyContext();
             
-            var entry = new QueueEntry<T>(message.MessageId, data, this, DateTime.UtcNow, 0);
+            var entry = new QueueEntry<T>(message.MessageId, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
             return message.MessageId;

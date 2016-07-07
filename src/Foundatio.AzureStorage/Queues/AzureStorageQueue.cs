@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
@@ -76,7 +77,7 @@ namespace Foundatio.Queues {
             var message = new CloudQueueMessage(await _serializer.SerializeAsync(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
             
-            var entry = new QueueEntry<T>(message.Id, data, this, DateTime.UtcNow, 0);
+            var entry = new QueueEntry<T>(message.Id, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
             
             return message.Id;
@@ -91,7 +92,7 @@ namespace Foundatio.Queues {
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await Task.Delay(_dequeueInterval, linkedCancellationToken);
+                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken);
                 } catch (TaskCanceledException) { }
 
                 // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.

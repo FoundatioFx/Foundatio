@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
     public interface IJob {
@@ -33,11 +34,11 @@ namespace Foundatio.Jobs {
                         iterations++;
 
                         if (result.Error != null)
-                            await Task.Delay(Math.Max(interval?.Milliseconds ?? 0, 100), cancellationToken).AnyContext();
+                            await SystemClock.SleepAsync(Math.Max(interval?.Milliseconds ?? 0, 100), cancellationToken).AnyContext();
                         else if (interval.HasValue)
-                            await Task.Delay(interval.Value, cancellationToken).AnyContext();
+                            await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                            await Task.Delay(1).AnyContext();
+                            await SystemClock.SleepAsync(1).AnyContext();
                     } catch (TaskCanceledException) { }
 
                     if (continuationCallback == null)
@@ -56,7 +57,7 @@ namespace Foundatio.Jobs {
                 if (cancellationToken.IsCancellationRequested)
                     logger.Trace("Job cancellation requested.");
 
-                await Task.Delay(1).AnyContext(); // allow events to process
+                await SystemClock.SleepAsync(1).AnyContext(); // allow events to process
             }
         }
 

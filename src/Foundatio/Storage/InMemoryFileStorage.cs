@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Storage {
     public class InMemoryFileStorage : IFileStorage {
@@ -59,8 +60,8 @@ namespace Foundatio.Storage {
 
             lock (_lock) {
                 _storage[path] = Tuple.Create(new FileSpec {
-                    Created = DateTime.Now,
-                    Modified = DateTime.Now,
+                    Created = SystemClock.UtcNow,
+                    Modified = SystemClock.UtcNow,
                     Path = path,
                     Size = contents.Length
                 }, contents);
@@ -84,7 +85,7 @@ namespace Foundatio.Storage {
 
                 _storage[newpath] = _storage[path];
                 _storage[newpath].Item1.Path = newpath;
-                _storage[newpath].Item1.Modified = DateTime.Now;
+                _storage[newpath].Item1.Modified = SystemClock.UtcNow;
                 _storage.Remove(path);
             }
 
@@ -103,7 +104,7 @@ namespace Foundatio.Storage {
 
                 _storage[targetpath] = _storage[path];
                 _storage[targetpath].Item1.Path = targetpath;
-                _storage[targetpath].Item1.Modified = DateTime.Now;
+                _storage[targetpath].Item1.Modified = SystemClock.UtcNow;
             }
 
             return Task.FromResult(true);

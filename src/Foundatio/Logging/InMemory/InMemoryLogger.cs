@@ -21,7 +21,7 @@ namespace Foundatio.Logging.InMemory {
 
             var scopes = _stack.Reverse().ToArray();
             var logEntry = new LogEntry {
-                Date = DateTime.UtcNow,
+                Date = SystemClock.UtcNow,
                 LogLevel = logLevel,
                 EventId = eventId,
                 State = state,

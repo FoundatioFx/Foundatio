@@ -95,7 +95,7 @@ namespace Foundatio.Jobs {
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
 
             if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                await Task.Delay(_options.InitialDelay.Value, cancellationToken).AnyContext();
+                await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
             if (_options.RunContinuous && _options.InstanceCount > 1) {
                 var tasks = new List<Task>();

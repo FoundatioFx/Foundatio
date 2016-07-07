@@ -30,7 +30,7 @@ namespace Foundatio.Utility {
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
-            var utcNow = DateTime.UtcNow;
+            var utcNow = SystemClock.UtcNow;
             if (!utcDate.HasValue || utcDate.Value < utcNow)
                 utcDate = utcNow;
 
@@ -81,7 +81,7 @@ namespace Foundatio.Utility {
                     return;
                 }
 
-                _last = DateTime.UtcNow;
+                _last = SystemClock.UtcNow;
             }
 
             try {
@@ -97,11 +97,11 @@ namespace Foundatio.Utility {
 
                 if (_minimumInterval > TimeSpan.Zero) {
                     _logger.Trace("Sleeping for minimum interval: {interval}", _minimumInterval);
-                    await Task.Delay(_minimumInterval).AnyContext();
+                    await SystemClock.SleepAsync(_minimumInterval).AnyContext();
                     _logger.Trace("Finished sleeping");
                 }
 
-                var nextRun = DateTime.UtcNow.AddMilliseconds(10);
+                var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
                 if (_shouldRunAgainImmediately || next.HasValue && next.Value <= nextRun)
                     ScheduleNext(nextRun);
                 else if (next.HasValue)

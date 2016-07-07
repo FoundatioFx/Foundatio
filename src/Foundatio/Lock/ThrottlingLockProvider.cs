@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Logging;
+using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -31,15 +32,15 @@ namespace Foundatio.Lock {
             byte errors = 0;
 
             do {
-                string cacheKey = GetCacheKey(name, DateTime.UtcNow);
+                string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
 
                 try {
-                    _logger.Trace("Current time: {0} throttle: {1} key: {2}", DateTime.UtcNow.ToString("mm:ss.fff"), DateTime.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                    _logger.Trace("Current time: {0} throttle: {1} key: {2}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                     _logger.Trace("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod);
                     if (hitCount <= _maxHitsPerPeriod - 1) {
-                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, DateTime.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
+                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
                         
                         // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
@@ -57,13 +58,13 @@ namespace Foundatio.Lock {
                         break;
                     }
 
-                    var sleepUntil = DateTime.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
-                    if (sleepUntil > DateTime.UtcNow) {
-                        _logger.Trace("Sleeping until key expires: {0}", sleepUntil - DateTime.UtcNow);
-                        await Task.Delay(sleepUntil - DateTime.UtcNow, cancellationToken).AnyContext();
+                    var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
+                    if (sleepUntil > SystemClock.UtcNow) {
+                        _logger.Trace("Sleeping until key expires: {0}", sleepUntil - SystemClock.UtcNow);
+                        await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
                     } else {
                         _logger.Trace("Default sleep.");
-                        await Task.Delay(50, cancellationToken).AnyContext();
+                        await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                     }
                 } catch (TaskCanceledException) {
                     return null;
@@ -73,7 +74,7 @@ namespace Foundatio.Lock {
                     if (errors >= 3)
                         break;
 
-                    await Task.Delay(50, cancellationToken).AnyContext();
+                    await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
@@ -89,7 +90,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            string cacheKey = GetCacheKey(name, DateTime.UtcNow);
+            string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
             var hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
 
             return hitCount >= _maxHitsPerPeriod;

@@ -10,7 +10,7 @@ namespace Foundatio.Utility {
         public static async Task DelayedAsync(TimeSpan delay, Func<Task> action) {
             await Task.Run(async () => {
                 if (delay.Ticks > 0)
-                    await Task.Delay(delay).AnyContext();
+                    await SystemClock.SleepAsync(delay).AnyContext();
 
                 await action().AnyContext();
             }).AnyContext();
@@ -32,10 +32,10 @@ namespace Foundatio.Utility {
                 throw new ArgumentNullException(nameof(action));
 
             int attempts = 1;
-            var startTime = DateTime.UtcNow;
+            var startTime = SystemClock.UtcNow;
             do {
                 if (attempts > 1)
-                    logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
+                    logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
 
                 try {
                     return await action().AnyContext();
@@ -44,7 +44,7 @@ namespace Foundatio.Utility {
                         throw;
 
                     logger?.Error(ex, $"Retry error: {ex.Message}");
-                    await Task.Delay(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
+                    await SystemClock.SleepAsync(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
                 }
 
                 attempts++;

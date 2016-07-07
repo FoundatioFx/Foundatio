@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -24,19 +25,19 @@ namespace Foundatio.Tests.Queue {
         public async Task TestAsyncEvents() {
             using (var q = new InMemoryQueue<SimpleWorkItem>(loggerFactory: Log)) {
                 q.Enqueuing.AddHandler(async (sender, args) => {
-                    await Task.Delay(250);
+                    await SystemClock.SleepAsync(250);
                     _logger.Info("First Enqueuing.");
                 });
                 q.Enqueuing.AddHandler(async(sender, args) => {
-                    await Task.Delay(250);
+                    await SystemClock.SleepAsync(250);
                     _logger.Info("Second Enqueuing.");
                 });
                 var e1 = q.Enqueued.AddHandler(async (sender, args) => {
-                    await Task.Delay(250);
+                    await SystemClock.SleepAsync(250);
                     _logger.Info("First.");
                 });
                 q.Enqueued.AddHandler(async(sender, args) => {
-                    await Task.Delay(250);
+                    await SystemClock.SleepAsync(250);
                     _logger.Info("Second.");
                 });
                 var sw = Stopwatch.StartNew();

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Logging.InMemory;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.SampleJobClient {
@@ -69,7 +70,7 @@ namespace Foundatio.SampleJobClient {
 
         private static void ClearOutputLines(int delay = 1000) {
             Task.Run(() => {
-                Thread.Sleep(delay);
+                SystemClock.Sleep(delay);
                 ClearConsoleLines(OPTIONS_MENU_LINE_COUNT, OPTIONS_MENU_LINE_COUNT + 4);
             });
         }
@@ -89,7 +90,7 @@ namespace Foundatio.SampleJobClient {
                             Console.ForegroundColor = originalColor;
                         }
                     }
-                    Thread.Sleep(250);
+                    SystemClock.Sleep(250);
                 }
             });
         }

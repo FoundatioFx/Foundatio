@@ -28,13 +28,13 @@ namespace Foundatio.Tests.Jobs {
 
                 var enqueueTask = Run.InParallel(workItemCount, async index => {
                     await queue.EnqueueAsync(new SampleQueueWorkItem {
-                        Created = DateTime.Now,
+                        Created = SystemClock.UtcNow,
                         Path = "somepath" + index
                     });
                 });
 
                 var job = new SampleQueueJob(queue, null, Log);
-                await Task.Delay(10);
+                await SystemClock.SleepAsync(10);
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -52,14 +52,14 @@ namespace Foundatio.Tests.Jobs {
             
                 var enqueueTask = Run.InParallel(workItemCount, async index => {
                     await queue.EnqueueAsync(new SampleQueueWorkItem {
-                        Created = DateTime.Now,
+                        Created = SystemClock.UtcNow,
                         Path = "somepath" + index
                     });
                 });
 
                 var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
-                await Task.Delay(10);
+                await SystemClock.SleepAsync(10);
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
                     var enqueueTask = Run.InParallel(workItemCount, async index => {
                         var queue = queues[RandomData.GetInt(0, jobCount - 1)];
                         await queue.EnqueueAsync(new SampleQueueWorkItem {
-                            Created = DateTime.Now,
+                            Created = SystemClock.UtcNow,
                             Path = RandomData.GetString()
                         });
                     });
