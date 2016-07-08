@@ -6,8 +6,8 @@ configuration: Release
 pull_requests:
   do_not_increment_build_number: true
   
-environment:
-  VERSION_SUFFIX: -beta
+#environment:
+#  VERSION_SUFFIX: -beta
 
 init: 
   - git config --global core.autocrlf true
