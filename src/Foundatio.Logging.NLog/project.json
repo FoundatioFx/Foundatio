@@ -29,7 +29,7 @@
         "Foundatio": {
             "target": "project"
         },
-        "NLog": "4.4.0-beta12",
+        "NLog": "4.4.0-betaV14",
         "System.Collections.Immutable": "1.2.0"
     },
     "frameworks": {
