@@ -32,7 +32,7 @@
         "Microsoft.Data.Services.Client": "5.7.0",
         "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
         "System.Spatial": "5.7.0",
-        "WindowsAzure.Storage": "7.1.2",
+        "WindowsAzure.Storage": "6.2.0",
         "Foundatio": {
             "target": "project"
         }

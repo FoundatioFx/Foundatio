@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio Amazon AWS Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -26,8 +26,8 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "AWSSDK.Core": "3.1.5.3",
-        "AWSSDK.S3": "3.1.5.0",
+        "AWSSDK.Core": "3.1.8.1",
+        "AWSSDK.S3": "3.1.8",
         "Foundatio": {
             "target": "project"
         }
