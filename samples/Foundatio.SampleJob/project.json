@@ -1,0 +1,37 @@
+{
+    "buildOptions": {
+        "debugType": "portable",
+        "emitEntryPoint": true,
+        "optimize": true,
+        "warningsAsErrors": true
+    },
+    "dependencies": {
+        "Exceptionless.RandomData": "1.1.24",
+        "Foundatio": {
+            "target": "project"
+        },
+        "Foundatio.Logging.NLog": {
+            "target": "project"
+        },
+        "Foundatio.Redis": {
+            "target": "project"
+        },
+        "SimpleInjector": "3.2.0",
+        "Topshelf": "4.0.1"
+    },
+    "frameworks": {
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": {
+                    "type": "build"
+                },
+                "System.Runtime": {
+                    "type": "build"
+                }
+            }
+        }
+    }
+}

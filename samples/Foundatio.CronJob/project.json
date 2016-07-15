@@ -1,0 +1,35 @@
+{
+    "buildOptions": {
+        "debugType": "portable",
+        "emitEntryPoint": true,
+        "optimize": true,
+        "warningsAsErrors": true
+    },
+    "dependencies": {
+        "Foundatio": {
+            "target": "project"
+        },
+        "Foundatio.Logging.NLog": {
+            "target": "project"
+        },
+        "ncrontab": "3.1.0",
+        "NLog.Schema": "4.3.4",
+        "SimpleInjector": "3.2.0",
+        "Topshelf": "4.0.1"
+    },
+    "frameworks": {
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": {
+                    "type": "build"
+                },
+                "System.Runtime": {
+                    "type": "build"
+                }
+            }
+        }
+    }
+}
