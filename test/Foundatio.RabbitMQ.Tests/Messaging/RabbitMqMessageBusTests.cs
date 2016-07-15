@@ -1,13 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using Foundatio.Logging;
-using Foundatio.Tests;
 using Foundatio.Messaging;
-using Foundatio.RabbitMQ;
-using Foundatio.RabbitMQ.Messaging;
 using Foundatio.Tests.Messaging;
 using Xunit;
 using Xunit.Abstractions;
@@ -21,7 +14,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new RabbitMQMessageService("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
+            _messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
                 false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
             return _messageBus;
         }
@@ -80,6 +73,5 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         public override Task WontKeepMessagesWithNoSubscribers() {
             return base.WontKeepMessagesWithNoSubscribers();
         }
-
     }
 }

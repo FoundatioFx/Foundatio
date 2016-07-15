@@ -2,20 +2,16 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Foundatio.Extensions;
 using Foundatio.Logging;
-using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace Foundatio.RabbitMQ.Messaging {
-    public class RabbitMQMessageService : MessageBusBase, IMessageBus {
-        private readonly string _userName;
-        private readonly string _password;
+namespace Foundatio.Messaging {
+    public class RabbitMQMessageBus : MessageBusBase, IMessageBus {
         private readonly string _queueName;
         private readonly string _routingKey;
         private readonly string _exchangeName;
@@ -24,7 +20,6 @@ namespace Foundatio.RabbitMQ.Messaging {
         private readonly bool _exclusive;
         private readonly bool _autoDelete;
         private readonly IDictionary<string, object> _queueArguments;
-        private readonly ILogger _log;
         private readonly ISerializer _serializer;
         private readonly IConnectionFactory _factory;
         private readonly IConnection _publisherClient;
@@ -32,7 +27,7 @@ namespace Foundatio.RabbitMQ.Messaging {
         private readonly IModel _publisherChannel;
         private readonly IModel _subscriberChannel;
         private readonly TimeSpan _defaultMessageTimeToLive = TimeSpan.MaxValue;
-        private readonly AsyncLock  _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new AsyncLock();
 
         /// <summary>
         /// Constructor for RabbitMqMessaging - Exchange type set as Direct exchange that uses the routing key
@@ -50,12 +45,8 @@ namespace Foundatio.RabbitMQ.Messaging {
         /// <param name="loggerFactory">logger</param>
         /// <param name="persistent">When set to true, RabbitMQ will persist message to disk</param>
         /// <param name="exclusive"></param>
-        public RabbitMQMessageService(string userName, string password, string queueName, string routingKey, string exhangeName, bool durable,
-            bool persistent, bool exclusive , bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null
-            ) : base(loggerFactory) {
+        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey, string exhangeName, bool durable, bool persistent, bool exclusive, bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
-            _userName = userName;
-            _password = password;
             _exchangeName = exhangeName;
             _queueName = queueName;
             _routingKey = routingKey;
@@ -64,24 +55,21 @@ namespace Foundatio.RabbitMQ.Messaging {
             _exclusive = exclusive;
             _autoDelete = autoDelete;
             _queueArguments = queueArguments;
-            if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero) {
+
+            if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero)
                 _defaultMessageTimeToLive = defaultMessageTimeToLive.Value;
-            }
-            _log = loggerFactory.CreateLogger(GetType());
 
             // initialize connection factory
-            _factory = new ConnectionFactory
-            {
-                UserName = _userName,
-                Password = _password
+            _factory = new ConnectionFactory {
+                UserName = userName,
+                Password = password
             };
 
             // initialize publisher
             _publisherClient = CreateConnection();
             _publisherChannel = _publisherClient.CreateModel();
             SetUpExchangeAndQueuesForRouting(_publisherChannel);
-            _logger.Trace("The unique channel number for the publisher is : {channelNumber}",
-                _publisherChannel.ChannelNumber);
+            _logger.Trace("The unique channel number for the publisher is : {channelNumber}", _publisherChannel.ChannelNumber);
 
             // initialize subscriber
             _subscriberClient = CreateConnection();
@@ -127,15 +115,12 @@ namespace Foundatio.RabbitMQ.Messaging {
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
         /// <returns></returns>
-        public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null,
-            CancellationToken cancellationToken = default(CancellationToken))
-        {
+        public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (message == null)
                 return;
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
-            {
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
             }
@@ -148,19 +133,17 @@ namespace Foundatio.RabbitMQ.Messaging {
             await Run.WithRetriesAsync(() => Publish(data, cancellationToken), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
-        private async Task Publish(byte[] data,
-            CancellationToken cancellationToken = default(CancellationToken))
-        {
-            if (_publisherChannel != null) {
-                using (await _lock.LockAsync(cancellationToken))
-            {
-                    var basicProperties = _publisherChannel.CreateBasicProperties();
-                    basicProperties.Persistent = _persistent;
-                    basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
+        private async Task Publish(byte[] data, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (_publisherChannel == null)
+                return;
 
-                    // The publication occurs with mandatory=false
-                    _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
-                }
+            using (await _lock.LockAsync(cancellationToken)) {
+                var basicProperties = _publisherChannel.CreateBasicProperties();
+                basicProperties.Persistent = _persistent;
+                basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
+
+                // The publication occurs with mandatory=false
+                _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
             }
         }
 
@@ -170,11 +153,10 @@ namespace Foundatio.RabbitMQ.Messaging {
         /// <typeparam name="T">Type of the subscriber who wants to be notified of the callback</typeparam>
         /// <param name="handler">callback handler</param>
         /// <param name="cancellationToken"></param>
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler,
-            CancellationToken cancellationToken = default(CancellationToken)) {
+        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
             var consumer = new EventingBasicConsumer(_subscriberChannel);
             consumer.Received += async (o, e) => {
-                _log.Trace("Callback Recieved called ");
+                _logger.Trace("Callback Recieved called ");
                 var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
                 Type messageType = Type.GetType(message.Type, false);
                 if (messageType == null) {
@@ -185,6 +167,7 @@ namespace Foundatio.RabbitMQ.Messaging {
                 object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
                 await SendMessageToSubscribersAsync(messageType, body).AnyContext();
             };
+
             _subscriberChannel.BasicConsume(_queueName, true, consumer);
             base.Subscribe(handler, cancellationToken);
         }
@@ -198,19 +181,17 @@ namespace Foundatio.RabbitMQ.Messaging {
         }
 
         private void CloseConnection() {
-            if (_publisherClient != null && _publisherClient.IsOpen) {
+            if (_publisherClient != null && _publisherClient.IsOpen)
                 _publisherClient.Close();
-            }
-            if (_subscriberClient != null && _subscriberClient.IsOpen) {
+            if (_subscriberClient != null && _subscriberClient.IsOpen)
                 _subscriberClient.Close();
-            }
+
             if (_lock != null) {
-                using (_lock.Lock()) {
+                using (_lock.Lock())
                     _publisherChannel?.Abort();
-                }
             }
+
             _subscriberChannel?.Abort();
         }
     }
-
 }
