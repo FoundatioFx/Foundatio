@@ -41,6 +41,7 @@ before_test:
   - redis-64\tools\redis-server.exe --service-install
   - redis-64\tools\redis-server.exe --service-start
   - choco install rabbitmq --ignoredependencies -y
+  - ps: (Get-Service -Name RabbitMQ).Status
 
 test_script:
   - ps: >-
