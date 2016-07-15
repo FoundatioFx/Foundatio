@@ -11,7 +11,7 @@ namespace Foundatio.RabbitMQSubscribeConsole
         public static void Main(string[] args)
         {
              IMessageBus messageBus = new RabbitMQMessageService("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
-                TimeSpan.FromMilliseconds(50));
+                 false, false, null, TimeSpan.FromMilliseconds(50));
              Console.WriteLine("Subscriber....");
                 messageBus.Subscribe<string>(msg => {
                     Console.WriteLine(msg);
