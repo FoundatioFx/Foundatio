@@ -8,6 +8,7 @@ using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -31,7 +32,7 @@ namespace Foundatio.RabbitMQ.Messaging {
         private readonly IModel _publisherChannel;
         private readonly IModel _subscriberChannel;
         private readonly TimeSpan _defaultMessageTimeToLive = TimeSpan.MaxValue;
-        private readonly Object _lock = new Object();
+        private readonly AsyncLock  _lock = new AsyncLock();
 
         /// <summary>
         /// Constructor for RabbitMqMessaging - Exchange type set as Direct exchange that uses the routing key
@@ -127,34 +128,39 @@ namespace Foundatio.RabbitMQ.Messaging {
         /// The same is a good idea for consumers.</remarks>
         /// <returns></returns>
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null,
-            CancellationToken cancellationToken = default(CancellationToken)) {
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (message == null)
                 return;
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+            {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
             }
-            await Run.WithRetriesAsync(() => Publish(messageType, message, cancellationToken), logger: _logger, cancellationToken: cancellationToken).AnyContext();
-        }
 
-        private async Task Publish(Type messageType, object message,
-            CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var data = await _serializer.SerializeAsync(new MessageBusData
-            {
+            var data = await _serializer.SerializeAsync(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             }).AnyContext();
 
-            lock (_lock) {
-                var basicProperties = _publisherChannel.CreateBasicProperties();
-                basicProperties.Persistent = _persistent;
-                basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
+            await Run.WithRetriesAsync(() => Publish(data, cancellationToken), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+        }
 
-                // The publication occurs with mandatory=false
-                _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
+        private async Task Publish(byte[] data,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (_publisherChannel != null) {
+                using (await _lock.LockAsync(cancellationToken))
+            {
+                    var basicProperties = _publisherChannel.CreateBasicProperties();
+                    basicProperties.Persistent = _persistent;
+                    basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
+
+                    // The publication occurs with mandatory=false
+                    _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
+                }
             }
         }
 
@@ -199,7 +205,7 @@ namespace Foundatio.RabbitMQ.Messaging {
                 _subscriberClient.Close();
             }
             if (_lock != null) {
-                lock (_lock) {
+                using (_lock.Lock()) {
                     _publisherChannel?.Abort();
                 }
             }
