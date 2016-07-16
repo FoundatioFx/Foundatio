@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public class NullCacheClient : ICacheClient {
+        public static readonly NullCacheClient Instance = new NullCacheClient();
+        
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             return Task.FromResult(0);
         }
