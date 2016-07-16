@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio Xunit Logging Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -30,20 +30,12 @@
             "target": "project"
         },
         "System.Collections.Immutable": "1.2.0",
-        "xunit.abstractions": "2.0.1-rc2",
-        "xunit.core": "2.2.0-beta2-build3300",
-        "xunit.extensibility.core": "2.2.0-beta2-build3300",
-        "xunit.extensibility.execution": "2.2.0-beta2-build3300"
+      "xunit.abstractions": "2.0.1-rc2",
+      "xunit.core": "2.2.0-beta2-build3300",
+      "xunit.extensibility.core": "2.2.0-beta2-build3300",
+      "xunit.extensibility.execution": "2.2.0-beta2-build3300"
     },
     "frameworks": {
-        "netstandard1.5": {
-            "buildOptions": {
-                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            },
-            "dependencies": {
-                "System.Threading": "4.0.11"
-            }
-        },
         "net46": {
             "buildOptions": {
                 "define": [ "NET46" ]

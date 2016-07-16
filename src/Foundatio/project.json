@@ -27,33 +27,10 @@
   },
   "dependencies": {
     "Newtonsoft.Json": "9.0.1",
-    "Nito.AsyncEx.Coordination": "1.0.0-eta-01"
+    "Nito.AsyncEx": "3.0.1",
+    "System.Threading.Tasks": "4.0.10"
   },
   "frameworks": {
-    "netstandard1.5": {
-      "buildOptions": {
-        "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-      },
-      "dependencies": {
-        "System.AppDomain": "2.0.11",
-        "System.Collections.Concurrent": "4.0.12",
-        "System.ComponentModel": "4.0.1",
-        "System.ComponentModel.TypeConverter": "4.1.0",
-        "System.Console": "4.0.0",
-        "System.Diagnostics.TraceSource": "4.0.0",
-        "System.IO.FileSystem": "4.0.1",
-        "System.IO.FileSystem.Watcher": "4.0.0",
-        "System.Net.Primitives": "4.0.11",
-        "System.Net.Sockets": "4.1.0",
-        "System.Runtime": "4.1.0",
-        "System.Runtime.Extensions": "4.1.0",
-        "System.Runtime.InteropServices": "4.1.0",
-        "System.Text.Encoding.Extensions": "4.0.11",
-        "System.Text.RegularExpressions": "4.1.0",
-        "System.Threading.Timer": "4.0.1",
-        "System.Threading.Thread": "4.0.0"
-      }
-    },
     "net46": {
       "buildOptions": {
         "define": [ "NET46" ]

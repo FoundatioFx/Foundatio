@@ -229,7 +229,7 @@ namespace Foundatio.Metrics {
             var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
                 try {
-                    await resetEvent.WaitAsync(cancellationToken).AnyContext();
+                    await resetEvent.WaitAsync().AnyContext();
                 } catch (OperationCanceledException) { }
 
                 currentCount = await this.GetCounterCountAsync(statName, start, SystemClock.UtcNow).AnyContext();

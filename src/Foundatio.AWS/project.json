@@ -26,18 +26,13 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "AWSSDK.Core": "3.2.5-beta",
-        "AWSSDK.S3": "3.2.5-beta",
+        "AWSSDK.Core": "3.1.9",
+      "AWSSDK.S3": "3.1.8.1",
         "Foundatio": {
             "target": "project"
         }
     },
     "frameworks": {
-        "netstandard1.5": {
-            "buildOptions": {
-                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            }
-        },
         "net46": {
             "buildOptions": {
                 "define": [ "NET46" ]

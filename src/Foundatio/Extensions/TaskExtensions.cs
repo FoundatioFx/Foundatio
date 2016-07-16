@@ -6,8 +6,8 @@ using Nito.AsyncEx;
 
 namespace Foundatio.Extensions {
     internal static class TaskExtensions {
-        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
-            return resetEvent.WaitAsync(timeout.ToCancellationToken());
+        public static void Wait(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
+            resetEvent.Wait(timeout.ToCancellationToken());
         }
 
         public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {

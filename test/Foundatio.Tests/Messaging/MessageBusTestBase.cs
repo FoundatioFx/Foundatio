@@ -41,7 +41,7 @@ namespace Foundatio.Tests.Messaging {
                 });
                 _logger.Trace("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
+                resetEvent.Wait(TimeSpan.FromSeconds(5).ToCancellationToken());
             }
         }
 
@@ -61,7 +61,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                Assert.Throws<TaskCanceledException>(() => resetEvent.Wait(TimeSpan.FromMilliseconds(100)));
             }
         }
         
@@ -85,7 +85,7 @@ namespace Foundatio.Tests.Messaging {
                 });
                 _logger.Trace("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
+                resetEvent.Wait(TimeSpan.FromSeconds(5));
             }
         }
 
@@ -199,7 +199,7 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
+                resetEvent.Wait(TimeSpan.FromSeconds(2));
             }
         }
 
