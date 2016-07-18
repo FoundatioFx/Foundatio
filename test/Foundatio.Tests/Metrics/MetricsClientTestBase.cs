@@ -135,19 +135,19 @@ namespace Foundatio.Tests.Metrics {
                     return;
 
                 Task.Run(async () => {
-                             await SystemClock.SleepAsync(50);
-                             await metrics.CounterAsync("Test").AnyContext();
-                             await metrics.CounterAsync("Test").AnyContext();
-                         });
+                    await SystemClock.SleepAsync(50);
+                    await metrics.CounterAsync("Test").AnyContext();
+                    await metrics.CounterAsync("Test").AnyContext();
+                });
 
                 await SystemClock.SleepAsync(1);
                 var success = await metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
                 Assert.True(success);
 
                 Task.Run(async () => {
-                             await SystemClock.SleepAsync(50);
-                             await metrics.CounterAsync("Test").AnyContext();
-                         });
+                    await SystemClock.SleepAsync(50);
+                    await metrics.CounterAsync("Test").AnyContext();
+                });
 
                 await SystemClock.SleepAsync(1);
                 success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
@@ -158,9 +158,9 @@ namespace Foundatio.Tests.Metrics {
                 Assert.False(success);
 
                 Task.Run(async () => {
-                             await SystemClock.SleepAsync(50);
-                             await metrics.CounterAsync("Test", 2);
-                         });
+                    await SystemClock.SleepAsync(50);
+                    await metrics.CounterAsync("Test", 2);
+                });
 
                 await SystemClock.SleepAsync(1);
                 success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
@@ -171,9 +171,9 @@ namespace Foundatio.Tests.Metrics {
                 Assert.True(success);
 
                 Task.Run(async () => {
-                             await SystemClock.SleepAsync(50);
-                             await metrics.CounterAsync("Test");
-                         });
+                    await SystemClock.SleepAsync(50);
+                    await metrics.CounterAsync("Test");
+                });
 
                 await SystemClock.SleepAsync(1);
                 success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));

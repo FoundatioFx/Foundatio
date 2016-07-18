@@ -150,8 +150,11 @@ namespace Foundatio.Queues {
             Enqueued?.Dispose();
             Enqueuing?.Dispose();
             LockRenewed?.Dispose();
-            
-            _behaviors.OfType<IDisposable>().ForEach(b => b.Dispose());
+
+            foreach (var behavior in _behaviors.OfType<IDisposable>())
+                behavior.Dispose();
+
+            _behaviors.Clear();
         }
     }
 }

@@ -181,6 +181,8 @@ namespace Foundatio.Messaging {
         }
 
         private void CloseConnection() {
+            base.Dispose();
+
             if (_publisherClient != null && _publisherClient.IsOpen)
                 _publisherClient.Close();
             if (_subscriberClient != null && _subscriberClient.IsOpen)
