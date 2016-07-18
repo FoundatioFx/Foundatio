@@ -378,7 +378,7 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                resetEvent.Wait(TimeSpan.FromSeconds(2));
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
