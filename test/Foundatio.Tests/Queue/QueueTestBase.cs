@@ -580,7 +580,7 @@ namespace Foundatio.Tests.Queue {
             // Need large value to reproduce this test
             var workItemTimeout = TimeSpan.FromSeconds(1);
             // Slightly shorter than the timeout to ensure we haven't lost the lock
-            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .50d);
+            var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .25d);
 
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
             if (queue == null)
@@ -598,9 +598,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal("Hello", entry.Value.Data);
 
                 await SystemClock.SleepAsync(renewWait);
-
                 await entry.RenewLockAsync();
-
                 await SystemClock.SleepAsync(renewWait);
                 
                 // We shouldn't get another item here if RenewLock works.
