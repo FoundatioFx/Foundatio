@@ -67,7 +67,7 @@ namespace Foundatio.Metrics {
 
             return Task.CompletedTask;
         }
-
+        
         private void OnMetricsTimer(object state) {
             try {
                 FlushAsync().GetAwaiter().GetResult();
@@ -230,8 +230,8 @@ namespace Foundatio.Metrics {
             do {
                 try {
                     await resetEvent.WaitAsync(cancellationToken).AnyContext();
-                } catch (OperationCanceledException) { }
-
+                } catch (OperationCanceledException) {}
+                
                 currentCount = await this.GetCounterCountAsync(statName, start, SystemClock.UtcNow).AnyContext();
                 _logger.Trace("Got signal: count={currentCount} expected={expectedCount}", currentCount, expectedCount);
 
@@ -282,8 +282,7 @@ namespace Foundatio.Metrics {
                 end = SystemClock.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 60 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
-
-
+            
             var countBuckets = GetMetricBuckets(MetricNames.Gauge, name, start.Value, end.Value, interval, MetricNames.Count);
             var totalBuckets = GetMetricBuckets(MetricNames.Gauge, name, start.Value, end.Value, interval, MetricNames.Total);
             var lastBuckets = GetMetricBuckets(MetricNames.Gauge, name, start.Value, end.Value, interval, MetricNames.Last);

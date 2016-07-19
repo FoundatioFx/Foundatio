@@ -220,8 +220,8 @@ namespace Foundatio.Queues {
         }
         
         public override void Dispose() {
-            _queueClient?.Close();
             base.Dispose();
+            _queueClient?.Close();
         }
 
         private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {

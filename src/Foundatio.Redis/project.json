@@ -29,14 +29,9 @@
         "Foundatio": {
             "target": "project"
         },
-        "StackExchange.Redis": "1.1.604-alpha"
+        "StackExchange.Redis": "1.1.603"
     },
     "frameworks": {
-        "netstandard1.5": {
-            "buildOptions": {
-                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            }
-        },
         "net46": {
             "buildOptions": {
                 "define": [ "NET46" ]

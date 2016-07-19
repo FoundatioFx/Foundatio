@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -565,16 +564,23 @@ namespace Foundatio.Queues {
             }
         }
 
-        public override async void Dispose() {
+        public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
+            _queueDisposedCancellationTokenSource?.Cancel();
+            base.Dispose();
 
             _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
             
-            await _subscriber.UnsubscribeAllAsync().AnyContext();
-            _queueDisposedCancellationTokenSource?.Cancel();
+            if (_isSubscribed) {
+                lock (_lock.Lock()) {
+                    if (_isSubscribed) {
+                        _subscriber.UnsubscribeAll(CommandFlags.FireAndForget);
+                        _isSubscribed = false;
+                    }
+                }
+            }
 
             _cache.Dispose();
-            base.Dispose();
         }
     }
 }

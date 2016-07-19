@@ -13,7 +13,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
-        protected LockTestBase(ITestOutputHelper output) : base(output) { }
+        protected LockTestBase(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
             return null;
@@ -146,7 +148,7 @@ namespace Foundatio.Tests.Locks {
         public virtual async Task WillThrottleCalls() {
             const int allowedLocks = 25;
 
-            var period = TimeSpan.FromSeconds(1);
+            var period = TimeSpan.FromSeconds(1.5);
             var locker = GetThrottlingLockProvider(allowedLocks, period);
             if (locker == null)
                 return;
@@ -169,13 +171,13 @@ namespace Foundatio.Tests.Locks {
             Assert.True(sw.Elapsed.TotalSeconds < 1);
             
             sw.Restart();
-            var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
+            var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(350));
             sw.Stop();
             Assert.Null(result);
             _logger.Info("Time {0}", sw.Elapsed);
 
             sw.Restart();
-            result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1.5));
+            result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.0));
             sw.Stop();
             Assert.NotNull(result);
             _logger.Info("Time {0}", sw.Elapsed);
