@@ -97,13 +97,12 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task LockOneAtATime() {
-            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
-
             var locker = GetLockProvider();
             if (locker == null)
                 return;
 
             await locker.ReleaseAsync("DoLockedWork");
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
 
             int successCount = 0;
             var lockTask1 = Task.Run(async () => {
@@ -142,7 +141,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
-            return await locker.TryUsingAsync("DoLockedWork", () => SystemClock.Sleep(500), TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext();
+            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext();
         }
 
         public virtual async Task WillThrottleCalls() {

@@ -167,13 +167,11 @@ namespace Foundatio.Messaging {
         }
         
         public override void Dispose() {
-            CloseConnection();
             base.Dispose();
+            CloseConnection();
         }
 
         private void CloseConnection() {
-            base.Dispose();
-
             if (_subscriberChannel.IsOpen)
                 _subscriberChannel.Close();
             _subscriberChannel.Dispose();

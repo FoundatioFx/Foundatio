@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
+using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
@@ -36,26 +37,26 @@ namespace Foundatio.Tests.Utility {
         [Fact]
         public async Task CanRunAndScheduleConcurrently() {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-
-            int hits = 0;
+            var countdown = new AsyncCountdownEvent(2);
+            
             Func<Task<DateTime?>> callback = async () => {
                 _logger.Info("Starting work.");
-                Interlocked.Increment(ref hits);
-                await SystemClock.SleepAsync(1000);
+                countdown.Signal();
+                await SystemClock.SleepAsync(500);
                 _logger.Info("Finished work.");
                 return null;
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                await SystemClock.SleepAsync(1);
-                timer.ScheduleNext();
-
-                await SystemClock.SleepAsync(50);
-                Assert.Equal(1, hits);
-
-                await SystemClock.SleepAsync(1000);
-                Assert.Equal(2, hits);
+                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(10));
+                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(20));
+                
+                await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
+                Assert.Equal(1, countdown.CurrentCount);
+                
+                await countdown.WaitAsync(TimeSpan.FromMilliseconds(600));
+                Assert.Equal(0, countdown.CurrentCount);
             }
         }
 
