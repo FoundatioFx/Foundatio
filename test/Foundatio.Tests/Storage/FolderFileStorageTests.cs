@@ -5,8 +5,6 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public class FolderFileStorageTests : FileStorageTestsBase {
-        private const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
-
         public FolderFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
@@ -37,13 +35,12 @@ namespace Foundatio.Tests.Storage {
         public override Task CanConcurrentlyManageFiles() {
             return base.CanConcurrentlyManageFiles();
         }
-
+        
+#if !NETSTANDARD
         [Fact]
-        public void CanUseDataDirectory() {
-            var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
-            Assert.NotNull(storage.Folder);
-            Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
-            Assert.True(storage.Folder.EndsWith("Queue\\"), storage.Folder);
+        public override void CanUseDataDirectory() {
+            base.CanUseDataDirectory();
         }
+#endif
     }
 }

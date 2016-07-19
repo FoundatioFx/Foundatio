@@ -8,8 +8,8 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
-using Xunit;
 using Foundatio.Utility;
+using Xunit;
 using Nito.AsyncEx;
 using Xunit.Abstractions;
 
@@ -36,8 +36,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                     _logger.Trace("Set event");
                 });
-
-                await SystemClock.SleepAsync(100);
+                
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
@@ -58,12 +57,11 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                     throw new Exception();
                 });
-
-                await SystemClock.SleepAsync(100);
+                
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(1));
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(250)));
             }
         }
         
@@ -80,8 +78,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                     _logger.Trace("Set event");
                 });
-
-                await SystemClock.SleepAsync(100);
+                
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
                     Data = "Hello"
                 });

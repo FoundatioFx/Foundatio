@@ -13,13 +13,12 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             SystemClock.Reset();
         }
 
         [Fact]
         public async Task CanRun() {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-
             int hits = 0;
             Func<Task<DateTime?>> callback = async () => {
                 Interlocked.Increment(ref hits);
@@ -36,7 +35,6 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanRunAndScheduleConcurrently() {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             var countdown = new AsyncCountdownEvent(2);
             
             Func<Task<DateTime?>> callback = async () => {
@@ -49,8 +47,8 @@ namespace Foundatio.Tests.Utility {
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(10));
                 timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(20));
+                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(40));
                 
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
@@ -62,7 +60,6 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanRunWithMinimumInterval() {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             var resetEvent = new AsyncAutoResetEvent(false);
             
             int hits = 0;
@@ -94,7 +91,6 @@ namespace Foundatio.Tests.Utility {
         
         [Fact]
         public async Task CanRecoverFromError() {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
             var resetEvent = new AsyncAutoResetEvent(false);
 
             int hits = 0;
@@ -118,8 +114,6 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanRunConcurrent() {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-
             int hits = 0;
             Func<Task<DateTime?>> callback = () => {
                 int i = Interlocked.Increment(ref hits);
