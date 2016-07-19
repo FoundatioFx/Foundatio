@@ -46,10 +46,11 @@ namespace Foundatio.Tests.Utility {
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
-                timer.ScheduleNext();
-                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(20));
-                timer.ScheduleNext(SystemClock.UtcNow.AddMilliseconds(40));
-                
+                for (int i = 0; i < 4; i++) {
+                    timer.ScheduleNext();
+                    SystemClock.Sleep(1);
+                }
+
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
                 
