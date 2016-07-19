@@ -156,9 +156,8 @@ namespace Foundatio.Tests.Locks {
             var lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            var utcNow = SystemClock.UtcNow;
-            await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
-
+            var startOfPeriod = DateTime.UtcNow - DateTime.UtcNow.Floor(period);
+            SystemClock.UtcNowFunc = () => DateTime.UtcNow.Subtract(startOfPeriod);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
                 _logger.Info($"Allowed Locks: {i}");
