@@ -15,18 +15,29 @@
         }
     },
     "frameworks": {
-      "NET46": {
-        "buildOptions": {
-          "define": [ "NET46" ]
+        "netcoreapp1.0": {
+            "buildOptions": {
+                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
+            },
+            "dependencies": {
+                "Microsoft.NETCore.App": {
+                    "type": "platform",
+                    "version": "1.0.0"
+                }
+            }
         },
-        "frameworkAssemblies": {
-          "System.Threading.Tasks": {
-            "type": "build"
-          },
-          "System.Runtime": {
-            "type": "build"
-          }
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": {
+                    "type": "build"
+                },
+                "System.Runtime": {
+                    "type": "build"
+                }
+            }
         }
-      }
     }
 }
