@@ -20,7 +20,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
-        protected QueueTestBase(ITestOutputHelper output) : base(output) {}
+        protected QueueTestBase(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;

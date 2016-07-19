@@ -13,7 +13,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
-        protected LockTestBase(ITestOutputHelper output) : base(output) { }
+        protected LockTestBase(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
             return null;

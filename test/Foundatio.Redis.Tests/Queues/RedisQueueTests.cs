@@ -191,7 +191,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(6, await CountAllKeysAsync());
 
                 // let the work item timeout and become auto abandoned.
-                await SystemClock.SleepAsync(250);
+                SystemClock.UtcNowFunc = () => DateTime.UtcNow.AddMilliseconds(250);
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
@@ -240,8 +240,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
                 Assert.Equal(5, await CountAllKeysAsync());
-                await SystemClock.SleepAsync(1000);
 
+                SystemClock.UtcNowFunc = () => DateTime.UtcNow.AddSeconds(1);
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
@@ -454,7 +454,6 @@ namespace Foundatio.Redis.Tests.Queues {
 
             long count = 0;
             foreach (var endpoint in endpoints) {
-                _logger.Info("Keys for server: {0}", endpoint);
                 var server = SharedConnection.GetMuxer().GetServer(endpoint);
 
                 try {
