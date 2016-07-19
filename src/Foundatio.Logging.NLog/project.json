@@ -29,18 +29,10 @@
         "Foundatio": {
             "target": "project"
         },
-        "NLog": "4.4.0-betaV14",
+        "NLog": "4.3.5",
         "System.Collections.Immutable": "1.2.0"
     },
     "frameworks": {
-        "netstandard1.5": {
-            "buildOptions": {
-                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            },
-            "dependencies": {
-                "System.Threading": "4.0.11"
-            }
-        },
         "net46": {
             "buildOptions": {
                 "define": [ "NET46" ]

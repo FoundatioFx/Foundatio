@@ -17,7 +17,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : TestWithLoggingBase {
-        public WorkItemJobTests(ITestOutputHelper output) : base(output) {}
+        public WorkItemJobTests(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         [Fact]
         public async Task CanRunWorkItem() {

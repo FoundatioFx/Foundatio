@@ -1,0 +1,40 @@
+﻿{
+    "version": "99.99.99-dev",
+    "title": "Foundatio RabbitMQ Implementations",
+    "description": "Pluggable foundation blocks for building distributed apps.",
+    "authors": [ "bniemyjski", "ejsmith" ],
+    "copyright": "Copyright (c) 2016 Exceptionless.  All rights reserved.",
+    "packOptions": {
+        "tags": [ "Queue", "Messaging", "Message", "Bus", "Locking", "Lock", "Distributed", "File", "Storage", "Blob", "Jobs", "Metrics", "Stats", "Azure", "Redis", "StatsD", "Amazon", "AWS", "S3", "broker", "Logging", "Log", "pcl", "NETSTANDARD", "Core", "RabbitMQ", "AMQP" ],
+        "owners": [ "Exceptionless" ],
+        "projectUrl": "https://github.com/exceptionless/Foundatio",
+        "releaseNotes": "https://github.com/exceptionless/Foundatio/releases",
+        "iconUrl": "https://be.exceptionless.io/img/exceptionless-32.png",
+        "licenseUrl": "http://www.apache.org/licenses/LICENSE-2.0",
+        "repository": {
+            "type": "git",
+            "url": "https://github.com/exceptionless/Foundatio"
+        }
+    },
+    "buildOptions": {
+        "nowarn": [
+            "CS1591"
+        ],
+        "optimize": true,
+        "warningsAsErrors": true,
+        "xmlDoc": true
+    },
+    "dependencies": {
+        "Foundatio": {
+            "target": "project"
+        },
+        "RabbitMQ.Client": "3.6.3"
+    },
+    "frameworks": {
+        "net46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            }
+        }
+    }
+}

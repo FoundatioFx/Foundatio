@@ -8,8 +8,6 @@
         }
     },
     "dependencies": {
-        "AWSSDK.Core": "3.1.8.1",
-        "AWSSDK.S3": "3.1.8",
         "dotnet-test-xunit": "2.2.0-preview2-build1029",
         "Foundatio": {
             "target": "project"

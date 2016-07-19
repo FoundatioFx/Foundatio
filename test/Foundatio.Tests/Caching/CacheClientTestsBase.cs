@@ -15,6 +15,10 @@ using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
+        protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
+
         protected virtual ICacheClient GetCacheClient() {
             return null;
         }
@@ -457,8 +461,6 @@ namespace Foundatio.Tests.Caching {
                 var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
             }
         }
-
-        protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {}
     }
 
     public class SimpleModel {

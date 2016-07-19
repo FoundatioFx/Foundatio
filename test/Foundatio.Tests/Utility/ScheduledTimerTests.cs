@@ -11,7 +11,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
-        public ScheduledTimerTests(ITestOutputHelper output) : base(output) { }
+        public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         [Fact]
         public async Task CanRun() {

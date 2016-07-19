@@ -26,16 +26,16 @@
         "xmlDoc": true
     },
     "dependencies": {
+        "Foundatio": {
+            "target": "project"
+        },
         "Microsoft.Azure.KeyVault.Core": "1.0.0",
         "Microsoft.Data.Edm": "5.7.0",
         "Microsoft.Data.OData": "5.7.0",
         "Microsoft.Data.Services.Client": "5.7.0",
         "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
         "System.Spatial": "5.7.0",
-        "WindowsAzure.Storage": "6.2.0",
-        "Foundatio": {
-            "target": "project"
-        }
+        "WindowsAzure.Storage": "6.2.0"
     },
     "frameworks": {
         "net46": {
