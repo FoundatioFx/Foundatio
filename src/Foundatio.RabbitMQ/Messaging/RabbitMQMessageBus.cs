@@ -27,7 +27,6 @@ namespace Foundatio.Messaging {
         private readonly IModel _publisherChannel;
         private readonly IModel _subscriberChannel;
         private readonly TimeSpan _defaultMessageTimeToLive = TimeSpan.MaxValue;
-        private readonly AsyncLock _lock = new AsyncLock();
 
         /// <summary>
         /// Constructor for RabbitMqMessaging - Exchange type set as Direct exchange that uses the routing key
@@ -120,6 +119,7 @@ namespace Foundatio.Messaging {
                 return;
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
+            // RabbitMQ only supports delayed messages with a third party plugin.
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
@@ -129,24 +129,15 @@ namespace Foundatio.Messaging {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             }).AnyContext();
+            
+            var basicProperties = _publisherChannel.CreateBasicProperties();
+            basicProperties.Persistent = _persistent;
+            basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
 
-            await Run.WithRetriesAsync(() => Publish(data, cancellationToken), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+            // The publication occurs with mandatory=false
+            _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
         }
-
-        private async Task Publish(byte[] data, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (_publisherChannel == null)
-                return;
-
-            using (await _lock.LockAsync(cancellationToken)) {
-                var basicProperties = _publisherChannel.CreateBasicProperties();
-                basicProperties.Persistent = _persistent;
-                basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
-
-                // The publication occurs with mandatory=false
-                _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
-            }
-        }
-
+        
         /// <summary>
         /// Subscribe for the message
         /// </summary>
@@ -155,26 +146,28 @@ namespace Foundatio.Messaging {
         /// <param name="cancellationToken"></param>
         public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
             var consumer = new EventingBasicConsumer(_subscriberChannel);
-            consumer.Received += async (o, e) => {
-                _logger.Trace("Callback Recieved called ");
-                var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
-                Type messageType = Type.GetType(message.Type, false);
-                if (messageType == null) {
-                    _logger.Error("Error getting message body type");
-                    return;
-                }
-
-                object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-                await SendMessageToSubscribersAsync(messageType, body).AnyContext();
-            };
+            consumer.Received += OnMessageAsync;
 
             _subscriberChannel.BasicConsume(_queueName, true, consumer);
             base.Subscribe(handler, cancellationToken);
         }
 
-        /// <summary>
-        /// Cleanup routine
-        /// </summary>
+        private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
+            _logger.Trace("OnMessage: {messageId}", e.BasicProperties?.MessageId);
+            var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
+
+            Type messageType;
+            try {
+                messageType = Type.GetType(message.Type);
+            } catch (Exception ex) {
+                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                return;
+            }
+
+            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
+            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+        }
+        
         public override void Dispose() {
             CloseConnection();
             base.Dispose();
@@ -183,17 +176,21 @@ namespace Foundatio.Messaging {
         private void CloseConnection() {
             base.Dispose();
 
-            if (_publisherClient != null && _publisherClient.IsOpen)
-                _publisherClient.Close();
-            if (_subscriberClient != null && _subscriberClient.IsOpen)
+            if (_subscriberChannel.IsOpen)
+                _subscriberChannel.Close();
+            _subscriberChannel.Dispose();
+
+            if (_subscriberClient.IsOpen)
                 _subscriberClient.Close();
+            _subscriberClient.Dispose();
 
-            if (_lock != null) {
-                using (_lock.Lock())
-                    _publisherChannel?.Abort();
-            }
+            if (_publisherChannel.IsOpen)
+                _publisherChannel.Close();
+            _publisherChannel.Dispose();
 
-            _subscriberChannel?.Abort();
+            if (_publisherClient.IsOpen)
+                _publisherClient.Close();
+            _publisherClient.Dispose();
         }
     }
 }
