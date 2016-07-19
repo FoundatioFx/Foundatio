@@ -55,7 +55,7 @@ namespace Foundatio.Tests.Utility {
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
                 
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(600));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }
