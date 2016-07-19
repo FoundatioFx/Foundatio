@@ -5,14 +5,14 @@
 [![Donate](https://img.shields.io/badge/donorbox-donate-blue.svg)](https://donorbox.org/exceptionless) 
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
-- Caching
-- Queues
-- Locks
-- Messaging
-- Jobs
-- File Storage
-- Metrics
-- Logging
+- [Caching](#caching)
+- [Queues](#queues)
+- [Locks](#locks)
+- [Messaging](#messaging)
+- [Jobs](#jobs)
+- [File Storage](#file-storage)
+- [Metrics](#metrics)
+- [Logging](#logging)
 
 Includes implementations in Redis, Azure, AWS and in memory (for development).
 
@@ -112,6 +112,7 @@ Allows you to publish and subscribe to messages flowing through your application
 
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
+3. [RabbitMQMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
 3. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample

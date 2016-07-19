@@ -15,7 +15,9 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : TestWithLoggingBase {
-        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {}
+        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
 
         protected virtual IMessageBus GetMessageBus() {
             return null;
@@ -61,7 +63,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(1));
             }
         }
         

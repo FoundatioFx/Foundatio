@@ -208,8 +208,8 @@ namespace Foundatio.Queues {
         public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
 
-            _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
+            _queueDisposedCancellationTokenSource?.Cancel();
         }
         
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {

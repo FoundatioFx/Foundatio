@@ -78,12 +78,17 @@ namespace Foundatio.Messaging {
         }
 
         public override void Dispose() {
-            if (_isSubscribed) {
-                _subscriber.Unsubscribe(_topic);
-                _isSubscribed = false;
-            }
-
             base.Dispose();
+
+            if (_isSubscribed) {
+                lock (_lockObject) {
+                    if (!_isSubscribed)
+                        return;
+
+                    _subscriber.UnsubscribeAll(CommandFlags.FireAndForget);
+                    _isSubscribed = false;
+                }
+            }
         }
     }
 }

@@ -1,0 +1,45 @@
+{
+    "testRunner": "xunit",
+    "buildOptions": {
+        "debugType": "portable",
+        "warningsAsErrors": true,
+        "copyToOutput": {
+            "include": [ "xunit.runner.json" ]
+        }
+    },
+    "dependencies": {
+        "dotnet-test-xunit": "2.2.0-preview2-build1029",
+        "Foundatio": {
+            "target": "project"
+        },
+        "Foundatio.Logging.Xunit": {
+            "target": "project"
+        },
+        "Foundatio.RabbitMQ": {
+            "target": "project"
+        },
+        "Foundatio.Tests": {
+            "target": "project"
+        },
+        "RabbitMQ.Client": "3.6.3",
+        "xunit": "2.2.0-beta2-build3300",
+        "xunit.extensibility.core": "2.2.0-beta2-build3300",
+        "xunit.extensibility.execution": "2.2.0-beta2-build3300",
+        "xunit.runner.visualstudio": "2.2.0-beta2-build1149"
+    },
+    "frameworks": {
+        "NET46": {
+            "buildOptions": {
+                "define": [ "NET46" ]
+            },
+            "frameworkAssemblies": {
+                "System.Threading.Tasks": {
+                    "type": "build"
+                },
+                "System.Runtime": {
+                    "type": "build"
+                }
+            }
+        }
+    }
+}

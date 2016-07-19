@@ -109,37 +109,41 @@ namespace Foundatio.Tests.Caching {
 
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
-                firstCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
+                Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
                     _logger.Trace("First expired: {0}", args.Key);
                     countdownEvent.Signal();
-                });
+                };
 
-                using (var secondCache = GetCacheClient() as HybridCacheClient) {
-                    Assert.NotNull(secondCache);
-                    secondCache.LocalCache.ItemExpired.AddSyncHandler((sender, args) => {
-                        _logger.Trace("Second expired: {0}", args.Key);
-                        countdownEvent.Signal();
-                    });
+                using (firstCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler)) {
+                    using (var secondCache = GetCacheClient() as HybridCacheClient) {
+                        Assert.NotNull(secondCache);
+                        Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
+                            _logger.Trace("Second expired: {0}", args.Key);
+                            countdownEvent.Signal();
+                        };
 
-                    string cacheKey = "willexpireremote";
-                    _logger.Trace("First Set");
-                    Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150)));
-                    _logger.Trace("Done First Set");
-                    Assert.Equal(1, firstCache.LocalCache.Count);
-            
-                    _logger.Trace("Second Get");
-                    Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-                    _logger.Trace("Done Second Get");
-                    Assert.Equal(1, secondCache.LocalCache.Count);
-            
-                    var sw = Stopwatch.StartNew();
-                    await countdownEvent.WaitAsync(TimeSpan.FromMilliseconds(250));
-                    sw.Stop();
+                        using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
+                            string cacheKey = "willexpireremote";
+                            _logger.Trace("First Set");
+                            Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150)));
+                            _logger.Trace("Done First Set");
+                            Assert.Equal(1, firstCache.LocalCache.Count);
 
-                    _logger.Trace("Time {0}", sw.Elapsed);
-                    Assert.Equal(0, countdownEvent.CurrentCount);
-                    Assert.Equal(0, firstCache.LocalCache.Count);
-                    Assert.Equal(0, secondCache.LocalCache.Count);
+                            _logger.Trace("Second Get");
+                            Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
+                            _logger.Trace("Done Second Get");
+                            Assert.Equal(1, secondCache.LocalCache.Count);
+
+                            var sw = Stopwatch.StartNew();
+                            await countdownEvent.WaitAsync(TimeSpan.FromMilliseconds(250));
+                            sw.Stop();
+
+                            _logger.Trace("Time {0}", sw.Elapsed);
+                            Assert.Equal(0, countdownEvent.CurrentCount);
+                            Assert.Equal(0, firstCache.LocalCache.Count);
+                            Assert.Equal(0, secondCache.LocalCache.Count);
+                        }
+                    }
                 }
             }
         }
