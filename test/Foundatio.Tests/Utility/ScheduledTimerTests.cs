@@ -81,12 +81,12 @@ namespace Foundatio.Tests.Utility {
                 timer.ScheduleNext();
 
                 await resetEvent.WaitAsync(new CancellationTokenSource(100).Token);
-                Assert.Equal(1, hits);
+                Assert.InRange(hits, 1, 2);
                 
                 await resetEvent.WaitAsync(new CancellationTokenSource(2000).Token);
                 sw.Stop();
 
-                Assert.Equal(2, hits);
+                Assert.InRange(hits, 2, 3);
                 Assert.InRange(sw.ElapsedMilliseconds, 100, 2000);
             }
         }
