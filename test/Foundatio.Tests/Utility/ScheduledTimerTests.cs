@@ -67,6 +67,7 @@ namespace Foundatio.Tests.Utility {
             int hits = 0;
             Func<Task<DateTime?>> callback = () => {
                 Interlocked.Increment(ref hits);
+                _logger.Info($"hits: {hits}");
                 resetEvent.Set();
                 return Task.FromResult<DateTime?>(null);
             };
