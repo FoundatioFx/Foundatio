@@ -14,7 +14,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
+            _messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioDelayedExchange", true, true,
                 false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
             return _messageBus;
         }
