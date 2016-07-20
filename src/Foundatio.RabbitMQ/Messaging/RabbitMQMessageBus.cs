@@ -80,12 +80,17 @@ namespace Foundatio.Messaging {
         /// The message is sent to all queues with the matching routing key. Each queue has a
         /// receiver attached which will process the message. We’ll initiate a dedicated message
         /// exchange and not use the default one. Note that a queue can be dedicated to one or more routing keys.
+        /// This exchange is a delayed exchange (direct). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+        /// Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the Performance
+        /// impact of the delayed exchange type
         /// </summary>
         /// <param name="model">channel</param>
         private void SetUpExchangeAndQueuesForRouting(IModel model) {
-            // setup the message router - it requires the name of our exchange, exhange type and durability
+            // setup the message router - it requires the name of our exchange, exhange type , durability and autodelete.
+            // For now we are using same autoDelete for both exchange and queue
             // ( it will survive a server restart )
-            model.ExchangeDeclare(_exchangeName, ExchangeType.Direct, _durable);
+            var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Direct } };
+            model.ExchangeDeclare(_exchangeName, "x-delayed-message", _durable, _autoDelete, args);
             // setup the queue where the messages will reside - it requires the queue name and durability.
             model.QueueDeclare(_queueName, _durable, _exclusive, _autoDelete, _queueArguments);
             // bind the queue with the exchange.
@@ -117,12 +122,6 @@ namespace Foundatio.Messaging {
                 return;
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
-            // RabbitMQ only supports delayed messages with a third party plugin.
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
-                return;
-            }
-
             var data = await _serializer.SerializeAsync(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
@@ -131,7 +130,14 @@ namespace Foundatio.Messaging {
             var basicProperties = _publisherChannel.CreateBasicProperties();
             basicProperties.Persistent = _persistent;
             basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
-
+            // RabbitMQ only supports delayed messages with a third party plugin.
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                // Its necessary to typecast long to int because rabbitmq on the consumer side is reading the 
+                // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
+                // and the data will be delievered immediately. 
+                var headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(delay.Value.TotalMilliseconds) } };
+                basicProperties.Headers = headers;
+            }
             // The publication occurs with mandatory=false
             _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
         }
