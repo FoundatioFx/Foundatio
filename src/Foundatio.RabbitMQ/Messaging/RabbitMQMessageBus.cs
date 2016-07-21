@@ -17,6 +17,7 @@ namespace Foundatio.Messaging {
         private readonly bool _persistent;
         private readonly bool _exclusive;
         private readonly bool _autoDelete;
+        private readonly bool _delayedExchange;
         private readonly IDictionary<string, object> _queueArguments;
         private readonly ISerializer _serializer;
         private readonly IConnectionFactory _factory;
@@ -34,6 +35,7 @@ namespace Foundatio.Messaging {
         /// <param name="queueName">Queue name</param>
         /// <param name="routingKey">The routing key is an "address" that the exchange may use to decide how to route the message</param>
         /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
+        /// <param name="delayedExchange">Delayed exchange requires special plugin. This gives an option to user to not declare exchange as "x-delayed-message" </param>
         /// <param name="durable">Durable exchanges survive broker restart</param>
         /// <param name="autoDelete">True, if you want the queue to be deleted when the connection is closed</param>
         /// <param name="queueArguments">queue arguments</param>
@@ -42,7 +44,7 @@ namespace Foundatio.Messaging {
         /// <param name="loggerFactory">logger</param>
         /// <param name="persistent">When set to true, RabbitMQ will persist message to disk</param>
         /// <param name="exclusive"></param>
-        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey, string exhangeName, bool durable, bool persistent, bool exclusive, bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey, string exhangeName, bool delayedExchange,  bool durable, bool persistent, bool exclusive, bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
             _exchangeName = exhangeName;
             _queueName = queueName;
@@ -51,6 +53,7 @@ namespace Foundatio.Messaging {
             _persistent = persistent;
             _exclusive = exclusive;
             _autoDelete = autoDelete;
+            _delayedExchange = delayedExchange;
             _queueArguments = queueArguments;
 
             if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero)
@@ -80,17 +83,22 @@ namespace Foundatio.Messaging {
         /// The message is sent to all queues with the matching routing key. Each queue has a
         /// receiver attached which will process the message. We’ll initiate a dedicated message
         /// exchange and not use the default one. Note that a queue can be dedicated to one or more routing keys.
-        /// This exchange is a delayed exchange (direct). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
-        /// Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the Performance
-        /// impact of the delayed exchange type
         /// </summary>
         /// <param name="model">channel</param>
         private void SetUpExchangeAndQueuesForRouting(IModel model) {
             // setup the message router - it requires the name of our exchange, exhange type , durability and autodelete.
             // For now we are using same autoDelete for both exchange and queue
             // ( it will survive a server restart )
-            var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Direct } };
-            model.ExchangeDeclare(_exchangeName, "x-delayed-message", _durable, _autoDelete, args);
+            if (_delayedExchange) {
+                //This exchange is a delayed exchange (direct).You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+                // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
+                // Impact* of the delayed exchange type.
+                var args = new Dictionary<string, object> {{"x-delayed-type", ExchangeType.Direct}};
+                model.ExchangeDeclare(_exchangeName, "x-delayed-message", _durable, _autoDelete, args);
+            } else {
+                // If you don't need to delay messages, then use the actual exchange
+                model.ExchangeDeclare(_exchangeName, ExchangeType.Direct, _durable);
+            }
             // setup the queue where the messages will reside - it requires the queue name and durability.
             model.QueueDeclare(_queueName, _durable, _exclusive, _autoDelete, _queueArguments);
             // bind the queue with the exchange.
@@ -110,7 +118,7 @@ namespace Foundatio.Messaging {
         /// </summary>
         /// <param name="messageType"></param>
         /// <param name="message"></param>
-        /// <param name="delay"></param>
+        /// <param name="delay">Along with the delay value, _delayExchange should also be set to true</param>
         /// <param name="cancellationToken"></param>
         /// <remarks>RabbitMQ has an upper limit of 2GB for messages.BasicPublish blocking AMQP operations.
         /// The rule of thumb is: avoid sharing channels across threads.
@@ -130,8 +138,8 @@ namespace Foundatio.Messaging {
             var basicProperties = _publisherChannel.CreateBasicProperties();
             basicProperties.Persistent = _persistent;
             basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
-            // RabbitMQ only supports delayed messages with a third party plugin.
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+            // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
+            if (_delayedExchange && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 // Its necessary to typecast long to int because rabbitmq on the consumer side is reading the 
                 // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
                 // and the data will be delievered immediately. 
