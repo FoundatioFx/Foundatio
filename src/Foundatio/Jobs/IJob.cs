@@ -40,10 +40,10 @@ namespace Foundatio.Jobs {
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
                             await SystemClock.SleepAsync(1).AnyContext();
                     } catch (TaskCanceledException) { }
-
-                    if (continuationCallback == null)
+                    
+                    if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;
-
+                    
                     try {
                         if (!await continuationCallback().AnyContext())
                             break;
@@ -51,13 +51,11 @@ namespace Foundatio.Jobs {
                         logger.Error(ex, "Error in continuation callback: {0}", ex.Message);
                     }
                 }
-
-                logger.Info("Stopping continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
-
+                
                 if (cancellationToken.IsCancellationRequested)
                     logger.Trace("Job cancellation requested.");
 
-                await SystemClock.SleepAsync(1).AnyContext(); // allow events to process
+                logger.Info("Stopping continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
             }
         }
 
@@ -65,7 +63,6 @@ namespace Foundatio.Jobs {
             var logger = job.GetLogger();
             await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
                 var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-
                 logger.Trace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
 
                 return stats.Queued + stats.Working > 0;
