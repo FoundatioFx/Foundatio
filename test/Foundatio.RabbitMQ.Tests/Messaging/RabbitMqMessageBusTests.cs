@@ -11,7 +11,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
 
         protected override IMessageBus GetMessageBus() {
             return  new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioDelayedExchange", true, true,
-                false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
+                false, false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
         }
 
         [Fact]
