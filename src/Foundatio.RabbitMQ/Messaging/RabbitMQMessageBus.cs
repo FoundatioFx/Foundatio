@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -137,7 +138,7 @@ namespace Foundatio.Messaging {
             
             var basicProperties = _publisherChannel.CreateBasicProperties();
             basicProperties.Persistent = _persistent;
-            basicProperties.Expiration = _defaultMessageTimeToLive.Milliseconds.ToString();
+            basicProperties.Expiration = _defaultMessageTimeToLive.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
             if (_delayedExchange && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 // Its necessary to typecast long to int because rabbitmq on the consumer side is reading the 
