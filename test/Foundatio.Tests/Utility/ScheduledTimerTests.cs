@@ -35,7 +35,7 @@ namespace Foundatio.Tests.Utility {
         [Fact]
         public async Task CanRunAndScheduleConcurrently() {
             var countdown = new AsyncCountdownEvent(2);
-            
+
             Func<Task<DateTime?>> callback = async () => {
                 _logger.Info("Starting work.");
                 countdown.Signal();
@@ -52,7 +52,7 @@ namespace Foundatio.Tests.Utility {
 
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
-                
+
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
                 Assert.Equal(0, countdown.CurrentCount);
             }
@@ -83,7 +83,7 @@ namespace Foundatio.Tests.Utility {
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }
-        
+
         [Fact]
         public async Task CanRecoverFromError() {
             var resetEvent = new AsyncAutoResetEvent(false);
