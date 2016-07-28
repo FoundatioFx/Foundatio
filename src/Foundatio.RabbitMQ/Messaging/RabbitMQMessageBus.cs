@@ -8,6 +8,7 @@ using Foundatio.Logging;
 using Foundatio.Serializer;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace Foundatio.Messaging {
     public class RabbitMQMessageBus : MessageBusBase, IMessageBus {
@@ -18,14 +19,14 @@ namespace Foundatio.Messaging {
         private readonly bool _persistent;
         private readonly bool _exclusive;
         private readonly bool _autoDelete;
-        private readonly bool _delayedExchange;
         private readonly IDictionary<string, object> _queueArguments;
         private readonly ISerializer _serializer;
         private readonly IConnectionFactory _factory;
-        private readonly IConnection _publisherClient;
-        private readonly IConnection _subscriberClient;
-        private readonly IModel _publisherChannel;
-        private readonly IModel _subscriberChannel;
+        private IConnection _publisherClient;
+        private IConnection _subscriberClient;
+        private IModel _publisherChannel;
+        private IModel _subscriberChannel;
+        private bool _delayedExchangePluginEnabled = true;
         private readonly TimeSpan _defaultMessageTimeToLive = TimeSpan.MaxValue;
 
         /// <summary>
@@ -36,7 +37,6 @@ namespace Foundatio.Messaging {
         /// <param name="queueName">Queue name</param>
         /// <param name="routingKey">The routing key is an "address" that the exchange may use to decide how to route the message</param>
         /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
-        /// <param name="delayedExchange">Delayed exchange requires special plugin. This gives an option to user to not declare exchange as "x-delayed-message" </param>
         /// <param name="durable">Durable exchanges survive broker restart</param>
         /// <param name="autoDelete">True, if you want the queue to be deleted when the connection is closed</param>
         /// <param name="queueArguments">queue arguments</param>
@@ -45,7 +45,10 @@ namespace Foundatio.Messaging {
         /// <param name="loggerFactory">logger</param>
         /// <param name="persistent">When set to true, RabbitMQ will persist message to disk</param>
         /// <param name="exclusive"></param>
-        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey, string exhangeName, bool delayedExchange,  bool durable, bool persistent, bool exclusive, bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey,
+            string exhangeName, bool durable, bool persistent, bool exclusive, bool autoDelete,
+            IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null,
+            ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
             _exchangeName = exhangeName;
             _queueName = queueName;
@@ -54,66 +57,21 @@ namespace Foundatio.Messaging {
             _persistent = persistent;
             _exclusive = exclusive;
             _autoDelete = autoDelete;
-            _delayedExchange = delayedExchange;
             _queueArguments = queueArguments;
-
             if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero)
                 _defaultMessageTimeToLive = defaultMessageTimeToLive.Value;
-
-            // initialize connection factory
+            // initialize the connection factory
             _factory = new ConnectionFactory {
                 UserName = userName,
                 Password = password
             };
-
-            // initialize publisher
-            _publisherClient = CreateConnection();
-            _publisherChannel = _publisherClient.CreateModel();
-            SetUpExchangeAndQueuesForRouting(_publisherChannel);
-            _logger.Trace("The unique channel number for the publisher is : {channelNumber}", _publisherChannel.ChannelNumber);
-
-            // initialize subscriber
-            _subscriberClient = CreateConnection();
-            _subscriberChannel = _subscriberClient.CreateModel();
-            SetUpExchangeAndQueuesForRouting(_subscriberChannel);
-            _logger.Trace("The unique channel number for the subscriber is : {channelNumber}", _subscriberChannel.ChannelNumber);
+            // initialize the publisher
+            InitPublisher();
+            // initialize the subscriber
+            InitSubscriber();
         }
 
-        /// <summary>
-        /// The client sends a message to an exchange and attaches a routing key to it. 
-        /// The message is sent to all queues with the matching routing key. Each queue has a
-        /// receiver attached which will process the message. We’ll initiate a dedicated message
-        /// exchange and not use the default one. Note that a queue can be dedicated to one or more routing keys.
-        /// </summary>
-        /// <param name="model">channel</param>
-        private void SetUpExchangeAndQueuesForRouting(IModel model) {
-            // setup the message router - it requires the name of our exchange, exhange type , durability and autodelete.
-            // For now we are using same autoDelete for both exchange and queue
-            // ( it will survive a server restart )
-            if (_delayedExchange) {
-                //This exchange is a delayed exchange (direct).You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
-                // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
-                // Impact* of the delayed exchange type.
-                var args = new Dictionary<string, object> {{"x-delayed-type", ExchangeType.Direct}};
-                model.ExchangeDeclare(_exchangeName, "x-delayed-message", _durable, _autoDelete, args);
-            } else {
-                // If you don't need to delay messages, then use the actual exchange
-                model.ExchangeDeclare(_exchangeName, ExchangeType.Direct, _durable);
-            }
-            // setup the queue where the messages will reside - it requires the queue name and durability.
-            model.QueueDeclare(_queueName, _durable, _exclusive, _autoDelete, _queueArguments);
-            // bind the queue with the exchange.
-            model.QueueBind(_queueName, _exchangeName, _routingKey);
-        }
-
-        /// <summary>
-        /// Connect to a broker - RabbitMQ
-        /// </summary>
-        /// <returns></returns>
-        private IConnection CreateConnection() {
-            return _factory.CreateConnection();
-        }
-
+        #region Public methods
         /// <summary>
         /// Publish the message
         /// </summary>
@@ -135,12 +93,19 @@ namespace Foundatio.Messaging {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             }).AnyContext();
-            
+
+            // if the rabbitmq plugin is not availaible then use the base class delay mechanism
+            if (!_delayedExchangePluginEnabled  && delay.HasValue && delay.Value > TimeSpan.Zero) {
+                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
+                return;
+            }
+
             var basicProperties = _publisherChannel.CreateBasicProperties();
             basicProperties.Persistent = _persistent;
             basicProperties.Expiration = _defaultMessageTimeToLive.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
-            if (_delayedExchange && delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 // Its necessary to typecast long to int because rabbitmq on the consumer side is reading the 
                 // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
                 // and the data will be delievered immediately. 
@@ -164,7 +129,17 @@ namespace Foundatio.Messaging {
             _subscriberChannel.BasicConsume(_queueName, true, consumer);
             base.Subscribe(handler, cancellationToken);
         }
+        /// <summary>
+        /// Cleanup the resources
+        /// </summary>
+        public override void Dispose() {
+            base.Dispose();
+            CloseConnections();
+        }
 
+        #endregion Public methods
+
+        #region private methods
         private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
             _logger.Trace("OnMessage: {messageId}", e.BasicProperties?.MessageId);
             var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
@@ -172,7 +147,8 @@ namespace Foundatio.Messaging {
             Type messageType;
             try {
                 messageType = Type.GetType(message.Type);
-            } catch (Exception ex) {
+            }
+            catch (Exception ex) {
                 _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
                 return;
             }
@@ -180,28 +156,139 @@ namespace Foundatio.Messaging {
             object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
             await SendMessageToSubscribersAsync(messageType, body).AnyContext();
         }
-        
-        public override void Dispose() {
-            base.Dispose();
-            CloseConnection();
+
+        /// <summary>
+        /// Connect to a broker - RabbitMQ
+        /// </summary>
+        /// <returns></returns>
+        private IConnection CreateConnection() {
+            return _factory.CreateConnection();
         }
 
-        private void CloseConnection() {
-            if (_subscriberChannel.IsOpen)
-                _subscriberChannel.Close();
-            _subscriberChannel.Dispose();
+        /// <summary>
+        /// Initialize the publisher
+        /// </summary>
+        // . Create the client connection, channel , declares the exchange, queue and binds
+        // the exchange with the publisher queue. It requires the name of our exchange, exhange type , durability and autodelete.
+        // For now we are using same autoDelete for both exchange and queue
+        // ( it will survive a server restart )
+        private void InitPublisher() {
+            _publisherClient = _factory.CreateConnection();
+            _publisherChannel = _publisherClient.CreateModel();
+            // We first attempt to create "x-delayed-type". For this plugin should be installed.
+            // However, we plugin is not installed this will throw an exception. In that case
+            // we attempt to create regular exchange. If regular exchange also throws and exception 
+            // then trouble shoot the problem.
+            if (!CreateExchange(_publisherChannel)) {
+                // dispose the channel 
+                ClosePublisherConnection();
+                // if the initial exchange creation was not successful then we must close the previous connection
+                // and establish the new client connection and model otherwise you will keep recieving failure in creation
+                // of the regular exchange too.
+                _publisherClient = _factory.CreateConnection();
+                _publisherChannel = _publisherClient.CreateModel();
+                CreateExchange(_publisherChannel);
+            }
+            CreateQueue(_publisherChannel);
+            _logger.Trace("The unique channel number for the publisher is : {channelNumber}", _publisherChannel.ChannelNumber);
+        }
 
-            if (_subscriberClient.IsOpen)
-                _subscriberClient.Close();
-            _subscriberClient.Dispose();
+        /// <summary>
+        /// Initialize the subscriber
+        /// </summary>
+        private void InitSubscriber() {
+            _subscriberClient = CreateConnection();
+            _subscriberChannel = _subscriberClient.CreateModel();
+            // If InitPublisher is called first, then we will never come in this if clause.
+            if (!CreateExchange(_subscriberChannel)) {
+                // dispose the channel 
+                CloseSubscriberConnection();
+                _subscriberClient = _factory.CreateConnection();
+                _subscriberChannel = _subscriberClient.CreateModel();
+                CreateExchange(_subscriberChannel);
+            }
+            CreateQueue(_subscriberChannel);
+            _logger.Trace("The unique channel number for the subscriber is : {channelNumber}", _subscriberChannel.ChannelNumber);
+        }
 
-            if (_publisherChannel.IsOpen)
+        private bool CreateExchange(IModel model) {
+            bool success = true;
+            try {
+                if (_delayedExchangePluginEnabled) {
+                    //This exchange is a delayed exchange (direct).You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+                    // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
+                    // Impact* of the delayed exchange type.
+                    var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Direct } };
+                    model.ExchangeDeclare(_exchangeName, "x-delayed-message", _durable, _autoDelete, args);
+                }
+                else {
+                    // If you don't need to delay messages, then use the actual exchange
+                    model.ExchangeDeclare(_exchangeName, ExchangeType.Direct, _durable);
+                }
+            }
+            catch (OperationInterruptedException o) {
+                if (o.ShutdownReason.ReplyCode == 503 &&
+                    String.Equals(o.ShutdownReason.ReplyText,
+                        "COMMAND_INVALID - invalid exchange type 'x-delayed-message'")) {
+                    _delayedExchangePluginEnabled = false;
+                    success = false;
+                    _logger.Info(o, "Not able to create an exchange");
+                } else {
+                    throw;
+                }
+            }
+
+            return success;
+        }
+
+        /// <summary>
+        /// The client sends a message to an exchange and attaches a routing key to it. 
+        /// The message is sent to all queues with the matching routing key. Each queue has a
+        /// receiver attached which will process the message. We’ll initiate a dedicated message
+        /// exchange and not use the default one. Note that a queue can be dedicated to one or more routing keys.
+        /// </summary>
+        /// <param name="model">channel</param>
+        private void CreateQueue(IModel model) {
+            // setup the queue where the messages will reside - it requires the queue name and durability.
+            model.QueueDeclare(_queueName, _durable, _exclusive, _autoDelete, _queueArguments);
+            // bind the queue with the exchange.
+            model.QueueBind(_queueName, _exchangeName, _routingKey);
+        }
+
+        private void CloseConnections() {
+            ClosePublisherConnection();
+            CloseSubscriberConnection();
+        }
+
+        private void ClosePublisherConnection() {
+            if (_publisherChannel != null && _publisherChannel.IsOpen) {
                 _publisherChannel.Close();
-            _publisherChannel.Dispose();
+            }
+            _publisherChannel?.Dispose();
+            _publisherChannel = null;
 
-            if (_publisherClient.IsOpen)
+            if (_publisherClient != null && _publisherClient.IsOpen) {
                 _publisherClient.Close();
-            _publisherClient.Dispose();
+            }
+            _publisherClient?.Dispose();
+            _publisherClient = null;
         }
+
+        private void CloseSubscriberConnection() {
+            if (_subscriberChannel != null && _subscriberChannel.IsOpen) {
+                _subscriberChannel.Close();
+            }
+            _subscriberChannel?.Dispose();
+            _subscriberChannel = null;
+
+            if (_subscriberClient != null && _subscriberClient.IsOpen) {
+                _subscriberClient.Close();
+            }
+            _subscriberClient?.Dispose();
+            _subscriberClient = null;
+        }
+
+        #endregion private methods
+
     }
 }
