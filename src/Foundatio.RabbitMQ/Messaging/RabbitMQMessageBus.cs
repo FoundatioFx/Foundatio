@@ -5,8 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Foundatio.Utility;
-using Nito.AsyncEx;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -169,13 +167,11 @@ namespace Foundatio.Messaging {
         }
         
         public override void Dispose() {
-            CloseConnection();
             base.Dispose();
+            CloseConnection();
         }
 
         private void CloseConnection() {
-            base.Dispose();
-
             if (_subscriberChannel.IsOpen)
                 _subscriberChannel.Close();
             _subscriberChannel.Dispose();
