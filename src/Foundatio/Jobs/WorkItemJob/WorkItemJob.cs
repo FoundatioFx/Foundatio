@@ -98,6 +98,8 @@ namespace Foundatio.Jobs {
                     Message = message,
                     Type = queueEntry.Value.Type
                 }).AnyContext();
+
+                handler.Log.Info(() => $"Progress {workItemDataType.Name}: {message}");
             });
 
             try {
