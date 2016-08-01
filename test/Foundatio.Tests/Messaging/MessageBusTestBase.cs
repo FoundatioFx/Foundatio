@@ -314,5 +314,45 @@ namespace Foundatio.Tests.Messaging {
                 Assert.Equal(1, messageCount);
             }
         }
+
+        public virtual async Task CanReceiveFromMultipleSubscribers() {
+            var messageBus1 = GetMessageBus();
+            if (messageBus1 == null)
+                return;
+
+            using (messageBus1) {
+                var countdown1 = new AsyncCountdownEvent(1);
+                messageBus1.Subscribe<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown1.Signal();
+                });
+                
+                using (var messageBus2 = GetMessageBus()) {
+                    var countdown2 = new AsyncCountdownEvent(1);
+                    messageBus2.Subscribe<SimpleMessageA>(msg => {
+                        Assert.Equal("Hello", msg.Data);
+                        countdown2.Signal();
+                    });
+                    
+
+                    await messageBus1.PublishAsync(new SimpleMessageA {
+                        Data = "Hello"
+                    });
+
+                    await countdown1.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown1.CurrentCount);
+                    await countdown2.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown2.CurrentCount);
+                }
+            }
+        }
+
+        public virtual void CanDisposeWithNoSubscribersOrPublishers() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            using (messageBus) {}
+        }
     }
 }
