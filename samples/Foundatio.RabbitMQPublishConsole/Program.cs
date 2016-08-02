@@ -7,8 +7,7 @@ namespace Foundatio.RabbitMQPublishConsole {
             IMessageBus messageBus;
             string message;
             Console.WriteLine("Publisher...");
-            messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey",
-                    "FoundatioExchange", true, true, false, false);
+            messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioExchangeFanout", "FoundatioExchangeFanoutQueue");
 
             Console.WriteLine("Enter the messages to send (press CTRL+Z) to exit :");
 
