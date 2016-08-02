@@ -177,13 +177,13 @@ namespace Foundatio.Messaging {
             // However, we plugin is not installed this will throw an exception. In that case
             // we attempt to create regular exchange. If regular exchange also throws and exception 
             // then trouble shoot the problem.
-            if (!CreateExchange(_publisherChannel)) {
+            if (!CreateDelayedExchange(_publisherChannel)) {
                 // if the initial exchange creation was not successful then we must close the previous connection
                 // and establish the new client connection and model otherwise you will keep recieving failure in creation
                 // of the regular exchange too.
                 _publisherClient = _factory.CreateConnection();
                 _publisherChannel = _publisherClient.CreateModel();
-                CreateExchange(_publisherChannel);
+                CreateRegularExchange(_publisherChannel);
             }
             _logger.Trace("The unique channel number for the publisher is : {channelNumber}", _publisherChannel.ChannelNumber);
         }
@@ -195,38 +195,40 @@ namespace Foundatio.Messaging {
             _subscriberClient = CreateConnection();
             _subscriberChannel = _subscriberClient.CreateModel();
             // If InitPublisher is called first, then we will never come in this if clause.
-            if (!CreateExchange(_subscriberChannel)) {
+            if (!CreateDelayedExchange(_subscriberChannel)) {
                 _subscriberClient = _factory.CreateConnection();
                 _subscriberChannel = _subscriberClient.CreateModel();
-                CreateExchange(_subscriberChannel);
+                CreateRegularExchange(_subscriberChannel);
             }
             _logger.Trace("The unique channel number for the subscriber is : {channelNumber}", _subscriberChannel.ChannelNumber);
         }
 
-        private bool CreateExchange(IModel model) {
+        /// <summary>
+        /// Attempts to create the delayed exchange.
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>true if the delayed exchange was successfully declared. Which means plugin was installed.</returns>
+        private bool CreateDelayedExchange(IModel model) {
             bool success = true;
+            if (!_delayedExchangePluginEnabled) return true;
             try {
-                if (_delayedExchangePluginEnabled) {
-                    //This exchange is a delayed exchange (direct).You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
-                    // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
-                    // Impact* of the delayed exchange type.
-                    var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
-                    model.ExchangeDeclare(_exchangeName, "x-delayed-message", true, false, args);
-                }
-                else {
-                    // If you don't need to delay messages, then use the actual exchange
-                    model.ExchangeDeclare(_exchangeName, ExchangeType.Fanout, true, false, null);
-                }
-            }
-            catch (OperationInterruptedException o) {
+                //This exchange is a delayed exchange (direct).You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+                // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
+                // Impact* of the delayed exchange type.
+                var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
+                model.ExchangeDeclare(_exchangeName, "x-delayed-message", true, false, args);
+            } catch (OperationInterruptedException o) {
                 if (o.ShutdownReason.ReplyCode == 503) {
                     _delayedExchangePluginEnabled = false;
                     success = false;
-                    _logger.Info(o, "Not able to create an exchange");
+                    _logger.Info(o, "Not able to create x-delayed-type exchange");
                 }
             }
-
             return success;
+        }
+
+        private void CreateRegularExchange(IModel model) {
+            model.ExchangeDeclare(_exchangeName, ExchangeType.Fanout, true, false, null);
         }
 
         /// <summary>
