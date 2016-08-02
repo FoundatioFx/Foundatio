@@ -4,14 +4,18 @@ using Foundatio.Messaging;
 namespace Foundatio.RabbitMQPublishConsole {
     public class Program {
         public static void Main(string[] args) {
-            IMessageBus messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true, false, false, null, TimeSpan.FromMilliseconds(50));
-            string input;
+            IMessageBus messageBus;
+            string message;
             Console.WriteLine("Publisher...");
+            messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioExchangeFanout", "FoundatioExchangeFanoutQueue");
+
             Console.WriteLine("Enter the messages to send (press CTRL+Z) to exit :");
+
             do {
-                input = Console.ReadLine();
-                messageBus.PublishAsync(input);
-            } while (input != null);
+                message = Console.ReadLine();
+                    messageBus.PublishAsync(message);
+            } while (message != null);
+
             messageBus.Dispose();
         }
     }

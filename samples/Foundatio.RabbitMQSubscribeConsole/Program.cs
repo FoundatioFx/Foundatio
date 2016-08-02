@@ -4,8 +4,9 @@ using Foundatio.Messaging;
 namespace Foundatio.RabbitMQSubscribeConsole {
     public class Program {
         public static void Main(string[] args) {
-            IMessageBus messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true, false, false, null, TimeSpan.FromMilliseconds(50));
-            Console.WriteLine("Subscriber....");
+            Console.WriteLine("Subscriber...." +  args[0]);
+            IMessageBus messageBus = new RabbitMQMessageBus("guest", "guest", "FoundatioExchangeFanout", args[0]);
+
             messageBus.Subscribe<string>(msg => { Console.WriteLine(msg); });
             Console.ReadLine();
         }
