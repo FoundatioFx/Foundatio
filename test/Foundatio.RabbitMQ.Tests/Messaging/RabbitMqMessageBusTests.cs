@@ -10,8 +10,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
 
         protected override IMessageBus GetMessageBus() {
-            return new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
-                false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
+            return new RabbitMQMessageBus("guest", "guest", "FoundatioExchangeFanout", "FoundatioExchangeFanoutQueue");
         }
 
         [Fact]
@@ -69,7 +68,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
             return base.WontKeepMessagesWithNoSubscribers();
         }
 
-        [Fact(Skip = "TODO: Ensure this is not broken")]
+        [Fact(Skip = "TODO: Each subscriber needs to have message bus instance with different queue names")]
         public override Task CanReceiveFromMultipleSubscribers() {
             return base.CanReceiveFromMultipleSubscribers();
         }

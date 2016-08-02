@@ -118,7 +118,7 @@ namespace Foundatio.Tests.Queue {
 
                     Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 50);
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                    Assert.InRange(timing.AverageDuration, 0, 25);
+                    Assert.InRange(timing.AverageDuration, 0, 30);
                 }
             }
         }
