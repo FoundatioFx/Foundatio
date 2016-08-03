@@ -10,8 +10,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
 
         protected override IMessageBus GetMessageBus() {
-            return new RabbitMQMessageBus("guest", "guest", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", true, true,
-                false, false, null, TimeSpan.FromMilliseconds(50), loggerFactory: Log);
+            return new RabbitMQMessageBus("guest", "guest", "FoundatioExchangeFanout", "FoundatioExchangeFanoutQueue");
         }
 
         [Fact]
