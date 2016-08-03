@@ -171,7 +171,7 @@ namespace Foundatio.Messaging {
         // For now we are using same autoDelete for both exchange and queue
         // ( it will survive a server restart )
         private void InitPublisher() {
-            _publisherClient = _factory.CreateConnection();
+            _publisherClient = CreateConnection();
             _publisherChannel = _publisherClient.CreateModel();
             // We first attempt to create "x-delayed-type". For this plugin should be installed.
             // However, we plugin is not installed this will throw an exception. In that case
@@ -181,7 +181,7 @@ namespace Foundatio.Messaging {
                 // if the initial exchange creation was not successful then we must close the previous connection
                 // and establish the new client connection and model otherwise you will keep recieving failure in creation
                 // of the regular exchange too.
-                _publisherClient = _factory.CreateConnection();
+                _publisherClient = CreateConnection();
                 _publisherChannel = _publisherClient.CreateModel();
                 CreateRegularExchange(_publisherChannel);
             }
@@ -196,7 +196,7 @@ namespace Foundatio.Messaging {
             _subscriberChannel = _subscriberClient.CreateModel();
             // If InitPublisher is called first, then we will never come in this if clause.
             if (!CreateDelayedExchange(_subscriberChannel)) {
-                _subscriberClient = _factory.CreateConnection();
+                _subscriberClient = CreateConnection();
                 _subscriberChannel = _subscriberClient.CreateModel();
                 CreateRegularExchange(_subscriberChannel);
             }
