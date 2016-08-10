@@ -1,14 +1,21 @@
+using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
-    public class InMemoryMessageBusTests : MessageBusTestBase {
+    public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable {
+        private IMessageBus _messageBus;
+
         public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            return new InMemoryMessageBus(Log);
+            if (_messageBus != null)
+                return _messageBus;
+
+            _messageBus = new InMemoryMessageBus(Log);
+            return _messageBus;
         }
 
         [Fact]
@@ -64,6 +71,21 @@ namespace Foundatio.Tests.Messaging {
         [Fact]
         public override Task WontKeepMessagesWithNoSubscribers() {
             return base.WontKeepMessagesWithNoSubscribers();
+        }
+
+        [Fact]
+        public override Task CanReceiveFromMultipleSubscribers() {
+            return base.CanReceiveFromMultipleSubscribers();
+        }
+
+        [Fact]
+        public override void CanDisposeWithNoSubscribersOrPublishers() {
+            base.CanDisposeWithNoSubscribersOrPublishers();
+        }
+
+        public void Dispose() {
+            _messageBus?.Dispose();
+            _messageBus = null;
         }
     }
 }
