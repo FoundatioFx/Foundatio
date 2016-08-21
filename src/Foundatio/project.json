@@ -1,71 +1,47 @@
 {
-    "version": "99.99.99-dev",
-    "title": "Foundatio",
-    "description": "Pluggable foundation blocks for building distributed apps.",
-    "authors": [ "bniemyjski", "ejsmith" ],
-    "copyright": "Copyright (c) 2016 Exceptionless.  All rights reserved.",
-    "packOptions": {
-        "tags": [ "Queue", "Messaging", "Message", "Bus", "Locking", "Lock", "Distributed", "File", "Storage", "Blob", "Jobs", "Metrics", "Stats", "Azure", "Redis", "StatsD", "Amazon", "AWS", "S3", "broker", "Logging", "Log", "pcl", "NETSTANDARD", "Core" ],
-        "owners": [ "Exceptionless" ],
-        "projectUrl": "https://github.com/exceptionless/Foundatio",
-        "releaseNotes": "https://github.com/exceptionless/Foundatio/releases",
-        "iconUrl": "https://be.exceptionless.io/img/exceptionless-32.png",
-        "licenseUrl": "http://www.apache.org/licenses/LICENSE-2.0",
-        "repository": {
-            "type": "git",
-            "url": "https://github.com/exceptionless/Foundatio"
-        }
-    },
-    "buildOptions": {
-        "debugType": "portable",
-        "nowarn": [
-            "CS1591"
-        ],
-        "optimize": true,
-        "warningsAsErrors": true,
-        "xmlDoc": true
-    },
-    "dependencies": {
-        "Newtonsoft.Json": "9.0.1",
-        "Nito.AsyncEx.Coordination": "1.0.0-eta-01"
-    },
-    "frameworks": {
-        "netstandard1.5": {
-            "buildOptions": {
-                "define": [ "NETSTANDARD", "NETSTANDARD1_5" ]
-            },
-            "dependencies": {
-                "System.AppDomain": "2.0.11",
-                "System.Collections.Concurrent": "4.0.12",
-                "System.ComponentModel": "4.0.1",
-                "System.ComponentModel.TypeConverter": "4.1.0",
-                "System.Console": "4.0.0",
-                "System.Diagnostics.TraceSource": "4.0.0",
-                "System.IO.FileSystem": "4.0.1",
-                "System.IO.FileSystem.Watcher": "4.0.0",
-                "System.Net.Primitives": "4.0.11",
-                "System.Net.Sockets": "4.1.0",
-                "System.Runtime": "4.1.0",
-                "System.Runtime.Extensions": "4.1.0",
-                "System.Runtime.InteropServices": "4.1.0",
-                "System.Text.Encoding.Extensions": "4.0.11",
-                "System.Text.RegularExpressions": "4.1.0",
-                "System.Threading.Timer": "4.0.1",
-                "System.Threading.Thread": "4.0.0"
-            }
-        },
-        "net46": {
-            "buildOptions": {
-                "define": [ "NET46" ]
-            },
-            "frameworkAssemblies": {
-                "System.Runtime": {
-                    "type": "build"
-                },
-                "System.Threading.Tasks": {
-                    "type": "build"
-                }
-            }
-        }
+  "version": "99.99.99-dev",
+  "title": "Foundatio",
+  "description": "Pluggable foundation blocks for building distributed apps.",
+  "authors": [ "bniemyjski", "ejsmith" ],
+  "copyright": "Copyright (c) 2016 Exceptionless.  All rights reserved.",
+  "packOptions": {
+    "tags": [ "Queue", "Messaging", "Message", "Bus", "Locking", "Lock", "Distributed", "File", "Storage", "Blob", "Jobs", "Metrics", "Stats", "Azure", "Redis", "StatsD", "Amazon", "AWS", "S3", "broker", "Logging", "Log", "pcl", "NETSTANDARD", "Core" ],
+    "owners": [ "Exceptionless" ],
+    "projectUrl": "https://github.com/exceptionless/Foundatio",
+    "releaseNotes": "https://github.com/exceptionless/Foundatio/releases",
+    "iconUrl": "https://be.exceptionless.io/img/exceptionless-32.png",
+    "licenseUrl": "http://www.apache.org/licenses/LICENSE-2.0",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/exceptionless/Foundatio"
     }
+  },
+  "buildOptions": {
+    "debugType": "portable",
+    "nowarn": [
+      "CS1591"
+    ],
+    "optimize": true,
+    "warningsAsErrors": true,
+    "xmlDoc": true
+  },
+  "dependencies": {
+    "NETStandard.Library": "1.6.0",
+    "Newtonsoft.Json": "9.0.1",
+    "Nito.AsyncEx.Coordination": "1.0.2"
+  },
+  "frameworks": {
+    "netstandard1.5": {
+      "buildOptions": {
+        "define": [ "NETSTANDARD" ]
+      },
+      "dependencies": {
+        "System.AppDomain": "2.0.11",
+        "System.ComponentModel.TypeConverter": "4.1.0",
+        "System.Threading.Thread": "4.0.0",
+        "System.IO.FileSystem.Watcher": "4.0.0"
+      }
+    },
+    "net46": {}
+  }
 }

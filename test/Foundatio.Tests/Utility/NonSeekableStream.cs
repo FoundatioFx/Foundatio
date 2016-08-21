@@ -3,7 +3,7 @@ using System.IO;
 
 namespace Foundatio.Tests.Utility {
     public class NonSeekableStream : Stream {
-        private Stream _stream;
+        private readonly Stream _stream;
 
         public NonSeekableStream(Stream stream) {
             _stream = stream;

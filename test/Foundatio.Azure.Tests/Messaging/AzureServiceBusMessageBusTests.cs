@@ -8,20 +8,15 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Messaging {
     public class AzureServiceBusMessageBusTests : MessageBusTestBase {
-        private static IMessageBus _messageBus;
+        protected readonly string _topicName = Guid.NewGuid().ToString("N");
 
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            if (_messageBus != null)
-                return _messageBus;
-
             if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
                 return null;
 
-            _messageBus = new AzureServiceBusMessageBus(Configuration.GetConnectionString("ServiceBusConnectionString"), Guid.NewGuid().ToString("N"), loggerFactory: Log);
-            
-            return _messageBus;
+            return new AzureServiceBusMessageBus(Configuration.GetConnectionString("ServiceBusConnectionString"), _topicName, loggerFactory: Log);
         }
 
         [Fact]
@@ -77,6 +72,16 @@ namespace Foundatio.Azure.Tests.Messaging {
         [Fact]
         public override Task WontKeepMessagesWithNoSubscribers() {
             return base.WontKeepMessagesWithNoSubscribers();
+        }
+
+        [Fact]
+        public override Task CanReceiveFromMultipleSubscribers() {
+            return base.CanReceiveFromMultipleSubscribers();
+        }
+
+        [Fact]
+        public override void CanDisposeWithNoSubscribersOrPublishers() {
+            base.CanDisposeWithNoSubscribersOrPublishers();
         }
     }
 }

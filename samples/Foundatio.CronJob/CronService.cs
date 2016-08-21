@@ -141,7 +141,7 @@ namespace Foundatio.CronJob {
     internal class Scheduler {
         private readonly Timer _timer;
         private readonly List<ScheduledJobRunner> _jobs;
-        private CancellationToken _cancellationToken;
+        private CancellationTokenSource _cts;
 
         public Scheduler(List<ScheduledJobRunner> jobs) {
             _timer = new Timer(Run, null, Timeout.Infinite, Timeout.Infinite);
@@ -149,17 +149,22 @@ namespace Foundatio.CronJob {
         }
 
         private void Run(object state) {
-            foreach (var job in _jobs)
-                job.StartIfScheduledAsync(_cancellationToken).GetAwaiter().GetResult();
+            foreach (var job in _jobs) {
+                if (_cts.Token.IsCancellationRequested)
+                    return;
+
+                job.StartIfScheduledAsync(_cts.Token).GetAwaiter().GetResult();
+            }
         }
 
         public void Start(CancellationToken cancellationToken = default(CancellationToken)) {
-            _cancellationToken = cancellationToken;
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _timer.Change(0, 5000);
         }
 
         public void Stop() {
             _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            _cts.Cancel();
         }
     }
 }

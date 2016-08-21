@@ -71,6 +71,16 @@ namespace Foundatio.Redis.Tests.Messaging {
             return base.WontKeepMessagesWithNoSubscribers();
         }
 
+        [Fact]
+        public override Task CanReceiveFromMultipleSubscribers() {
+            return base.CanReceiveFromMultipleSubscribers();
+        }
+
+        [Fact]
+        public override void CanDisposeWithNoSubscribersOrPublishers() {
+            base.CanDisposeWithNoSubscribersOrPublishers();
+        }
+
         private void FlushAll() {
             var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
             if (endpoints.Length == 0)

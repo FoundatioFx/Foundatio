@@ -1,13 +1,12 @@
 {
   "title": "RabbitMQ Publisher Console",
-    "buildOptions": {
-        "debugType": "portable",
-        "emitEntryPoint": true,
-        "optimize": true,
-        "warningsAsErrors": true
-    },
+  "buildOptions": {
+    "debugType": "portable",
+    "emitEntryPoint": true,
+    "optimize": true,
+    "warningsAsErrors": true
+  },
   "dependencies": {
-
     "Foundatio": {
       "target": "project"
     },
@@ -16,22 +15,10 @@
     },
     "Foundatio.RabbitMQ": {
       "target": "project"
-    }
-
+    },
+    "NETStandard.Library": "1.6.0"
   },
-    "frameworks": {
-        "NET46": {
-            "buildOptions": {
-                "define": [ "NET46" ]
-            },
-            "frameworkAssemblies": {
-                "System.Threading.Tasks": {
-                    "type": "build"
-                },
-                "System.Runtime": {
-                    "type": "build"
-                }
-            }
-        }
-    }
+  "frameworks": {
+    "net46": {}
+  }
 }

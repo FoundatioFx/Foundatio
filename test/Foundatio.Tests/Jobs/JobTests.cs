@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
@@ -9,7 +10,6 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
-using Foundatio.ServiceProviders;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -25,6 +25,26 @@ namespace Foundatio.Tests.Jobs {
             var token = TimeSpan.FromSeconds(1).ToCancellationToken();
             var job = new HelloWorldJob();
             var result = await new JobRunner(job, Log).RunAsync(token);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public async Task CanStopLongRunningJob() {
+            var job = new LongRunningJob(Log);
+            var runner = new JobRunner(job, Log);
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var result = await runner.RunAsync(cts.Token);
+            
+            Assert.True(result);
+        }
+
+        [Fact]
+        public async Task CanStopLongRunningCronJob() {
+            var job = new LongRunningJob(Log);
+            var runner = new JobRunner(job, Log);
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var result = await runner.RunAsync(cts.Token);
 
             Assert.True(result);
         }
