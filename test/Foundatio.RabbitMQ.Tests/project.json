@@ -21,10 +21,10 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "RabbitMQ.Client": "3.6.5",
     "xunit": "2.2.0-*",
     "xunit.runner.visualstudio": "2.2.0-*",
-    "dotnet-test-xunit": "2.2.0-*"
+    "dotnet-test-xunit": "2.2.0-*",
+    "RabbitMQ.Client": "4.0.0"
   },
   "frameworks": {
     "net46": {}
