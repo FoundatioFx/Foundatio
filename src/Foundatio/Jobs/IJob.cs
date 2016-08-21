@@ -38,7 +38,7 @@ namespace Foundatio.Jobs {
                         else if (interval.HasValue)
                             await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                            await SystemClock.SleepAsync(1).AnyContext();
+                            SystemClock.Sleep(1);
                     } catch (TaskCanceledException) { }
 
                     if (continuationCallback == null)
@@ -57,7 +57,7 @@ namespace Foundatio.Jobs {
                 if (cancellationToken.IsCancellationRequested)
                     logger.Trace("Job cancellation requested.");
 
-                await SystemClock.SleepAsync(1).AnyContext(); // allow events to process
+                SystemClock.Sleep(1); // allow events to process
             }
         }
 
