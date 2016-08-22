@@ -21,8 +21,8 @@
         "Foundatio.Tests": {
             "target": "project"
         },
-        "RabbitMQ.Client": "3.6.3",
-        "xunit": "2.2.0-beta2-build3300",
+      "RabbitMQ.Client": "3.6.5",
+      "xunit": "2.2.0-beta2-build3300",
         "xunit.extensibility.core": "2.2.0-beta2-build3300",
         "xunit.extensibility.execution": "2.2.0-beta2-build3300",
         "xunit.runner.visualstudio": "2.2.0-beta2-build1149"

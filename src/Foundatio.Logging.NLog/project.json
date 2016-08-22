@@ -29,8 +29,8 @@
         "Foundatio": {
             "target": "project"
         },
-        "NLog": "4.3.5",
-        "System.Collections.Immutable": "1.2.0"
+      "NLog": "4.3.7",
+      "System.Collections.Immutable": "1.2.0"
     },
     "frameworks": {
         "net46": {

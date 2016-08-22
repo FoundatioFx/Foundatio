@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio RabbitMQ Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -25,11 +25,10 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Foundatio": {
-            "target": "project"
-        },
-        "RabbitMQ.Client": "3.6.3"
-    },
+      "Foundatio": {
+        "target": "project"
+      },
+      "RabbitMQ.Client": "3.6.5"    },
     "frameworks": {
         "net46": {
             "buildOptions": {

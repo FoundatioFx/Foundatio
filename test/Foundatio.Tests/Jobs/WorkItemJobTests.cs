@@ -133,9 +133,9 @@ namespace Foundatio.Tests.Jobs {
                         Assert.Equal(workItemCount, completedItems.Count + errors);
                         Assert.Equal(3, jobIds.Count);
                         Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
-                        }
                     }
                 }
+            }
         }
 
         [Fact]

@@ -91,6 +91,7 @@ namespace Foundatio.Jobs {
                 }
 
                 await ReportProgress(handler, queueEntry, progress, message).AnyContext();
+                handler.Log.Info(() => $"{workItemDataType.Name} Progress {progress}%: {message}");
             });
 
             try {
