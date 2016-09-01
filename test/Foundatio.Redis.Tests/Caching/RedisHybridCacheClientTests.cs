@@ -61,6 +61,11 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.WillExpireRemoteItems();
         }
 
+        [Fact]
+        public override Task WillWorkWithSets() {
+            return base.WillWorkWithSets();
+        }
+
         [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughput() {
             return base.MeasureThroughput();
