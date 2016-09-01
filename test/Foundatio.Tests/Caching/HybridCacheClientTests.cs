@@ -148,6 +148,23 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        [Fact]
+        public virtual async Task WillWorkWithSets() {
+            using (var firstCache = GetCacheClient() as HybridCacheClient) {
+                Assert.NotNull(firstCache);
+
+                using (var secondCache = GetCacheClient() as HybridCacheClient) {
+                    Assert.NotNull(secondCache);
+
+                    await firstCache.SetAddAsync("set1", new[] { 1, 2, 3 });
+
+                    var values = await secondCache.GetSetAsync<int>("set1");
+
+                    Assert.Equal(3, values.Value.Count);
+                }
+            }
+        }
+
         public void Dispose() {
             _distributedCache.Dispose();
             _messageBus.Dispose();
