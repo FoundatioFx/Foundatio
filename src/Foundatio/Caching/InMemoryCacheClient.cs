@@ -225,7 +225,7 @@ namespace Foundatio.Caching {
             return difference;
         }
 
-        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
@@ -233,16 +233,16 @@ namespace Foundatio.Caching {
             DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
             
-            var entry = new CacheEntry(new List<T> { value }, expiresAt, ShouldCloneValues);
+            var entry = new CacheEntry(values.ToList(), expiresAt, ShouldCloneValues);
             _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
                 var collection = cacheEntry.Value as ICollection<T>;
                 if (collection == null)
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
 
-                collection.Add(value);
+                collection.AddRange(values);
                 cacheEntry.Value = collection;
                 cacheEntry.ExpiresAt = expiresAt;
                 return cacheEntry;
@@ -251,7 +251,7 @@ namespace Foundatio.Caching {
             ScheduleNextMaintenance(expiresAt);
             await CleanupAsync().AnyContext();
 
-            return true;
+            return values.Count();
         }
 
         private async Task CleanupAsync() {
@@ -272,20 +272,24 @@ namespace Foundatio.Caching {
                 await OnItemExpiredAsync(oldest).AnyContext();
         }
 
-        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
             DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
             
             _memory.TryUpdate(key, (k, cacheEntry) => {
                 var collection = cacheEntry.Value as ICollection<T>;
-                if (collection != null && collection.Contains(value)) {
-                    collection.Remove(value);
+                if (collection != null && collection.Count > 0) {
+                    foreach (var value in values) {
+                        if (collection.Contains(value)) {
+                            collection.Remove(value);
+                        }
+                    }
                     cacheEntry.Value = collection;
                 }
 
@@ -294,7 +298,7 @@ namespace Foundatio.Caching {
                 return cacheEntry;
             });
 
-            return true;
+            return values.Count();
         }
 
         public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {

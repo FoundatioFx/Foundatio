@@ -147,7 +147,7 @@ namespace Foundatio.Caching {
             return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
         }
 
-        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
@@ -155,19 +155,22 @@ namespace Foundatio.Caching {
                 _logger.Trace("Removing expired key: {key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
-
-            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
             
-            var result = await Database.SetAddAsync(key, redisValue).AnyContext();
-            if (result && expiresIn.HasValue)
+            var redisValues = new List<RedisValue>();
+            foreach (var value in values) {
+                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+            }
+            
+            var result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
+            if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
         }
 
-        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
@@ -175,13 +178,16 @@ namespace Foundatio.Caching {
                 _logger.Trace("Removing expired key: {key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
 
-            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
+            var redisValues = new List<RedisValue>();
+            foreach (var value in values) {
+                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+            }
 
-            var result = await Database.SetRemoveAsync(key, redisValue).AnyContext();
-            if (result && expiresIn.HasValue)
+            var result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+            if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;

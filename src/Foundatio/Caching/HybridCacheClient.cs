@@ -183,18 +183,41 @@ namespace Foundatio.Caching {
             return _distributedCache.SetIfLowerAsync(key, value, expiresIn);
         }
 
-        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _localCache.SetAddAsync(key, value, expiresIn).AnyContext();
-            return await _distributedCache.SetAddAsync(key, value, expiresIn).AnyContext();
+        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            await _localCache.SetAddAsync(key, values, expiresIn).AnyContext();
+            return await _distributedCache.SetAddAsync(key, values, expiresIn).AnyContext();
         }
 
-        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _localCache.SetRemoveAsync(key, value, expiresIn).AnyContext();
-            return await _distributedCache.SetRemoveAsync(key, value, expiresIn).AnyContext();
+        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            await _localCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
+            return await _distributedCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
         }
 
-        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
-            return GetAsync<ICollection<T>>(key);
+        public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+            CacheValue<ICollection<T>> cacheValue;
+            bool requiresSerialization = TypeRequiresSerialization(typeof(T));
+            _logger.Trace("Type requires serialization: {0}", requiresSerialization);
+
+            if (requiresSerialization) {
+                cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
+                if (cacheValue.HasValue) {
+                    _logger.Trace("Local cache hit: {0}", key);
+                    Interlocked.Increment(ref _localCacheHits);
+                    return cacheValue;
+                }
+            }
+
+            _logger.Trace("Local cache miss: {0}", key);
+            cacheValue = await _distributedCache.GetSetAsync<T>(key).AnyContext();
+            if (requiresSerialization && cacheValue.HasValue) {
+                var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
+                _logger.Trace("Setting Local cache key: {0} with expiration: {1}", key, expiration);
+
+                await _localCache.SetAddAsync(key, cacheValue.Value, expiration).AnyContext();
+                return cacheValue;
+            }
+
+            return cacheValue.HasValue ? cacheValue : CacheValue<ICollection<T>>.NoValue;
         }
 
         private bool TypeRequiresSerialization(Type t) {
