@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Caching;
 using Foundatio.Utility;
+using Foundatio.Extensions;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Caching {
     public static class CacheClientExtensions {
         public static async Task<T> GetAsync<T>(this ICacheClient client, string key, T defaultValue) {
             var cacheValue = await client.GetAsync<T>(key).AnyContext();
