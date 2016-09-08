@@ -26,11 +26,11 @@
         "xmlDoc": true
     },
     "dependencies": {
-      "AWSSDK.Core": "3.1.9.2",
-      "AWSSDK.S3": "3.1.8.3",
-      "Foundatio": {
-        "target": "project"
-      }
+        "AWSSDK.Core": "3.1.11",
+        "AWSSDK.S3": "3.1.9",
+        "Foundatio": {
+            "target": "project"
+        }
     },
     "frameworks": {
         "net46": {

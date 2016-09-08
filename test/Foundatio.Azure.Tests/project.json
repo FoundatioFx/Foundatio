@@ -31,9 +31,9 @@
         "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
         "RimDev.Automation.StorageEmulator": "0.1.0",
         "System.Spatial": "5.7.0",
-      "WindowsAzure.ServiceBus": "3.3.2",
-        "WindowsAzure.Storage": "6.2.0",
-        "xunit": "2.2.0-beta2-build3300",
+        "WindowsAzure.ServiceBus": "3.3.2",
+        "WindowsAzure.Storage": "7.2.0",
+      "xunit": "2.2.0-beta2-build3300",
         "xunit.extensibility.core": "2.2.0-beta2-build3300",
         "xunit.extensibility.execution": "2.2.0-beta2-build3300",
         "xunit.runner.visualstudio": "2.2.0-beta2-build1149"

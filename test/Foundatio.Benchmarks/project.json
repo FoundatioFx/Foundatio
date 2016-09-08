@@ -6,7 +6,7 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "BenchmarkDotNet": "0.9.8",
+        "BenchmarkDotNet": "0.9.9",
         "Foundatio": {
             "target": "project"
         },

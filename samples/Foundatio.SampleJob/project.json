@@ -16,7 +16,7 @@
         "Foundatio.Redis": {
             "target": "project"
         },
-        "SimpleInjector": "3.2.0",
+        "SimpleInjector": "3.2.2",
         "Topshelf": "4.0.1"
     },
     "frameworks": {

@@ -25,10 +25,10 @@
         "xmlDoc": true
     },
     "dependencies": {
-      "Foundatio": {
-        "target": "project"
-      },
-      "RabbitMQ.Client": "3.6.5"    },
+        "Foundatio": {
+            "target": "project"
+        },
+        "RabbitMQ.Client": "4.0.2"  },
     "frameworks": {
         "net46": {
             "buildOptions": {
