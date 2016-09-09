@@ -98,6 +98,14 @@ namespace Foundatio.Utility {
             };
         }
 
+        public static void UseFakeSleep() {
+            SleepFunc = delay => AdjustTime(TimeSpan.FromMilliseconds(-delay));
+            SleepFuncAsync = (delay, ct) => {
+                AdjustTime(TimeSpan.FromMilliseconds(-delay));
+                return Task.CompletedTask;
+            };
+        }
+
         public static void Reset() {
             SleepFunc = Thread.Sleep;
             SleepFuncAsync = Task.Delay;
