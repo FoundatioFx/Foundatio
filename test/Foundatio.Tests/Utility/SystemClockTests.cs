@@ -2,11 +2,17 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
-    public class SystemClockTests {
+    public class SystemClockTests : TestWithLoggingBase {
+        public SystemClockTests(ITestOutputHelper output) : base(output) {
+            SystemClock.Reset();
+        }
+
         [Fact]
         public void CanGetTime() {
             Assert.InRange(DateTime.UtcNow.Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
