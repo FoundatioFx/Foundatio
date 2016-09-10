@@ -191,7 +191,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(6, await CountAllKeysAsync());
 
                 // let the work item timeout and become auto abandoned.
-                SystemClock.UtcNowFunc = () => DateTime.UtcNow.AddMilliseconds(250);
+                SystemClock.Test.AddTime(TimeSpan.FromMilliseconds(250));
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
@@ -241,7 +241,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
                 Assert.Equal(5, await CountAllKeysAsync());
 
-                SystemClock.UtcNowFunc = () => DateTime.UtcNow.AddSeconds(1);
+                SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));

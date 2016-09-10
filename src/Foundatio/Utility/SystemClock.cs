@@ -3,117 +3,138 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace Foundatio.Utility {
-    public static class SystemClock {
-        public static Action<int> SleepFunc = Thread.Sleep;
-        public static Func<int, CancellationToken, Task> SleepFuncAsync = Task.Delay;
-        public static Func<DateTime> UtcNowFunc = () => DateTime.UtcNow;
-        public static Func<DateTime> NowFunc = () => DateTime.Now;
-        public static Func<DateTimeOffset> OffsetUtcNowFunc = () => DateTimeOffset.UtcNow;
-        public static Func<DateTimeOffset> OffsetNowFunc = () => DateTimeOffset.Now;
-        public static Func<TimeSpan> TimeZoneOffsetFunc = () => DateTimeOffset.Now.Offset;
+    public interface ISystemClock {
+        DateTime Now();
+        DateTime UtcNow();
+        DateTimeOffset OffsetNow();
+        DateTimeOffset OffsetUtcNow();
+        void Sleep(int milliseconds);
+        Task SleepAsync(int milliseconds, CancellationToken ct);
+        TimeSpan TimeZoneOffset();
+    }
 
-        public static DateTime UtcNow => UtcNowFunc();
-        public static DateTime Now => NowFunc();
-        public static DateTimeOffset OffsetUtcNow => OffsetUtcNowFunc();
-        public static DateTimeOffset OffsetNow => OffsetNowFunc();
-        public static TimeSpan TimeZoneOffset => TimeZoneOffsetFunc();
+    public class DefaultSystemClock : ISystemClock {
+        public static readonly DefaultSystemClock Instance = new DefaultSystemClock();
 
-        public static void Sleep(TimeSpan time) {
-            SleepFunc((int)time.TotalMilliseconds);
+        public DateTime Now() {
+            return DateTime.Now;
         }
 
-        public static void Sleep(int time) {
-            SleepFunc(time);
+        public DateTime UtcNow() {
+            return DateTime.UtcNow;
         }
 
-        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) {
-            return SleepFuncAsync((int)time.TotalMilliseconds, cancellationToken);
+        public DateTimeOffset OffsetNow() {
+            return DateTimeOffset.Now;
         }
 
-        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
-            return SleepAsync(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
+        public DateTimeOffset OffsetUtcNow() {
+            return DateTimeOffset.UtcNow;
         }
 
-        public static void SetFixedTime(DateTime time) {
+        public void Sleep(int milliseconds) {
+            Thread.Sleep(milliseconds);
+        }
+
+        public Task SleepAsync(int milliseconds, CancellationToken ct) {
+            return Task.Delay(milliseconds, ct);
+        }
+
+        public TimeSpan TimeZoneOffset() {
+            return DateTimeOffset.Now.Offset;
+        }
+    }
+
+    public class TestSystemClock : ISystemClock {
+        private DateTime _currentUtc = DateTime.UtcNow;
+        private TimeSpan _timeZoneOffset = DateTimeOffset.Now.Offset;
+
+        public DateTime Now() {
+            return _currentUtc.Add(_timeZoneOffset);
+        }
+
+        public DateTime UtcNow() {
+            return _currentUtc;
+        }
+
+        public DateTimeOffset OffsetNow() {
+            return new DateTimeOffset(Now().Ticks, _timeZoneOffset);
+        }
+
+        public DateTimeOffset OffsetUtcNow() {
+            return new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);
+        }
+
+        public void Sleep(int milliseconds) {
+            AddTime(TimeSpan.FromMilliseconds(milliseconds));
+            Thread.Sleep(1);
+        }
+
+        public Task SleepAsync(int milliseconds, CancellationToken ct) {
+            Sleep(milliseconds);
+            return Task.CompletedTask;
+        }
+
+        public TimeSpan TimeZoneOffset() {
+            return _timeZoneOffset;
+        }
+
+        public void SetTime(DateTime time) {
             if (time.Kind == DateTimeKind.Unspecified)
                 time = time.ToUniversalTime();
 
             if (time.Kind == DateTimeKind.Utc) {
-                UtcNowFunc = () => time;
-                OffsetUtcNowFunc = () => new DateTimeOffset(time, TimeSpan.Zero);
-
-                NowFunc = () => {
-                    var now = UtcNowFunc().Add(TimeZoneOffsetFunc());
-                    return new DateTime(now.Ticks, DateTimeKind.Local);
-                };
-                OffsetNowFunc = () => {
-                    var now = UtcNowFunc().Add(TimeZoneOffsetFunc());
-                    return new DateTimeOffset(now.Ticks, TimeZoneOffsetFunc());
-                };
+                _currentUtc = time;
             } else if (time.Kind == DateTimeKind.Local) {
-                NowFunc = () => time;
-                OffsetNowFunc = () => new DateTimeOffset(time, TimeZoneOffsetFunc());
-
-                UtcNowFunc = () => {
-                    var now = NowFunc().Subtract(TimeZoneOffsetFunc());
-                    return new DateTime(now.Ticks, DateTimeKind.Local);
-                };
-                OffsetUtcNowFunc = () => {
-                    var now = NowFunc().Subtract(TimeZoneOffsetFunc());
-                    return new DateTimeOffset(now.Ticks, TimeSpan.Zero);
-                };
+                _currentUtc = time.Subtract(_timeZoneOffset);
             }
         }
 
-        public static void SetTimeZoneOffset(TimeSpan offset) {
-            TimeZoneOffsetFunc = () => offset;
-            NowFunc = () => UtcNowFunc().Add(offset);
-            OffsetNowFunc = () => new DateTimeOffset(UtcNowFunc().Add(offset).Ticks, offset);
+        public void SetTimeZoneOffset(TimeSpan offset) {
+            _timeZoneOffset = offset;
         }
 
-        public static void SetTime(DateTime time) {
-            if (time.Kind == DateTimeKind.Unspecified)
-                time = time.ToUniversalTime();
-
-            TimeSpan adjustment = TimeSpan.Zero;
-            if (time.Kind == DateTimeKind.Utc)
-                adjustment = DateTime.UtcNow.Subtract(time);
-            else if (time.Kind == DateTimeKind.Local)
-                adjustment = DateTime.Now.Subtract(time);
-
-            AdjustTime(adjustment);
+        public void AddTime(TimeSpan amount) {
+            _currentUtc = _currentUtc.Add(amount);
         }
 
-        public static void AdjustTime(TimeSpan adjustment) {
-            UtcNowFunc = () => DateTime.UtcNow.Subtract(adjustment);
-            OffsetUtcNowFunc = () => new DateTimeOffset(DateTimeOffset.UtcNow.Subtract(adjustment).Ticks, TimeSpan.Zero);
+        public void SubtractTime(TimeSpan amount) {
+            _currentUtc = _currentUtc.Subtract(amount);
+        }
+    }
 
-            NowFunc = () => {
-                var now = UtcNowFunc().Add(TimeZoneOffsetFunc());
-                return new DateTime(now.Ticks, DateTimeKind.Local);
-            };
-            OffsetNowFunc = () => {
-                var now = UtcNowFunc().Add(TimeZoneOffsetFunc());
-                return new DateTimeOffset(now.Ticks, TimeZoneOffsetFunc());
-            };
+    public static class SystemClock {
+        public static ISystemClock Instance { get; set; } = DefaultSystemClock.Instance;
+        public static TestSystemClock Test { get; set; } = new TestSystemClock();
+
+        public static void UseTestClock() {
+            Instance = Test;
         }
 
-        public static void UseFakeSleep() {
-            SleepFunc = delay => AdjustTime(TimeSpan.FromMilliseconds(-delay));
-            SleepFuncAsync = (delay, ct) => {
-                AdjustTime(TimeSpan.FromMilliseconds(-delay));
-                return Task.CompletedTask;
-            };
+        public static DateTime Now => Instance.Now();
+        public static DateTime UtcNow => Instance.UtcNow();
+        public static DateTimeOffset OffsetNow => Instance.OffsetNow();
+        public static DateTimeOffset OffsetUtcNow => Instance.OffsetUtcNow();
+        public static TimeSpan TimeZoneOffset => Instance.TimeZoneOffset();
+
+        public static void Sleep(TimeSpan time) {
+            Instance.Sleep((int)time.TotalMilliseconds);
+        }
+
+        public static void Sleep(int milliseconds) {
+            Instance.Sleep(milliseconds);
+        }
+
+        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) {
+            return Instance.SleepAsync((int)time.TotalMilliseconds, cancellationToken);
+        }
+
+        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
+            return Instance.SleepAsync(milliseconds, cancellationToken);
         }
 
         public static void Reset() {
-            SleepFunc = Thread.Sleep;
-            SleepFuncAsync = Task.Delay;
-            UtcNowFunc = () => DateTime.UtcNow;
-            NowFunc = () => DateTime.Now;
-            OffsetUtcNowFunc = () => DateTimeOffset.UtcNow;
-            OffsetNowFunc = () => DateTimeOffset.Now;
-            TimeZoneOffsetFunc = () => DateTimeOffset.Now.Offset;
+            Instance = DefaultSystemClock.Instance;
         }
     }
 }

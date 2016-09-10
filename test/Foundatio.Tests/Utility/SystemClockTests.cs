@@ -1,31 +1,37 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
-    public class SystemClockTests {
+    public class SystemClockTests : TestWithLoggingBase {
+        public SystemClockTests(ITestOutputHelper output) : base(output) { }
+
         [Fact]
         public void CanGetTime() {
-            Assert.InRange(DateTime.UtcNow.Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTime.Now.Subtract(SystemClock.Now).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTimeOffset.UtcNow.Subtract(SystemClock.OffsetUtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTimeOffset.Now.Subtract(SystemClock.OffsetNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTimeOffset.Now.Offset.Subtract(SystemClock.TimeZoneOffset).TotalMilliseconds, -50, 50);
+            var now = DateTime.UtcNow;
+            SystemClock.Test.SetTime(now);
+            Assert.Equal(now, SystemClock.UtcNow);
+            Assert.Equal(now.ToLocalTime(), SystemClock.Now);
+            Assert.Equal(now, SystemClock.OffsetUtcNow);
+            Assert.Equal(now.ToLocalTime(), SystemClock.OffsetNow);
             Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
         }
 
         [Fact]
         public void CanSleep() {
+            SystemClock.Reset();
+
             var sw = Stopwatch.StartNew();
             SystemClock.Sleep(250);
             sw.Stop();
 
             Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
-            SystemClock.UseFakeSleep();
+            SystemClock.UseTestClock();
 
             var now = SystemClock.UtcNow;
             sw.Restart();
@@ -40,13 +46,15 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanSleepAsync() {
+            SystemClock.Reset();
+
             var sw = Stopwatch.StartNew();
             await SystemClock.SleepAsync(250);
             sw.Stop();
 
             Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
-            SystemClock.UseFakeSleep();
+            SystemClock.UseTestClock();
 
             var now = SystemClock.UtcNow;
             sw.Restart();
@@ -63,8 +71,8 @@ namespace Foundatio.Tests.Utility {
         public void CanSetTimeZone() {
             var utcNow = DateTime.UtcNow;
             var now = new DateTime(utcNow.AddHours(1).Ticks, DateTimeKind.Local);
-            SystemClock.SetFixedTime(utcNow);
-            SystemClock.SetTimeZoneOffset(TimeSpan.FromHours(1));
+            SystemClock.Test.SetTime(utcNow);
+            SystemClock.Test.SetTimeZoneOffset(TimeSpan.FromHours(1));
 
             Assert.Equal(utcNow, SystemClock.UtcNow);
             Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
@@ -77,7 +85,7 @@ namespace Foundatio.Tests.Utility {
         public void CanSetLocalFixedTime() {
             var now = DateTime.Now;
             var utcNow = now.ToUniversalTime();
-            SystemClock.SetFixedTime(now);
+            SystemClock.Test.SetTime(now);
 
             Assert.Equal(now, SystemClock.Now);
             Assert.Equal(now, SystemClock.OffsetNow);
@@ -90,50 +98,12 @@ namespace Foundatio.Tests.Utility {
         public void CanSetUtcFixedTime() {
             var utcNow = DateTime.UtcNow;
             var now = utcNow.ToLocalTime();
-            SystemClock.SetFixedTime(utcNow);
+            SystemClock.Test.SetTime(utcNow);
 
             Assert.Equal(now, SystemClock.Now);
             Assert.Equal(now, SystemClock.OffsetNow);
             Assert.Equal(utcNow, SystemClock.UtcNow);
             Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
-            Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
-        }
-
-        [Fact]
-        public void CanSetLocalTime() {
-            SystemClock.SetTime(DateTime.Now.AddMinutes(-5));
-
-            Assert.InRange(DateTime.UtcNow.AddMinutes(-5).Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTime.Now.AddMinutes(-5).Subtract(SystemClock.Now).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-5).Ticks, TimeSpan.Zero).Subtract(SystemClock.OffsetUtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.Now.AddMinutes(-5).Ticks, SystemClock.TimeZoneOffset).Subtract(SystemClock.OffsetNow).TotalMilliseconds, -50, 50);
-            Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
-
-            Thread.Sleep(500);
-
-            Assert.InRange(DateTime.UtcNow.AddMinutes(-5).Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTime.Now.AddMinutes(-5).Subtract(SystemClock.Now).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-5).Ticks, TimeSpan.Zero).Subtract(SystemClock.OffsetUtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.Now.AddMinutes(-5).Ticks, SystemClock.TimeZoneOffset).Subtract(SystemClock.OffsetNow).TotalMilliseconds, -50, 50);
-            Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
-        }
-
-        [Fact]
-        public void CanSetUtcTime() {
-            SystemClock.SetTime(DateTime.UtcNow.AddMinutes(-5));
-
-            Assert.InRange(DateTime.UtcNow.AddMinutes(-5).Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTime.Now.AddMinutes(-5).Subtract(SystemClock.Now).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-5).Ticks, TimeSpan.Zero).Subtract(SystemClock.OffsetUtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.Now.AddMinutes(-5).Ticks, SystemClock.TimeZoneOffset).Subtract(SystemClock.OffsetNow).TotalMilliseconds, -50, 50);
-            Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
-
-            Thread.Sleep(500);
-
-            Assert.InRange(DateTime.UtcNow.AddMinutes(-5).Subtract(SystemClock.UtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(DateTime.Now.AddMinutes(-5).Subtract(SystemClock.Now).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-5).Ticks, TimeSpan.Zero).Subtract(SystemClock.OffsetUtcNow).TotalMilliseconds, -50, 50);
-            Assert.InRange(new DateTimeOffset(DateTime.Now.AddMinutes(-5).Ticks, SystemClock.TimeZoneOffset).Subtract(SystemClock.OffsetNow).TotalMilliseconds, -50, 50);
             Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
         }
     }
