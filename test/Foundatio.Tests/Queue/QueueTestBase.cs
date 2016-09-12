@@ -12,6 +12,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
@@ -306,7 +307,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
+                TestSystemClock.Instance.Scheduler.AdvanceBy(1000 * TimeSpan.TicksPerMillisecond);
 
                 // wait for the task to be auto abandoned
 

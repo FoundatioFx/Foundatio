@@ -8,6 +8,7 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
@@ -191,7 +192,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(6, await CountAllKeysAsync());
 
                 // let the work item timeout and become auto abandoned.
-                SystemClock.Test.AddTime(TimeSpan.FromMilliseconds(250));
+                TestSystemClock.Instance.Scheduler.AdvanceBy(250 * TimeSpan.TicksPerMillisecond);
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
@@ -241,7 +242,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
                 Assert.Equal(5, await CountAllKeysAsync());
 
-                SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
+                TestSystemClock.Instance.Scheduler.AdvanceBy(1000 * TimeSpan.TicksPerMillisecond);
                 await queue.DoMaintenanceWorkAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));

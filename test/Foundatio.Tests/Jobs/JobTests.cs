@@ -10,6 +10,7 @@ using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -17,7 +18,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Jobs {
     public class JobTests : TestWithLoggingBase {
         public JobTests(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
+            TestSystemClock.Install();
         }
 
         [Fact]

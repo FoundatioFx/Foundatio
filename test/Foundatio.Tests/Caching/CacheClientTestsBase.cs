@@ -12,11 +12,12 @@ using Foundatio.Utility;
 using Newtonsoft.Json;
 using System.Linq;
 using Foundatio.Extensions;
+using Foundatio.Tests.Utility;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
+            TestSystemClock.Install();
         }
 
         protected virtual ICacheClient GetCacheClient() {

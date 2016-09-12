@@ -11,6 +11,7 @@ using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -18,7 +19,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Jobs {
     public abstract class JobQueueTestsBase: TestWithLoggingBase {
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
+            TestSystemClock.Install();
         }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);

@@ -24,6 +24,5 @@ namespace Foundatio.Extensions {
         public static TimeSpan Max(this TimeSpan source, TimeSpan other) {
             return source.Ticks < other.Ticks ? other : source;
         }
-
     }
 }

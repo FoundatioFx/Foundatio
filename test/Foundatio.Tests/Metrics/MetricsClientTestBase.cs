@@ -6,6 +6,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -13,7 +14,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {
         public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
+            TestSystemClock.Install();
         }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
