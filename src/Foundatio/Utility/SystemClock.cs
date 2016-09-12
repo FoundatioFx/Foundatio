@@ -7,6 +7,7 @@ using Nito.AsyncEx.Synchronous;
 namespace Foundatio.Utility {
     public interface ISystemClock : IScheduler
     {
+        CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout);
     }
 
     public abstract class SchedulerSystemClockBase : ISystemClock
@@ -33,6 +34,8 @@ namespace Foundatio.Utility {
             return _scheduler.Schedule(state, dueTime, action);
         }
 
+        public abstract CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout);
+
         public DateTimeOffset Now => _scheduler.Now;
     }
 
@@ -41,6 +44,11 @@ namespace Foundatio.Utility {
 
         public DefaultSystemClock() : base(DefaultScheduler.Instance)
         {
+        }
+
+        public override CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
+        {
+            return new CancellationTokenSource(timeout);
         }
     }
 
@@ -59,6 +67,11 @@ namespace Foundatio.Utility {
 
         public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
             return SleepAsync(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
+        }
+
+        public static CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
+        {
+            return Instance.CreateCancellationTokenSource(timeout);
         }
     }
 }

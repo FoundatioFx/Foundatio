@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Concurrency;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Microsoft.Reactive.Testing;
@@ -27,5 +28,11 @@ namespace Foundatio.Tests.Utility
         public TestSystemClock(): this(new TestScheduler()) { }
 
         public TestScheduler Scheduler { get; }
+        public override CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
+        {
+            var result = new CancellationTokenSource();
+            Scheduler.Schedule(timeout, () => result.Cancel());
+            return result;
+        }
     }
 }

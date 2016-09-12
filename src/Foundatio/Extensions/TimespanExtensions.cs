@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using Foundatio.Utility;
 
 namespace Foundatio.Extensions {
     internal static class TimespanExtensions {
@@ -8,7 +9,7 @@ namespace Foundatio.Extensions {
                 return new CancellationToken(true);
 
             if (timeout.Ticks > 0)
-                return new CancellationTokenSource(timeout).Token;
+                return SystemClock.CreateCancellationTokenSource(timeout).Token;
 
             return default(CancellationToken);
         }
