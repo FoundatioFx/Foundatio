@@ -28,6 +28,7 @@ namespace Foundatio.Tests.Utility
         public TestSystemClock(): this(new TestScheduler()) { }
 
         public TestScheduler Scheduler { get; }
+
         public override CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
         {
             var result = new CancellationTokenSource();

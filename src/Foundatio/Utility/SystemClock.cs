@@ -55,18 +55,27 @@ namespace Foundatio.Utility {
     public static class SystemClock {
         public static ISystemClock Instance { get; set; } = DefaultSystemClock.Instance;
 
+        public static DateTime Now => Instance.Now.LocalDateTime;
         public static DateTime UtcNow => Instance.Now.UtcDateTime;
+        public static DateTimeOffset OffsetNow => Instance.Now.ToLocalTime();
+        public static DateTimeOffset OffsetUtcNow => Instance.Now.ToUniversalTime();
 
-        public static void Sleep(int milliseconds) {
-            SleepAsync(TimeSpan.FromMilliseconds(milliseconds)).WaitAndUnwrapException();
+        public static void Sleep(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) {
+            // ReSharper disable once MethodSupportsCancellation
+            SleepAsync(time, cancellationToken).WaitAndUnwrapException();
+        }
+
+        public static void Sleep(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
+            Sleep(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
+        }
+
+        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return SleepAsync(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
         }
 
         public static async Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) {
             await Instance.Sleep(time, cancellationToken).ConfigureAwait(false);
-        }
-
-        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
-            return SleepAsync(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
         }
 
         public static CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
