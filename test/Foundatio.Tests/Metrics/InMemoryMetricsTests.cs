@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Metrics;
 using Xunit;
 using Xunit.Abstractions;
