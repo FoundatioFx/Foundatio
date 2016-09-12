@@ -12,11 +12,19 @@ namespace Foundatio.Tests.Utility
 {
     public sealed class TestSystemClock: SchedulerSystemClockBase
     {
-        public static TestSystemClock Instance { get; private set; }
+        public static TestSystemClock Instance {
+            get
+            {
+                var result = SystemClock.Instance as TestSystemClock;
+                if (result == null)
+                    throw new InvalidOperationException("Must call Install() before accessing Instance.");
+                return result;
+            }
+        }
 
         public static void Install()
         {
-            SystemClock.Instance = Instance = new TestSystemClock();
+            SystemClock.Instance = new TestSystemClock();
         }
 
         private TestSystemClock(TestScheduler scheduler)
@@ -34,6 +42,21 @@ namespace Foundatio.Tests.Utility
             var result = new CancellationTokenSource();
             Scheduler.Schedule(timeout, () => result.Cancel());
             return result;
+        }
+
+        public static void AdvanceBy(TimeSpan timeSpan)
+        {
+            Instance.Scheduler.AdvanceBy(timeSpan.Ticks);
+        }
+
+        public static void AdvanceTo(DateTimeOffset time)
+        {
+            Instance.Scheduler.AdvanceTo(time.Ticks);
+        }
+
+        public override string ToString()
+        {
+            return Scheduler.Clock + "(" + Scheduler.Now + ")";
         }
     }
 }

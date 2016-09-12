@@ -307,7 +307,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                TestSystemClock.Instance.Scheduler.AdvanceBy(1000 * TimeSpan.TicksPerMillisecond);
+                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
 
                 // wait for the task to be auto abandoned
 
