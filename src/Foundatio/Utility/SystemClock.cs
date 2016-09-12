@@ -46,15 +46,17 @@ namespace Foundatio.Utility {
     }
 
     public class TestSystemClock : ISystemClock {
-        private DateTime _currentUtc = DateTime.UtcNow;
+        private DateTime? _fixedUtc = null;
+        private TimeSpan _offset = TimeSpan.Zero;
         private TimeSpan _timeZoneOffset = DateTimeOffset.Now.Offset;
-
-        public DateTime Now() {
-            return _currentUtc.Add(_timeZoneOffset);
-        }
+        private bool _fakeSleep = false;
 
         public DateTime UtcNow() {
-            return _currentUtc;
+            return _fixedUtc ?? DateTime.UtcNow.Add(_offset);
+        }
+
+        public DateTime Now() {
+            return UtcNow().Add(_timeZoneOffset);
         }
 
         public DateTimeOffset OffsetNow() {
@@ -66,11 +68,19 @@ namespace Foundatio.Utility {
         }
 
         public void Sleep(int milliseconds) {
+            if (!_fakeSleep) {
+                Thread.Sleep(milliseconds);
+                return;
+            }
+
             AddTime(TimeSpan.FromMilliseconds(milliseconds));
             Thread.Sleep(1);
         }
 
         public Task SleepAsync(int milliseconds, CancellationToken ct) {
+            if (!_fakeSleep)
+                return Task.Delay(milliseconds, ct);
+
             Sleep(milliseconds);
             return Task.CompletedTask;
         }
@@ -79,14 +89,27 @@ namespace Foundatio.Utility {
             return _timeZoneOffset;
         }
 
-        public void SetTime(DateTime time) {
+        public void SetFixedTime(DateTime time) {
             if (time.Kind == DateTimeKind.Unspecified)
                 time = time.ToUniversalTime();
 
             if (time.Kind == DateTimeKind.Utc) {
-                _currentUtc = time;
+                _fixedUtc = time;
             } else if (time.Kind == DateTimeKind.Local) {
-                _currentUtc = time.Subtract(_timeZoneOffset);
+                _fixedUtc = time.Add(TimeZoneOffset());
+            }
+        }
+
+        public void SetTime(DateTime time) {
+            _fixedUtc = null;
+
+            if (time.Kind == DateTimeKind.Unspecified)
+                time = time.ToUniversalTime();
+
+            if (time.Kind == DateTimeKind.Utc) {
+                _offset = DateTime.UtcNow.Subtract(time);
+            } else if (time.Kind == DateTimeKind.Local) {
+                _offset = DateTime.Now.Subtract(time);
             }
         }
 
@@ -95,20 +118,32 @@ namespace Foundatio.Utility {
         }
 
         public void AddTime(TimeSpan amount) {
-            _currentUtc = _currentUtc.Add(amount);
+            _offset = _offset.Subtract(amount);
         }
 
         public void SubtractTime(TimeSpan amount) {
-            _currentUtc = _currentUtc.Subtract(amount);
+            _offset = _offset.Add(amount);
+        }
+
+        public void UseFakeSleep() {
+            _fakeSleep = true;
+        }
+
+        public void UseRealSleep() {
+            _fakeSleep = false;
         }
     }
 
     public static class SystemClock {
         public static ISystemClock Instance { get; set; } = DefaultSystemClock.Instance;
-        public static TestSystemClock Test { get; set; } = new TestSystemClock();
+        public static TestSystemClock Test {
+            get {
+                var testClock = Instance as TestSystemClock;
+                if (testClock == null)
+                    throw new ApplicationException("You must set SystemClock.Instance to ");
 
-        public static void UseTestClock() {
-            Instance = Test;
+                return testClock;
+            }
         }
 
         public static DateTime Now => Instance.Now();
@@ -133,8 +168,8 @@ namespace Foundatio.Utility {
             return Instance.SleepAsync(milliseconds, cancellationToken);
         }
 
-        public static void Reset() {
-            Instance = DefaultSystemClock.Instance;
+        public static void UseTestClock() {
+            Instance = new TestSystemClock();
         }
     }
 }

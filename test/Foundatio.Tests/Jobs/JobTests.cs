@@ -17,7 +17,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Jobs {
     public class JobTests : TestWithLoggingBase {
         public JobTests(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         [Fact]

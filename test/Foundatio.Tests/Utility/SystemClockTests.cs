@@ -8,12 +8,14 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
     public class SystemClockTests : TestWithLoggingBase {
-        public SystemClockTests(ITestOutputHelper output) : base(output) { }
+        public SystemClockTests(ITestOutputHelper output) : base(output) {
+            SystemClock.UseTestClock();
+        }
 
         [Fact]
         public void CanGetTime() {
             var now = DateTime.UtcNow;
-            SystemClock.Test.SetTime(now);
+            SystemClock.Test.SetFixedTime(now);
             Assert.Equal(now, SystemClock.UtcNow);
             Assert.Equal(now.ToLocalTime(), SystemClock.Now);
             Assert.Equal(now, SystemClock.OffsetUtcNow);
@@ -23,7 +25,7 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public void CanSleep() {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
 
             var sw = Stopwatch.StartNew();
             SystemClock.Sleep(250);
@@ -31,7 +33,7 @@ namespace Foundatio.Tests.Utility {
 
             Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
-            SystemClock.UseTestClock();
+            SystemClock.Test.UseFakeSleep();
 
             var now = SystemClock.UtcNow;
             sw.Restart();
@@ -46,7 +48,7 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanSleepAsync() {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
 
             var sw = Stopwatch.StartNew();
             await SystemClock.SleepAsync(250);
@@ -54,7 +56,7 @@ namespace Foundatio.Tests.Utility {
 
             Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
-            SystemClock.UseTestClock();
+            SystemClock.Test.UseFakeSleep();
 
             var now = SystemClock.UtcNow;
             sw.Restart();
@@ -85,7 +87,7 @@ namespace Foundatio.Tests.Utility {
         public void CanSetLocalFixedTime() {
             var now = DateTime.Now;
             var utcNow = now.ToUniversalTime();
-            SystemClock.Test.SetTime(now);
+            SystemClock.Test.SetFixedTime(now);
 
             Assert.Equal(now, SystemClock.Now);
             Assert.Equal(now, SystemClock.OffsetNow);

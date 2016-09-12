@@ -16,7 +16,7 @@ using Foundatio.Extensions;
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         protected virtual ICacheClient GetCacheClient() {

@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {
         public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
