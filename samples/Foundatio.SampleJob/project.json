@@ -17,7 +17,7 @@
     },
     "NETStandard.Library": "1.6.0",
     "Exceptionless.RandomData": "1.1.24",
-    "SimpleInjector": "3.2.0",
+    "SimpleInjector": "3.2.2",
     "Topshelf": "4.0.1"
   },
   "frameworks": {

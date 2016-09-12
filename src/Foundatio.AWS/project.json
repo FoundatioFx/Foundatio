@@ -30,7 +30,7 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "AWSSDK.S3": "3.2.6-beta"
+    "AWSSDK.S3": "3.2.8-rc"
   },
   "frameworks": {
     "netstandard1.5": {},

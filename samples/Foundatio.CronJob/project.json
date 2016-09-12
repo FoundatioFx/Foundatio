@@ -12,10 +12,10 @@
     "Foundatio.Logging.NLog": {
       "target": "project"
     },
-    "NETStandard.Library": "1.6.0",
     "ncrontab": "3.1.0",
-    "NLog.Schema": "4.3.7",
-    "SimpleInjector": "3.2.0",
+    "NETStandard.Library": "1.6.0",
+    "NLog.Schema": "4.3.8",
+    "SimpleInjector": "3.2.2",
     "Topshelf": "4.0.1"
   },
   "frameworks": {

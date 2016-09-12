@@ -1,4 +1,4 @@
-﻿{
+{
   "version": "99.99.99-dev",
   "title": "Foundatio Redis Implementations",
   "description": "Pluggable foundation blocks for building distributed apps.",
@@ -30,7 +30,7 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "StackExchange.Redis": "1.1.604-alpha"
+    "StackExchange.Redis": "1.1.605"
   },
   "frameworks": {
     "netstandard1.5": {},
