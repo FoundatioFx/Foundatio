@@ -14,7 +14,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -155,8 +155,8 @@ namespace Foundatio.Tests.Locks {
             var lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            var startOfPeriod = DateTime.UtcNow - DateTime.UtcNow.Floor(period);
-            SystemClock.UtcNowFunc = () => DateTime.UtcNow.Subtract(startOfPeriod);
+            var sc = SystemClock.Test;
+            sc.SetTime(DateTime.UtcNow.Floor(period));
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
                 _logger.Info($"Allowed Locks: {i}");

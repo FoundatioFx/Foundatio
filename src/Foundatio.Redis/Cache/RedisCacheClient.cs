@@ -45,17 +45,14 @@ namespace Foundatio.Caching {
 
                     try {
                         var redisKeys = server.Keys().ToArray();
-                        if (redisKeys.Length > 0) {
+                        if (redisKeys.Length > 0)
                             await Database.KeyDeleteAsync(redisKeys).AnyContext();
-                        }
                     } catch (Exception) {}
                 }
             } else {
                 var redisKeys = keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).ToArray();
-                if (redisKeys.Length > 0) {
-                    await Database.KeyDeleteAsync(redisKeys).AnyContext();
-                    return redisKeys.Length;
-                }
+                if (redisKeys.Length > 0)
+                    return (int)await Database.KeyDeleteAsync(redisKeys).AnyContext();
             }
 
             return 0;

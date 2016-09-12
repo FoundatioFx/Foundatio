@@ -21,7 +21,6 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
         }
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
@@ -108,15 +107,12 @@ namespace Foundatio.Tests.Queue {
                              });
 
                     _logger.Trace("Starting dequeue loop.");
-                    var sw = Stopwatch.StartNew();
                     for (int index = 0; index < iterations; index++) {
                         var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
                         Assert.NotNull(item);
                         await item.CompleteAsync();
                     }
-                    sw.Stop();
 
-                    Assert.InRange(sw.ElapsedMilliseconds, iterations * 10, iterations * 50);
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
                     Assert.InRange(timing.AverageDuration, 0, 30);
                 }
@@ -310,6 +306,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
+                SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
 
                 // wait for the task to be auto abandoned
 
@@ -480,15 +477,15 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
-                var sw = Stopwatch.StartNew();
+                var startTime = SystemClock.UtcNow;
                 await workItem.AbandonAsync();
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
 
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                var elapsed = SystemClock.UtcNow.Subtract(startTime);
+                _logger.Trace("Time {0}", elapsed);
                 Assert.NotNull(workItem);
-                Assert.True(sw.Elapsed > TimeSpan.FromSeconds(.95));
+                Assert.True(elapsed > TimeSpan.FromSeconds(.95));
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             }

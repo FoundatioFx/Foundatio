@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         [Fact]

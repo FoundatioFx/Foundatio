@@ -16,7 +16,7 @@ using Foundatio.Extensions;
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
+            SystemClock.UseTestClock();
         }
 
         protected virtual ICacheClient GetCacheClient() {
@@ -224,6 +224,19 @@ namespace Foundatio.Tests.Caching {
                 Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
                 Assert.False((await scopedCache2.GetAsync<int>("test")).HasValue);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+                
+                Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(10, await scopedCache1.IncrementAsync("total", 10));
+                Assert.Equal(10, await scopedCache1.GetAsync<double>("total", 0));
+
+                Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(20, await nestedScopedCache1.IncrementAsync("total", 20));
+                Assert.Equal(20, await nestedScopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(1, await nestedScopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+                Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
+                
+                Assert.Equal(1, await scopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+                Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
             }
         }
 
