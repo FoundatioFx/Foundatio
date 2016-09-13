@@ -4,12 +4,14 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Nito.AsyncEx;
+using System.Reactive.Concurrency;
+using AsyncLock = Nito.AsyncEx.AsyncLock;
 
 namespace Foundatio.Utility {
     public class ScheduledTimer : IDisposable {
         private DateTime _next = DateTime.MaxValue;
         private DateTime _last = DateTime.MinValue;
-        private readonly Timer _timer;
+        private IDisposable _timer;
         private readonly ILogger _logger;
         private readonly Func<Task<DateTime?>> _timerCallback;
         private readonly TimeSpan _minimumInterval;
@@ -25,8 +27,7 @@ namespace Foundatio.Utility {
             _timerCallback = timerCallback;
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
-            int dueTimeMs = dueTime.HasValue ? (int)dueTime.Value.TotalMilliseconds : Timeout.Infinite;
-            _timer = new Timer(s => RunCallbackAsync().GetAwaiter().GetResult(), null, dueTimeMs, Timeout.Infinite);
+            _timer = SystemClock.Instance.Schedule(dueTime ?? Timeout.InfiniteTimeSpan, () => RunCallbackAsync().GetAwaiter().GetResult());
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
@@ -61,7 +62,8 @@ namespace Foundatio.Utility {
 
                 _logger.Trace(() => $"Scheduling next: delay={delay}");
 
-                _timer.Change(delay, Timeout.Infinite);
+                _timer?.Dispose();
+                _timer = SystemClock.Instance.Schedule(TimeSpan.FromMilliseconds(delay), () => RunCallbackAsync().GetAwaiter().GetResult());
             }
         }
 
