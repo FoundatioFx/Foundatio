@@ -11,6 +11,7 @@ namespace Foundatio.Utility {
     public class ScheduledTimer : IDisposable {
         private DateTime _next = DateTime.MaxValue;
         private DateTime _last = DateTime.MinValue;
+        private DateTime? _nextPossibleTime = null;
         private IDisposable _timer;
         private readonly ILogger _logger;
         private readonly Func<Task<DateTime?>> _timerCallback;
@@ -42,6 +43,11 @@ namespace Foundatio.Utility {
                 return;
             }
 
+            if (_nextPossibleTime != null && utcDate.Value < _nextPossibleTime.Value) {
+                utcDate = _nextPossibleTime;
+                _logger.Trace(() => $"Adjusting to next possible time: value={utcDate.Value.ToString("O")}");
+            }
+
             using (_lock.Lock()) {
                 // already have an earlier scheduled time
                 if (_next > utcNow && utcDate > _next) {
@@ -62,7 +68,7 @@ namespace Foundatio.Utility {
 
                 _logger.Trace(() => $"Scheduling next: delay={delay}");
 
-                _timer?.Dispose();
+                DisposeTimer();
                 _timer = SystemClock.Instance.Schedule(TimeSpan.FromMilliseconds(delay), () => RunCallbackAsync().GetAwaiter().GetResult());
             }
         }
@@ -98,9 +104,7 @@ namespace Foundatio.Utility {
                 }
 
                 if (_minimumInterval > TimeSpan.Zero) {
-                    _logger.Trace("Sleeping for minimum interval: {interval}", _minimumInterval);
-                    await SystemClock.SleepAsync(_minimumInterval).AnyContext();
-                    _logger.Trace("Finished sleeping");
+                    _nextPossibleTime = SystemClock.UtcNow.Add(_minimumInterval);
                 }
 
                 var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
@@ -117,7 +121,16 @@ namespace Foundatio.Utility {
         }
 
         public void Dispose() {
-            _timer?.Dispose();
+            DisposeTimer();
+        }
+
+        private void DisposeTimer() {
+            try {
+                _timer?.Dispose();
+            }
+            catch {
+                // ignored
+            }
         }
     }
 }
