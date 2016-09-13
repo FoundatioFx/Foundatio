@@ -191,9 +191,14 @@ namespace Foundatio.Tests.Queue {
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
-                Task.Factory.StartNewDelayed(100, async () => await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                }));
+                Task.Run(async () =>
+                {
+                    await Task.Delay(100);
+                    await queue.EnqueueAsync(new SimpleWorkItem
+                    {
+                        Data = "Hello"
+                    });
+                });
 
                 sw.Restart();
                 workItem = await queue.DequeueAsync(timeToWait);
@@ -213,9 +218,14 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                Task.Factory.StartNewDelayed(250, async () => await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                }));
+                Task.Run(async () =>
+                {
+                    await Task.Delay(250);
+                    await queue.EnqueueAsync(new SimpleWorkItem
+                    {
+                        Data = "Hello"
+                    });
+                });
 
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
