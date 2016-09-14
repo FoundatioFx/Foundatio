@@ -11,10 +11,17 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
-    public class ScheduledTimerTests : TestWithLoggingBase {
+    public class ScheduledTimerTests : TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
+        }
+
+        void IDisposable.Dispose()
+        {
+            _systemClockSwapper.Dispose();
         }
 
         [Fact]

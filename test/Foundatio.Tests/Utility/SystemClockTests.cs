@@ -8,9 +8,16 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
-    public class SystemClockTests : TestWithLoggingBase {
+    public class SystemClockTests : TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         public SystemClockTests(ITestOutputHelper output) : base(output) {
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
+        }
+
+        void IDisposable.Dispose()
+        {
+            _systemClockSwapper.Dispose();
         }
 
         [Fact]

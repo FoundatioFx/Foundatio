@@ -12,10 +12,17 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
-    public abstract class MetricsClientTestBase : TestWithLoggingBase {
+    public abstract class MetricsClientTestBase : TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
             TestSystemClock.AdvanceTo(DateTimeOffset.Now);
+        }
+
+        void IDisposable.Dispose()
+        {
+            _systemClockSwapper.Dispose();
         }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);

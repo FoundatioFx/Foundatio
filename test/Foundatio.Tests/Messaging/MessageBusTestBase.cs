@@ -15,9 +15,16 @@ using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
-    public abstract class MessageBusTestBase : TestWithLoggingBase {
+    public abstract class MessageBusTestBase : TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
+        }
+
+        void IDisposable.Dispose()
+        {
+            _systemClockSwapper.Dispose();
         }
 
         protected virtual IMessageBus GetMessageBus() {

@@ -17,9 +17,16 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public abstract class JobQueueTestsBase: TestWithLoggingBase {
+    public abstract class JobQueueTestsBase: TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) {
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
+        }
+
+        void IDisposable.Dispose()
+        {
+            _systemClockSwapper.Dispose();
         }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);

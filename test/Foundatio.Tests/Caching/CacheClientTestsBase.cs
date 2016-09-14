@@ -15,9 +15,15 @@ using Foundatio.Extensions;
 using Foundatio.Tests.Utility;
 
 namespace Foundatio.Tests.Caching {
-    public abstract class CacheClientTestsBase : TestWithLoggingBase {
+    public abstract class CacheClientTestsBase : TestWithLoggingBase, IDisposable {
+        private readonly IDisposable _systemClockSwapper;
+
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
-            TestSystemClock.Install();
+            _systemClockSwapper = TestSystemClock.Install();
+        }
+
+        void IDisposable.Dispose() {
+            _systemClockSwapper.Dispose();
         }
 
         protected virtual ICacheClient GetCacheClient() {
