@@ -93,7 +93,7 @@ namespace Foundatio.Queues {
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
                     await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken);
-                } catch (TaskCanceledException) { }
+                } catch (OperationCanceledException) { }
 
                 // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
                 message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
@@ -182,7 +182,7 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueImplAsync(cancellationToken).AnyContext();
-                    } catch (TaskCanceledException) { }
+                    } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;

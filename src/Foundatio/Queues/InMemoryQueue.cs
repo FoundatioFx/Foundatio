@@ -134,7 +134,7 @@ namespace Foundatio.Queues {
                 try {
                     using (await _monitor.EnterAsync(cancellationToken))
                         await _monitor.WaitAsync(cancellationToken).AnyContext();
-                } catch (TaskCanceledException) {}
+                } catch (OperationCanceledException) {}
 
                 sw.Stop();
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());

@@ -98,7 +98,7 @@ namespace Foundatio.Lock {
                 try {
                     using (await monitor.EnterAsync(linkedCancellationToken))
                         await monitor.WaitAsync(linkedCancellationToken).AnyContext();
-                } catch (TaskCanceledException) {
+                } catch (OperationCanceledException) {
                     if (delayCancellationTokenSource.IsCancellationRequested) {
                         _logger.Trace("Retrying: Delay exceeded. Cancellation requested: {0}", cancellationToken.IsCancellationRequested);
                         continue;

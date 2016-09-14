@@ -134,7 +134,7 @@ namespace Foundatio.Tests.Jobs {
                         try {
                             await Task.WhenAll(tasks);
                             await SystemClock.SleepAsync(100);
-                        } catch (TaskCanceledException) {}
+                        } catch (OperationCanceledException) {}
 
                         _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
             

@@ -66,7 +66,7 @@ namespace Foundatio.Lock {
                         _logger.Trace("Default sleep.");
                         await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                     }
-                } catch (TaskCanceledException) {
+                } catch (OperationCanceledException) {
                     return null;
                 } catch (Exception ex) {
                     _logger.Error(ex, "Error acquiring throttled lock: name={0} message={1}", name, ex.Message);
