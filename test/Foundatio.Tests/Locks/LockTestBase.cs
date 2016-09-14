@@ -154,6 +154,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task WillThrottleCalls() {
+            Log.MinimumLevel = LogLevel.Trace;
             const int allowedLocks = 25;
 
             var period = TimeSpan.FromSeconds(1.5);
@@ -164,8 +165,8 @@ namespace Foundatio.Tests.Locks {
             var lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            //var sc = SystemClock.Test;
-            //sc.SetTime(DateTime.UtcNow.Floor(period));
+            var utcNow = SystemClock.UtcNow;
+            await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
                 _logger.Info($"Allowed Locks: {i}");
