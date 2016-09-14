@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(_cache, maxHits, period);
+            return new ThrottlingLockProvider(_cache, maxHits, period, Log);
         }
 
         protected override ILockProvider GetLockProvider() {
