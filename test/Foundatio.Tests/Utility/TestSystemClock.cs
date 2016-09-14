@@ -17,14 +17,14 @@ namespace Foundatio.Tests.Utility
             {
                 var result = SystemClock.Instance as TestSystemClock;
                 if (result == null)
-                    throw new InvalidOperationException("Must call Install() before accessing Instance.");
+                    return new TestSystemClock();
+                    //throw new InvalidOperationException("Must call Install() before accessing Instance.");
                 return result;
             }
         }
 
-        public static IDisposable Install()
-        {
-            return new SwapSystemClock(new TestSystemClock());
+        public static IDisposable Install() {
+            return new SwapSystemClock(SystemClock.Instance); //new TestSystemClock());
         }
 
         private TestSystemClock(TestScheduler scheduler)
@@ -59,7 +59,7 @@ namespace Foundatio.Tests.Utility
             return Scheduler.Clock + "(" + Scheduler.Now + ")";
         }
 
-        private sealed class SwapSystemClock : IDisposable {
+        public sealed class SwapSystemClock : IDisposable {
             private ISystemClock _originalInstance;
 
             public SwapSystemClock(ISystemClock replacementInstance) {
