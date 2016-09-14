@@ -281,7 +281,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         
