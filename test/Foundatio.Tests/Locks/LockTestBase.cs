@@ -38,8 +38,9 @@ namespace Foundatio.Tests.Locks {
             try {
                 Assert.NotNull(lock1);
                 Assert.True(await locker.IsLockedAsync("test"));
-                var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
-                Assert.Null(lock2);
+                var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(250));
+                Assert.Null(await lock2Task);
             } finally {
                 await lock1.ReleaseAsync();
             }
