@@ -23,7 +23,9 @@ namespace Foundatio.Tests.Utility
         }
 
         public static IDisposable Install() {
-            return SystemClock.SetInstance(new TestSystemClock());
+            var clock = new TestSystemClock();
+            clock.Scheduler.AdvanceTo(DateTimeOffset.UtcNow.Ticks);
+            return SystemClock.SetInstance(clock);
         }
 
         private TestSystemClock(TestScheduler scheduler)
@@ -46,11 +48,6 @@ namespace Foundatio.Tests.Utility
         public static void AdvanceBy(TimeSpan timeSpan)
         {
             Instance.Scheduler.AdvanceBy(timeSpan.Ticks);
-        }
-
-        public static void AdvanceTo(DateTimeOffset time)
-        {
-            Instance.Scheduler.AdvanceTo(time.Ticks);
         }
 
         public override string ToString()
