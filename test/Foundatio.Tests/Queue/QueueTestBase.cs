@@ -303,34 +303,31 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task WorkItemsWillTimeout() {
-            using (TestSystemClock.Install()) {
-
                 var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
                 if (queue == null)
                     return;
 
-                using (queue) {
-                    await queue.DeleteQueueAsync();
-                    await AssertEmptyQueueAsync(queue);
+            using (queue) {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
 
-                    await queue.EnqueueAsync(new SimpleWorkItem {
-                        Data = "Hello"
-                    });
-                    var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-                    Assert.NotNull(workItem);
-                    Assert.Equal("Hello", workItem.Value.Data);
-                    TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
 
-                    // wait for the task to be auto abandoned
+                // wait for the task to be auto abandoned
 
-                    var sw = Stopwatch.StartNew();
-                    workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                    sw.Stop();
-                    _logger.Trace("Time {0}", sw.Elapsed);
-                    Assert.NotNull(workItem);
-                    await workItem.CompleteAsync();
-                    Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
-                }
+                var sw = Stopwatch.StartNew();
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+                sw.Stop();
+                _logger.Trace("Time {0}", sw.Elapsed);
+                Assert.NotNull(workItem);
+                await workItem.CompleteAsync();
+                Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             }
         }
 

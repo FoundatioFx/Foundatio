@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Metrics;
+using Foundatio.Tests.Utility;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -25,7 +26,9 @@ namespace Foundatio.Tests.Metrics {
 
         [Fact]
         public override Task CanWaitForCounter() {
-            return base.CanWaitForCounter();
+            using (TestSystemClock.Install()) {
+                return base.CanWaitForCounter();
+            }
         }
 
         [Fact]

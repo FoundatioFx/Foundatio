@@ -26,54 +26,51 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task CanAcquireAndReleaseLock() {
-            using (TestSystemClock.Install()) {
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
 
-                var locker = GetLockProvider();
-                if (locker == null)
-                    return;
+            await locker.ReleaseAsync("test");
 
-                await locker.ReleaseAsync("test");
+            var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1));
 
-                var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1));
+            try {
+                Assert.NotNull(lock1);
+                Assert.True(await locker.IsLockedAsync("test"));
+                var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(250));
+                Assert.Null(await lock2Task);
+            }
+            finally {
+                await lock1.ReleaseAsync();
+            }
+
+            Assert.False(await locker.IsLockedAsync("test"));
+
+            int counter = 0;
+
+            await Run.InParallel(25, async i => {
+                var sw = Stopwatch.StartNew();
+                var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1));
+                sw.Stop();
 
                 try {
-                    Assert.NotNull(lock1);
-                    Assert.True(await locker.IsLockedAsync("test"));
-                    var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(250));
-                    Assert.Null(await lock2Task);
+                    _logger.Trace("Lock {i}: start", i);
+                    string message = lock2 != null ? "Acquired" : "Unable to acquire";
+                    _logger.Trace("Lock {i}: {message} in {ms}ms", i, message, sw.ElapsedMilliseconds);
+
+                    Assert.NotNull(lock2);
+                    Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
+                    Interlocked.Increment(ref counter);
+                    _logger.Trace("Lock {i}: end", i);
                 }
                 finally {
-                    await lock1.ReleaseAsync();
+                    if (lock2 != null)
+                        await lock2.ReleaseAsync().AnyContext();
                 }
+            });
 
-                Assert.False(await locker.IsLockedAsync("test"));
-
-                int counter = 0;
-
-                await Run.InParallel(25, async i => {
-                    var sw = Stopwatch.StartNew();
-                    var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1));
-                    sw.Stop();
-
-                    try {
-                        _logger.Trace("Lock {i}: start", i);
-                        string message = lock2 != null ? "Acquired" : "Unable to acquire";
-                        _logger.Trace("Lock {i}: {message} in {ms}ms", i, message, sw.ElapsedMilliseconds);
-
-                        Assert.NotNull(lock2);
-                        Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
-                        Interlocked.Increment(ref counter);
-                        _logger.Trace("Lock {i}: end", i);
-                    }
-                    finally {
-                        if (lock2 != null)
-                            await lock2.ReleaseAsync().AnyContext();
-                    }
-                });
-
-                Assert.Equal(25, counter);
-            }
+            Assert.Equal(25, counter);
         }
 
         public virtual async Task LockWillTimeout() {

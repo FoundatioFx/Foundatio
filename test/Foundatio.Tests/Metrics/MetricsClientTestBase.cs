@@ -131,70 +131,67 @@ namespace Foundatio.Tests.Metrics {
 
 #pragma warning disable 4014
         public virtual async Task CanWaitForCounter() {
-            using (TestSystemClock.Install()) {
+            using (var metrics = GetMetricsClient() as CacheBucketMetricsClientBase) {
+                var stats = metrics as IMetricsClientStats;
+                if (stats == null)
+                    return;
 
-                using (var metrics = GetMetricsClient() as CacheBucketMetricsClientBase) {
-                    var stats = metrics as IMetricsClientStats;
-                    if (stats == null)
-                        return;
+                var sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Task.Run(async () => {
+                    await sleep;
+                    await metrics.CounterAsync("Test").AnyContext();
+                    await metrics.CounterAsync("Test").AnyContext();
+                });
 
-                    var sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
-                    Task.Run(async () => {
-                        await sleep;
-                        await metrics.CounterAsync("Test").AnyContext();
-                        await metrics.CounterAsync("Test").AnyContext();
-                    });
+                var task = metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
+                var success = await task;
+                Assert.True(success);
 
-                    var task = metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
-                    var success = await task;
-                    Assert.True(success);
+                sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Task.Run(async () => {
+                    await sleep;
+                    await metrics.CounterAsync("Test").AnyContext();
+                });
 
-                    sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
-                    Task.Run(async () => {
-                        await sleep;
-                        await metrics.CounterAsync("Test").AnyContext();
-                    });
+                task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
+                success = await task;
+                Assert.True(success);
 
-                    task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
-                    success = await task;
-                    Assert.True(success);
+                task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(100));
+                success = await task;
+                Assert.False(success);
 
-                    task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(100));
-                    success = await task;
-                    Assert.False(success);
+                sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Task.Run(async () => {
+                    await sleep;
+                    await metrics.CounterAsync("Test", 2);
+                });
 
-                    sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
-                    Task.Run(async () => {
-                        await sleep;
-                        await metrics.CounterAsync("Test", 2);
-                    });
+                task = metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
+                success = await task;
+                Assert.True(success);
 
-                    task = metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
-                    success = await task;
-                    Assert.True(success);
+                task = metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test"), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(500));
+                success = await task;
+                Assert.True(success);
 
-                    task = metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test"), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(500));
-                    success = await task;
-                    Assert.True(success);
+                sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Task.Run(async () => {
+                    await sleep;
+                    await metrics.CounterAsync("Test");
+                });
 
-                    sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
-                    Task.Run(async () => {
-                        await sleep;
-                        await metrics.CounterAsync("Test");
-                    });
+                task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
+                success = await task;
+                Assert.True(success);
 
-                    task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
-                    success = await task;
-                    Assert.True(success);
-
-                    _logger.Info((await metrics.GetCounterStatsAsync("Test")).ToString());
-                }
+                _logger.Info((await metrics.GetCounterStatsAsync("Test")).ToString());
             }
         }
 #pragma warning restore 4014

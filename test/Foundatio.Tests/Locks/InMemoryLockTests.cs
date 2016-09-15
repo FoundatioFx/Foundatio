@@ -8,6 +8,7 @@ using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Extensions;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Locks {
@@ -30,7 +31,9 @@ namespace Foundatio.Tests.Locks {
 
         [Fact]
         public override Task CanAcquireAndReleaseLock() {
-            return base.CanAcquireAndReleaseLock();
+            using (TestSystemClock.Install()) {
+                return base.CanAcquireAndReleaseLock();
+            }
         }
 
         [Fact]

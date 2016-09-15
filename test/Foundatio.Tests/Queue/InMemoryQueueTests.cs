@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Queues;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -107,7 +108,9 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public override Task WorkItemsWillTimeout() {
-            return base.WorkItemsWillTimeout();
+            using (TestSystemClock.Install()) {
+                return base.WorkItemsWillTimeout();
+            }
         }
 
         [Fact]
