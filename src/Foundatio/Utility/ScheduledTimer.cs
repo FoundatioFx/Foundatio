@@ -11,7 +11,6 @@ namespace Foundatio.Utility {
     public class ScheduledTimer : IDisposable {
         private DateTime _next = DateTime.MaxValue;
         private DateTime _last = DateTime.MinValue;
-        private DateTime? _nextPossibleTime = null;
         private IDisposable _timer;
         private readonly ILogger _logger;
         private readonly Func<Task<DateTime?>> _timerCallback;
@@ -28,7 +27,8 @@ namespace Foundatio.Utility {
             _timerCallback = timerCallback;
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
-            _timer = SystemClock.Instance.Schedule(dueTime ?? Timeout.InfiniteTimeSpan, () => RunCallbackAsync().GetAwaiter().GetResult());
+            if (dueTime != null)
+                _timer = SystemClock.Instance.Schedule(dueTime.Value, async () => await RunCallbackAsync());
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
@@ -41,11 +41,6 @@ namespace Foundatio.Utility {
             if (utcDate == DateTime.MaxValue) {
                 _logger.Trace("Ignoring MaxValue");
                 return;
-            }
-
-            if (_nextPossibleTime != null && utcDate.Value < _nextPossibleTime.Value) {
-                utcDate = _nextPossibleTime;
-                _logger.Trace(() => $"Adjusting to next possible time: value={utcDate.Value.ToString("O")}");
             }
 
             using (_lock.Lock()) {
@@ -69,7 +64,7 @@ namespace Foundatio.Utility {
                 _logger.Trace(() => $"Scheduling next: delay={delay}");
 
                 DisposeTimer();
-                _timer = SystemClock.Instance.Schedule(TimeSpan.FromMilliseconds(delay), () => RunCallbackAsync().GetAwaiter().GetResult());
+                _timer = SystemClock.Instance.Schedule(TimeSpan.FromMilliseconds(delay), async () => await RunCallbackAsync());
             }
         }
 
@@ -104,7 +99,9 @@ namespace Foundatio.Utility {
                 }
 
                 if (_minimumInterval > TimeSpan.Zero) {
-                    _nextPossibleTime = SystemClock.UtcNow.Add(_minimumInterval);
+                    _logger.Trace("Sleeping for minimum interval: {interval}", _minimumInterval);
+                    await SystemClock.SleepAsync(_minimumInterval).AnyContext();
+                    _logger.Trace("Finished sleeping");
                 }
 
                 var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
