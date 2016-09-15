@@ -47,7 +47,10 @@ namespace Foundatio.Tests.Utility
 
         public static void AdvanceBy(TimeSpan timeSpan)
         {
-            Instance.Scheduler.AdvanceBy(timeSpan.Ticks);
+            if (SystemClock.Instance is TestSystemClock)
+                Instance.Scheduler.AdvanceBy(timeSpan.Ticks);
+            else
+                SystemClock.Sleep(timeSpan);
         }
 
         public override string ToString()
