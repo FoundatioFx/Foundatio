@@ -303,31 +303,34 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task WorkItemsWillTimeout() {
-            var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
-            if (queue == null)
-                return;
+            using (TestSystemClock.Install()) {
 
-            using (queue) {
-                await queue.DeleteQueueAsync();
-                await AssertEmptyQueueAsync(queue);
+                var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
+                if (queue == null)
+                    return;
 
-                await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                });
-                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-                Assert.NotNull(workItem);
-                Assert.Equal("Hello", workItem.Value.Data);
-                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
+                using (queue) {
+                    await queue.DeleteQueueAsync();
+                    await AssertEmptyQueueAsync(queue);
 
-                // wait for the task to be auto abandoned
+                    await queue.EnqueueAsync(new SimpleWorkItem {
+                        Data = "Hello"
+                    });
+                    var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                    Assert.NotNull(workItem);
+                    Assert.Equal("Hello", workItem.Value.Data);
+                    TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
 
-                var sw = Stopwatch.StartNew();
-                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
-                Assert.NotNull(workItem);
-                await workItem.CompleteAsync();
-                Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+                    // wait for the task to be auto abandoned
+
+                    var sw = Stopwatch.StartNew();
+                    workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+                    sw.Stop();
+                    _logger.Trace("Time {0}", sw.Elapsed);
+                    Assert.NotNull(workItem);
+                    await workItem.CompleteAsync();
+                    Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+                }
             }
         }
 

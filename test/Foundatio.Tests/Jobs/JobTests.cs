@@ -22,12 +22,14 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelJob() {
-            var token = TimeSpan.FromSeconds(1).ToCancellationToken();
-            var job = new HelloWorldJob();
-            var resultTask = new JobRunner(job, Log).RunAsync(token);
-            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
+            using (TestSystemClock.Install()) {
+                var token = TimeSpan.FromSeconds(1).ToCancellationToken();
+                var job = new HelloWorldJob();
+                var resultTask = new JobRunner(job, Log).RunAsync(token);
+                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
 
-            Assert.True(await resultTask);
+                Assert.True(await resultTask);
+            }
         }
 
         [Fact]
@@ -88,16 +90,18 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            var job = new HelloWorldJob();
-            var jobTask = job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
-            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
-            await jobTask;
-            Assert.Equal(1, job.RunCount);
+            using (TestSystemClock.Install()) {
+                var job = new HelloWorldJob();
+                var jobTask = job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
+                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
+                await jobTask;
+                Assert.Equal(1, job.RunCount);
 
-            var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
-                .RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
-            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
-            await runnerTask;
+                var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
+                    .RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
+                await runnerTask;
+            }
         }
 
         [Fact]
