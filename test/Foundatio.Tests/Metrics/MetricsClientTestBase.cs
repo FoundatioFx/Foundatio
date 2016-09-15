@@ -59,7 +59,6 @@ namespace Foundatio.Tests.Metrics {
         }
         
         public virtual async Task CanGetBufferedQueueMetrics() {
-            Log.MinimumLevel = LogLevel.Trace;
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
