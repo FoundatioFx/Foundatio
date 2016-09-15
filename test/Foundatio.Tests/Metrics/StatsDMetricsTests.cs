@@ -18,10 +18,8 @@ namespace Foundatio.Tests.Metrics {
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
         private Thread _listenerThread;
-        private readonly IDisposable _systemClockSwapper;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            _systemClockSwapper = TestSystemClock.Install();
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
@@ -141,7 +139,6 @@ namespace Foundatio.Tests.Metrics {
 
         public void Dispose() {
             _listener.Dispose();
-            _systemClockSwapper.Dispose();
         }
     }
 }

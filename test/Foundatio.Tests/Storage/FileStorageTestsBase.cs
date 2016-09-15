@@ -15,16 +15,8 @@ using Foundatio.Utility;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
-    public abstract class FileStorageTestsBase : TestWithLoggingBase, IDisposable {
-        private readonly IDisposable _systemClockSwapper;
-
+    public abstract class FileStorageTestsBase : TestWithLoggingBase {
         protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {
-            _systemClockSwapper = TestSystemClock.Install();
-        }
-
-        void IDisposable.Dispose()
-        {
-            _systemClockSwapper.Dispose();
         }
 
         protected virtual IFileStorage GetStorage() {

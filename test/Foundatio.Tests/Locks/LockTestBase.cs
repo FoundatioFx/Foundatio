@@ -13,16 +13,8 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks {
-    public abstract class LockTestBase : TestWithLoggingBase, IDisposable {
-        private readonly IDisposable _systemClockSwapper;
-
+    public abstract class LockTestBase : TestWithLoggingBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) {
-            _systemClockSwapper = TestSystemClock.Install();
-        }
-
-        void IDisposable.Dispose()
-        {
-            _systemClockSwapper.Dispose();
         }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {

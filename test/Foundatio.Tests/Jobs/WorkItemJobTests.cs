@@ -17,16 +17,8 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
-    public class WorkItemJobTests : TestWithLoggingBase, IDisposable {
-        private readonly IDisposable _systemClockSwapper;
-
+    public class WorkItemJobTests : TestWithLoggingBase {
         public WorkItemJobTests(ITestOutputHelper output) : base(output) {
-            _systemClockSwapper = TestSystemClock.Install();
-        }
-
-        void IDisposable.Dispose()
-        {
-            _systemClockSwapper.Dispose();
         }
 
         [Fact]
