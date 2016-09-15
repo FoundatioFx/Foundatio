@@ -53,7 +53,21 @@ namespace Foundatio.Utility {
     }
 
     public static class SystemClock {
-        public static ISystemClock Instance { get; set; } = DefaultSystemClock.Instance;
+        private static readonly AsyncLocal<ISystemClock> _instance = new AsyncLocal<ISystemClock>();
+
+        public static ISystemClock Instance {
+            get { return _instance.Value ?? DefaultSystemClock.Instance; }
+            private set {
+                if (value == DefaultSystemClock.Instance)
+                    _instance.Value = null;
+                else
+                    _instance.Value = value;
+            }
+        }
+
+        public static IDisposable SetInstance(ISystemClock instance) {
+            return new SwapSystemClock(instance);
+        }
 
         public static DateTime Now => Instance.Now.LocalDateTime;
         public static DateTime UtcNow => Instance.Now.UtcDateTime;
@@ -81,6 +95,24 @@ namespace Foundatio.Utility {
         public static CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
         {
             return Instance.CreateCancellationTokenSource(timeout);
+        }
+
+        private sealed class SwapSystemClock : IDisposable
+        {
+            private ISystemClock _originalInstance;
+
+            public SwapSystemClock(ISystemClock replacementInstance)
+            {
+                _originalInstance = SystemClock.Instance;
+                SystemClock.Instance = replacementInstance;
+            }
+
+            public void Dispose()
+            {
+                var originalInstance = Interlocked.Exchange(ref _originalInstance, null);
+                if (originalInstance != null)
+                    SystemClock.Instance = originalInstance;
+            }
         }
     }
 }

@@ -23,7 +23,7 @@ namespace Foundatio.Tests.Utility
         }
 
         public static IDisposable Install() {
-            return new SwapSystemClock(new TestSystemClock());
+            return SystemClock.SetInstance(new TestSystemClock());
         }
 
         private TestSystemClock(TestScheduler scheduler)
@@ -56,21 +56,6 @@ namespace Foundatio.Tests.Utility
         public override string ToString()
         {
             return Scheduler.Clock + "(" + Scheduler.Now + ")";
-        }
-
-        public sealed class SwapSystemClock : IDisposable {
-            private ISystemClock _originalInstance;
-
-            public SwapSystemClock(ISystemClock replacementInstance) {
-                _originalInstance = SystemClock.Instance;
-                SystemClock.Instance = replacementInstance;
-            }
-
-            public void Dispose() {
-                var originalInstance = Interlocked.Exchange(ref _originalInstance, null);
-                if (originalInstance != null)
-                    SystemClock.Instance = originalInstance;
-            }
         }
     }
 }
