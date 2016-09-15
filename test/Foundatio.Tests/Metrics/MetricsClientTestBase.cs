@@ -68,7 +68,7 @@ namespace Foundatio.Tests.Metrics {
         }
         
         public virtual async Task CanGetBufferedQueueMetrics() {
-            Log.MinimumLevel = LogLevel.Warning;
+            Log.MinimumLevel = LogLevel.Trace;
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
@@ -76,11 +76,11 @@ namespace Foundatio.Tests.Metrics {
 
                 using (var queue = new InMemoryQueue<SimpleWorkItem>(behaviors: new[] { new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log) }, loggerFactory: Log)) {
                     await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(50));
+                    await SystemClock.SleepAsync(50);
                     var entry = await queue.DequeueAsync(TimeSpan.Zero);
-                    TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(30));
+                    await SystemClock.SleepAsync(30);
                     await entry.CompleteAsync();
-                    TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(6));  // give queue metrics time
+                    await SystemClock.SleepAsync(500); // give queue metrics time
 
                     await metrics.FlushAsync();
 

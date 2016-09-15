@@ -32,9 +32,10 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanCancelJob() {
             var token = TimeSpan.FromSeconds(1).ToCancellationToken();
             var job = new HelloWorldJob();
-            var result = await new JobRunner(job, Log).RunAsync(token);
+            var resultTask = new JobRunner(job, Log).RunAsync(token);
+            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
 
-            Assert.True(result);
+            Assert.True(await resultTask);
         }
 
         [Fact]
@@ -96,11 +97,15 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanCancelContinuousJobs() {
             var job = new HelloWorldJob();
-            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
+            var jobTask = job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
+            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(2));
+            await jobTask;
             Assert.Equal(1, job.RunCount);
 
-            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
+            var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
                 .RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
+            TestSystemClock.AdvanceBy(TimeSpan.FromSeconds(1));
+            await runnerTask;
         }
 
         [Fact]
