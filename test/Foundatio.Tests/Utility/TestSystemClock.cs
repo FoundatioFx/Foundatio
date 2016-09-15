@@ -17,14 +17,13 @@ namespace Foundatio.Tests.Utility
             {
                 var result = SystemClock.Instance as TestSystemClock;
                 if (result == null)
-                    return new TestSystemClock();
-                    //throw new InvalidOperationException("Must call Install() before accessing Instance.");
+                    throw new InvalidOperationException("Must call Install() before accessing Instance.");
                 return result;
             }
         }
 
         public static IDisposable Install() {
-            return new SwapSystemClock(SystemClock.Instance); //new TestSystemClock());
+            return new SwapSystemClock(new TestSystemClock());
         }
 
         private TestSystemClock(TestScheduler scheduler)
