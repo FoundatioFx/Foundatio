@@ -6,10 +6,10 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "BenchmarkDotNet": "0.9.9",
-        "Foundatio": {
-            "target": "project"
-        },
+      "BenchmarkDotNet": "0.9.9",
+      "Foundatio": {
+        "target": "project"
+      },
         "Foundatio.Redis": {
             "target": "project"
         }

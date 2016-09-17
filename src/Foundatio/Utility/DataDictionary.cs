@@ -7,6 +7,8 @@ using Newtonsoft.Json.Linq;
 
 namespace Foundatio.Utility {
     public class DataDictionary : Dictionary<string, object> {
+        public static readonly DataDictionary Empty = new DataDictionary();
+
         public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) {}
 
         public DataDictionary(IEnumerable<KeyValuePair<string, object>> values) : base(StringComparer.OrdinalIgnoreCase) {
@@ -77,34 +79,6 @@ namespace Foundatio.Utility {
                 return (string)value;
 
             return String.Empty;
-        }
-
-        public void ConvertJObjectToDataDictionary() {
-            foreach (var kvp in this.ToList()) {
-                if (kvp.Value is JObject) {
-                    this[kvp.Key] = DeserializeToDictionary(kvp.Value.ToString());
-                } else {
-                    this[kvp.Key] = kvp.Value;
-                }
-            }
-        }
-
-        public void RemoveSensitiveData() {
-            Keys.Where(k => k.StartsWith("-")).ToArray().ForEach(key => Remove(key));
-        }
-
-        private static Dictionary<string, object> DeserializeToDictionary(string json) {
-            var values = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
-            var values2 = new Dictionary<string, object>();
-            foreach (KeyValuePair<string, object> d in values) {
-                if (d.Value is JObject) {
-                    values2.Add(d.Key, DeserializeToDictionary(d.Value.ToString()));
-                } else {
-                    values2.Add(d.Key, d.Value);
-                }
-            }
-
-            return values2;
         }
     }
 }
