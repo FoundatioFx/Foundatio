@@ -98,5 +98,11 @@ namespace Foundatio.Tests.Caching {
                 }
             }
         }
+
+        [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
     }
 }
