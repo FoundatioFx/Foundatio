@@ -6,8 +6,9 @@
     "warningsAsErrors": true
   },
   "dependencies": {
+    "Exceptionless.RandomData": "1.1.26",
     "Foundatio": {
-      "target": "project"
+        "target": "project"
     },
     "Foundatio.Logging.NLog": {
       "target": "project"
@@ -16,9 +17,8 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "Exceptionless.RandomData": "1.1.24",
     "SimpleInjector": "3.2.2",
-    "Topshelf": "4.0.1"
+    "Topshelf": "4.0.2"
   },
   "frameworks": {
     "net46": {}

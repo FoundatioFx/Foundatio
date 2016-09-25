@@ -24,7 +24,7 @@
     "xunit": "2.2.0-*",
     "xunit.runner.visualstudio": "2.2.0-*",
     "dotnet-test-xunit": "2.2.0-*",
-    "RabbitMQ.Client": "4.1.0-rc1"
+    "RabbitMQ.Client": "4.1.0"
   },
   "frameworks": {
     "netcoreapp1.0": {
@@ -34,7 +34,7 @@
       "dependencies": {
         "Microsoft.NETCore.App": {
           "type": "platform",
-          "version": "1.0.0"
+          "version": "1.0.1"
         }
       }
     },

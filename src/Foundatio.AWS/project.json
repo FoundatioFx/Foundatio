@@ -26,11 +26,11 @@
     "xmlDoc": true
   },
   "dependencies": {
+    "AWSSDK.S3": "3.3.0.1",
     "Foundatio": {
-      "target": "project"
+        "target": "project"
     },
-    "NETStandard.Library": "1.6.0",
-    "AWSSDK.S3": "3.2.8-rc"
+    "NETStandard.Library": "1.6.0"
   },
   "frameworks": {
     "netstandard1.5": {},

@@ -21,7 +21,7 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "Exceptionless.RandomData": "1.1.24",
+    "Exceptionless.RandomData": "1.1.26",
     "xunit": "2.2.0-*",
     "xunit.runner.visualstudio": "2.2.0-*",
     "dotnet-test-xunit": "2.2.0-*"
@@ -31,7 +31,7 @@
       "dependencies": {
         "Microsoft.NETCore.App": {
           "type": "platform",
-          "version": "1.0.0"
+          "version": "1.0.1"
         }
       }
     },

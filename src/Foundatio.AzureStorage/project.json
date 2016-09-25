@@ -30,7 +30,7 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "WindowsAzure.Storage": "7.2.0"
+    "WindowsAzure.Storage": "7.2.1"
   },
   "frameworks": {
     "net46": {}

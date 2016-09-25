@@ -15,8 +15,8 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "Exceptionless.DateTimeExtensions": "3.2.53",
-    "Exceptionless.RandomData": "1.1.24",
+    "Exceptionless.DateTimeExtensions": "3.2.55",
+    "Exceptionless.RandomData": "1.1.26",
     "Microsoft.Extensions.Configuration.EnvironmentVariables": "1.0.0",
     "Microsoft.Extensions.Configuration.Json": "1.0.0",
     "xunit": "2.2.0-*", 
@@ -31,7 +31,7 @@
       "dependencies": {
         "Microsoft.NETCore.App": {
           "type": "platform",
-          "version": "1.0.0"
+          "version": "1.0.1"
         }
       }
     },

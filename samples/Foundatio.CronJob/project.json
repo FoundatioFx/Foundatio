@@ -14,9 +14,9 @@
     },
     "ncrontab": "3.1.0",
     "NETStandard.Library": "1.6.0",
-    "NLog.Schema": "4.3.8",
+    "NLog.Schema": "4.3.9",
     "SimpleInjector": "3.2.2",
-    "Topshelf": "4.0.1"
+    "Topshelf": "4.0.2"
   },
   "frameworks": {
     "net46": {}

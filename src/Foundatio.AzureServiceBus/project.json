@@ -29,7 +29,7 @@
       "target": "project"
     },
     "NETStandard.Library": "1.6.0",
-    "WindowsAzure.ServiceBus": "3.3.2"
+    "WindowsAzure.ServiceBus": "3.4.0"
   },
   "frameworks": {
     "net46": {}

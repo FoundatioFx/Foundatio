@@ -25,11 +25,11 @@
     },
     "NETStandard.Library": "1.6.0",
     "RimDev.Automation.StorageEmulator": "0.1.0",
-    "WindowsAzure.ServiceBus": "3.3.2",
     "xunit": "2.2.0-*",
     "xunit.runner.visualstudio": "2.2.0-*",
     "dotnet-test-xunit": "2.2.0-*",
-    "WindowsAzure.Storage": "7.2.0"
+    "WindowsAzure.ServiceBus": "3.4.0",
+    "WindowsAzure.Storage": "7.2.1"
   },
   "frameworks": {
     "net46": {}
