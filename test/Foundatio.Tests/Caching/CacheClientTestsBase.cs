@@ -340,49 +340,49 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty));
                 
-                await cache.SetAddAsync("test1", new[] { 1, 2, 3 }).AnyContext();
-                var result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
+                var result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", new[] { 1, 2, 3 }).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetRemoveAsync("test1", new[] { 1, 2, 3 });
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
 
                 await cache.RemoveAllAsync();
 
-                await cache.SetAddAsync("test1", 1).AnyContext();
-                await cache.SetAddAsync("test1", 2).AnyContext();
-                await cache.SetAddAsync("test1", 3).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetAddAsync("test1", 1);
+                await cache.SetAddAsync("test1", 2);
+                await cache.SetAddAsync("test1", 3);
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 2).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetRemoveAsync("test1", 2);
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(2, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 1).AnyContext();
-                await cache.SetRemoveAsync("test1", 3).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetRemoveAsync("test1", 1);
+                await cache.SetRemoveAsync("test1", 3);
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
                 
                 await Assert.ThrowsAnyAsync<Exception>(async () => {
-                    await cache.AddAsync("key1", 1).AnyContext();
-                    await cache.SetAddAsync("key1", 1).AnyContext();
-                }).AnyContext();
+                    await cache.AddAsync("key1", 1);
+                    await cache.SetAddAsync("key1", 1);
+                });
             }
         }
 

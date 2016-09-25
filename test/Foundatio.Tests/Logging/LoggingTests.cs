@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Logging {
             using (logger.BeginScope(b => b.Property("prop1", "val1").Property("prop2", "val2")))
             using (logger.BeginScope(b => b.Property("prop1", "innerval1"))) {
                 logger.Info("Hey {Stuff}!", "Eric");
-                await BlahAsync(logger).AnyContext();
+                await BlahAsync(logger);
             }
 
             foreach (var entry in Log.LogEntries) {

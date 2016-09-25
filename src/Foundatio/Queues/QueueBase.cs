@@ -51,8 +51,8 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
         public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            await EnsureQueueCreatedAsync(cancellationToken);
-            return await GetDeadletterItemsImplAsync(cancellationToken);
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
         }
 
         protected abstract Task<QueueStats> GetQueueStatsImplAsync();
