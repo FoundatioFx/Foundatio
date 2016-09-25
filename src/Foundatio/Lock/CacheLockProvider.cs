@@ -46,7 +46,7 @@ namespace Foundatio.Lock {
             if (!_monitors.TryGetValue(msg.Name, out monitor))
                 return;
 
-            using (await monitor.EnterAsync())
+            using (await monitor.EnterAsync().AnyContext())
                 monitor.Pulse();
         }
 
@@ -96,7 +96,7 @@ namespace Foundatio.Lock {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await monitor.EnterAsync(linkedCancellationToken))
+                    using (await monitor.EnterAsync(linkedCancellationToken).AnyContext())
                         await monitor.WaitAsync(linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) {
                     if (delayCancellationTokenSource.IsCancellationRequested) {

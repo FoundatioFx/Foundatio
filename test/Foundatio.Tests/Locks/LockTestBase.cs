@@ -66,7 +66,7 @@ namespace Foundatio.Tests.Locks {
                 }
                 finally {
                     if (lock2 != null)
-                        await lock2.ReleaseAsync().AnyContext();
+                        await lock2.ReleaseAsync();
                 }
             });
 
@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
-            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext();
+            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
         }
 
         public virtual async Task WillThrottleCalls() {

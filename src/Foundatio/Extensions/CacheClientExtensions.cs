@@ -58,11 +58,11 @@ namespace Foundatio.Caching {
         }
 
         public static async Task<bool> SetAddAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null) {
-            return await client.SetAddAsync(key, new [] { value }, expiresIn) > 0;
+            return await client.SetAddAsync(key, new [] { value }, expiresIn).AnyContext() > 0;
         }
 
         public static async Task<bool> SetRemoveAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null) {
-            return await client.SetRemoveAsync(key, new[] { value }, expiresIn) > 0;
+            return await client.SetRemoveAsync(key, new[] { value }, expiresIn).AnyContext() > 0;
         }
     }
 }

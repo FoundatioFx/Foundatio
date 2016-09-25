@@ -139,8 +139,8 @@ namespace Foundatio.Tests.Metrics {
                 var sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 Task.Run(async () => {
                     await sleep;
-                    await metrics.CounterAsync("Test").AnyContext();
-                    await metrics.CounterAsync("Test").AnyContext();
+                    await metrics.CounterAsync("Test");
+                    await metrics.CounterAsync("Test");
                 });
 
                 var task = metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
@@ -151,7 +151,7 @@ namespace Foundatio.Tests.Metrics {
                 sleep = SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 Task.Run(async () => {
                     await sleep;
-                    await metrics.CounterAsync("Test").AnyContext();
+                    await metrics.CounterAsync("Test");
                 });
 
                 task = metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));

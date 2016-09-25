@@ -85,7 +85,7 @@ namespace Foundatio.Queues {
             if (!_runMaintenanceTasks || _maintenanceTask != null)
                 return;
 
-            using (await _lock.LockAsync().AnyContext()) {
+            using (await  _lock.LockAsync().AnyContext()) {
                 if (_maintenanceTask != null)
                     return;
 
@@ -265,7 +265,7 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken))
+                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
                         await _monitor.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
@@ -301,8 +301,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id),
-                SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+            await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
@@ -481,7 +480,7 @@ namespace Foundatio.Queues {
         private async Task OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
 
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 
@@ -560,7 +559,7 @@ namespace Foundatio.Queues {
             while (!cancellationToken.IsCancellationRequested) {
                 _logger.Trace("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId);
 
-                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
+                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
             }
         }
 

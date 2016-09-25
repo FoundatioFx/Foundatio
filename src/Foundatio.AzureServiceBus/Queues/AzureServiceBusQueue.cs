@@ -53,7 +53,7 @@ namespace Foundatio.Queues {
                 return;
             }
 
-            using (await _lock.LockAsync(cancellationToken)) {
+            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
                 if (_queueClient != null) {
                     return;
                 }

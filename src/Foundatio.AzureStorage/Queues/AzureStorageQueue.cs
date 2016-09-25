@@ -57,7 +57,7 @@ namespace Foundatio.Queues {
                 return;
             }
 
-            using (await _lock.LockAsync(cancellationToken)) {
+            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
                 if (_queueCreated) {
                     return;
                 }
@@ -92,7 +92,7 @@ namespace Foundatio.Queues {
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken);
+                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
@@ -103,7 +103,7 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _dequeuedCount);
-            var data = await _serializer.DeserializeAsync<T>(message.AsBytes);
+            var data = await _serializer.DeserializeAsync<T>(message.AsBytes).AnyContext();
             var entry = new AzureStorageQueueEntry<T>(message, data, this);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
@@ -188,7 +188,7 @@ namespace Foundatio.Queues {
                         continue;
 
                     try { 
-                        await handler(queueEntry, cancellationToken);
+                        await handler(queueEntry, cancellationToken).AnyContext();
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     }
