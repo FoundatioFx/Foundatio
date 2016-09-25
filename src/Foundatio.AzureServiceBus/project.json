@@ -29,8 +29,7 @@
             "target": "project"
         },
         "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
-        "WindowsAzure.ServiceBus": "3.3.2"
-    },
+        "WindowsAzure.ServiceBus": "3.4.0"    },
     "frameworks": {
         "net46": {
             "buildOptions": {

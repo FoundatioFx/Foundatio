@@ -6,7 +6,7 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "Exceptionless.RandomData": "1.1.24",
+        "Exceptionless.RandomData": "1.1.26",
         "Foundatio": {
             "target": "project"
         },
@@ -16,9 +16,8 @@
         "Foundatio.Redis": {
             "target": "project"
         },
-      "SimpleInjector": "3.2.2",
-        "Topshelf": "4.0.1"
-    },
+        "SimpleInjector": "3.2.2",
+        "Topshelf": "4.0.2"    },
     "frameworks": {
         "NET46": {
             "buildOptions": {

@@ -28,7 +28,7 @@
         "Foundatio": {
             "target": "project"
         },
-        "RabbitMQ.Client": "4.0.2"  },
+        "RabbitMQ.Client": "4.1.0"  },
     "frameworks": {
         "net46": {
             "buildOptions": {
