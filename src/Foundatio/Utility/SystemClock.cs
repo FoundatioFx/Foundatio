@@ -140,7 +140,7 @@ namespace Foundatio.Utility {
             get {
                 var testClock = Instance as TestSystemClock;
                 if (testClock == null)
-                    throw new ApplicationException("You must set SystemClock.Instance to ");
+                    throw new ArgumentException("You must set SystemClock.Instance to TestSystemClock");
 
                 return testClock;
             }
