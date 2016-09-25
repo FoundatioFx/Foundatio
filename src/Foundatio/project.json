@@ -37,7 +37,8 @@
     "Newtonsoft.Json": "9.0.1",
     "Nito.AsyncEx": "3.0.1",
     "System.Reactive.Core": "3.0.0",
-    "System.Reactive.Interfaces": "3.0.0"
+    "System.Reactive.Interfaces": "3.0.0",
+    "System.Reactive.Linq": "3.0.0"
   },
   "frameworks": {
     "net46": {

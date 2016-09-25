@@ -5,32 +5,26 @@ using System.Threading.Tasks;
 using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Utility {
-    public interface ISystemClock : IScheduler
-    {
+    public interface ISystemClock : IScheduler {
         CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout);
     }
 
-    public abstract class SchedulerSystemClockBase : ISystemClock
-    {
+    public abstract class SchedulerSystemClockBase : ISystemClock {
         private readonly IScheduler _scheduler;
 
-        protected SchedulerSystemClockBase(IScheduler scheduler)
-        {
+        protected SchedulerSystemClockBase(IScheduler scheduler) {
             _scheduler = scheduler;
         }
 
-        public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action)
-        {
+        public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action) {
             return _scheduler.Schedule(state, action);
         }
 
-        public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action)
-        {
+        public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) {
             return _scheduler.Schedule(state, dueTime, action);
         }
 
-        public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action)
-        {
+        public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) {
             return _scheduler.Schedule(state, dueTime, action);
         }
 
@@ -42,12 +36,10 @@ namespace Foundatio.Utility {
     public sealed class DefaultSystemClock : SchedulerSystemClockBase {
         public static readonly DefaultSystemClock Instance = new DefaultSystemClock();
 
-        public DefaultSystemClock() : base(DefaultScheduler.Instance)
-        {
+        public DefaultSystemClock() : base(DefaultScheduler.Instance) {
         }
 
-        public override CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
-        {
+        public override CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout) {
             return new CancellationTokenSource(timeout);
         }
     }
@@ -55,9 +47,11 @@ namespace Foundatio.Utility {
     public static class SystemClock {
         private static readonly AsyncLocal<ISystemClock> _instance = new AsyncLocal<ISystemClock>();
 
-        public static ISystemClock Instance {
+        public static ISystemClock Instance
+        {
             get { return _instance.Value ?? DefaultSystemClock.Instance; }
-            private set {
+            private set
+            {
                 if (value == DefaultSystemClock.Instance)
                     _instance.Value = null;
                 else
@@ -83,8 +77,7 @@ namespace Foundatio.Utility {
             Sleep(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
         }
 
-        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken))
-        {
+        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
             return SleepAsync(TimeSpan.FromMilliseconds(milliseconds), cancellationToken);
         }
 
@@ -92,23 +85,19 @@ namespace Foundatio.Utility {
             await Instance.Sleep(time, cancellationToken).ConfigureAwait(false);
         }
 
-        public static CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout)
-        {
+        public static CancellationTokenSource CreateCancellationTokenSource(TimeSpan timeout) {
             return Instance.CreateCancellationTokenSource(timeout);
         }
 
-        private sealed class SwapSystemClock : IDisposable
-        {
+        private sealed class SwapSystemClock : IDisposable {
             private ISystemClock _originalInstance;
 
-            public SwapSystemClock(ISystemClock replacementInstance)
-            {
+            public SwapSystemClock(ISystemClock replacementInstance) {
                 _originalInstance = SystemClock.Instance;
                 SystemClock.Instance = replacementInstance;
             }
 
-            public void Dispose()
-            {
+            public void Dispose() {
                 var originalInstance = Interlocked.Exchange(ref _originalInstance, null);
                 if (originalInstance != null)
                     SystemClock.Instance = originalInstance;

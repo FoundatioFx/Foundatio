@@ -294,7 +294,7 @@ namespace Foundatio.Caching {
             if (_scriptsLoaded)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_scriptsLoaded)
                     return;
 

@@ -85,7 +85,7 @@ namespace Foundatio.Queues {
             if (!_runMaintenanceTasks || _maintenanceTask != null)
                 return;
 
-            using (await  _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_maintenanceTask != null)
                     return;
 
@@ -98,7 +98,7 @@ namespace Foundatio.Queues {
             if (_isSubscribed)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isSubscribed)
                     return;
 

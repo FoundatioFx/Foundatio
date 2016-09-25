@@ -1,5 +1,6 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -13,7 +14,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+            Log.MinimumLevel = LogLevel.Trace;
         }
 
         [Fact]
@@ -81,6 +82,29 @@ namespace Foundatio.Tests.Utility {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
                 Assert.Equal(0, countdown.CurrentCount);
             }
+        }
+
+        [Fact]
+        public async Task Test() {
+            var countdown = new AsyncCountdownEvent(100);
+
+            Action callback = () => {
+                _logger.Info($"Working Thread:{Thread.CurrentThread.ManagedThreadId}");
+                countdown.Signal();
+            };
+
+            var subject = new Subject<int>();
+            subject
+              .Buffer(TimeSpan.FromMilliseconds(10))
+              //.Throttle(TimeSpan.FromMilliseconds(10))
+              .Subscribe(i => callback());
+
+            Parallel.For(0, 100, i => {
+                _logger.Info($"Triggering Thread:{Thread.CurrentThread.ManagedThreadId}");
+                subject.OnNext(0);
+            });
+            await countdown.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(1, countdown.CurrentCount);
         }
 
         [Fact]

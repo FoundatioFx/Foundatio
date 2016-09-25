@@ -9,10 +9,10 @@
     },
     "dependencies": {
         "dotnet-test-xunit": "2.2.0-preview2-build1029",
-        "Exceptionless.RandomData": "1.1.24",
-        "Foundatio": {
-            "target": "project"
-        },
+      "Exceptionless.RandomData": "1.1.26",
+      "Foundatio": {
+        "target": "project"
+      },
         "Foundatio.Logging.Xunit": {
             "target": "project"
         },

@@ -6,18 +6,18 @@
         "warningsAsErrors": true
     },
     "dependencies": {
-        "Exceptionless.RandomData": "1.1.24",
-        "Foundatio": {
-            "target": "project"
-        },
+      "Exceptionless.RandomData": "1.1.26",
+      "Foundatio": {
+        "target": "project"
+      },
         "Foundatio.Logging.NLog": {
             "target": "project"
         },
         "Foundatio.Redis": {
             "target": "project"
         },
-        "SimpleInjector": "3.2.2",
-        "Topshelf": "4.0.1"
+      "SimpleInjector": "3.2.2",
+      "Topshelf": "4.0.2"
     },
     "frameworks": {
         "NET46": {

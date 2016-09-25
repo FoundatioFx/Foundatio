@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "99.99.99-dev",
     "title": "Foundatio Redis Implementations",
     "description": "Pluggable foundation blocks for building distributed apps.",
@@ -26,10 +26,10 @@
         "xmlDoc": true
     },
     "dependencies": {
-        "Foundatio": {
-            "target": "project"
-        },
-        "StackExchange.Redis": "1.1.603"
+      "Foundatio": {
+        "target": "project"
+      },
+      "StackExchange.Redis": "1.1.605"
     },
     "frameworks": {
         "net46": {
