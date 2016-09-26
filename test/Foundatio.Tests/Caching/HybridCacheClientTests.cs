@@ -80,18 +80,17 @@ namespace Foundatio.Tests.Caching {
 
                     await firstCache.SetAsync("first1", 1);
                     await firstCache.IncrementAsync("first2");
-                    // doesnt use localcache for simple types
-                    Assert.Equal(0, firstCache.LocalCache.Count);
+                    Assert.Equal(1, firstCache.LocalCache.Count);
 
                     var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                     await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
-                    Assert.Equal(1, firstCache.LocalCache.Count);
+                    Assert.Equal(2, firstCache.LocalCache.Count);
                     Assert.Equal(0, secondCache.LocalCache.Count);
                     Assert.Equal(0, firstCache.LocalCacheHits);
 
                     Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
                     Assert.Equal(1, firstCache.LocalCacheHits);
-                    Assert.Equal(1, firstCache.LocalCache.Count);
+                    Assert.Equal(2, firstCache.LocalCache.Count);
 
                     Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
                     Assert.Equal(0, secondCache.LocalCacheHits);
