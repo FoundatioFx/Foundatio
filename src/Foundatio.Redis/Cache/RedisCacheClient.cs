@@ -39,12 +39,12 @@ namespace Foundatio.Caching {
                     var server = _connectionMultiplexer.GetServer(endpoint);
 
                     try {
-                        await server.FlushDatabaseAsync().AnyContext();
+                        await server.FlushDatabaseAsync(Database.Database).AnyContext();
                         continue;
                     } catch (Exception) {}
 
                     try {
-                        var redisKeys = server.Keys().ToArray();
+                        var redisKeys = server.Keys(Database.Database).ToArray();
                         if (redisKeys.Length > 0)
                             await Database.KeyDeleteAsync(redisKeys).AnyContext();
                     } catch (Exception) {}
@@ -304,10 +304,11 @@ namespace Foundatio.Caching {
                 var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
 
                 foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                    _setIfHigherScript = await setIfHigher.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _setIfLowerScript = await setIfLower.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _incrByAndExpireScript = await incrByAndExpire.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _delByWildcardScript = await delByWildcard.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                    var server = _connectionMultiplexer.GetServer(endpoint);
+                    _setIfHigherScript = await setIfHigher.LoadAsync(server).AnyContext();
+                    _setIfLowerScript = await setIfLower.LoadAsync(server).AnyContext();
+                    _incrByAndExpireScript = await incrByAndExpire.LoadAsync(server).AnyContext();
+                    _delByWildcardScript = await delByWildcard.LoadAsync(server).AnyContext();
                 }
 
                 _scriptsLoaded = true;
