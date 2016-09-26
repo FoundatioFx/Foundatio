@@ -86,8 +86,6 @@ namespace Foundatio.Caching {
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             CacheValue<T> cacheValue;
-            bool requiresSerialization = TypeRequiresSerialization(typeof(T));
-            _logger.Trace("Type requires serialization: {0}", requiresSerialization);
             
             cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
@@ -187,9 +185,7 @@ namespace Foundatio.Caching {
 
         public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
             CacheValue<ICollection<T>> cacheValue;
-            bool requiresSerialization = TypeRequiresSerialization(typeof(T));
-            _logger.Trace("Type requires serialization: {0}", requiresSerialization);
-
+           
             cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 _logger.Trace("Local cache hit: {0}", key);
@@ -208,13 +204,6 @@ namespace Foundatio.Caching {
             }
 
             return cacheValue.HasValue ? cacheValue : CacheValue<ICollection<T>>.NoValue;
-        }
-
-        private bool TypeRequiresSerialization(Type t) {
-            if (t == TypeHelper.BoolType || t == TypeHelper.ByteArrayType || t == TypeHelper.StringType || t.IsNumeric() || t.IsNullableNumeric())
-                return false;
-
-            return true;
         }
 
         public virtual void Dispose() {
