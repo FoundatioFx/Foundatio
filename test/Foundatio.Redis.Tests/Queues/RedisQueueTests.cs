@@ -7,6 +7,7 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Queue;
 using Foundatio.Utility;
 using Nito.AsyncEx;
@@ -17,12 +18,14 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Queues {
     public class RedisQueueTests : QueueTestBase {
         public RedisQueueTests(ITestOutputHelper output) : base(output) {
-            while (CountAllKeysAsync().GetAwaiter().GetResult() != 0)
-                FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            while (muxer.CountAllKeysAsync().GetAwaiter().GetResult() != 0)
+                muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            var queue = new RedisQueue<SimpleWorkItem>(SharedConnection.GetMuxer(), workItemTimeout: workItemTimeout,
+            var muxer = SharedConnection.GetMuxer();
+            var queue = new RedisQueue<SimpleWorkItem>(muxer, workItemTimeout: workItemTimeout,
                 retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance, loggerFactory: Log);
             _logger.Debug("Queue Id: {queueId}", queue.QueueId);
             return queue;
@@ -125,13 +128,14 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
             
             using (queue) {
-                var db = SharedConnection.GetMuxer().GetDatabase();
+                var muxer = SharedConnection.GetMuxer();
+                var db = muxer.GetDatabase();
 
                 string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-                Assert.Equal(3, await CountAllKeysAsync());
+                Assert.Equal(3, await muxer.CountAllKeysAsync());
 
                 _logger.Info("-----");
 
@@ -142,7 +146,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(5, await CountAllKeysAsync());
+                Assert.Equal(5, await muxer.CountAllKeysAsync());
 
                 _logger.Info("-----");
 
@@ -153,7 +157,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(0, await CountAllKeysAsync());
+                Assert.Equal(0, await muxer.CountAllKeysAsync());
             }
         }
 
@@ -164,7 +168,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
             
             using (queue) {
-                var db = SharedConnection.GetMuxer().GetDatabase();
+                var muxer = SharedConnection.GetMuxer();
+                var db = muxer.GetDatabase();
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 _logger.Trace("SimpleWorkItem Id: {0}", id);
@@ -178,7 +183,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(4, await CountAllKeysAsync());
+                Assert.Equal(4, await muxer.CountAllKeysAsync());
 
                 workItem = await queue.DequeueAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -188,7 +193,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.Equal(6, await CountAllKeysAsync());
+                Assert.Equal(6, await muxer.CountAllKeysAsync());
 
                 // let the work item timeout and become auto abandoned.
                 SystemClock.Test.AddTime(TimeSpan.FromMilliseconds(250));
@@ -201,7 +206,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(2, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Timeouts);
-                Assert.InRange(await CountAllKeysAsync(), 3, 4);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 3, 4);
 
                 // should go to deadletter now
                 workItem = await queue.DequeueAsync();
@@ -214,7 +219,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(3, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(await CountAllKeysAsync(), 4, 5);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 4, 5);
             }
         }
 
@@ -225,7 +230,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
             
             using (queue) {
-                var db = SharedConnection.GetMuxer().GetDatabase();
+                var muxer = SharedConnection.GetMuxer();
+                var db = muxer.GetDatabase();
 
                 var id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 var workItem = await queue.DequeueAsync();
@@ -239,7 +245,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.Equal(5, await CountAllKeysAsync());
+                Assert.Equal(5, await muxer.CountAllKeysAsync());
 
                 SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
                 await queue.DoMaintenanceWorkAsync();
@@ -252,7 +258,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
-                Assert.InRange(await CountAllKeysAsync(), 4, 5);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 4, 5);
 
                 workItem = await queue.DequeueAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -262,7 +268,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-                Assert.InRange(await CountAllKeysAsync(), 6, 7);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 6, 7);
 
                 await workItem.CompleteAsync();
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
@@ -270,7 +276,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.InRange(await CountAllKeysAsync(), 0, 1);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 0, 1);
             }
         }
 
@@ -281,7 +287,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
             
             using (queue) {
-                var db = SharedConnection.GetMuxer().GetDatabase();
+                var muxer = SharedConnection.GetMuxer();
+                var db = muxer.GetDatabase();
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
@@ -308,7 +315,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
                 Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait"));
                 Assert.Equal(3, await db.ListLengthAsync("q:SimpleWorkItem:dead"));
-                Assert.InRange(await CountAllKeysAsync(), 10, 11);
+                Assert.InRange(await muxer.CountAllKeysAsync(), 10, 11);
             }
         }
         
@@ -351,7 +358,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed + stats.Deadletter);
                 Assert.Equal(0, stats.Queued);
 
-                _logger.Trace("# Keys: {0}", CountAllKeysAsync());
+                var muxer = SharedConnection.GetMuxer();
+                _logger.Trace("# Keys: {0}", muxer.CountAllKeysAsync());
             }
         }
 
@@ -388,7 +396,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
 
-                _logger.Trace("# Keys: {0}", CountAllKeysAsync());
+                var muxer = SharedConnection.GetMuxer();
+                _logger.Trace("# Keys: {0}", muxer.CountAllKeysAsync());
             }
         }
 
@@ -427,43 +436,9 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
 
-                _logger.Trace("# Keys: {0}", CountAllKeysAsync());
+                var muxer = SharedConnection.GetMuxer();
+                _logger.Trace("# Keys: {0}", muxer.CountAllKeysAsync());
             }
-        }
-
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis: {0}", ex.Message);
-                }
-            }
-        }
-
-        private async Task<long> CountAllKeysAsync() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return 0;
-
-            long count = 0;
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    count += await server.DatabaseSizeAsync();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error getting redis key count: {0}", ex.Message);
-                }
-            }
-
-            return count;
         }
     }
 }
