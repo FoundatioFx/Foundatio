@@ -53,6 +53,12 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
+
+        [Fact]
         public override Task WillUseLocalCache() {
             return base.WillUseLocalCache();
         }
@@ -81,5 +87,6 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task MeasureSerializerComplexThroughput() {
             return base.MeasureSerializerComplexThroughput();
         }
+
     }
 }

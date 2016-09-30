@@ -71,6 +71,12 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
+
+        [Fact]
         public virtual async Task WillUseLocalCache() {
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
@@ -164,6 +170,8 @@ namespace Foundatio.Tests.Caching {
                 }
             }
         }
+
+        
 
         public void Dispose() {
             _distributedCache.Dispose();

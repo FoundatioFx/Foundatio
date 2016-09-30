@@ -72,6 +72,12 @@ namespace Foundatio.Redis.Tests.Caching {
             await base.CanManageSets();
         }
 
+        [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
+
         [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughput() {
             return base.MeasureThroughput();
@@ -86,5 +92,7 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task MeasureSerializerComplexThroughput() {
             return base.MeasureSerializerComplexThroughput();
         }
+
+        
     }
 }
