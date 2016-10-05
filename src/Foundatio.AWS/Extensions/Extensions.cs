@@ -19,8 +19,8 @@ namespace Foundatio.AWS.Extensions {
             return new FileSpec {
                 Path = blob.Key,
                 Size = blob.Size,
-                Modified = blob.LastModified,
-                Created = blob.LastModified // TODO: Need to fix this
+                Modified = blob.LastModified.ToUniversalTime(),
+                Created = blob.LastModified.ToUniversalTime() // TODO: Need to fix this
             };
         }
 

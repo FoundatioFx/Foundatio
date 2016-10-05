@@ -70,7 +70,7 @@ namespace Foundatio.Caching {
                 _logger.Warn("Unknown invalidate cache message");
             }
         }
-        
+
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             bool flushAll = keys == null || !keys.Any();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = keys?.ToArray() }).AnyContext();
@@ -159,7 +159,7 @@ namespace Foundatio.Caching {
         public Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
             return _distributedCache.IncrementAsync(key, amount, expiresIn);
         }
-        
+
         public Task<bool> ExistsAsync(string key) {
             return _distributedCache.ExistsAsync(key);
         }
@@ -231,7 +231,7 @@ namespace Foundatio.Caching {
             _localCache.ItemExpired.RemoveHandler(OnItemExpired);
             _localCache.Dispose();
 
-            // TODO: unsubscribe handler from messagebus. 
+            // TODO: unsubscribe handler from messagebus.
         }
 
         public class InvalidateCache {
@@ -239,6 +239,6 @@ namespace Foundatio.Caching {
             public string[] Keys { get; set; }
             public bool FlushAll { get; set; }
             public bool Expired { get; set; }
-        }   
+        }
     }
 }
