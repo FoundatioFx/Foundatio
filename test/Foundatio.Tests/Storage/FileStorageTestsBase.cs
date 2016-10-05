@@ -61,6 +61,38 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanGetFileInfo() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                var startTime = SystemClock.UtcNow;
+                Assert.True(await storage.SaveFileAsync(@"folder\nested.txt", "test"));
+                var fileInfo = await storage.GetFileInfoAsync(@"folder\nested.txt");
+                Assert.NotNull(fileInfo);
+                Assert.True(fileInfo.Path.EndsWith("nested.txt"), "Incorrect file");
+                Assert.True(fileInfo.Size > 0, "Incorrect file size");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
+                // NOTE: File creation time might not be accurate: http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
+                Assert.True(startTime < fileInfo.Modified, "File modified time should be newer than the start time.");
+
+                Assert.True(await storage.SaveFileAsync("test.txt", "test"));
+                fileInfo = await storage.GetFileInfoAsync("test.txt");
+                Assert.NotNull(fileInfo);
+                Assert.True(fileInfo.Path.EndsWith("test.txt"), "Incorrect file");
+                Assert.True(fileInfo.Size > 0, "Incorrect file size");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
+                Assert.True(startTime < fileInfo.Modified, "File modified time should be newer than the start time.");
+            }
+        }
+
         public virtual async Task CanManageFiles() {
             await ResetAsync();
 
@@ -120,11 +152,11 @@ namespace Foundatio.Tests.Storage {
 
             using (storage) {
                 var files = (await storage.GetFileListAsync()).ToList();
-                if (files.Any())
-                    Debug.WriteLine("Got files");
-                else
-                    Debug.WriteLine("No files");
-                await storage.DeleteFilesAsync(files);
+                if (files.Count > 0) {
+                    _logger.Trace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
+                    await storage.DeleteFilesAsync(files);
+                }
+
                 Assert.Equal(0, (await storage.GetFileListAsync()).Count());
             }
         }
@@ -158,7 +190,7 @@ namespace Foundatio.Tests.Storage {
                     await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev);
                     queueItems.Add(i);
                 });
-                
+
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
                 await Run.InParallel(10, async i => {

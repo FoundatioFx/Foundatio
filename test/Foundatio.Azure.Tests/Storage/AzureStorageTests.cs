@@ -22,10 +22,15 @@ namespace Foundatio.Azure.Tests.Storage {
         public override Task CanGetEmptyFileListOnMissingDirectory() {
             return base.CanGetEmptyFileListOnMissingDirectory();
         }
-        
+
         [Fact]
         public override Task CanGetFileListForSingleFolder() {
             return base.CanGetFileListForSingleFolder();
+        }
+
+        [Fact]
+        public override Task CanGetFileInfo() {
+            return base.CanGetFileInfo();
         }
 
         [Fact]
