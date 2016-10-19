@@ -14,7 +14,7 @@ namespace Foundatio.Utility {
             _parallelInvoke = parallelInvoke;
         }
 
-        public bool HasListeners => _invocationList.Count > 0;
+        public bool HasHandlers => _invocationList.Count > 0;
 
         public IDisposable AddHandler(Func<object, TEventArgs, Task> callback) {
             if (callback == null)
