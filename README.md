@@ -28,7 +28,6 @@ To summarize, if you want pain free development and testing while allowing your 
 ## Primary Sponsors
 
 [![Exceptionless](https://github.com/exceptionless/MediaKit/blob/master/Exceptionless_350.png)](http://exceptionless.com)
-
 [![Learning Machine](https://avatars2.githubusercontent.com/u/16006067?v=3&s=200)](http://learningmachine.com)
 
 ## Getting Started (Development)
