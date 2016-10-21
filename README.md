@@ -26,13 +26,10 @@ When building several big cloud applications we found a lack of great solutions 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
 
 ## Primary Sponsors
-[Learning Machine](http://learningmachine.com)
-
-[![Learning Machine](https://avatars2.githubusercontent.com/u/16006067?v=3&s=200)](http://learningmachine.com)
-
-[Exceptionless](http://exceptionless.com)
 
 [![Exceptionless](https://github.com/exceptionless/MediaKit/blob/master/Exceptionless_350.png)](http://exceptionless.com)
+
+[![Learning Machine](https://avatars2.githubusercontent.com/u/16006067?v=3&s=200)](http://learningmachine.com)
 
 ## Getting Started (Development)
 
