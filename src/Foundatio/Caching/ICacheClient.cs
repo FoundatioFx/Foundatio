@@ -21,5 +21,6 @@ namespace Foundatio.Caching {
         Task<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null);
         Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null);
         Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key);
+        Task<CacheValue<T>> GetOrAddAsync<T>(string key, Func<T> addFunc, TimeSpan? expiresIn = null);
     }
 }

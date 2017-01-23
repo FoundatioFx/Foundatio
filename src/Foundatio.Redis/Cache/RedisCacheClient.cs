@@ -133,6 +133,22 @@ namespace Foundatio.Caching {
             return await RedisValuesToCacheValueAsync<T>(set).AnyContext();
         }
 
+        public async Task<CacheValue<T>> GetOrAddAsync<T>(string key, Func<T> addFunc, TimeSpan? expiresIn = null)
+        {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
+            var cachedValue = await GetAsync<T>(key);
+            if (cachedValue.HasValue) return cachedValue;
+
+            var value = addFunc();
+
+            var addResult = await AddAsync(key, value, expiresIn);
+            if (addResult == false) return CacheValue<T>.NoValue;
+
+            return new CacheValue<T>(value, true);
+        }
+
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");

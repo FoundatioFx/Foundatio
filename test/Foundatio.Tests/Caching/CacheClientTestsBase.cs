@@ -23,6 +23,30 @@ namespace Foundatio.Tests.Caching {
             return null;
         }
 
+        public virtual async Task CanGetOrAddAsync()
+        {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache)
+            {
+                await cache.RemoveAllAsync();
+
+                var addFunc = new Func<int>(() => 1);
+                var result1 = await cache.GetOrAddAsync("test1", addFunc);
+
+                Assert.NotNull(result1);
+                Assert.Equal(result1.Value, 1);
+
+                var addFunc2 = new Func<int>(() => 2);
+                var result2 = await cache.GetOrAddAsync("test1", addFunc2);
+
+                Assert.NotNull(result2);
+                Assert.Equal(result2.Value, 1);
+            }
+        }
+
         public virtual async Task CanGetAll() {
             var cache = GetCacheClient();
             if (cache == null)

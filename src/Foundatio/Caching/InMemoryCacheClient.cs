@@ -308,6 +308,22 @@ namespace Foundatio.Caching {
             return GetAsync<ICollection<T>>(key);
         }
 
+        public async Task<CacheValue<T>> GetOrAddAsync<T>(string key, Func<T> addFunc, TimeSpan? expiresIn = null)
+        {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentException("Key cannot be null or empty.");
+
+            var cachedValue = await GetAsync<T>(key);
+            if (cachedValue.HasValue) return cachedValue;
+
+            var value = addFunc();
+
+            var addResult = await AddAsync(key, value, expiresIn);
+            if (addResult == false) return CacheValue<T>.NoValue;
+            
+            return new CacheValue<T>(value, true);
+        }
+
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("SetInternalAsync: Key cannot be null or empty.");

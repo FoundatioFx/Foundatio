@@ -165,6 +165,12 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
+
         public void Dispose() {
             _distributedCache.Dispose();
             _messageBus.Dispose();
