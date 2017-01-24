@@ -8,6 +8,7 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
+using Foundatio.Tests.Utility;
 using Xunit;
 using Foundatio.Utility;
 using Nito.AsyncEx;
@@ -16,7 +17,6 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : TestWithLoggingBase {
         protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
         }
 
         protected virtual IMessageBus GetMessageBus() {
@@ -273,7 +273,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         

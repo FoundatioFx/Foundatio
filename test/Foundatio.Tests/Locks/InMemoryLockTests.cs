@@ -8,6 +8,7 @@ using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Extensions;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Locks {
@@ -21,7 +22,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(_cache, maxHits, period);
+            return new ThrottlingLockProvider(_cache, maxHits, period, Log);
         }
 
         protected override ILockProvider GetLockProvider() {
@@ -30,7 +31,9 @@ namespace Foundatio.Tests.Locks {
 
         [Fact]
         public override Task CanAcquireAndReleaseLock() {
-            return base.CanAcquireAndReleaseLock();
+            using (TestSystemClock.Install()) {
+                return base.CanAcquireAndReleaseLock();
+            }
         }
 
         [Fact]
@@ -49,7 +52,7 @@ namespace Foundatio.Tests.Locks {
             var sw = Stopwatch.StartNew();
             // Monitor will not be pulsed and should be cancelled after 100ms.
             using (await monitor.EnterAsync())
-                await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
                     await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()));
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 75, 125);

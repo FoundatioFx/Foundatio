@@ -7,6 +7,7 @@ using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
@@ -14,7 +15,6 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
         }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -37,9 +37,11 @@ namespace Foundatio.Tests.Locks {
             try {
                 Assert.NotNull(lock1);
                 Assert.True(await locker.IsLockedAsync("test"));
-                var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
-                Assert.Null(lock2);
-            } finally {
+                var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+                TestSystemClock.AdvanceBy(TimeSpan.FromMilliseconds(250));
+                Assert.Null(await lock2Task);
+            }
+            finally {
                 await lock1.ReleaseAsync();
             }
 
@@ -61,9 +63,10 @@ namespace Foundatio.Tests.Locks {
                     Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
                     Interlocked.Increment(ref counter);
                     _logger.Trace("Lock {i}: end", i);
-                } finally {
+                }
+                finally {
                     if (lock2 != null)
-                        await lock2.ReleaseAsync().AnyContext();
+                        await lock2.ReleaseAsync();
                 }
             });
 
@@ -141,7 +144,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
-            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero).AnyContext();
+            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
         }
 
         public virtual async Task WillThrottleCalls() {
@@ -155,8 +158,8 @@ namespace Foundatio.Tests.Locks {
             var lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            var sc = SystemClock.Test;
-            sc.SetTime(DateTime.UtcNow.Floor(period));
+            var utcNow = SystemClock.UtcNow;
+            await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
                 _logger.Info($"Allowed Locks: {i}");

@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -20,7 +21,7 @@ namespace Foundatio.Metrics {
         };
 
         private readonly string _prefix;
-        private readonly Timer _flushTimer;
+        private readonly IDisposable _flushTimer;
         private readonly bool _buffered;
         protected readonly ICacheClient _cache;
         protected readonly ILogger _logger;
@@ -32,7 +33,7 @@ namespace Foundatio.Metrics {
             _prefix = !String.IsNullOrEmpty(prefix) ? (!prefix.EndsWith(":") ? prefix + ":" : prefix) : String.Empty;
 
             if (buffered)
-                _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+                _flushTimer = SystemClock.Instance.SchedulePeriodic(TimeSpan.FromSeconds(2), OnMetricsTimer);
         }
 
         public Task CounterAsync(string name, int value = 1) {
@@ -68,7 +69,7 @@ namespace Foundatio.Metrics {
             return Task.CompletedTask;
         }
         
-        private void OnMetricsTimer(object state) {
+        private void OnMetricsTimer() {
             try {
                 FlushAsync().GetAwaiter().GetResult();
             } catch (Exception ex) {

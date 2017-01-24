@@ -38,8 +38,8 @@ namespace Foundatio.Jobs {
                         else if (interval.HasValue)
                             await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                            SystemClock.Sleep(1);
-                    } catch (TaskCanceledException) { }
+                            await SystemClock.SleepAsync(1).AnyContext();
+                    } catch (OperationCanceledException) { }
                     
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;

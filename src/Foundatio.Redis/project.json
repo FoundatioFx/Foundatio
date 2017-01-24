@@ -29,7 +29,7 @@
       "Foundatio": {
         "target": "project"
       },
-        "StackExchange.Redis": "1.1.605"
+      "StackExchange.Redis": "1.1.605"
     },
     "frameworks": {
         "net46": {

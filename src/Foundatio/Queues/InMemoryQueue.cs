@@ -72,7 +72,7 @@ namespace Foundatio.Queues {
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
             Interlocked.Increment(ref _enqueuedCount);
 
@@ -132,9 +132,9 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken))
+                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
                         await _monitor.WaitAsync(cancellationToken).AnyContext();
-                } catch (TaskCanceledException) {}
+                } catch (OperationCanceledException) {}
 
                 sw.Stop();
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
@@ -218,7 +218,7 @@ namespace Foundatio.Queues {
 
         private async Task RetryAsync(QueueEntry<T> entry) {
             _queue.Enqueue(entry);
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 

@@ -28,8 +28,9 @@
         "Foundatio": {
             "target": "project"
         },
-        "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
-        "WindowsAzure.ServiceBus": "3.4.0"    },
+      "Microsoft.WindowsAzure.ConfigurationManager": "3.2.1",
+      "WindowsAzure.ServiceBus": "3.4.0"
+    },
     "frameworks": {
         "net46": {
             "buildOptions": {

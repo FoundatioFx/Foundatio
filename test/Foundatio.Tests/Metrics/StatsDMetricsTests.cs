@@ -20,7 +20,6 @@ namespace Foundatio.Tests.Metrics {
         private Thread _listenerThread;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
