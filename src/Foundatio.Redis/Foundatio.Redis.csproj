@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Pluggable foundation blocks for building distributed apps.</Description>
+    <Copyright>Copyright (c) 2016 Exceptionless.  All rights reserved.</Copyright>
+    <AssemblyTitle>Foundatio Redis Implementations</AssemblyTitle>
+    <VersionPrefix>99.99.99-dev</VersionPrefix>
+    <Authors>bniemyjski;ejsmith</Authors>
+    <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <WarningsAsErrors>true</WarningsAsErrors>
+    <DebugType>portable</DebugType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AssemblyName>Foundatio.Redis</AssemblyName>
+    <PackageId>Foundatio.Redis</PackageId>
+    <PackageTags>Queue;Messaging;Message;Bus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;pcl;NETSTANDARD;Core</PackageTags>
+    <PackageReleaseNotes>https://github.com/exceptionless/Foundatio/releases</PackageReleaseNotes>
+    <PackageIconUrl>https://be.exceptionless.io/img/exceptionless-32.png</PackageIconUrl>
+    <PackageProjectUrl>https://github.com/exceptionless/Foundatio</PackageProjectUrl>
+    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/exceptionless/Foundatio</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="1.2.0" />
+  </ItemGroup>
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
+    <Reference Include="System" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+</Project>

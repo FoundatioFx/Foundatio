@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Storage {
         public FolderFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new FolderFileStorage("temp");
+            return new FolderFileStorage("|DataDirectory|\\temp");
         }
 
         [Fact]

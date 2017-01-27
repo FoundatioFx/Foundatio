@@ -93,7 +93,7 @@ namespace Foundatio.Tests.Storage {
 #if NETSTANDARD
             string readmeFile = Path.GetFullPath(@"..\..\README.md");
 #else
-            string readmeFile = Path.GetFullPath(@"..\..\..\..\..\..\README.md");
+            string readmeFile = Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
 #endif
 
             using (storage) {
