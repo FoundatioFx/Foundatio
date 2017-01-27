@@ -1,0 +1,27 @@
+<Project ToolsVersion="15.0">
+
+  <Import Project="..\version.props" />
+
+  <PropertyGroup>
+    <Product>Foundatio</Product>
+    <Description>Pluggable foundation blocks for building distributed apps.</Description>
+    <Copyright>Copyright (c) 2016 Exceptionless.  All rights reserved.</Copyright>
+    <VersionPrefix>99.99.99-dev</VersionPrefix>
+    <Authors>bniemyjski;ejsmith</Authors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <WarningsAsErrors>true</WarningsAsErrors>
+    <DebugType>portable</DebugType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageTags>Queue;Messaging;Message;Bus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;pcl;NETSTANDARD;Core</PackageTags>
+    <PackageReleaseNotes>https://github.com/exceptionless/Foundatio/releases</PackageReleaseNotes>
+    <PackageIconUrl>https://be.exceptionless.io/img/exceptionless-32.png</PackageIconUrl>
+    <PackageProjectUrl>https://github.com/exceptionless/Foundatio</PackageProjectUrl>
+    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/exceptionless/Foundatio</RepositoryUrl>
+    <VersionSuffix Condition="'$(VersionSuffix)'!='' AND '$(BuildNumber)' != ''">$(VersionSuffix)-$(BuildNumber)</VersionSuffix>
+  </PropertyGroup>
+
+</Project>
+
+
