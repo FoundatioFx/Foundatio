@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <RuntimeIdentifier>win7-x86</RuntimeIdentifier>
+    <WarningsAsErrors>true</WarningsAsErrors>
+    <DebugType>portable</DebugType>
+    <AssemblyName>Foundatio.CronJob</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <PackageId>Foundatio.CronJob</PackageId>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateAssemblyDescriptionAttribute>false</GenerateAssemblyDescriptionAttribute>
+    <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
+    <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
+    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Logging.NLog\Foundatio.Logging.NLog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ncrontab" Version="3.1.0" />
+    <PackageReference Include="NETStandard.Library" Version="1.6.0" />
+    <PackageReference Include="NLog.Schema" Version="4.3.9" />
+    <PackageReference Include="SimpleInjector" Version="3.2.2" />
+    <PackageReference Include="Topshelf" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
+    <Reference Include="System" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+</Project>

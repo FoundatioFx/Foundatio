@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <RuntimeIdentifier>win7-x86</RuntimeIdentifier>
+    <WarningsAsErrors>true</WarningsAsErrors>
+    <DebugType>portable</DebugType>
+    <AssemblyName>Foundatio.SampleJob</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <PackageId>Foundatio.SampleJob</PackageId>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
+    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Logging.NLog\Foundatio.Logging.NLog.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.26" />
+    <PackageReference Include="NETStandard.Library" Version="1.6.0" />
+    <PackageReference Include="SimpleInjector" Version="3.2.2" />
+    <PackageReference Include="Topshelf" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
+    <Reference Include="System" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+</Project>
