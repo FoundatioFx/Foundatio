@@ -9,8 +9,4 @@
   <ItemGroup>
     <PackageReference Include="WindowsAzure.ServiceBus" Version="3.4.5" />
   </ItemGroup>
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
-    <Reference Include="System" />
-    <Reference Include="Microsoft.CSharp" />
-  </ItemGroup>
 </Project>

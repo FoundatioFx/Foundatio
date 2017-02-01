@@ -1,17 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
+  <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
-    <RuntimeIdentifier>win7-x86</RuntimeIdentifier>
-    <WarningsAsErrors>true</WarningsAsErrors>
-    <DebugType>portable</DebugType>
-    <AssemblyName>Foundatio.SampleJob</AssemblyName>
+    <TargetFramework>netcoreapp1.1</TargetFramework>
+    <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
-    <PackageId>Foundatio.SampleJob</PackageId>
-    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
-    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
-    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
-    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,15 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Exceptionless.RandomData" Version="1.1.26" />
-    <PackageReference Include="NETStandard.Library" Version="1.6.0" />
-    <PackageReference Include="SimpleInjector" Version="3.2.2" />
-    <PackageReference Include="Topshelf" Version="4.0.2" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.27" />
+    <PackageReference Include="SimpleInjector" Version="3.3.2" />
+    <PackageReference Include="Topshelf" Version="4.0.3" />
   </ItemGroup>
-
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
-    <Reference Include="System" />
-    <Reference Include="Microsoft.CSharp" />
-  </ItemGroup>
-
 </Project>
