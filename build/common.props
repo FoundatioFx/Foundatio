@@ -5,7 +5,7 @@
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
-    <Copyright>Copyright (c) 2016 Exceptionless.  All rights reserved.</Copyright>
+    <Copyright>Copyright (c) 2017 Exceptionless.  All rights reserved.</Copyright>
     <VersionPrefix>99.99.99-dev</VersionPrefix>
     <Authors>bniemyjski;ejsmith</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
@@ -21,7 +21,4 @@
     <RepositoryUrl>https://github.com/exceptionless/Foundatio</RepositoryUrl>
     <VersionSuffix Condition="'$(VersionSuffix)'!='' AND '$(BuildNumber)' != ''">$(VersionSuffix)-$(BuildNumber)</VersionSuffix>
   </PropertyGroup>
-
 </Project>
-
-

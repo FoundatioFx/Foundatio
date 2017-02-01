@@ -2,11 +2,6 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFramework>net46</TargetFramework>
-    <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
-    <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
-  </PropertyGroup>
-  <PropertyGroup>
-    <PackageTargetFallback>dnxcore50;portable-net45+win8</PackageTargetFallback>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="xunit.runner.json">
