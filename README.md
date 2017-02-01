@@ -2,7 +2,6 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/mpak90b87dl9crl8/branch/master?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
-[![Donate](https://img.shields.io/badge/donorbox-donate-blue.svg)](https://donorbox.org/exceptionless) 
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Caching](#caching)
@@ -16,8 +15,8 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 
 Includes implementations in Redis, Azure, AWS and in memory (for development).
 
-## Why should I use Foundatio?
-When we first started building [Exceptionless](https://github.com/exceptionless/Exceptionless) we found a lack of great solutions (that's not to say there isn't great solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
+## Why Foundatio?
+When building several big cloud applications we found a lack of great solutions (that's not to say there isn't solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
  * Wanted to build against abstract interfaces so that we could easily change implementations.
  * Wanted the blocks to be dependency injection friendly.
  * Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there wasn't any in memory implementations so every developer was required to set up and configure Redis.
@@ -25,6 +24,12 @@ When we first started building [Exceptionless](https://github.com/exceptionless/
  * Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
+
+## Primary Sponsors
+
+[![Exceptionless](https://github.com/exceptionless/MediaKit/blob/master/Exceptionless_350.png)](http://exceptionless.com)
+
+[![Learning Machine](http://www.learningmachine.com/assets/images/LearningMachine.png)](http://learningmachine.com)
 
 ## Getting Started (Development)
 
@@ -316,11 +321,6 @@ log.Error().Exception(ex).Message("Writing a captured exception out to the log."
 
 ## Sample Application
 We have both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/exceptionless/Foundatio.Samples) that shows off how to use Foundatio.
-
-## Sponsors
-[Learning Machine](http://learningmachine.com)
-
-[![Learning Machine](https://avatars2.githubusercontent.com/u/16006067?v=3&s=200)](http://learningmachine.com)
 
 ## Roadmap
 

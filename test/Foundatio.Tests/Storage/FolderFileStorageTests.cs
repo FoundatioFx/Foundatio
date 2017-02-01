@@ -22,6 +22,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanGetFileInfo() {
+            return base.CanGetFileInfo();
+        }
+
+        [Fact]
         public override Task CanSaveFilesAsync() {
             return base.CanSaveFilesAsync();
         }

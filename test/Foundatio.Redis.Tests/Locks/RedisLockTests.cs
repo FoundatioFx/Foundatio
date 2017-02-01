@@ -6,6 +6,7 @@ using Foundatio.Logging;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Messaging;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 
 namespace Foundatio.Redis.Tests.Locks {
@@ -14,9 +15,10 @@ namespace Foundatio.Redis.Tests.Locks {
         private readonly IMessageBus _messageBus;
 
         public RedisLockTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
-            _cache = new RedisCacheClient(SharedConnection.GetMuxer(), loggerFactory: Log);
-            _messageBus = new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), loggerFactory: Log);
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
+            _cache = new RedisCacheClient(muxer, loggerFactory: Log);
+            _messageBus = new RedisMessageBus(muxer.GetSubscriber(), loggerFactory: Log);
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -47,26 +49,11 @@ namespace Foundatio.Redis.Tests.Locks {
             return base.LockOneAtATime();
         }
 
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
-                }
-            }
-        }
-        
         public void Dispose() {
             _cache.Dispose();
             _messageBus.Dispose();
-            FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
     }
 }

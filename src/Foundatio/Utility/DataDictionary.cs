@@ -46,6 +46,9 @@ namespace Foundatio.Utility {
             if (data is T)
                 return (T)data;
 
+            if (data == null)
+                return defaultValue;
+
             if (data is string) {
                 try {
                     return JsonConvert.DeserializeObject<T>((string)data);

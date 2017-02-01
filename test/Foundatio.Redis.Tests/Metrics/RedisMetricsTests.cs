@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Metrics;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Metrics;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,7 +9,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Metrics {
     public class RedisMetricsTests : MetricsClientTestBase, IDisposable {
         public RedisMetricsTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
@@ -47,23 +48,8 @@ namespace Foundatio.Redis.Tests.Metrics {
         }
 
         public void Dispose() {
-            FlushAll();
-        }
-
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
-                }
-            }
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
     }
 }
