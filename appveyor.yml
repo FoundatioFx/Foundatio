@@ -19,22 +19,10 @@ assembly_info:
   assembly_informational_version: "{version}$(VERSION_SUFFIX) $(GIT_HASH)"
 
 before_build:
-  - ps: >-
-      Get-ChildItem -Path .\ -Filter project.json -Recurse -Name |
-      ForEach {
-        $content = Get-Content "$_"
-        $content = $content.Replace("99.99.99-dev", "$($env:APPVEYOR_BUILD_VERSION)$($env:VERSION_SUFFIX)")
-        Set-Content "$_" $content -Encoding UTF8
-      }
   - dotnet restore -v Minimal
 
-build_script:
-  - ps: >-
-      dotnet build **/project.json -c Release
-      
-      If ($LASTEXITCODE -ne 0) {
-        throw "One or more projects failed to build."
-      }
+build:
+    project: Foundatio.sln /p:VersionPrefix={version} /p:VersionSuffix=$env:VERSION_SUFFIX
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -42,22 +30,6 @@ before_test:
   - redis-64\tools\redis-server.exe --service-start
   - choco install rabbitmq --ignoredependencies -y
   - ps: (Get-Service -Name RabbitMQ).Status
-
-test_script:
-  - ps: >-
-      DIR "test/*.Tests" | Where {$_.PsIsContainer} | ForEach {
-        Push-Location -Path "$_"
-        dotnet test -c Release
-        Pop-Location
-        
-        If ($LASTEXITCODE -ne 0) {
-          $testFailure = $True
-        }
-      }
-      
-      If ($testFailure) {
-        throw "One or more tests failed."
-      }
 
 after_test:
   - ps: >-
@@ -72,6 +44,8 @@ artifacts:
 deploy:
   - provider: Environment
     name: NuGet
+    on:
+      branch: master
   - provider: GitHub
     auth_token:
       secure: 0s81q7bweVLTFSOKxnIhan7el6bIFiN8HJ1kYJzOkeFXX7wgGSq9bs/rV53X9qpf
