@@ -22,10 +22,10 @@ before_build:
   - dotnet restore -v Minimal
 
 build:
-  project: Foundatio.sln /p:VersionPrefix={version} /p:VersionSuffix=$env:VERSION_SUFFIX
+  project: Foundatio.sln
   parallel: true
   verbosity: quiet
-  
+
 before_test:
   - nuget install redis-64 -excludeversion
   - redis-64\tools\redis-server.exe --service-install
