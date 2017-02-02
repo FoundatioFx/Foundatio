@@ -25,8 +25,6 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public void CanSleep() {
-            SystemClock.UseTestClock();
-
             var sw = Stopwatch.StartNew();
             SystemClock.Sleep(250);
             sw.Stop();
@@ -48,8 +46,6 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanSleepAsync() {
-            SystemClock.UseTestClock();
-
             var sw = Stopwatch.StartNew();
             await SystemClock.SleepAsync(250);
             sw.Stop();
@@ -100,7 +96,7 @@ namespace Foundatio.Tests.Utility {
         public void CanSetUtcFixedTime() {
             var utcNow = DateTime.UtcNow;
             var now = utcNow.ToLocalTime();
-            SystemClock.Test.SetTime(utcNow);
+            SystemClock.Test.SetFixedTime(utcNow);
 
             Assert.Equal(now, SystemClock.Now);
             Assert.Equal(now, SystemClock.OffsetNow);

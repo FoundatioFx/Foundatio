@@ -24,10 +24,10 @@ namespace Foundatio.Caching {
             _messageBus = messageBus;
             _messageBus.Subscribe<InvalidateCache>(async cache => await OnMessageAsync(cache).AnyContext());
             _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
-            _localCache.ItemExpired.AddHandler(OnItemExpired);
+            _localCache.ItemExpired.AddHandler(OnItemExpiredAsync);
         }
 
-        private async Task OnItemExpired(object sender, ItemExpiredEventArgs args) {
+        private async Task OnItemExpiredAsync(object sender, ItemExpiredEventArgs args) {
             if (!args.SendNotification)
                 return;
 
@@ -112,16 +112,14 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.AddAsync(key, value, expiresIn).AnyContext();
-
             return await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         }
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             _logger.Trace("Adding key \"{0}\" to local cache with expiration: {1}", key, expiresIn);
-
-            await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
 
             return await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -132,22 +130,21 @@ namespace Foundatio.Caching {
                 return 0;
 
             _logger.Trace("Adding keys \"{0}\" to local cache with expiration: {1}", values.Keys, expiresIn);
-
-            await _localCache.SetAllAsync(values, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
-            
+            await _localCache.SetAllAsync(values, expiresIn).AnyContext();
             return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            await _messageBus.PublishAsync(new InvalidateCache {CacheId = _cacheId, Keys = new[] {key}}).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
-
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 
-        public Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
-            return _distributedCache.IncrementAsync(key, amount, expiresIn);
+        public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         }
 
         public Task<bool> ExistsAsync(string key) {
@@ -165,20 +162,25 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
-            await _localCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
             return await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         }
 
-        public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
-            return _distributedCache.SetIfLowerAsync(key, value, expiresIn);
+        public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            return await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         }
 
         public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetAddAsync(key, values, expiresIn).AnyContext();
             return await _distributedCache.SetAddAsync(key, values, expiresIn).AnyContext();
         }
 
         public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
             return await _distributedCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
         }
@@ -207,7 +209,7 @@ namespace Foundatio.Caching {
         }
 
         public virtual void Dispose() {
-            _localCache.ItemExpired.RemoveHandler(OnItemExpired);
+            _localCache.ItemExpired.RemoveHandler(OnItemExpiredAsync);
             _localCache.Dispose();
 
             // TODO: unsubscribe handler from messagebus.

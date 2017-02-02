@@ -34,13 +34,13 @@ namespace Foundatio.Utility {
         public static string GetDataDirectory() {
             try {
                 string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
-                if (String.IsNullOrEmpty(dataDirectory))
-                    dataDirectory = Path.GetDirectoryName(typeof(PathHelper).GetTypeInfo().Assembly.Location);
-
-                return Path.GetFullPath(dataDirectory);
+                if (!String.IsNullOrEmpty(dataDirectory))
+                    return Path.GetFullPath(dataDirectory);
             } catch (Exception) {
                 return null;
             }
+
+            return null;
         }
     }
 }

@@ -56,11 +56,11 @@ namespace Foundatio.Utility {
         }
 
         public DateTime Now() {
-            return UtcNow().Add(_timeZoneOffset);
+            return new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
         }
 
         public DateTimeOffset OffsetNow() {
-            return new DateTimeOffset(Now().Ticks, _timeZoneOffset);
+            return new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
         }
 
         public DateTimeOffset OffsetUtcNow() {
@@ -96,20 +96,21 @@ namespace Foundatio.Utility {
             if (time.Kind == DateTimeKind.Utc) {
                 _fixedUtc = time;
             } else if (time.Kind == DateTimeKind.Local) {
-                _fixedUtc = time.Add(TimeZoneOffset());
+                _fixedUtc = new DateTime(time.Ticks - TimeZoneOffset().Ticks, DateTimeKind.Utc);
             }
         }
 
         public void SetTime(DateTime time) {
+            var now = DateTime.Now;
             _fixedUtc = null;
 
             if (time.Kind == DateTimeKind.Unspecified)
                 time = time.ToUniversalTime();
 
             if (time.Kind == DateTimeKind.Utc) {
-                _offset = DateTime.UtcNow.Subtract(time);
+                _offset = now.ToUniversalTime().Subtract(time);
             } else if (time.Kind == DateTimeKind.Local) {
-                _offset = DateTime.Now.Subtract(time);
+                _offset = now.Subtract(time);
             }
         }
 
@@ -118,11 +119,11 @@ namespace Foundatio.Utility {
         }
 
         public void AddTime(TimeSpan amount) {
-            _offset = _offset.Subtract(amount);
+            _offset = _offset.Add(amount);
         }
 
         public void SubtractTime(TimeSpan amount) {
-            _offset = _offset.Add(amount);
+            _offset = _offset.Subtract(amount);
         }
 
         public void UseFakeSleep() {
