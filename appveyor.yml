@@ -12,12 +12,10 @@ init:
   - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="-pre" }
 
 before_build:
-  - dotnet restore -v Minimal
+  - appveyor-retry dotnet restore -v Minimal
 
-build:
-  project: Foundatio.sln /p:VersionPrefix="{version}" /p:VersionSuffix="$env:VERSION_SUFFIX"
-  parallel: false
-  verbosity: quiet
+build_script:
+  - dotnet build Foundatio.sln /p:VersionPrefix="{version}" /p:VersionSuffix="$env:VERSION_SUFFIX" /p:GeneratePackageOnBuild=false --verbosity quiet
 
 before_test:
   - nuget install redis-64 -excludeversion
