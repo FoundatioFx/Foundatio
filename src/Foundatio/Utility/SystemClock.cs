@@ -133,6 +133,25 @@ namespace Foundatio.Utility {
         public void UseRealSleep() {
             _fakeSleep = false;
         }
+
+        public static IDisposable Install() {
+            return new SwapSystemClock(new TestSystemClock());
+        }
+
+        private sealed class SwapSystemClock : IDisposable {
+            private ISystemClock _originalInstance;
+
+            public SwapSystemClock(ISystemClock replacementInstance) {
+                _originalInstance = SystemClock.Instance;
+                SystemClock.Instance = replacementInstance;
+            }
+
+            public void Dispose() {
+                var originalInstance = Interlocked.Exchange(ref _originalInstance, null);
+                if (originalInstance != null)
+                    SystemClock.Instance = originalInstance;
+            }
+        }
     }
 
     public static class SystemClock {
@@ -167,10 +186,6 @@ namespace Foundatio.Utility {
 
         public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
             return Instance.SleepAsync(milliseconds, cancellationToken);
-        }
-
-        public static void UseTestClock() {
-            Instance = new TestSystemClock();
         }
     }
 }

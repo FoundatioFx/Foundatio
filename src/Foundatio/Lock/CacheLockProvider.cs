@@ -46,7 +46,7 @@ namespace Foundatio.Lock {
             if (!_monitors.TryGetValue(msg.Name, out monitor))
                 return;
 
-            using (await monitor.EnterAsync())
+            using (await monitor.EnterAsync().AnyContext())
                 monitor.Pulse();
         }
 
@@ -96,9 +96,9 @@ namespace Foundatio.Lock {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await monitor.EnterAsync(linkedCancellationToken))
+                    using (await monitor.EnterAsync(linkedCancellationToken).AnyContext())
                         await monitor.WaitAsync(linkedCancellationToken).AnyContext();
-                } catch (TaskCanceledException) {
+                } catch (OperationCanceledException) {
                     if (delayCancellationTokenSource.IsCancellationRequested) {
                         _logger.Trace("Retrying: Delay exceeded. Cancellation requested: {0}", cancellationToken.IsCancellationRequested);
                         continue;
@@ -134,12 +134,12 @@ namespace Foundatio.Lock {
             _logger.Trace("ReleaseAsync Complete: {name}", name);
         }
 
-        public async Task RenewAsync(String name, TimeSpan? lockExtension = null) {
+        public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
             _logger.Trace("RenewAsync: {0}", name);
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);
 
-            await Run.WithRetriesAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value)).AnyContext();
+            return Run.WithRetriesAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value));
         }
     }
 

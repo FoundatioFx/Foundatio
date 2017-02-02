@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -14,7 +13,6 @@ namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-            SystemClock.UseTestClock();
         }
 
         [Fact]

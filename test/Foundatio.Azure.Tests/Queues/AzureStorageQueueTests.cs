@@ -27,83 +27,83 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItem() {
-            return base.CanQueueAndDequeueWorkItem();
+        public override Task CanQueueAndDequeueWorkItemAsync() {
+            return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithCancelledToken() {
-            return base.CanDequeueWithCancelledToken();
+        public override Task CanDequeueWithCancelledTokenAsync() {
+            return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueMultipleWorkItems() {
-            return base.CanQueueAndDequeueMultipleWorkItems();
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
+            return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact]
-        public override Task WillWaitForItem() {
-            return base.WillWaitForItem();
+        public override Task WillWaitForItemAsync() {
+            return base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override Task DequeueWaitWillGetSignaled() {
-            return base.DequeueWaitWillGetSignaled();
+        public override Task DequeueWaitWillGetSignaledAsync() {
+            return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueWorker() {
-            return base.CanUseQueueWorker();
+        public override Task CanUseQueueWorkerAsync() {
+            return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorker() {
-            return base.CanHandleErrorInWorker();
+        public override Task CanHandleErrorInWorkerAsync() {
+            return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillTimeout() {
-            return base.WorkItemsWillTimeout();
+        public override Task WorkItemsWillTimeoutAsync() {
+            return base.WorkItemsWillTimeoutAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillGetMovedToDeadletter() {
-            return base.WorkItemsWillGetMovedToDeadletter();
+        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+            return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override Task CanAutoCompleteWorker() {
-            return base.CanAutoCompleteWorker();
+        public override Task CanAutoCompleteWorkerAsync() {
+            return base.CanAutoCompleteWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHaveMultipleQueueInstances() {
-            return base.CanHaveMultipleQueueInstances();
+        public override Task CanHaveMultipleQueueInstancesAsync() {
+            return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override Task CanRunWorkItemWithMetrics() {
-            return base.CanRunWorkItemWithMetrics();
+        public override Task CanRunWorkItemWithMetricsAsync() {
+            return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override Task CanRenewLock() {
-            return base.CanRenewLock();
+        public override Task CanRenewLockAsync() {
+            return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override Task CanAbandonQueueEntryOnce() {
-            return base.CanAbandonQueueEntryOnce();
+        public override Task CanAbandonQueueEntryOnceAsync() {
+            return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanCompleteQueueEntryOnce() {
-            return base.CanCompleteQueueEntryOnce();
+        public override Task CanCompleteQueueEntryOnceAsync() {
+            return base.CanCompleteQueueEntryOnceAsync();
         }
 
         // NOTE: Not using this test because you can set specific delay times for storage queue
-        public override Task CanDelayRetry() {
-            return base.CanDelayRetry();
+        public override Task CanDelayRetryAsync() {
+            return base.CanDelayRetryAsync();
         }
     }
 }

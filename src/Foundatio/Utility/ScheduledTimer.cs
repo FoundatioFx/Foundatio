@@ -74,7 +74,7 @@ namespace Foundatio.Utility {
 
             _logger.Trace("RunCallbackAsync");
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isRunning) {
                     _logger.Trace("Exiting run callback because its already running, will run again immediately.");
                     _shouldRunAgainImmediately = true;

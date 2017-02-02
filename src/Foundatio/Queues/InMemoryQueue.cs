@@ -72,7 +72,7 @@ namespace Foundatio.Queues {
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
             Interlocked.Increment(ref _enqueuedCount);
 
@@ -132,9 +132,9 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken))
+                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
                         await _monitor.WaitAsync(cancellationToken).AnyContext();
-                } catch (TaskCanceledException) {}
+                } catch (OperationCanceledException) {}
 
                 sw.Stop();
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
@@ -165,7 +165,7 @@ namespace Foundatio.Queues {
             return entry;
         }
 
-        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+        public override Task RenewLockAsync(IQueueEntry<T> entry) {
             _logger.Trace("Queue {0} renew lock item: {1}", _queueName, entry.Id);
             var item = entry as QueueEntry<T>;
 
@@ -176,7 +176,7 @@ namespace Foundatio.Queues {
                 return value;
             });
 
-            await OnLockRenewedAsync(entry).AnyContext();
+            return OnLockRenewedAsync(entry);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
@@ -218,7 +218,7 @@ namespace Foundatio.Queues {
 
         private async Task RetryAsync(QueueEntry<T> entry) {
             _queue.Enqueue(entry);
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 

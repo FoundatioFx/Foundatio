@@ -30,14 +30,14 @@ namespace Foundatio.Caching {
 
         public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
 
-        private async Task OnItemExpiredAsync(string key, bool sendNotification = true) {
+        private Task OnItemExpiredAsync(string key, bool sendNotification = true) {
             var args = new ItemExpiredEventArgs {
                 Client = this,
                 Key = key,
                 SendNotification = sendNotification
             };
 
-            await (ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
+            return ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public ICollection<string> Keys {

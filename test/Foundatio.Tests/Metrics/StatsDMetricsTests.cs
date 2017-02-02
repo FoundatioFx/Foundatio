@@ -20,7 +20,6 @@ namespace Foundatio.Tests.Metrics {
         private Thread _listenerThread;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
             _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
         }
@@ -123,11 +122,11 @@ namespace Foundatio.Tests.Metrics {
             return _listener.GetMessages();
         }
 
-        private async Task StartListeningAsync(int expectedMessageCount) {
+        private Task StartListeningAsync(int expectedMessageCount) {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
 
-            await SystemClock.SleepAsync(75);
+            return SystemClock.SleepAsync(75);
         }
 
         private void StopListening() {

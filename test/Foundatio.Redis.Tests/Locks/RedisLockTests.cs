@@ -30,23 +30,23 @@ namespace Foundatio.Redis.Tests.Locks {
         }
 
         [Fact]
-        public override Task CanAcquireAndReleaseLock() {
-            return base.CanAcquireAndReleaseLock();
+        public override Task CanAcquireAndReleaseLockAsync() {
+            return base.CanAcquireAndReleaseLockAsync();
         }
 
         [Fact]
-        public override Task LockWillTimeout() {
-            return base.LockWillTimeout();
+        public override Task LockWillTimeoutAsync() {
+            return base.LockWillTimeoutAsync();
         }
 
         [Fact]
-        public override Task WillThrottleCalls() {
-            return base.WillThrottleCalls();
+        public override Task WillThrottleCallsAsync() {
+            return base.WillThrottleCallsAsync();
         }
 
         [Fact]
-        public override Task LockOneAtATime() {
-            return base.LockOneAtATime();
+        public override Task LockOneAtATimeAsync() {
+            return base.LockOneAtATimeAsync();
         }
 
         public void Dispose() {

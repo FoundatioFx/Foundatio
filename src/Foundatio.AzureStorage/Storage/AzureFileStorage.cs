@@ -38,9 +38,9 @@ namespace Foundatio.Storage {
             return Task.FromResult(blob.ToFileInfo());
         }
 
-        public async Task<bool> ExistsAsync(string path) {
+        public Task<bool> ExistsAsync(string path) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return await blockBlob.ExistsAsync().AnyContext();
+            return blockBlob.ExistsAsync();
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -74,9 +74,9 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return await blockBlob.DeleteIfExistsAsync(cancellationToken).AnyContext();
+            return blockBlob.DeleteIfExistsAsync(cancellationToken);
         }
 
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {

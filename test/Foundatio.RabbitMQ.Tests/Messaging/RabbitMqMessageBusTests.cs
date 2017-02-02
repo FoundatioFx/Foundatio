@@ -15,63 +15,63 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         }
 
         [Fact]
-        public override Task CanSendMessage() {
-            return base.CanSendMessage();
+        public override Task CanSendMessageAsync() {
+            return base.CanSendMessageAsync();
         }
 
         [Fact]
-        public override Task CanHandleNullMessage() {
-            return base.CanHandleNullMessage();
+        public override Task CanHandleNullMessageAsync() {
+            return base.CanHandleNullMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendDerivedMessage() {
-            return base.CanSendDerivedMessage();
+        public override Task CanSendDerivedMessageAsync() {
+            return base.CanSendDerivedMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendDelayedMessage() {
-            return base.CanSendDelayedMessage();
+        public override Task CanSendDelayedMessageAsync() {
+            return base.CanSendDelayedMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendMessageToMultipleSubscribers() {
-            return base.CanSendMessageToMultipleSubscribers();
+        public override Task CanSendMessageToMultipleSubscribersAsync() {
+            return base.CanSendMessageToMultipleSubscribersAsync();
         }
 
         [Fact]
-        public override Task CanTolerateSubscriberFailure() {
-            return base.CanTolerateSubscriberFailure();
+        public override Task CanTolerateSubscriberFailureAsync() {
+            return base.CanTolerateSubscriberFailureAsync();
         }
 
         [Fact]
-        public override Task WillOnlyReceiveSubscribedMessageType() {
-            return base.WillOnlyReceiveSubscribedMessageType();
+        public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
+            return base.WillOnlyReceiveSubscribedMessageTypeAsync();
         }
 
         [Fact]
-        public override Task WillReceiveDerivedMessageTypes() {
-            return base.WillReceiveDerivedMessageTypes();
+        public override Task WillReceiveDerivedMessageTypesAsync() {
+            return base.WillReceiveDerivedMessageTypesAsync();
         }
 
         [Fact]
-        public override Task CanSubscribeToAllMessageTypes() {
-            return base.CanSubscribeToAllMessageTypes();
+        public override Task CanSubscribeToAllMessageTypesAsync() {
+            return base.CanSubscribeToAllMessageTypesAsync();
         }
 
         [Fact]
-        public override Task CanCancelSubscription() {
-            return base.CanCancelSubscription();
+        public override Task CanCancelSubscriptionAsync() {
+            return base.CanCancelSubscriptionAsync();
         }
 
         [Fact]
-        public override Task WontKeepMessagesWithNoSubscribers() {
-            return base.WontKeepMessagesWithNoSubscribers();
+        public override Task WontKeepMessagesWithNoSubscribersAsync() {
+            return base.WontKeepMessagesWithNoSubscribersAsync();
         }
 
         [Fact(Skip = "TODO: Ensure this is not broken")]
-        public override Task CanReceiveFromMultipleSubscribers() {
-            return base.CanReceiveFromMultipleSubscribers();
+        public override Task CanReceiveFromMultipleSubscribersAsync() {
+            return base.CanReceiveFromMultipleSubscribersAsync();
         }
 
         [Fact]

@@ -19,18 +19,18 @@ namespace Foundatio.Redis.Tests.Jobs {
         }
 
         [Fact]
-        public override Task CanRunMultipleQueueJobs() {
-            return base.CanRunMultipleQueueJobs();
+        public override Task CanRunMultipleQueueJobsAsync() {
+            return base.CanRunMultipleQueueJobsAsync();
         }
 
         [Fact]
-        public override Task CanRunQueueJobWithLockFail() {
-            return base.CanRunQueueJobWithLockFail();
+        public override Task CanRunQueueJobWithLockFailAsync() {
+            return base.CanRunQueueJobWithLockFailAsync();
         }
 
         [Fact]
-        public override Task CanRunQueueJob() {
-            return base.CanRunQueueJob();
+        public override Task CanRunQueueJobAsync() {
+            return base.CanRunQueueJobAsync();
         }
     }
 }

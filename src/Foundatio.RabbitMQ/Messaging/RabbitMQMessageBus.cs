@@ -115,6 +115,7 @@ namespace Foundatio.Messaging {
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (message == null)
                 return;
+
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
             // RabbitMQ only supports delayed messages with a third party plugin.

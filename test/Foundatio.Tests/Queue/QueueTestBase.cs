@@ -11,7 +11,6 @@ using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Nito.AsyncEx;
 using Xunit;
@@ -21,14 +20,13 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
         }
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
         }
 
-        public virtual async Task CanQueueAndDequeueWorkItem() {
+        public virtual async Task CanQueueAndDequeueWorkItemAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -58,7 +56,7 @@ namespace Foundatio.Tests.Queue {
         /// When a cancelled token is passed into Dequeue, it will only try to dequeue one time and then exit.
         /// </summary>
         /// <returns></returns>
-        public virtual async Task CanDequeueWithCancelledToken() {
+        public virtual async Task CanDequeueWithCancelledTokenAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -85,7 +83,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanDequeueEfficiently() {
+        public virtual async Task CanDequeueEfficientlyAsync() {
             const int iterations = 100;
 
             var queue = GetQueue(runQueueMaintenance: false);
@@ -115,12 +113,12 @@ namespace Foundatio.Tests.Queue {
                     }
 
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                    Assert.InRange(timing.AverageDuration, 0, 30);
+                    Assert.InRange(timing.AverageDuration, 0, 25);
                 }
             }
         }
 
-        public virtual async Task CanQueueAndDequeueMultipleWorkItems() {
+        public virtual async Task CanQueueAndDequeueMultipleWorkItemsAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -155,7 +153,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task WillNotWaitForItem() {
+        public virtual async Task WillNotWaitForItemAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -173,7 +171,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task WillWaitForItem() {
+        public virtual async Task WillWaitForItemAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -191,9 +189,12 @@ namespace Foundatio.Tests.Queue {
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
 
-                Task.Factory.StartNewDelayed(100, async () => await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                }));
+                Task.Run(async () => {
+                    await Task.Delay(100);
+                    await queue.EnqueueAsync(new SimpleWorkItem {
+                        Data = "Hello"
+                    });
+                });
 
                 sw.Restart();
                 workItem = await queue.DequeueAsync(timeToWait);
@@ -204,7 +205,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task DequeueWaitWillGetSignaled() {
+        public virtual async Task DequeueWaitWillGetSignaledAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -213,9 +214,12 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                Task.Factory.StartNewDelayed(250, async () => await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                }));
+                Task.Run(async () => {
+                    await Task.Delay(250);
+                    await queue.EnqueueAsync(new SimpleWorkItem {
+                        Data = "Hello"
+                    });
+                });
 
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
@@ -226,7 +230,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanUseQueueWorker() {
+        public virtual async Task CanUseQueueWorkerAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -254,7 +258,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanHandleErrorInWorker() {
+        public virtual async Task CanHandleErrorInWorkerAsync() {
             var queue = GetQueue(retries: 0);
             if (queue == null)
                 return;
@@ -292,7 +296,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task WorkItemsWillTimeout() {
+        public virtual async Task WorkItemsWillTimeoutAsync() {
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
             if (queue == null)
                 return;
@@ -307,7 +311,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
+                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
 
                 // wait for the task to be auto abandoned
 
@@ -321,7 +325,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task WorkItemsWillGetMovedToDeadletter() {
+        public virtual async Task WorkItemsWillGetMovedToDeadletterAsync() {
             var queue = GetQueue(retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
@@ -355,7 +359,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanAutoCompleteWorker() {
+        public virtual async Task CanAutoCompleteWorkerAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -384,7 +388,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanHaveMultipleQueueInstances() {
+        public virtual async Task CanHaveMultipleQueueInstancesAsync() {
             var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
@@ -459,7 +463,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanDelayRetry() {
+        public virtual async Task CanDelayRetryAsync() {
             var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(500), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
@@ -492,7 +496,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanRunWorkItemWithMetrics() {
+        public virtual async Task CanRunWorkItemWithMetricsAsync() {
             int completedCount = 0;
             //Log.MinimumLevel = LogLevel.Trace;
             //Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
@@ -572,7 +576,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanRenewLock() {
+        public virtual async Task CanRenewLockAsync() {
             Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
             // Need large value to reproduce this test
@@ -607,7 +611,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CanAbandonQueueEntryOnce() {
+        public virtual async Task CanAbandonQueueEntryOnceAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -655,7 +659,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
         
-        public virtual async Task CanCompleteQueueEntryOnce() {
+        public virtual async Task CanCompleteQueueEntryOnceAsync() {
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -729,14 +733,15 @@ namespace Foundatio.Tests.Queue {
             Assert.Equal(0, stats.Timeouts);
             Assert.Equal(0, stats.Working);
         }
-        
-        public virtual async void Dispose() {
+
+        public virtual void Dispose() {
             var queue = GetQueue();
             if (queue == null)
                 return;
 
-            using (queue)
-                await queue.DeleteQueueAsync();
+            using (queue) {
+                queue.DeleteQueueAsync().GetAwaiter().GetResult();
+            }
         }
     }
 

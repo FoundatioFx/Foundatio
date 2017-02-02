@@ -4,6 +4,7 @@
     <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="AsyncFixer" Version="1.1.4" PrivateAssets="anaylzers" />
     <PackageReference Include="Newtonsoft.Json" Version="9.0.1" />
     <PackageReference Include="Nito.AsyncEx.Coordination" Version="1.0.2" />
   </ItemGroup>
