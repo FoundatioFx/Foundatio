@@ -1,7 +1,6 @@
 <Project ToolsVersion="15.0">
-
-  <Import Project="..\version.props" />
-
+  <Import Project="version.props" />
+  
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
