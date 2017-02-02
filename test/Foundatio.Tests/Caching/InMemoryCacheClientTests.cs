@@ -65,6 +65,12 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetOrAddAsync()
+        {
+            return base.CanGetOrAddAsync();
+        }
+
+        [Fact]
         public async Task CanSetMaxItems() {
             // run in tight loop so that the code is warmed up and we can catch timing issues
             for (int x = 0; x < 5; x++) {
