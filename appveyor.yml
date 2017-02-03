@@ -15,7 +15,7 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - dotnet build Foundatio.sln /p:VersionPrefix={version} /p:VersionSuffix=$env:VERSION_SUFFIX /p:GeneratePackageOnBuild=false
+  - dotnet build Foundatio.sln /p:VersionPrefix="$env:APPVEYOR_BUILD_VERSION" /p:VersionSuffix="$env:VERSION_SUFFIX" /p:GeneratePackageOnBuild=false
 
 before_test:
   - nuget install redis-64 -excludeversion
