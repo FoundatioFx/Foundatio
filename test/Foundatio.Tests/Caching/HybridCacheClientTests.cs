@@ -134,7 +134,7 @@ namespace Foundatio.Tests.Caching {
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
                             var sw = Stopwatch.StartNew();
-                            await countdownEvent.WaitAsync(TimeSpan.FromMilliseconds(250));
+                            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             sw.Stop();
 
                             _logger.Trace("Time {0}", sw.Elapsed);
