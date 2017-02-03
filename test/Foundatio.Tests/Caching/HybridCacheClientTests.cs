@@ -109,7 +109,7 @@ namespace Foundatio.Tests.Caching {
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
                 Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
-                    _logger.Trace("First expired: {0}", args.Key);
+                    _logger.Trace("First local cache expired: {0}", args.Key);
                     countdownEvent.Signal();
                 };
 
@@ -117,7 +117,7 @@ namespace Foundatio.Tests.Caching {
                     using (var secondCache = GetCacheClient() as HybridCacheClient) {
                         Assert.NotNull(secondCache);
                         Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
-                            _logger.Trace("Second expired: {0}", args.Key);
+                            _logger.Trace("Second local cache expired: {0}", args.Key);
                             countdownEvent.Signal();
                         };
 
@@ -134,7 +134,7 @@ namespace Foundatio.Tests.Caching {
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
                             var sw = Stopwatch.StartNew();
-                            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(2));
+                            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(3));
                             sw.Stop();
 
                             _logger.Trace("Time {0}", sw.Elapsed);
