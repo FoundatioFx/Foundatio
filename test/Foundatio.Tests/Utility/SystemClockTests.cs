@@ -29,7 +29,6 @@ namespace Foundatio.Tests.Utility {
                 var sw = Stopwatch.StartNew();
                 SystemClock.Sleep(250);
                 sw.Stop();
-
                 Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
                 SystemClock.Test.UseFakeSleep();
@@ -40,7 +39,7 @@ namespace Foundatio.Tests.Utility {
                 sw.Stop();
                 var afterSleepNow = SystemClock.UtcNow;
 
-                Assert.InRange(sw.ElapsedMilliseconds, 0, 25);
+                Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
                 Assert.True(afterSleepNow > now);
                 Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 1100);
             }
@@ -63,7 +62,7 @@ namespace Foundatio.Tests.Utility {
                 sw.Stop();
                 var afterSleepNow = SystemClock.UtcNow;
 
-                Assert.InRange(sw.ElapsedMilliseconds, 0, 25);
+                Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
                 Assert.True(afterSleepNow > now);
                 Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 1100);
             }

@@ -122,9 +122,9 @@ namespace Foundatio.Tests.Caching {
                         };
 
                         using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
-                            string cacheKey = "willexpireremote";
+                            string cacheKey = "will-expire-remote";
                             _logger.Trace("First Set");
-                            Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150)));
+                            Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));
                             _logger.Trace("Done First Set");
                             Assert.Equal(1, firstCache.LocalCache.Count);
 
@@ -139,7 +139,9 @@ namespace Foundatio.Tests.Caching {
 
                             _logger.Trace("Time {0}", sw.Elapsed);
                             Assert.Equal(0, countdownEvent.CurrentCount);
+                            _logger.Trace("Keys in first cache: {0}", firstCache.LocalCache.Count);
                             Assert.Equal(0, firstCache.LocalCache.Count);
+                            _logger.Trace("Keys in second cache: {0}", secondCache.LocalCache.Count);
                             Assert.Equal(0, secondCache.LocalCache.Count);
                         }
                     }

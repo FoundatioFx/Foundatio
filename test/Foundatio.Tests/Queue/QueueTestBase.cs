@@ -89,7 +89,7 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue(runQueueMaintenance: false);
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
@@ -98,12 +98,12 @@ namespace Foundatio.Tests.Queue {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics));
 
                     Task.Run(async () => {
-                                 for (int index = 0; index < iterations; index++) {
-                                     await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
-                                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-                                 }
-                                 _logger.Trace("Done enqueuing.");
-                             });
+                        for (int index = 0; index < iterations; index++) {
+                            await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
+                            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                        }
+                        _logger.Trace("Done enqueuing.");
+                    });
 
                     _logger.Trace("Starting dequeue loop.");
                     for (int index = 0; index < iterations; index++) {
@@ -113,7 +113,8 @@ namespace Foundatio.Tests.Queue {
                     }
 
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                    Assert.InRange(timing.AverageDuration, 0, 25);
+                    _logger.Trace(() => $"AverageDuration: {timing.AverageDuration}");
+                    Assert.InRange(timing.AverageDuration, 0, 75);
                 }
             }
         }
