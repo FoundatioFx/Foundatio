@@ -147,7 +147,7 @@ namespace Foundatio.Tests.Locks {
         public virtual async Task WillThrottleCallsAsync() {
             const int allowedLocks = 25;
 
-            var period = TimeSpan.FromSeconds(1.5);
+            var period = TimeSpan.FromSeconds(2);
             var locker = GetThrottlingLockProvider(allowedLocks, period);
             if (locker == null)
                 return;
@@ -165,20 +165,20 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            _logger.Info("Time {0}", sw.Elapsed);
+            _logger.Info("Time to acquire {0} locks: {1}", allowedLocks, sw.Elapsed);
             Assert.True(sw.Elapsed.TotalSeconds < 1);
-            
+
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(350));
             sw.Stop();
+            _logger.Info("Total acquire time took to attempt to get throttled lock: {0}", sw.Elapsed);
             Assert.Null(result);
-            _logger.Info("Time {0}", sw.Elapsed);
 
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.0));
             sw.Stop();
+            _logger.Info("Time to acquire lock: {0}", sw.Elapsed);
             Assert.NotNull(result);
-            _logger.Info("Time {0}", sw.Elapsed);
         }
     }
 }
