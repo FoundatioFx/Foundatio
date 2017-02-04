@@ -15,7 +15,6 @@ namespace Foundatio.Utility {
 
             string dataDirectory = GetDataDirectory();
             int length = DATA_DIRECTORY.Length;
-
             if (path.Length <= length)
                 return dataDirectory;
 
@@ -34,6 +33,11 @@ namespace Foundatio.Utility {
         public static string GetDataDirectory() {
             try {
                 string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
+#if NETSTANDARD
+                if (String.IsNullOrEmpty(dataDirectory))
+                    dataDirectory = Path.GetDirectoryName(typeof(PathHelper).GetTypeInfo().Assembly.Location);
+#endif
+
                 if (!String.IsNullOrEmpty(dataDirectory))
                     return Path.GetFullPath(dataDirectory);
             } catch (Exception) {
