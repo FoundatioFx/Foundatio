@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Tests.Extensions;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
@@ -104,21 +104,21 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
-            var countdownEvent = new AsyncCountdownEvent(2);
-
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
+                var firstResetEvent = new AsyncAutoResetEvent(false);
                 Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
                     _logger.Trace("First local cache expired: {0}", args.Key);
-                    countdownEvent.Signal();
+                    firstResetEvent.Set();
                 };
 
                 using (firstCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler)) {
                     using (var secondCache = GetCacheClient() as HybridCacheClient) {
                         Assert.NotNull(secondCache);
+                        var secondResetEvent = new AsyncAutoResetEvent(false);
                         Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
                             _logger.Trace("Second local cache expired: {0}", args.Key);
-                            countdownEvent.Signal();
+                            secondResetEvent.Set();
                         };
 
                         using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
@@ -134,15 +134,10 @@ namespace Foundatio.Tests.Caching {
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
                             var sw = Stopwatch.StartNew();
-                            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(3));
+                            await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
+                            await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             sw.Stop();
-
                             _logger.Trace("Time {0}", sw.Elapsed);
-                            Assert.Equal(0, countdownEvent.CurrentCount);
-                            _logger.Trace("Keys in first cache: {0}", firstCache.LocalCache.Count);
-                            Assert.Equal(0, firstCache.LocalCache.Count);
-                            _logger.Trace("Keys in second cache: {0}", secondCache.LocalCache.Count);
-                            Assert.Equal(0, secondCache.LocalCache.Count);
                         }
                     }
                 }
