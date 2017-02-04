@@ -133,6 +133,7 @@ namespace Foundatio.Tests.Caching {
                             _logger.Trace("Done Second Get");
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
+                            _logger.Trace("Waiting for item expired handlers...");
                             var sw = Stopwatch.StartNew();
                             await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
