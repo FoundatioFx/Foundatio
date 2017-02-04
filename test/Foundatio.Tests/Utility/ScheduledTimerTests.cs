@@ -17,16 +17,15 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanRun() {
-            var countdown = new AsyncCountdownEvent(1);
+            var resetEvent = new AsyncAutoResetEvent();
             Func<Task<DateTime?>> callback = () => {
-                countdown.Signal();
+                resetEvent.Set();
                 return null;
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
-                Assert.Equal(0, countdown.CurrentCount);
+                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
             }
         }
 
@@ -45,7 +44,7 @@ namespace Foundatio.Tests.Utility {
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 for (int i = 0; i < 4; i++) {
                     timer.ScheduleNext();
-                    SystemClock.Sleep(1);
+                    await SystemClock.SleepAsync(1);
                 }
 
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
@@ -71,7 +70,7 @@ namespace Foundatio.Tests.Utility {
             using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
                 for (int i = 0; i < 4; i++) {
                     timer.ScheduleNext();
-                    SystemClock.Sleep(1);
+                    await SystemClock.SleepAsync(1);
                 }
 
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
@@ -99,8 +98,7 @@ namespace Foundatio.Tests.Utility {
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-
-                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(800).Token);
                 Assert.Equal(2, hits);
             }
         }

@@ -60,7 +60,6 @@ namespace Foundatio.Utility {
                     _last = _next;
 
                 _logger.Trace(() => $"Scheduling next: delay={delay}");
-
                 _timer.Change(delay, Timeout.Infinite);
             }
         }
