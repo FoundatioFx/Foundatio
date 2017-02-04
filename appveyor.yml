@@ -15,7 +15,7 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build Foundatio.sln /p:VersionPrefix="$($env:APPVEYOR_BUILD_VERSION)" /p:VersionSuffix="$($env:VERSION_SUFFIX)" /p:GeneratePackageOnBuild=false
+  - ps: dotnet build -f net46 Foundatio.sln /p:VersionPrefix="$($env:APPVEYOR_BUILD_VERSION)" /p:VersionSuffix="$($env:VERSION_SUFFIX)"
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -28,12 +28,6 @@ before_test:
       (New-Object Net.WebClient).DownloadFile('http://download.microsoft.com/download/8/B/9/8B905834-DA6B-4A0A-A6C2-C1B8ACD9141D/MicrosoftAzureStorageEmulator.msi', $msiPath)
       cmd /c start /wait msiexec /i $msiPath /quiet
       del $msiPath
-
-after_test:
-  - ps: >-
-      DIR "src/*" | Where {$_.PsIsContainer} | ForEach {
-        dotnet pack "$_" -c Release -o .\artifacts\ --no-build
-      }
 
 artifacts:
   - path: artifacts\*.nupkg
