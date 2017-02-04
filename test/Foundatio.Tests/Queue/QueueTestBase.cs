@@ -600,11 +600,15 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(entry);
                 Assert.Equal("Hello", entry.Value.Data);
 
+                _logger.Trace(() => $"Waiting for {renewWait} before renewing lock");
                 await SystemClock.SleepAsync(renewWait);
+                _logger.Trace(() => $"Renewing lock");
                 await entry.RenewLockAsync();
+                _logger.Trace(() => $"Waiting for {renewWait} to see if lock was renewed");
                 await SystemClock.SleepAsync(renewWait);
-                
+
                 // We shouldn't get another item here if RenewLock works.
+                _logger.Trace(() => $"Attempting to dequeue item that shouldn't exist");
                 var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.Null(nullWorkItem);
                 await entry.CompleteAsync();
