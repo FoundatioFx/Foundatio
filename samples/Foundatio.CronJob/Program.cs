@@ -5,14 +5,12 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Logging;
-using Foundatio.Logging.NLog;
 using Foundatio.ServiceProviders;
 
 namespace Foundatio.CronJob {
     public class Program {
         public static void Main() {
             var loggerFactory = new LoggerFactory();
-            loggerFactory.AddNLog();
             loggerFactory.DefaultLogLevel = LogLevel.Trace;
             var logger = loggerFactory.CreateLogger<Program>();
 

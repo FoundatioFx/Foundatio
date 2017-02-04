@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
-    <ProjectReference Include="..\..\src\Foundatio.Logging.NLog\Foundatio.Logging.NLog.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
   </ItemGroup>
 </Project>

@@ -32,7 +32,7 @@ before_test:
 after_test:
   - ps: >-
       DIR "src/*" | Where {$_.PsIsContainer} | ForEach {
-        dotnet pack "$_" -c Release -o .\artifacts\
+        dotnet pack "$_" -c Release -o .\artifacts\ --no-build
       }
 
 artifacts:
