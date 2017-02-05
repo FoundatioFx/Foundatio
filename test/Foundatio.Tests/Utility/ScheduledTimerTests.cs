@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -14,26 +13,33 @@ namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
         public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-            SystemClock.UseTestClock();
         }
 
         [Fact]
         public async Task CanRun() {
-            var countdown = new AsyncCountdownEvent(1);
+            var resetEvent = new AsyncAutoResetEvent();
             Func<Task<DateTime?>> callback = () => {
-                countdown.Signal();
+                resetEvent.Set();
                 return null;
             };
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
-                Assert.Equal(0, countdown.CurrentCount);
+                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
             }
         }
 
         [Fact]
-        public async Task CanRunAndScheduleConcurrently() {
+        public Task CanRunAndScheduleConcurrently() {
+            return CanRunConcurrentlyAsync();
+        }
+
+        [Fact]
+        public Task CanRunWithMinimumInterval() {
+            return CanRunConcurrentlyAsync(TimeSpan.FromMilliseconds(100));
+        }
+
+        private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null) {
             var countdown = new AsyncCountdownEvent(2);
 
             Func<Task<DateTime?>> callback = async () => {
@@ -44,42 +50,23 @@ namespace Foundatio.Tests.Utility {
                 return null;
             };
 
-            using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
-                for (int i = 0; i < 4; i++) {
-                    timer.ScheduleNext();
-                    SystemClock.Sleep(1);
-                }
+            using (var timer = new ScheduledTimer(callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log)) {
+                timer.ScheduleNext();
+                var t = Task.Run(async () => {
+                    for (int i = 0; i < 3; i++) {
+                        await SystemClock.SleepAsync(10);
+                        timer.ScheduleNext();
+                    }
+                });
 
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
+                _logger.Info("Waiting for 300ms");
+                await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
+                _logger.Info("Finished waiting for 300ms");
                 Assert.Equal(1, countdown.CurrentCount);
 
+                _logger.Info("Waiting for 1.5 seconds");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
-                Assert.Equal(0, countdown.CurrentCount);
-            }
-        }
-
-        [Fact]
-        public async Task CanRunWithMinimumInterval() {
-            var countdown = new AsyncCountdownEvent(2);
-
-            Func<Task<DateTime?>> callback = async () => {
-                _logger.Info("Starting work.");
-                countdown.Signal();
-                await SystemClock.SleepAsync(500);
-                _logger.Info("Finished work.");
-                return null;
-            };
-
-            using (var timer = new ScheduledTimer(callback, minimumIntervalTime: TimeSpan.FromMilliseconds(100), loggerFactory: Log)) {
-                for (int i = 0; i < 4; i++) {
-                    timer.ScheduleNext();
-                    SystemClock.Sleep(1);
-                }
-
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
-                Assert.Equal(1, countdown.CurrentCount);
-
-                await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
+                _logger.Info("Finished waiting for 1.5 seconds");
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }
@@ -101,8 +88,7 @@ namespace Foundatio.Tests.Utility {
 
             using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
-
-                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+                await resetEvent.WaitAsync(new CancellationTokenSource(800).Token);
                 Assert.Equal(2, hits);
             }
         }

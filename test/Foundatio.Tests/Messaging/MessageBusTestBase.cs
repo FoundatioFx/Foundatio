@@ -8,22 +8,21 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
-using Xunit;
 using Foundatio.Utility;
+using Xunit;
 using Nito.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : TestWithLoggingBase {
         protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
         }
 
         protected virtual IMessageBus GetMessageBus() {
             return null;
         }
 
-        public virtual async Task CanSendMessage() {
+        public virtual async Task CanSendMessageAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -47,7 +46,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanHandleNullMessage() {
+        public virtual async Task CanHandleNullMessageAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -63,11 +62,11 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await resetEvent.WaitAsync(TimeSpan.FromSeconds(1));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
             }
         }
         
-        public virtual async Task CanSendDerivedMessage() {
+        public virtual async Task CanSendDerivedMessageAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -91,7 +90,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanSendDelayedMessage() {
+        public virtual async Task CanSendDelayedMessageAsync() {
             const int numConcurrentMessages = 1000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
@@ -128,7 +127,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanSendMessageToMultipleSubscribers() {
+        public virtual async Task CanSendMessageToMultipleSubscribersAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -156,7 +155,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanTolerateSubscriberFailure() {
+        public virtual async Task CanTolerateSubscriberFailureAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -183,7 +182,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task WillOnlyReceiveSubscribedMessageType() {
+        public virtual async Task WillOnlyReceiveSubscribedMessageTypeAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -205,7 +204,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task WillReceiveDerivedMessageTypes() {
+        public virtual async Task WillReceiveDerivedMessageTypesAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -231,7 +230,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanSubscribeToAllMessageTypes() {
+        public virtual async Task CanSubscribeToAllMessageTypesAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -256,7 +255,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task WontKeepMessagesWithNoSubscribers() {
+        public virtual async Task WontKeepMessagesWithNoSubscribersAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -273,11 +272,11 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         
-        public virtual async Task CanCancelSubscription() {
+        public virtual async Task CanCancelSubscriptionAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -315,7 +314,7 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanReceiveFromMultipleSubscribers() {
+        public virtual async Task CanReceiveFromMultipleSubscribersAsync() {
             var messageBus1 = GetMessageBus();
             if (messageBus1 == null)
                 return;

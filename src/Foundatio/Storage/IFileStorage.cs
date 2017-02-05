@@ -69,7 +69,7 @@ namespace Foundatio.Storage {
                 using (var ms = new MemoryStream()) {
                     int read;
                     while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
-                        ms.Write(buffer, 0, read);
+                        await ms.WriteAsync(buffer, 0, read).AnyContext();
                     }
 
                     return ms.ToArray();

@@ -56,7 +56,6 @@ namespace Foundatio.Messaging {
             if (message == null)
                 return;
 
-            
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();

@@ -89,7 +89,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 try {
-                    var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
+                    var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
 
                     result.Add(value);
                 } catch (Exception ex) {
@@ -105,7 +105,7 @@ namespace Foundatio.Caching {
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
             try {
-                var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
+                var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
@@ -294,7 +294,7 @@ namespace Foundatio.Caching {
             if (_scriptsLoaded)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_scriptsLoaded)
                     return;
 

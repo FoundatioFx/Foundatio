@@ -42,7 +42,7 @@ namespace Foundatio.Tests.Jobs {
                     break;
                 
                 if (_iterationCount % 10000 == 0)
-                    _logger.Info("LongRunningJob Running: instance={0} iterations={1}", _id, IterationCount);
+                    _logger.Trace("LongRunningJob Running: instance={0} iterations={1}", _id, IterationCount);
             } while (true);
 
             return Task.FromResult(JobResult.Success);

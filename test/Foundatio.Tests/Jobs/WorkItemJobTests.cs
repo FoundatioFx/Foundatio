@@ -18,7 +18,6 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : TestWithLoggingBase {
         public WorkItemJobTests(ITestOutputHelper output) : base(output) {
-            SystemClock.UseTestClock();
         }
 
         [Fact]
@@ -126,7 +125,7 @@ namespace Foundatio.Tests.Jobs {
                         try {
                             await Task.WhenAll(tasks);
                             await SystemClock.SleepAsync(100);
-                        } catch (TaskCanceledException) {}
+                        } catch (OperationCanceledException) {}
 
                         _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
             

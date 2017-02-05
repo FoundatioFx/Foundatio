@@ -56,11 +56,11 @@ namespace Foundatio.Utility {
         }
 
         public DateTime Now() {
-            return UtcNow().Add(_timeZoneOffset);
+            return new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
         }
 
         public DateTimeOffset OffsetNow() {
-            return new DateTimeOffset(Now().Ticks, _timeZoneOffset);
+            return new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
         }
 
         public DateTimeOffset OffsetUtcNow() {
@@ -96,20 +96,21 @@ namespace Foundatio.Utility {
             if (time.Kind == DateTimeKind.Utc) {
                 _fixedUtc = time;
             } else if (time.Kind == DateTimeKind.Local) {
-                _fixedUtc = time.Add(TimeZoneOffset());
+                _fixedUtc = new DateTime(time.Ticks - TimeZoneOffset().Ticks, DateTimeKind.Utc);
             }
         }
 
         public void SetTime(DateTime time) {
+            var now = DateTime.Now;
             _fixedUtc = null;
 
             if (time.Kind == DateTimeKind.Unspecified)
                 time = time.ToUniversalTime();
 
             if (time.Kind == DateTimeKind.Utc) {
-                _offset = DateTime.UtcNow.Subtract(time);
+                _offset = now.ToUniversalTime().Subtract(time);
             } else if (time.Kind == DateTimeKind.Local) {
-                _offset = DateTime.Now.Subtract(time);
+                _offset = now.Subtract(time);
             }
         }
 
@@ -118,11 +119,11 @@ namespace Foundatio.Utility {
         }
 
         public void AddTime(TimeSpan amount) {
-            _offset = _offset.Subtract(amount);
+            _offset = _offset.Add(amount);
         }
 
         public void SubtractTime(TimeSpan amount) {
-            _offset = _offset.Add(amount);
+            _offset = _offset.Subtract(amount);
         }
 
         public void UseFakeSleep() {
@@ -132,6 +133,25 @@ namespace Foundatio.Utility {
         public void UseRealSleep() {
             _fakeSleep = false;
         }
+
+        public static IDisposable Install() {
+            return new SwapSystemClock(new TestSystemClock());
+        }
+
+        private sealed class SwapSystemClock : IDisposable {
+            private ISystemClock _originalInstance;
+
+            public SwapSystemClock(ISystemClock replacementInstance) {
+                _originalInstance = SystemClock.Instance;
+                SystemClock.Instance = replacementInstance;
+            }
+
+            public void Dispose() {
+                var originalInstance = Interlocked.Exchange(ref _originalInstance, null);
+                if (originalInstance != null)
+                    SystemClock.Instance = originalInstance;
+            }
+        }
     }
 
     public static class SystemClock {
@@ -140,7 +160,7 @@ namespace Foundatio.Utility {
             get {
                 var testClock = Instance as TestSystemClock;
                 if (testClock == null)
-                    throw new ApplicationException("You must set SystemClock.Instance to ");
+                    throw new ArgumentException("You must set SystemClock.Instance to TestSystemClock");
 
                 return testClock;
             }
@@ -166,10 +186,6 @@ namespace Foundatio.Utility {
 
         public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
             return Instance.SleepAsync(milliseconds, cancellationToken);
-        }
-
-        public static void UseTestClock() {
-            Instance = new TestSystemClock();
         }
     }
 }

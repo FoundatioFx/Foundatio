@@ -23,28 +23,28 @@ namespace Foundatio.Redis.Tests.Metrics {
         }
 
         [Fact]
-        public override Task CanIncrementCounter() {
-            return base.CanIncrementCounter();
+        public override Task CanIncrementCounterAsync() {
+            return base.CanIncrementCounterAsync();
         }
 
         [Fact]
-        public override Task CanWaitForCounter() {
-            return base.CanWaitForCounter();
+        public override Task CanWaitForCounterAsync() {
+            return base.CanWaitForCounterAsync();
         }
 
         [Fact]
-        public override Task CanGetBufferedQueueMetrics() {
-            return base.CanGetBufferedQueueMetrics();
+        public override Task CanGetBufferedQueueMetricsAsync() {
+            return base.CanGetBufferedQueueMetricsAsync();
         }
 
         [Fact]
-        public override Task CanIncrementBufferedCounter() {
-            return base.CanIncrementBufferedCounter();
+        public override Task CanIncrementBufferedCounterAsync() {
+            return base.CanIncrementBufferedCounterAsync();
         }
 
         [Fact]
-        public override Task CanSendBufferedMetrics() {
-            return base.CanSendBufferedMetrics();
+        public override Task CanSendBufferedMetricsAsync() {
+            return base.CanSendBufferedMetricsAsync();
         }
 
         public void Dispose() {

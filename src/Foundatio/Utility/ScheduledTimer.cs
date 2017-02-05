@@ -34,8 +34,7 @@ namespace Foundatio.Utility {
             if (!utcDate.HasValue || utcDate.Value < utcNow)
                 utcDate = utcNow;
 
-            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value.ToString("O")}");
-
+            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value:O}");
             if (utcDate == DateTime.MaxValue) {
                 _logger.Trace("Ignoring MaxValue");
                 return;
@@ -60,7 +59,6 @@ namespace Foundatio.Utility {
                     _last = _next;
 
                 _logger.Trace(() => $"Scheduling next: delay={delay}");
-
                 _timer.Change(delay, Timeout.Infinite);
             }
         }
@@ -72,9 +70,8 @@ namespace Foundatio.Utility {
                 return;
             }
 
-            _logger.Trace("RunCallbackAsync");
-
-            using (await _lock.LockAsync()) {
+            _logger.Trace("Starting RunCallbackAsync");
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isRunning) {
                     _logger.Trace("Exiting run callback because its already running, will run again immediately.");
                     _shouldRunAgainImmediately = true;
@@ -112,6 +109,8 @@ namespace Foundatio.Utility {
                 _isRunning = false;
                 _shouldRunAgainImmediately = false;
             }
+
+            _logger.Trace("Finished RunCallbackAsync");
         }
 
         public void Dispose() {

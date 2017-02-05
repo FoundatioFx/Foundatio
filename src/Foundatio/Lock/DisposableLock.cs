@@ -31,8 +31,8 @@ namespace Foundatio.Lock {
             _logger.Trace("Renewing lock: {0}", _name);
         }
 
-        public async Task ReleaseAsync() {
-            await _lockProvider.ReleaseAsync(_name).AnyContext();
+        public Task ReleaseAsync() {
+            return _lockProvider.ReleaseAsync(_name);
         }
     }
 }

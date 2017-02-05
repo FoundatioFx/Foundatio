@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Metrics;
@@ -18,19 +17,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
-            await _metrics.CounterAsync("dequeued").AnyContext();
+            await _metrics.CounterAsync("dequeued");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors").AnyContext();
+                await _metrics.CounterAsync("errors");
                 throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned").AnyContext();
+                await _metrics.CounterAsync("abandoned");
                 return JobResult.FailedWithMessage("Abandoned");
             }
             
-            await _metrics.CounterAsync("completed").AnyContext();
+            await _metrics.CounterAsync("completed");
             return JobResult.Success;
         }
     }
@@ -44,15 +43,15 @@ namespace Foundatio.Tests.Jobs {
             _lockProvider = lockProvider;
         }
 
-        protected override async Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = new CancellationToken()) {
+        protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = new CancellationToken()) {
             if (_lockProvider != null)
-                return await _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero).AnyContext();
+                return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
 
-            return await base.GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
+            return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
         }
 
         protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
-            await _metrics.CounterAsync("completed").AnyContext();
+            await _metrics.CounterAsync("completed");
             return JobResult.Success;
         }
     }
@@ -70,19 +69,19 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected override async Task<JobResult> RunInternalAsync(JobContext context) {
-            await _metrics.CounterAsync("runs").AnyContext();
+            await _metrics.CounterAsync("runs");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors").AnyContext();
+                await _metrics.CounterAsync("errors");
                 throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("failed").AnyContext();
+                await _metrics.CounterAsync("failed");
                 return JobResult.FailedWithMessage("Failed");
             }
 
-            await _metrics.CounterAsync("completed").AnyContext();
+            await _metrics.CounterAsync("completed");
             return JobResult.Success;
         }
     }

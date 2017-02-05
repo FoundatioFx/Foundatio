@@ -9,7 +9,7 @@ namespace Foundatio.Redis {
     internal static class RedisValueExtensions {
         private static readonly RedisValue _nullValue = "@@NULL";
 
-        public static Task<T> ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer) {
+        public static Task<T> ToValueOfTypeAsync<T>(this RedisValue redisValue, ISerializer serializer) {
             T value;
             Type type = typeof(T);
 

@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Locks {
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
-            return new ThrottlingLockProvider(_cache, maxHits, period);
+            return new ThrottlingLockProvider(_cache, maxHits, period, Log);
         }
 
         protected override ILockProvider GetLockProvider() {
@@ -29,18 +29,20 @@ namespace Foundatio.Tests.Locks {
         }
 
         [Fact]
-        public override Task CanAcquireAndReleaseLock() {
-            return base.CanAcquireAndReleaseLock();
+        public override Task CanAcquireAndReleaseLockAsync() {
+            using (TestSystemClock.Install()) {
+                return base.CanAcquireAndReleaseLockAsync();
+            }
         }
 
         [Fact]
-        public override Task LockWillTimeout() {
-            return base.LockWillTimeout();
+        public override Task LockWillTimeoutAsync() {
+            return base.LockWillTimeoutAsync();
         }
 
         [Fact]
-        public override Task LockOneAtATime() {
-            return base.LockOneAtATime();
+        public override Task LockOneAtATimeAsync() {
+            return base.LockOneAtATimeAsync();
         }
 
         [Fact(Skip = "Was an experiment")]
@@ -49,7 +51,7 @@ namespace Foundatio.Tests.Locks {
             var sw = Stopwatch.StartNew();
             // Monitor will not be pulsed and should be cancelled after 100ms.
             using (await monitor.EnterAsync())
-                await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
                     await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()));
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
@@ -68,8 +70,8 @@ namespace Foundatio.Tests.Locks {
         }
 
         [Fact]
-        public override Task WillThrottleCalls() {
-            return base.WillThrottleCalls();
+        public override Task WillThrottleCallsAsync() {
+            return base.WillThrottleCallsAsync();
         }
         
         public void Dispose() {

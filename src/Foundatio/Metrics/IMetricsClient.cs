@@ -19,8 +19,8 @@ namespace Foundatio.Metrics {
             return new MetricTimer(name, client);
         }
 
-        public static async Task TimeAsync(this IMetricsClient client, Func<Task> action, string name) {
-            await Async.Using(client.StartTimer(name), action).AnyContext();
+        public static Task TimeAsync(this IMetricsClient client, Func<Task> action, string name) {
+            return Async.Using(client.StartTimer(name), action);
         }
 
         public static Task TimeAsync(this IMetricsClient client, Action action, string name) {

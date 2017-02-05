@@ -39,7 +39,7 @@ namespace Foundatio.Jobs {
                             await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
                             SystemClock.Sleep(1);
-                    } catch (TaskCanceledException) { }
+                    } catch (OperationCanceledException) { }
                     
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;

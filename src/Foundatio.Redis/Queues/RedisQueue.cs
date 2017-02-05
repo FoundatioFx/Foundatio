@@ -85,12 +85,12 @@ namespace Foundatio.Queues {
             if (!_runMaintenanceTasks || _maintenanceTask != null)
                 return;
 
-            using (await  _lock.LockAsync()) {
+            using (await  _lock.LockAsync().AnyContext()) {
                 if (_maintenanceTask != null)
                     return;
 
                 _logger.Trace("Starting maintenance for {_queueName}.", _queueName);
-                _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoop(_queueDisposedCancellationTokenSource.Token));
+                _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoopAsync(_queueDisposedCancellationTokenSource.Token));
             }
         }
 
@@ -98,12 +98,12 @@ namespace Foundatio.Queues {
             if (_isSubscribed)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isSubscribed)
                     return;
 
                 _logger.Trace("Subscribing to enqueue messages for {_queueName}.", _queueName);
-                await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessage(channel, value).AnyContext()).AnyContext();
+                await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessageAsync(channel, value).AnyContext()).AnyContext();
                 _isSubscribed = true;
             }
         }
@@ -265,9 +265,9 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken))
+                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
                         await _monitor.WaitAsync(cancellationToken).AnyContext();
-                } catch (TaskCanceledException) { }
+                } catch (OperationCanceledException) { }
 
                 sw.Stop();
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
@@ -284,7 +284,7 @@ namespace Foundatio.Queues {
             await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(value), now, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
 
             try {
-                var entry = await GetQueueEntry(value).AnyContext();
+                var entry = await GetQueueEntryAsync(value).AnyContext();
                 if (entry == null)
                     return null;
 
@@ -301,12 +301,12 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id),
-                SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+            _logger.Trace("Queue {0} renew lock item: {1}", _queueName, entry.Id);
+            await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
 
-        private async Task<QueueEntry<T>> GetQueueEntry(string workId) {
+        private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId) {
             var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<T>(GetPayloadKey(workId)), logger: _logger).AnyContext();
             if (payload.IsNull) {
                 _logger.Error("Error getting queue payload: {0}", workId);
@@ -478,10 +478,10 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async Task OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+        private async Task OnTopicMessageAsync(RedisChannel redisChannel, RedisValue redisValue) {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
 
-            using (await _monitor.EnterAsync())
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 
@@ -511,7 +511,7 @@ namespace Foundatio.Queues {
 
                     _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime.ToString("o")} current: {utcNow.ToString("o")} timeout: {_workItemTimeout}");
 
-                    var entry = await GetQueueEntry(workId).AnyContext();
+                    var entry = await GetQueueEntryAsync(workId).AnyContext();
                     if (entry == null)
                         continue;
 
@@ -556,11 +556,11 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async Task DoMaintenanceWorkLoop(CancellationToken cancellationToken) {
+        private async Task DoMaintenanceWorkLoopAsync(CancellationToken cancellationToken) {
             while (!cancellationToken.IsCancellationRequested) {
                 _logger.Trace("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId);
 
-                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30));
+                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
             }
         }
 

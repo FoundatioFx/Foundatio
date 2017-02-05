@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Queues;
 
@@ -13,9 +14,9 @@ namespace Foundatio.Jobs {
 
         public override async Task RenewLockAsync() {
             if (QueueEntry != null)
-                await QueueEntry.RenewLockAsync();
+                await QueueEntry.RenewLockAsync().AnyContext();
 
-            await base.RenewLockAsync();
+            await base.RenewLockAsync().AnyContext();
         }
     }
 }

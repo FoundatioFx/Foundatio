@@ -53,13 +53,12 @@ namespace Foundatio.Queues {
                 return;
             }
 
-            using (await _lock.LockAsync(cancellationToken)) {
+            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
                 if (_queueClient != null) {
                     return;
                 }
 
                 QueueDescription queueDescription;
-
                 if (!await _namespaceManager.QueueExistsAsync(_queueName).AnyContext()) {
                     try {
                         queueDescription = await _namespaceManager.CreateQueueAsync(new QueueDescription(_queueName) {
