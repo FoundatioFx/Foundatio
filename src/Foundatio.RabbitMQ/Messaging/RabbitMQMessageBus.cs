@@ -29,8 +29,7 @@ namespace Foundatio.Messaging {
         /// <summary>
         /// Constructor for RabbitMqMessaging - Exchange type set as Direct exchange that uses the routing key
         /// </summary>
-        /// <param name="userName">username needed to create the connection with the broker</param>
-        /// <param name="password">password needed to create the connection with the broker</param>
+        /// <param name="connectionString">The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.</param>
         /// <param name="queueName">Queue name</param>
         /// <param name="routingKey">The routing key is an "address" that the exchange may use to decide how to route the message</param>
         /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
@@ -42,7 +41,7 @@ namespace Foundatio.Messaging {
         /// <param name="loggerFactory">logger</param>
         /// <param name="persistent">When set to true, RabbitMQ will persist message to disk</param>
         /// <param name="exclusive"></param>
-        public RabbitMQMessageBus(string userName, string password, string queueName, string routingKey, string exhangeName, bool durable, bool persistent, bool exclusive, bool autoDelete, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public RabbitMQMessageBus(string connectionString, string queueName, string routingKey, string exhangeName, bool durable = true, bool persistent = true, bool exclusive = false, bool autoDelete = false, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
             _exchangeName = exhangeName;
             _queueName = queueName;
@@ -57,10 +56,7 @@ namespace Foundatio.Messaging {
                 _defaultMessageTimeToLive = defaultMessageTimeToLive.Value;
 
             // initialize connection factory
-            _factory = new ConnectionFactory {
-                UserName = userName,
-                Password = password
-            };
+            _factory = new ConnectionFactory { Uri =  connectionString };
 
             // initialize publisher
             _publisherClient = CreateConnection();

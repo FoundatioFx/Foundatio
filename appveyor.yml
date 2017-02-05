@@ -9,7 +9,7 @@ pull_requests:
 init: 
   - git config --global core.autocrlf true
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
-  - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="-pre" }
+  - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="pre" }
 
 before_build:
   - appveyor-retry dotnet restore -v Minimal
