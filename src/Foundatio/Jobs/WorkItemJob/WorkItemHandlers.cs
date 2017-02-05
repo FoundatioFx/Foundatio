@@ -44,7 +44,7 @@ namespace Foundatio.Jobs {
         void LogProcessingQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem);
         void LogAutoCompletedQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem);
     }
-    
+
     public abstract class WorkItemHandlerBase : IWorkItemHandler {
         public WorkItemHandlerBase(ILoggerFactory loggerFactory = null) {
             Log = loggerFactory.CreateLogger(GetType());
@@ -56,7 +56,7 @@ namespace Foundatio.Jobs {
         public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.FromResult(Disposable.EmptyLock);
         }
-        
+
         public bool AutoRenewLockOnProgress { get; set; }
         public ILogger Log { get; set; }
 
@@ -69,7 +69,7 @@ namespace Foundatio.Jobs {
         }
 
         public abstract Task HandleItemAsync(WorkItemContext context);
-        
+
         protected int CalculateProgress(long total, long completed, int startProgress = 0, int endProgress = 100) {
             return startProgress + (int)((100 * (double)completed / total) * (((double)endProgress - startProgress) / 100));
         }
