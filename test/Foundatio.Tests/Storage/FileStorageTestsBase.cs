@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;
@@ -67,7 +68,7 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                var startTime = SystemClock.UtcNow;
+                var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
                 var fileInfo = await storage.GetFileInfoAsync(path);
