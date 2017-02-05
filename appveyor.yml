@@ -12,10 +12,15 @@ init:
   - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="pre" }
 
 before_build:
+  - ps: |
+      [xml]$versionXml = Get-Content .\build\version.props
+      $versionXml.Project.PropertyGroup.VersionPrefix = "$($env:APPVEYOR_BUILD_VERSION)"
+      $versionXml.Project.PropertyGroup.VersionSuffix = "$($env:VERSION_SUFFIX)"
+      $versionXml.Save("$pwd\build\version.props")
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build -f net46 Foundatio.sln /p:VersionPrefix="$($env:APPVEYOR_BUILD_VERSION)" /p:VersionSuffix="$($env:VERSION_SUFFIX)"
+  - ps: dotnet build -f net46 Foundatio.sln
 
 before_test:
   - nuget install redis-64 -excludeversion
