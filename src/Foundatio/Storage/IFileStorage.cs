@@ -32,7 +32,7 @@ namespace Foundatio.Storage {
             string json = JsonConvert.SerializeObject(data);
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json ?? String.Empty)), cancellationToken);
         }
-        
+
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
             string fileContents = null;
             using (Stream stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
@@ -64,12 +64,12 @@ namespace Foundatio.Storage {
             using (var stream = await storage.GetFileStreamAsync(path).AnyContext()) {
                 if (stream == null)
                     return null;
-                
+
                 byte[] buffer = new byte[16 * 1024];
                 using (var ms = new MemoryStream()) {
                     int read;
                     while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
-                        ms.Write(buffer, 0, read);
+                        await ms.WriteAsync(buffer, 0, read).AnyContext();
                     }
 
                     return ms.ToArray();

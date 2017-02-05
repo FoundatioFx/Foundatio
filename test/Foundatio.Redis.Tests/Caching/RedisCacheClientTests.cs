@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Logging;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,7 +9,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
         public RedisCacheClientTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override ICacheClient GetCacheClient() {
@@ -17,89 +18,73 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanGetAll() {
-            return base.CanGetAll();
+        public override Task CanGetAllAsync() {
+            return base.CanGetAllAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetValue() {
-            return base.CanSetAndGetValue();
+        public override Task CanSetAndGetValueAsync() {
+            return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanAdd() {
-            return base.CanAdd();
+        public override Task CanAddAsync() {
+            return base.CanAddAsync();
         }
 
         [Fact]
-        public override Task CanAddConncurrently() {
-            return base.CanAddConncurrently();
+        public override Task CanAddConncurrentlyAsync() {
+            return base.CanAddConncurrentlyAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetObject() {
-            return base.CanSetAndGetObject();
+        public override Task CanSetAndGetObjectAsync() {
+            return base.CanSetAndGetObjectAsync();
         }
         
         [Fact]
-        public override Task CanTryGet() {
-            return base.CanTryGet();
+        public override Task CanTryGetAsync() {
+            return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanSetExpiration() {
-            return base.CanSetExpiration();
+        public override Task CanSetExpirationAsync() {
+            return base.CanSetExpirationAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAndExpire() {
-            return base.CanIncrementAndExpire();
+        public override Task CanIncrementAndExpireAsync() {
+            return base.CanIncrementAndExpireAsync();
         }
         
         [Fact]
-        public override Task CanRemoveByPrefix() {
-            return base.CanRemoveByPrefix();
+        public override Task CanRemoveByPrefixAsync() {
+            return base.CanRemoveByPrefixAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCaches() {
-            return base.CanUseScopedCaches();
+        public override Task CanUseScopedCachesAsync() {
+            return base.CanUseScopedCachesAsync();
         }
 
         [Fact]
-        public override async Task CanManageSets() {
-            await base.CanManageSets();
+        public override Task CanManageSetsAsync() {
+            return base.CanManageSetsAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureThroughput() {
-            return base.MeasureThroughput();
+        public override Task MeasureThroughputAsync() {
+            return base.MeasureThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerSimpleThroughput() {
-            return base.MeasureSerializerSimpleThroughput();
+        public override Task MeasureSerializerSimpleThroughputAsync() {
+            return base.MeasureSerializerSimpleThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerComplexThroughput() {
-            return base.MeasureSerializerComplexThroughput();
-        }
-
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
-                }
-            }
+        public override Task MeasureSerializerComplexThroughputAsync() {
+            return base.MeasureSerializerComplexThroughputAsync();
         }
     }
 }

@@ -14,7 +14,7 @@ namespace Foundatio.Redis.Tests {
                 _muxer = ConnectionMultiplexer.Connect(Configuration.GetConnectionString("RedisConnectionString"));
                 _muxer.PreserveAsyncOrder = false;
             }
-            
+
             return _muxer;
         }
     }

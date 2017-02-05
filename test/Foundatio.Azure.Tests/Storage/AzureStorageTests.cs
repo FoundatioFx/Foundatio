@@ -19,13 +19,18 @@ namespace Foundatio.Azure.Tests.Storage {
         }
 
         [Fact]
-        public override Task CanGetEmptyFileListOnMissingDirectory() {
-            return base.CanGetEmptyFileListOnMissingDirectory();
+        public override Task CanGetEmptyFileListOnMissingDirectoryAsync() {
+            return base.CanGetEmptyFileListOnMissingDirectoryAsync();
         }
-        
+
         [Fact]
-        public override Task CanGetFileListForSingleFolder() {
-            return base.CanGetFileListForSingleFolder();
+        public override Task CanGetFileListForSingleFolderAsync() {
+            return base.CanGetFileListForSingleFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanGetFileInfoAsync() {
+            return base.CanGetFileInfoAsync();
         }
 
         [Fact]
@@ -34,13 +39,13 @@ namespace Foundatio.Azure.Tests.Storage {
         }
 
         [Fact]
-        public override Task CanManageFiles() {
-            return base.CanManageFiles();
+        public override Task CanManageFilesAsync() {
+            return base.CanManageFilesAsync();
         }
 
         [Fact]
-        public override Task CanConcurrentlyManageFiles() {
-            return base.CanConcurrentlyManageFiles();
+        public override Task CanConcurrentlyManageFilesAsync() {
+            return base.CanConcurrentlyManageFilesAsync();
         }
     }
 }

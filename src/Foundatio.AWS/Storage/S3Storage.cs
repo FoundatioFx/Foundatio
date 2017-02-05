@@ -42,7 +42,7 @@ namespace Foundatio.Storage {
                 var res = await client.GetObjectAsync(req, cancellationToken).AnyContext();
                 if (!res.HttpStatusCode.IsSuccessful())
                     return null;
-                
+
                 return res.ResponseStream;
             }
         }
@@ -62,8 +62,8 @@ namespace Foundatio.Storage {
 
                     return new FileSpec {
                         Size = res.ContentLength,
-                        Created = res.LastModified,
-                        Modified = res.LastModified,
+                        Created = res.LastModified.ToUniversalTime(),  // TODO: Need to fix this
+                        Modified = res.LastModified.ToUniversalTime(),
                         Path = path
                     };
                 } catch (AmazonS3Exception) {
@@ -143,7 +143,7 @@ namespace Foundatio.Storage {
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (limit.HasValue && limit.Value <= 0)
                 return new List<FileSpec>();
-            
+
             searchPattern = searchPattern?.Replace('\\', '/');
             string prefix = searchPattern;
             Regex patternRegex = null;

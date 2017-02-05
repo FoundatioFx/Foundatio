@@ -13,7 +13,6 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {
         public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
         }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
@@ -35,7 +34,7 @@ namespace Foundatio.Tests.Metrics {
             }
         }
 
-        public virtual async Task CanIncrementCounter() {
+        public virtual async Task CanIncrementCounterAsync() {
             using (var metrics = GetMetricsClient()) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
@@ -58,7 +57,7 @@ namespace Foundatio.Tests.Metrics {
             }
         }
         
-        public virtual async Task CanGetBufferedQueueMetrics() {
+        public virtual async Task CanGetBufferedQueueMetricsAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
@@ -70,7 +69,7 @@ namespace Foundatio.Tests.Metrics {
                     var entry = await queue.DequeueAsync(TimeSpan.Zero);
                     await SystemClock.SleepAsync(30);
                     await entry.CompleteAsync();
-                    await SystemClock.SleepAsync(500);  // give queue metrics time
+                    await SystemClock.SleepAsync(500); // give queue metrics time
 
                     await metrics.FlushAsync();
 
@@ -80,13 +79,13 @@ namespace Foundatio.Tests.Metrics {
                     Assert.Equal(1, queueStats.Enqueued.Count);
                     Assert.Equal(1, queueStats.Dequeued.Count);
                     Assert.Equal(1, queueStats.Completed.Count);
-                    Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 200);
-                    Assert.InRange(queueStats.ProcessTime.AverageDuration, 30, 200);
+                    Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 250);
+                    Assert.InRange(queueStats.ProcessTime.AverageDuration, 30, 250);
                 }
             }
         }
 
-        public virtual async Task CanIncrementBufferedCounter() {
+        public virtual async Task CanIncrementBufferedCounterAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
@@ -130,63 +129,50 @@ namespace Foundatio.Tests.Metrics {
         }
 
 #pragma warning disable 4014
-        public virtual async Task CanWaitForCounter() {
+        public virtual async Task CanWaitForCounterAsync() {
+            const string CounterName = "Test";
             using (var metrics = GetMetricsClient() as CacheBucketMetricsClientBase) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)
                     return;
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(50);
-                    await metrics.CounterAsync("Test").AnyContext();
-                    await metrics.CounterAsync("Test").AnyContext();
+                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await metrics.CounterAsync(CounterName);
                 });
 
-                await SystemClock.SleepAsync(1);
-                var success = await metrics.WaitForCounterAsync("Test", 1, TimeSpan.FromMilliseconds(500));
-                Assert.True(success);
+                var task = metrics.WaitForCounterAsync(CounterName, 1, TimeSpan.FromMilliseconds(500));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Assert.True(await task, "Expected at least 1 count within 500 ms");
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(50);
-                    await metrics.CounterAsync("Test").AnyContext();
+                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await metrics.CounterAsync(CounterName);
                 });
 
-                await SystemClock.SleepAsync(1);
-                success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
-                Assert.True(success);
-
-                await SystemClock.SleepAsync(1);
-                success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(100));
-                Assert.False(success);
+                task = metrics.WaitForCounterAsync(CounterName, timeout: TimeSpan.FromMilliseconds(500));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Assert.True(await task, "Expected at least 2 count within 500 ms");
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(50);
-                    await metrics.CounterAsync("Test", 2);
+                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await metrics.CounterAsync(CounterName, 2);
                 });
 
-                await SystemClock.SleepAsync(1);
-                success = await metrics.WaitForCounterAsync("Test", 2, TimeSpan.FromMilliseconds(500));
-                Assert.True(success);
+                task = metrics.WaitForCounterAsync(CounterName, 2, TimeSpan.FromMilliseconds(500));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                Assert.True(await task, "Expected at least 4 count within 500 ms");
 
-                await SystemClock.SleepAsync(1);
-                success = await metrics.WaitForCounterAsync("Test", async () => await metrics.CounterAsync("Test"), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
-                Assert.True(success);
+                task = metrics.WaitForCounterAsync(CounterName, async () => await metrics.CounterAsync(CounterName), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
+                Assert.True(await task, "Expected at least 5 count within 500 ms");
 
-                Task.Run(async () => {
-                    await SystemClock.SleepAsync(50);
-                    await metrics.CounterAsync("Test");
-                });
-
-                await SystemClock.SleepAsync(1);
-                success = await metrics.WaitForCounterAsync("Test", timeout: TimeSpan.FromMilliseconds(500));
-                Assert.True(success);
-
-                _logger.Info((await metrics.GetCounterStatsAsync("Test")).ToString());
+                _logger.Info((await metrics.GetCounterStatsAsync(CounterName)).ToString());
             }
         }
 #pragma warning restore 4014
 
-        public virtual async Task CanSendBufferedMetrics() {
+        public virtual async Task CanSendBufferedMetricsAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;
                 if (stats == null)

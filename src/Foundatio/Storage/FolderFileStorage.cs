@@ -42,14 +42,14 @@ namespace Foundatio.Storage {
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
-            var info = new FileInfo(path);
+            var info = new FileInfo(Path.Combine(Folder, path));
             if (!info.Exists)
                 return Task.FromResult<FileSpec>(null);
 
             return Task.FromResult(new FileSpec {
                 Path = path.Replace(Folder, String.Empty),
-                Created = info.CreationTime,
-                Modified = info.LastWriteTime,
+                Created = info.CreationTimeUtc,
+                Modified = info.LastWriteTimeUtc,
                 Size = info.Length
             });
         }
@@ -70,7 +70,7 @@ namespace Foundatio.Storage {
                 using (var fileStream = File.Create(Path.Combine(Folder, path))) {
                     if (stream.CanSeek)
                         stream.Seek(0, SeekOrigin.Begin);
-                    
+
                     stream.CopyTo(fileStream);
                 }
             } catch (Exception) {
@@ -153,8 +153,8 @@ namespace Foundatio.Storage {
 
                 list.Add(new FileSpec {
                     Path = path.Replace(Folder, String.Empty),
-                    Created = info.CreationTime,
-                    Modified = info.LastWriteTime,
+                    Created = info.CreationTimeUtc,
+                    Modified = info.LastWriteTimeUtc,
                     Size = info.Length
                 });
             }

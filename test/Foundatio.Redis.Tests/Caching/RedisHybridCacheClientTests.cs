@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Logging;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,7 +9,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisHybridCacheClientTests : HybridCacheClientTests {
         public RedisHybridCacheClientTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override ICacheClient GetCacheClient() {
@@ -17,38 +18,38 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanSetAndGetValue() {
-            return base.CanSetAndGetValue();
+        public override Task CanSetAndGetValueAsync() {
+            return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetObject() {
-            return base.CanSetAndGetObject();
+        public override Task CanSetAndGetObjectAsync() {
+            return base.CanSetAndGetObjectAsync();
         }
         
         [Fact]
-        public override Task CanTryGet() {
-            return base.CanTryGet();
+        public override Task CanTryGetAsync() {
+            return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanRemoveByPrefix() {
-            return base.CanRemoveByPrefix();
+        public override Task CanRemoveByPrefixAsync() {
+            return base.CanRemoveByPrefixAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCaches() {
-            return base.CanUseScopedCaches();
+        public override Task CanUseScopedCachesAsync() {
+            return base.CanUseScopedCachesAsync();
         }
 
         [Fact]
-        public override Task CanSetExpiration() {
-            return base.CanSetExpiration();
+        public override Task CanSetExpirationAsync() {
+            return base.CanSetExpirationAsync();
         }
         
         [Fact]
-        public override Task CanManageSets() {
-            return base.CanManageSets();
+        public override Task CanManageSetsAsync() {
+            return base.CanManageSetsAsync();
         }
 
         [Fact]
@@ -61,35 +62,24 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.WillExpireRemoteItems();
         }
 
-        [Fact(Skip = "Performance Test")]
-        public override Task MeasureThroughput() {
-            return base.MeasureThroughput();
+        [Fact]
+        public override Task WillWorkWithSets() {
+            return base.WillWorkWithSets();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerSimpleThroughput() {
-            return base.MeasureSerializerSimpleThroughput();
+        public override Task MeasureThroughputAsync() {
+            return base.MeasureThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerComplexThroughput() {
-            return base.MeasureSerializerComplexThroughput();
+        public override Task MeasureSerializerSimpleThroughputAsync() {
+            return base.MeasureSerializerSimpleThroughputAsync();
         }
 
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
-                }
-            }
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureSerializerComplexThroughputAsync() {
+            return base.MeasureSerializerComplexThroughputAsync();
         }
     }
 }

@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Tests.Extensions;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
@@ -21,53 +21,53 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanSetAndGetValue() {
-            return base.CanSetAndGetValue();
+        public override Task CanSetAndGetValueAsync() {
+            return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanAdd() {
-            return base.CanAdd();
+        public override Task CanAddAsync() {
+            return base.CanAddAsync();
         }
 
         [Fact]
-        public override Task CanAddConncurrently() {
-            return base.CanAddConncurrently();
+        public override Task CanAddConncurrentlyAsync() {
+            return base.CanAddConncurrentlyAsync();
         }
 
         [Fact]
-        public override Task CanTryGet() {
-            return base.CanTryGet();
+        public override Task CanTryGetAsync() {
+            return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCaches() {
-            return base.CanUseScopedCaches();
+        public override Task CanUseScopedCachesAsync() {
+            return base.CanUseScopedCachesAsync();
         }
         
         [Fact]
-        public override Task CanSetAndGetObject() {
-            return base.CanSetAndGetObject();
+        public override Task CanSetAndGetObjectAsync() {
+            return base.CanSetAndGetObjectAsync();
         }
 
         [Fact]
-        public override Task CanRemoveByPrefix() {
-            return base.CanRemoveByPrefix();
+        public override Task CanRemoveByPrefixAsync() {
+            return base.CanRemoveByPrefixAsync();
         }
 
         [Fact]
-        public override Task CanSetExpiration() {
-            return base.CanSetExpiration();
+        public override Task CanSetExpirationAsync() {
+            return base.CanSetExpirationAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAndExpire() {
-            return base.CanIncrementAndExpire();
+        public override Task CanIncrementAndExpireAsync() {
+            return base.CanIncrementAndExpireAsync();
         }
 
         [Fact]
-        public override Task CanManageSets() {
-            return base.CanManageSets();
+        public override Task CanManageSetsAsync() {
+            return base.CanManageSetsAsync();
         }
 
         [Fact]
@@ -80,18 +80,17 @@ namespace Foundatio.Tests.Caching {
 
                     await firstCache.SetAsync("first1", 1);
                     await firstCache.IncrementAsync("first2");
-                    // doesnt use localcache for simple types
-                    Assert.Equal(0, firstCache.LocalCache.Count);
+                    Assert.Equal(1, firstCache.LocalCache.Count);
 
                     var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                     await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
-                    Assert.Equal(1, firstCache.LocalCache.Count);
+                    Assert.Equal(2, firstCache.LocalCache.Count);
                     Assert.Equal(0, secondCache.LocalCache.Count);
                     Assert.Equal(0, firstCache.LocalCacheHits);
 
                     Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
                     Assert.Equal(1, firstCache.LocalCacheHits);
-                    Assert.Equal(1, firstCache.LocalCache.Count);
+                    Assert.Equal(2, firstCache.LocalCache.Count);
 
                     Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
                     Assert.Equal(0, secondCache.LocalCacheHits);
@@ -105,27 +104,27 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public virtual async Task WillExpireRemoteItems() {
-            var countdownEvent = new AsyncCountdownEvent(2);
-
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
+                var firstResetEvent = new AsyncAutoResetEvent(false);
                 Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
-                    _logger.Trace("First expired: {0}", args.Key);
-                    countdownEvent.Signal();
+                    _logger.Trace("First local cache expired: {0}", args.Key);
+                    firstResetEvent.Set();
                 };
 
                 using (firstCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler)) {
                     using (var secondCache = GetCacheClient() as HybridCacheClient) {
                         Assert.NotNull(secondCache);
+                        var secondResetEvent = new AsyncAutoResetEvent(false);
                         Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
-                            _logger.Trace("Second expired: {0}", args.Key);
-                            countdownEvent.Signal();
+                            _logger.Trace("Second local cache expired: {0}", args.Key);
+                            secondResetEvent.Set();
                         };
 
                         using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
-                            string cacheKey = "willexpireremote";
+                            string cacheKey = "will-expire-remote";
                             _logger.Trace("First Set");
-                            Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(150)));
+                            Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));
                             _logger.Trace("Done First Set");
                             Assert.Equal(1, firstCache.LocalCache.Count);
 
@@ -134,16 +133,31 @@ namespace Foundatio.Tests.Caching {
                             _logger.Trace("Done Second Get");
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
+                            _logger.Trace("Waiting for item expired handlers...");
                             var sw = Stopwatch.StartNew();
-                            await countdownEvent.WaitAsync(TimeSpan.FromMilliseconds(250));
+                            await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
+                            await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             sw.Stop();
-
                             _logger.Trace("Time {0}", sw.Elapsed);
-                            Assert.Equal(0, countdownEvent.CurrentCount);
-                            Assert.Equal(0, firstCache.LocalCache.Count);
-                            Assert.Equal(0, secondCache.LocalCache.Count);
                         }
                     }
+                }
+            }
+        }
+
+        [Fact]
+        public virtual async Task WillWorkWithSets() {
+            using (var firstCache = GetCacheClient() as HybridCacheClient) {
+                Assert.NotNull(firstCache);
+
+                using (var secondCache = GetCacheClient() as HybridCacheClient) {
+                    Assert.NotNull(secondCache);
+
+                    await firstCache.SetAddAsync("set1", new[] { 1, 2, 3 });
+
+                    var values = await secondCache.GetSetAsync<int>("set1");
+
+                    Assert.Equal(3, values.Value.Count);
                 }
             }
         }

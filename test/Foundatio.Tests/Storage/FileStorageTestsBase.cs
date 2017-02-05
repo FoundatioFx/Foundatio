@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -16,15 +15,13 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public abstract class FileStorageTestsBase : TestWithLoggingBase {
-        protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
-        }
+        protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {}
 
         protected virtual IFileStorage GetStorage() {
             return null;
         }
 
-        public virtual async Task CanGetEmptyFileListOnMissingDirectory() {
+        public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync() {
             await ResetAsync();
 
             IFileStorage storage = GetStorage();
@@ -36,7 +33,7 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanGetFileListForSingleFolder() {
+        public virtual async Task CanGetFileListForSingleFolderAsync() {
             await ResetAsync();
 
             IFileStorage storage = GetStorage();
@@ -62,7 +59,41 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanManageFiles() {
+        public virtual async Task CanGetFileInfoAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                var startTime = SystemClock.UtcNow;
+                string path = $"folder\\{Guid.NewGuid()}-nested.txt";
+                Assert.True(await storage.SaveFileAsync(path, "test"));
+                var fileInfo = await storage.GetFileInfoAsync(path);
+                Assert.NotNull(fileInfo);
+                Assert.True(fileInfo.Path.EndsWith("nested.txt"), "Incorrect file");
+                Assert.True(fileInfo.Size > 0, "Incorrect file size");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
+                // NOTE: File creation time might not be accurate: http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
+                Assert.True(startTime <= fileInfo.Modified, $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}.");
+
+                path = $"{Guid.NewGuid()}-test.txt";
+                Assert.True(await storage.SaveFileAsync(path, "test"));
+                fileInfo = await storage.GetFileInfoAsync(path);
+                Assert.NotNull(fileInfo);
+                Assert.True(fileInfo.Path.EndsWith("test.txt"), "Incorrect file");
+                Assert.True(fileInfo.Size > 0, "Incorrect file size");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
+                Assert.True(startTime <= fileInfo.Modified, $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}.");
+            }
+        }
+
+        public virtual async Task CanManageFilesAsync() {
             await ResetAsync();
 
             IFileStorage storage = GetStorage();
@@ -90,12 +121,8 @@ namespace Foundatio.Tests.Storage {
             IFileStorage storage = GetStorage();
             if (storage == null)
                 return;
-#if NETSTANDARD
-            string readmeFile = Path.GetFullPath(@"..\..\README.md");
-#else
-            string readmeFile = Path.GetFullPath(@"..\..\..\..\..\..\README.md");
-#endif
 
+            string readmeFile = Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
             using (storage) {
                 Assert.False(await storage.ExistsAsync("README.md"));
 
@@ -121,16 +148,16 @@ namespace Foundatio.Tests.Storage {
 
             using (storage) {
                 var files = (await storage.GetFileListAsync()).ToList();
-                if (files.Any())
-                    Debug.WriteLine("Got files");
-                else
-                    Debug.WriteLine("No files");
-                await storage.DeleteFilesAsync(files);
+                if (files.Count > 0) {
+                    _logger.Trace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
+                    await storage.DeleteFilesAsync(files);
+                }
+
                 Assert.Equal(0, (await storage.GetFileListAsync()).Count());
             }
         }
 
-        public virtual async Task CanConcurrentlyManageFiles() {
+        public virtual async Task CanConcurrentlyManageFilesAsync() {
             await ResetAsync();
 
             IFileStorage storage = GetStorage();
@@ -159,7 +186,7 @@ namespace Foundatio.Tests.Storage {
                     await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev);
                     queueItems.Add(i);
                 });
-                
+
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
                 await Run.InParallel(10, async i => {
@@ -169,11 +196,20 @@ namespace Foundatio.Tests.Storage {
                         return;
 
                     if (RandomData.GetBool()) {
-                        await storage.CompleteEventPost(path, eventPost.ProjectId, SystemClock.UtcNow, true, _logger);
+                        await storage.CompleteEventPostAsync(path, eventPost.ProjectId, SystemClock.UtcNow, true, _logger);
                     } else
                         await storage.SetNotActiveAsync(path, _logger);
                 });
             }
+        }
+        
+        public virtual void CanUseDataDirectory() {
+            const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
+
+            var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
+            Assert.NotNull(storage.Folder);
+            Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
+            Assert.True(storage.Folder.EndsWith("Queue\\"), storage.Folder);
         }
     }
 
@@ -216,7 +252,7 @@ namespace Foundatio.Tests.Storage {
             return false;
         }
 
-        public static async Task<bool> CompleteEventPost(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null) {
+        public static async Task<bool> CompleteEventPostAsync(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null) {
             // don't move files that are already in the archive
             if (path.StartsWith("archive"))
                 return true;

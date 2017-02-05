@@ -11,19 +11,17 @@ using Xunit.Abstractions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
 using System.Linq;
-using Foundatio.Extensions;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
         }
 
         protected virtual ICacheClient GetCacheClient() {
             return null;
         }
 
-        public virtual async Task CanGetAll() {
+        public virtual async Task CanGetAllAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -61,7 +59,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetAndGetValue() {
+        public virtual async Task CanSetAndGetValueAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -109,8 +107,8 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal("Testing", result.Value.Message);
             }
         }
-        
-        public virtual async Task CanAdd() {
+
+        public virtual async Task CanAddAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -118,19 +116,24 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                string key = "type-id";
+                const string key = "type-id";
+                const string val = "value-should-not-change";
                 Assert.False(await cache.ExistsAsync(key));
-                Assert.True(await cache.AddAsync(key, true));
+                Assert.True(await cache.AddAsync(key, val));
                 Assert.True(await cache.ExistsAsync(key));
-                
-                Assert.True(await cache.AddAsync(key + ":1", true, TimeSpan.FromMinutes(1)));
-                Assert.True(await cache.ExistsAsync(key + ":1"));
+                Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
 
-                Assert.False(await cache.AddAsync(key, true, TimeSpan.FromMinutes(1)));
+                Assert.False(await cache.AddAsync(key, "random value"));
+                Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
+
+                // Add a sub key
+                Assert.True(await cache.AddAsync(key + ":1", "nested"));
+                Assert.True(await cache.ExistsAsync(key + ":1"));
+                Assert.Equal("nested", (await cache.GetAsync<string>(key + ":1")).Value);
             }
         }
 
-        public virtual async Task CanAddConncurrently() {
+        public virtual async Task CanAddConncurrentlyAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -149,7 +152,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanTryGet() {
+        public virtual async Task CanTryGetAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -178,7 +181,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanUseScopedCaches() {
+        public virtual async Task CanUseScopedCachesAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -224,10 +227,23 @@ namespace Foundatio.Tests.Caching {
                 Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
                 Assert.False((await scopedCache2.GetAsync<int>("test")).HasValue);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+                
+                Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(10, await scopedCache1.IncrementAsync("total", 10));
+                Assert.Equal(10, await scopedCache1.GetAsync<double>("total", 0));
+
+                Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(20, await nestedScopedCache1.IncrementAsync("total", 20));
+                Assert.Equal(20, await nestedScopedCache1.GetAsync<double>("total", 0));
+                Assert.Equal(1, await nestedScopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+                Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
+                
+                Assert.Equal(1, await scopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+                Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
             }
         }
 
-        public virtual async Task CanRemoveByPrefix() {
+        public virtual async Task CanRemoveByPrefixAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -249,7 +265,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetAndGetObject() {
+        public virtual async Task CanSetAndGetObjectAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -274,7 +290,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetExpiration() {
+        public virtual async Task CanSetExpirationAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -298,7 +314,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanIncrementAndExpire() {
+        public virtual async Task CanIncrementAndExpireAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -319,7 +335,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanManageSets() {
+        public virtual async Task CanManageSetsAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -327,41 +343,53 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1).AnyContext()).AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null).AnyContext()).AnyContext();
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty).AnyContext()).AnyContext();
-
-                await cache.SetAddAsync("test1", 1).AnyContext();
-                await cache.SetAddAsync("test1", 2).AnyContext();
-                await cache.SetAddAsync("test1", 3).AnyContext();
-                var result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null));
+                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty));
+                
+                await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
+                var result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 2).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetRemoveAsync("test1", new[] { 1, 2, 3 });
+                result = await cache.GetSetAsync<int>("test1");
+                Assert.NotNull(result);
+                Assert.Equal(0, result.Value.Count);
+
+                await cache.RemoveAllAsync();
+
+                await cache.SetAddAsync("test1", 1);
+                await cache.SetAddAsync("test1", 2);
+                await cache.SetAddAsync("test1", 3);
+                result = await cache.GetSetAsync<int>("test1");
+                Assert.NotNull(result);
+                Assert.Equal(3, result.Value.Count);
+
+                await cache.SetRemoveAsync("test1", 2);
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(2, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 1).AnyContext();
-                await cache.SetRemoveAsync("test1", 3).AnyContext();
-                result = await cache.GetSetAsync<int>("test1").AnyContext();
+                await cache.SetRemoveAsync("test1", 1);
+                await cache.SetRemoveAsync("test1", 3);
+                result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
                 
                 await Assert.ThrowsAnyAsync<Exception>(async () => {
-                    await cache.AddAsync("key1", 1).AnyContext();
-                    await cache.SetAddAsync("key1", 1).AnyContext();
-                }).AnyContext();
+                    await cache.AddAsync("key1", 1);
+                    await cache.SetAddAsync("key1", 1);
+                });
             }
         }
 
-        public virtual async Task MeasureThroughput() {
+        public virtual async Task MeasureThroughputAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -385,7 +413,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task MeasureSerializerSimpleThroughput() {
+        public virtual async Task MeasureSerializerSimpleThroughputAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -412,7 +440,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task MeasureSerializerComplexThroughput() {
+        public virtual async Task MeasureSerializerComplexThroughputAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;

@@ -51,8 +51,8 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
         public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            await EnsureQueueCreatedAsync(cancellationToken);
-            return await GetDeadletterItemsImplAsync(cancellationToken);
+            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
         }
 
         protected abstract Task<QueueStats> GetQueueStatsImplAsync();
@@ -74,66 +74,52 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
         protected virtual async Task<bool> OnEnqueuingAsync(T data) {
-            var args = new EnqueuingEventArgs<T> {
-                Queue = this,
-                Data = data
-            };
-            
+            var args = new EnqueuingEventArgs<T> { Queue = this, Data = data };
             await (Enqueuing?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
             return !args.Cancel;
         }
 
         public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
-        protected virtual async Task OnEnqueuedAsync(IQueueEntry<T> entry) {
-            await (Enqueued?.InvokeAsync(this, new EnqueuedEventArgs<T> {
-                Queue = this,
-                Entry = entry
-            }) ?? Task.CompletedTask).AnyContext();
+        protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry) {
+            var args = new EnqueuedEventArgs<T> { Queue = this, Entry = entry };
+            return Enqueued?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
-        protected virtual async Task OnDequeuedAsync(IQueueEntry<T> entry) {
-            await (Dequeued?.InvokeAsync(this, new DequeuedEventArgs<T> {
-                Queue = this,
-                Entry = entry
-            }) ?? Task.CompletedTask).AnyContext();
+        protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
+            var args = new DequeuedEventArgs<T> { Queue = this, Entry = entry };
+            return Dequeued?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
 
-        protected virtual async Task OnLockRenewedAsync(IQueueEntry<T> entry) {
-            await (LockRenewed?.InvokeAsync(this, new LockRenewedEventArgs<T> {
-                Queue = this,
-                Entry = entry
-            }) ?? Task.CompletedTask).AnyContext();
+        protected virtual Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            var args = new LockRenewedEventArgs<T> { Queue = this, Entry = entry };
+            return LockRenewed?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
         
-        protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry) {
+        protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
             var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
-            await (Completed?.InvokeAsync(this, new CompletedEventArgs<T> {
-                Queue = this,
-                Entry = entry
-            }) ?? Task.CompletedTask).AnyContext();
+            var args = new CompletedEventArgs<T> { Queue = this, Entry = entry };
+            return Completed?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
-        protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry) {
+        protected virtual Task OnAbandonedAsync(IQueueEntry<T> entry) {
             var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
-            
-            await (Abandoned?.InvokeAsync(this, new AbandonedEventArgs<T> {
-                Queue = this,
-                Entry = entry
-            }) ?? Task.CompletedTask).AnyContext();
+
+            var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
+            return Abandoned?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public string QueueId { get; protected set; }

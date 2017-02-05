@@ -39,23 +39,20 @@ namespace Foundatio.Caching {
                     var server = _connectionMultiplexer.GetServer(endpoint);
 
                     try {
-                        await server.FlushDatabaseAsync().AnyContext();
+                        await server.FlushDatabaseAsync(Database.Database).AnyContext();
                         continue;
                     } catch (Exception) {}
 
                     try {
-                        var redisKeys = server.Keys().ToArray();
-                        if (redisKeys.Length > 0) {
+                        var redisKeys = server.Keys(Database.Database).ToArray();
+                        if (redisKeys.Length > 0)
                             await Database.KeyDeleteAsync(redisKeys).AnyContext();
-                        }
                     } catch (Exception) {}
                 }
             } else {
                 var redisKeys = keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).ToArray();
-                if (redisKeys.Length > 0) {
-                    await Database.KeyDeleteAsync(redisKeys).AnyContext();
-                    return redisKeys.Length;
-                }
+                if (redisKeys.Length > 0)
+                    return (int)await Database.KeyDeleteAsync(redisKeys).AnyContext();
             }
 
             return 0;
@@ -92,7 +89,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 try {
-                    var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
+                    var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
 
                     result.Add(value);
                 } catch (Exception ex) {
@@ -108,7 +105,7 @@ namespace Foundatio.Caching {
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
             try {
-                var value = await redisValue.ToValueOfType<T>(_serializer).AnyContext();
+                var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
@@ -150,7 +147,7 @@ namespace Foundatio.Caching {
             return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
         }
 
-        public async Task<bool> SetAddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
@@ -158,19 +155,22 @@ namespace Foundatio.Caching {
                 _logger.Trace("Removing expired key: {key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
-
-            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
             
-            var result = await Database.SetAddAsync(key, redisValue).AnyContext();
-            if (result && expiresIn.HasValue)
+            var redisValues = new List<RedisValue>();
+            foreach (var value in values) {
+                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+            }
+            
+            var result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
+            if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
         }
 
-        public async Task<bool> SetRemoveAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
 
@@ -178,13 +178,16 @@ namespace Foundatio.Caching {
                 _logger.Trace("Removing expired key: {key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return false;
+                return default(long);
             }
 
-            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
+            var redisValues = new List<RedisValue>();
+            foreach (var value in values) {
+                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+            }
 
-            var result = await Database.SetRemoveAsync(key, redisValue).AnyContext();
-            if (result && expiresIn.HasValue)
+            var result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+            if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
@@ -291,7 +294,7 @@ namespace Foundatio.Caching {
             if (_scriptsLoaded)
                 return;
 
-            using (await _lock.LockAsync()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_scriptsLoaded)
                     return;
 
@@ -301,10 +304,11 @@ namespace Foundatio.Caching {
                 var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
 
                 foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                    _setIfHigherScript = await setIfHigher.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _setIfLowerScript = await setIfLower.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _incrByAndExpireScript = await incrByAndExpire.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
-                    _delByWildcardScript = await delByWildcard.LoadAsync(_connectionMultiplexer.GetServer(endpoint)).AnyContext();
+                    var server = _connectionMultiplexer.GetServer(endpoint);
+                    _setIfHigherScript = await setIfHigher.LoadAsync(server).AnyContext();
+                    _setIfLowerScript = await setIfLower.LoadAsync(server).AnyContext();
+                    _incrByAndExpireScript = await incrByAndExpire.LoadAsync(server).AnyContext();
+                    _delByWildcardScript = await delByWildcard.LoadAsync(server).AnyContext();
                 }
 
                 _scriptsLoaded = true;

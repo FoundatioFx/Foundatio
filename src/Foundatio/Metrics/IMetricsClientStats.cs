@@ -37,7 +37,7 @@ namespace Foundatio.Metrics {
             var abandonedTask = stats.GetCounterStatsAsync($"{name}{subQueueName}.abandoned", start, end, dataPoints);
             var processTimeTask = stats.GetTimerStatsAsync($"{name}{subQueueName}.processtime", start, end, dataPoints);
 
-            await Task.WhenAll(countTask, workingTask, deadletterTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask);
+            await Task.WhenAll(countTask, workingTask, deadletterTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask).AnyContext();
 
             return new QueueStatSummary {
                 Count = countTask.Result,

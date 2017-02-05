@@ -5,22 +5,25 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
     public class FolderFileStorageTests : FileStorageTestsBase {
-        private const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
-
         public FolderFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new FolderFileStorage("temp");
+            return new FolderFileStorage("|DataDirectory|\\temp");
         }
 
         [Fact]
-        public override Task CanGetEmptyFileListOnMissingDirectory() {
-            return base.CanGetEmptyFileListOnMissingDirectory();
+        public override Task CanGetEmptyFileListOnMissingDirectoryAsync() {
+            return base.CanGetEmptyFileListOnMissingDirectoryAsync();
         }
 
         [Fact]
-        public override Task CanGetFileListForSingleFolder() {
-            return base.CanGetFileListForSingleFolder();
+        public override Task CanGetFileListForSingleFolderAsync() {
+            return base.CanGetFileListForSingleFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanGetFileInfoAsync() {
+            return base.CanGetFileInfoAsync();
         }
 
         [Fact]
@@ -29,21 +32,20 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
-        public override Task CanManageFiles() {
-            return base.CanManageFiles();
+        public override Task CanManageFilesAsync() {
+            return base.CanManageFilesAsync();
         }
 
         [Fact]
-        public override Task CanConcurrentlyManageFiles() {
-            return base.CanConcurrentlyManageFiles();
+        public override Task CanConcurrentlyManageFilesAsync() {
+            return base.CanConcurrentlyManageFilesAsync();
         }
-
+        
+#if !NETSTANDARD
         [Fact]
-        public void CanUseDataDirectory() {
-            var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
-            Assert.NotNull(storage.Folder);
-            Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
-            Assert.True(storage.Folder.EndsWith("Queue\\"), storage.Folder);
+        public override void CanUseDataDirectory() {
+            base.CanUseDataDirectory();
         }
+#endif
     }
 }

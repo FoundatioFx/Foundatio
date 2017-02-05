@@ -1,4 +1,6 @@
-﻿using System;
+﻿#if NET46
+
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -31,3 +33,5 @@ namespace Foundatio.Utility {
         }
     }
 }
+
+#endif

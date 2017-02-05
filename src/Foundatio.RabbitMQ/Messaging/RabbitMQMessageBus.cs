@@ -28,18 +28,20 @@ namespace Foundatio.Messaging {
         /// <summary>
         /// Constructor for RabbitMqMessaging - Exchange type set as fanout exchange that uses the exchange name
         /// </summary>
-        /// <param name="userName">username needed to create the connection with the broker</param>
-        /// <param name="password">password needed to create the connection with the broker</param>
-        /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
+        /// <param name="connectionString">The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.</param>
         /// <param name="queueName">Name of the queue established by the subscriber when they call QueueDeclare. Its not used by publisher.</param>
+        /// <param name="routingKey">The routing key is an "address" that the exchange may use to decide how to route the message</param>
+        /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
+        /// <param name="durable"></param>
+        /// <param name="persistent">When set to true, RabbitMQ will persist message to disk</param>
+        /// <param name="exclusive"></param>
+        /// <param name="autoDelete"></param>
         /// <param name="queueArguments">queue arguments</param>
         /// <param name="defaultMessageTimeToLive">The value of the expiration field describes the TTL period in milliseconds</param>
         /// <param name="serializer">For data serialization</param>
         /// <param name="loggerFactory">logger</param>
         /// <remarks>https://www.rabbitmq.com/dotnet-api-guide.html#connection-recovery</remarks>
-        public RabbitMQMessageBus(string userName, string password, string exhangeName, string queueName,
-            IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null,
-            ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public RabbitMQMessageBus(string connectionString, string queueName, string routingKey, string exhangeName, bool durable = true, bool persistent = true, bool exclusive = false, bool autoDelete = false, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
             _exchangeName = exhangeName;
             _queueName = queueName;
@@ -51,12 +53,7 @@ namespace Foundatio.Messaging {
             // Topology ( queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
             // by default so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
             // it can always be fine tuned if needed.
-            _factory = new ConnectionFactory
-            {
-                UserName = userName,
-                Password = password,
-                AutomaticRecoveryEnabled = true
-            };
+            _factory = new ConnectionFactory { Uri =  connectionString, AutomaticRecoveryEnabled = true };
             // initialize the publisher
             InitPublisher();
             // initialize the subscriber
@@ -79,6 +76,7 @@ namespace Foundatio.Messaging {
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (message == null)
                 return;
+
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
             var data = await _serializer.SerializeAsync(new MessageBusData {

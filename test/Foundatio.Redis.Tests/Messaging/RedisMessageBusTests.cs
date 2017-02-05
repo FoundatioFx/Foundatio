@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Messaging;
+using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,7 +9,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
         public RedisMessageBusTests(ITestOutputHelper output) : base(output) {
-            FlushAll();
+            var muxer = SharedConnection.GetMuxer();
+            muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override IMessageBus GetMessageBus() {
@@ -17,84 +18,68 @@ namespace Foundatio.Redis.Tests.Messaging {
         }
 
         [Fact]
-        public override Task CanSendMessage() {
-            return base.CanSendMessage();
+        public override Task CanSendMessageAsync() {
+            return base.CanSendMessageAsync();
         }
 
         [Fact]
-        public override Task CanHandleNullMessage() {
-            return base.CanHandleNullMessage();
+        public override Task CanHandleNullMessageAsync() {
+            return base.CanHandleNullMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendDerivedMessage() {
-            return base.CanSendDerivedMessage();
+        public override Task CanSendDerivedMessageAsync() {
+            return base.CanSendDerivedMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendDelayedMessage() {
-            return base.CanSendDelayedMessage();
+        public override Task CanSendDelayedMessageAsync() {
+            return base.CanSendDelayedMessageAsync();
         }
 
         [Fact]
-        public override Task CanSendMessageToMultipleSubscribers() {
-            return base.CanSendMessageToMultipleSubscribers();
+        public override Task CanSendMessageToMultipleSubscribersAsync() {
+            return base.CanSendMessageToMultipleSubscribersAsync();
         }
 
         [Fact]
-        public override Task CanTolerateSubscriberFailure() {
-            return base.CanTolerateSubscriberFailure();
+        public override Task CanTolerateSubscriberFailureAsync() {
+            return base.CanTolerateSubscriberFailureAsync();
         }
 
         [Fact]
-        public override Task WillOnlyReceiveSubscribedMessageType() {
-            return base.WillOnlyReceiveSubscribedMessageType();
+        public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
+            return base.WillOnlyReceiveSubscribedMessageTypeAsync();
         }
 
         [Fact]
-        public override Task WillReceiveDerivedMessageTypes() {
-            return base.WillReceiveDerivedMessageTypes();
+        public override Task WillReceiveDerivedMessageTypesAsync() {
+            return base.WillReceiveDerivedMessageTypesAsync();
         }
 
         [Fact]
-        public override Task CanSubscribeToAllMessageTypes() {
-            return base.CanSubscribeToAllMessageTypes();
+        public override Task CanSubscribeToAllMessageTypesAsync() {
+            return base.CanSubscribeToAllMessageTypesAsync();
         }
 
         [Fact]
-        public override Task CanCancelSubscription() {
-            return base.CanCancelSubscription();
+        public override Task CanCancelSubscriptionAsync() {
+            return base.CanCancelSubscriptionAsync();
         }
 
         [Fact]
-        public override Task WontKeepMessagesWithNoSubscribers() {
-            return base.WontKeepMessagesWithNoSubscribers();
+        public override Task WontKeepMessagesWithNoSubscribersAsync() {
+            return base.WontKeepMessagesWithNoSubscribersAsync();
         }
 
         [Fact]
-        public override Task CanReceiveFromMultipleSubscribers() {
-            return base.CanReceiveFromMultipleSubscribers();
+        public override Task CanReceiveFromMultipleSubscribersAsync() {
+            return base.CanReceiveFromMultipleSubscribersAsync();
         }
 
         [Fact]
         public override void CanDisposeWithNoSubscribersOrPublishers() {
             base.CanDisposeWithNoSubscribersOrPublishers();
-        }
-
-        private void FlushAll() {
-            var endpoints = SharedConnection.GetMuxer().GetEndPoints(true);
-            if (endpoints.Length == 0)
-                return;
-
-            foreach (var endpoint in endpoints) {
-                var server = SharedConnection.GetMuxer().GetServer(endpoint);
-
-                try {
-                    server.FlushAllDatabases();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error flushing redis");
-                }
-            }
         }
     }
 }

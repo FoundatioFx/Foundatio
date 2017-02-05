@@ -21,20 +21,14 @@ namespace Foundatio.Messaging {
         public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
 
         protected async Task SendMessageToSubscribersAsync(Type messageType, object message) {
-            if (message == null)
+            if (message == null) {
+                _logger.Warn($"Unable to send null message for type {messageType.Name}");
                 return;
+            }
 
-            var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.GetTypeInfo().IsAssignableFrom(messageType));
+            var messageTypeSubscribers = _subscribers.Values.Where(s => s.Type.GetTypeInfo().IsAssignableFrom(messageType)).ToList();
+            _logger.Trace(() => $"Found {messageTypeSubscribers.Count} subscribers for message type {messageType.Name}.");
             foreach (var subscriber in messageTypeSubscribers) {
-                if (subscriber.CancellationToken.IsCancellationRequested)
-                    continue;
-
-                try {
-                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                } catch (Exception ex) {
-                    _logger.Error(ex, "Error sending message to subscriber: {0}", ex.Message);
-                }
-
                 if (subscriber.CancellationToken.IsCancellationRequested) {
                     Subscriber sub;
                     if (_subscribers.TryRemove(subscriber.Id, out sub)) {
@@ -42,8 +36,17 @@ namespace Foundatio.Messaging {
                     } else {
                         _logger.Trace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
                     }
+
+                    continue;
+                }
+
+                try {
+                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                } catch (Exception ex) {
+                    _logger.Error(ex, "Error sending message to subscriber: {0}", ex.Message);
                 }
             }
+            _logger.Trace(() => $"Done sending message to {messageTypeSubscribers.Count} subscribers for message type {messageType.Name}.");
         }
 
         public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {

@@ -18,12 +18,11 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Jobs {
     public abstract class JobQueueTestsBase: TestWithLoggingBase {
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) {
-            SystemClock.Reset();
         }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
         
-        public virtual async Task CanRunQueueJob() {
+        public virtual async Task CanRunQueueJobAsync() {
             const int workItemCount = 100;
             using (var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
@@ -46,7 +45,7 @@ namespace Foundatio.Tests.Jobs {
             }
         }
 
-        public virtual async Task CanRunQueueJobWithLockFail() {
+        public virtual async Task CanRunQueueJobWithLockFailAsync() {
             const int workItemCount = 10;
             const int allowedLockCount = 5;
             using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero)) {
@@ -73,7 +72,7 @@ namespace Foundatio.Tests.Jobs {
             }
         }
 
-        public virtual async Task CanRunMultipleQueueJobs() {
+        public virtual async Task CanRunMultipleQueueJobsAsync() {
             const int jobCount = 5;
             const int workItemCount = 100;
 
