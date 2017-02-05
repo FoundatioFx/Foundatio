@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\common.props" />
+  <PropertyGroup>
+    <TargetFrameworks>netcoreapp1.1;net46</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.10.2" />
+  </ItemGroup>
+</Project>

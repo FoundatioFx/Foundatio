@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\common.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
+  </ItemGroup>
+</Project>

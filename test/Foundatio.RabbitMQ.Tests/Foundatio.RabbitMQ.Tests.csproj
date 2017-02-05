@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\common.props" />
+  <PropertyGroup>
+    <TargetFrameworks>netcoreapp1.1;net46</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Logging.Xunit\Foundatio.Logging.Xunit.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
+    <ProjectReference Include="..\Foundatio.Tests\Foundatio.Tests.csproj" />
+  </ItemGroup>
+</Project>
