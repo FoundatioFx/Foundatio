@@ -9,6 +9,6 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="3.3.5.3" />
+    <PackageReference Include="AWSSDK.S3" Version="3.3.5.4" />
   </ItemGroup>
 </Project>

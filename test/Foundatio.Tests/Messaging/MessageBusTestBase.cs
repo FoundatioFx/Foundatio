@@ -62,7 +62,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
             }
         }
         
@@ -110,7 +110,7 @@ namespace Foundatio.Tests.Messaging {
 
                 var sw = Stopwatch.StartNew();
 
-                await Run.InParallel(numConcurrentMessages, async i => {
+                await Run.InParallelAsync(numConcurrentMessages, async i => {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello",
                         Count = i
@@ -272,7 +272,7 @@ namespace Foundatio.Tests.Messaging {
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         

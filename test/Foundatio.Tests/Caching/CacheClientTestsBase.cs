@@ -143,7 +143,7 @@ namespace Foundatio.Tests.Caching {
 
                 var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                 long adds = 0;
-                await Run.InParallel(5, async i => {
+                await Run.InParallelAsync(5, async i => {
                     if (await cache.AddAsync(cacheKey, i, TimeSpan.FromMinutes(1)))
                         Interlocked.Increment(ref adds);
                 });
@@ -343,14 +343,14 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAddAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetAddAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetAddAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetRemoveAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetRemoveAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetRemoveAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(null));
-                await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetSetAsync<ICollection<int>>(String.Empty));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(null));
+                await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(String.Empty));
                 
                 await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
                 var result = await cache.GetSetAsync<int>("test1");

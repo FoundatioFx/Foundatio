@@ -15,8 +15,7 @@ namespace Foundatio.Messaging {
             if (delay.HasValue && delay.Value > TimeSpan.Zero)
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
 
-            Task.Run(async () => await SendMessageToSubscribersAsync(messageType, message.Copy()).AnyContext());
-            return Task.CompletedTask;
+            return SendMessageToSubscribersAsync(messageType, message.Copy());
         }
     }
 }

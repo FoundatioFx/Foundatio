@@ -103,7 +103,7 @@ namespace Foundatio.Queues {
                     return;
 
                 _logger.Trace("Subscribing to enqueue messages for {_queueName}.", _queueName);
-                await _subscriber.SubscribeAsync(GetTopicName(), async (channel, value) => await OnTopicMessageAsync(channel, value).AnyContext()).AnyContext();
+                await _subscriber.SubscribeAsync(GetTopicName(), OnTopicMessage).AnyContext();
                 _isSubscribed = true;
             }
         }
@@ -357,7 +357,7 @@ namespace Foundatio.Queues {
             int attempts = 1;
             if (attemptsCachedValue.HasValue)
                 attempts = attemptsCachedValue.Value + 1;
-            
+
             var retryDelay = GetRetryDelay(attempts);
             _logger.Trace("Item: {entryId} Retry attempts: {attempts} delay: {retryDelay} allowed: {_retries}", entry.Id, attempts, retryDelay, _retries);
 
@@ -478,10 +478,10 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async Task OnTopicMessageAsync(RedisChannel redisChannel, RedisValue redisValue) {
+        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
 
-            using (await _monitor.EnterAsync().AnyContext())
+            using (_monitor.Enter())
                 _monitor.Pulse();
         }
 
@@ -504,12 +504,12 @@ namespace Foundatio.Queues {
                         continue;
 
                     var renewedTime = new DateTime(renewedTimeTicks.Value);
-                    _logger.Trace(() => $"Renewed time {renewedTime.ToString("o")}");
+                    _logger.Trace(() => $"Renewed time {renewedTime:o}");
 
                     if (utcNow.Subtract(renewedTime) <= _workItemTimeout)
                         continue;
 
-                    _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime.ToString("o")} current: {utcNow.ToString("o")} timeout: {_workItemTimeout}");
+                    _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime:o} current: {utcNow:o} timeout: {_workItemTimeout}");
 
                     var entry = await GetQueueEntryAsync(workId).AnyContext();
                     if (entry == null)
@@ -560,7 +560,7 @@ namespace Foundatio.Queues {
             while (!cancellationToken.IsCancellationRequested) {
                 _logger.Trace("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId);
 
-                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", async () => await DoMaintenanceWorkAsync().AnyContext(), acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
+                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", DoMaintenanceWorkAsync, acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
             }
         }
 
@@ -570,11 +570,12 @@ namespace Foundatio.Queues {
             base.Dispose();
 
             _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
-            
+
             if (_isSubscribed) {
                 lock (_lock.Lock()) {
                     if (_isSubscribed) {
-                        _subscriber.UnsubscribeAll(CommandFlags.FireAndForget);
+                        _logger.Trace("Unsubscribing from topic {0}", GetTopicName());
+                        _subscriber.Unsubscribe(GetTopicName(), OnTopicMessage, CommandFlags.FireAndForget);
                         _isSubscribed = false;
                     }
                 }

@@ -77,6 +77,7 @@ namespace Foundatio.Messaging {
         }
 
         public override void Dispose() {
+            _logger.Trace("MessageBus dispose");
             base.Dispose();
 
             if (_isSubscribed) {
@@ -84,7 +85,8 @@ namespace Foundatio.Messaging {
                     if (!_isSubscribed)
                         return;
 
-                    _subscriber.UnsubscribeAll(CommandFlags.FireAndForget);
+                    _logger.Trace("Unsubscribing from topic {0}", _topic);
+                    _subscriber.Unsubscribe(_topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
                 }
             }

@@ -47,7 +47,7 @@ namespace Foundatio.Tests.Locks {
 
             int counter = 0;
 
-            await Run.InParallel(25, async i => {
+            await Run.InParallelAsync(25, async i => {
                 var sw = Stopwatch.StartNew();
                 var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1));
                 sw.Stop();

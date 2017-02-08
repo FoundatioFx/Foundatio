@@ -163,7 +163,7 @@ namespace Foundatio.Tests.Metrics {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 Assert.True(await task, "Expected at least 4 count within 500 ms");
 
-                task = metrics.WaitForCounterAsync(CounterName, async () => await metrics.CounterAsync(CounterName), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                task = metrics.WaitForCounterAsync(CounterName, () => metrics.CounterAsync(CounterName), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
                 Assert.True(await task, "Expected at least 5 count within 500 ms");
 

@@ -105,7 +105,7 @@ namespace Foundatio.Tests.Jobs {
                             lock (completedItemsLock)
                                 completedItems.Add(status.WorkItemId);
                         });
-            
+
                         var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                         var tasks = new List<Task> {
                             Task.Run(async () => {

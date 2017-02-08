@@ -51,8 +51,7 @@ namespace Foundatio.Tests.Locks {
             var sw = Stopwatch.StartNew();
             // Monitor will not be pulsed and should be cancelled after 100ms.
             using (await monitor.EnterAsync())
-                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-                    await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()));
+                await Assert.ThrowsAsync<OperationCanceledException>(() => monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()));
             sw.Stop();
             Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
 

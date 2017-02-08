@@ -71,7 +71,7 @@ namespace Foundatio.Tests.Metrics {
             const int iterations = 100;
             await StartListeningAsync(iterations);
 
-            await Run.InParallel(iterations, async i =>{
+            await Run.InParallelAsync(iterations, async i =>{
                 await SystemClock.SleepAsync(50);
                 await _client.CounterAsync("counter");
             });

@@ -110,7 +110,7 @@ namespace Foundatio.Tests.Jobs {
             await job.RunContinuousAsync(iterationLimit: 2);
             Assert.Equal(3, job.RunCount);
 
-            await Run.InParallel(2, async i => await job.RunAsync());
+            await Run.InParallelAsync(2, i => job.RunAsync());
             Assert.Equal(4, job.RunCount);
         }
 

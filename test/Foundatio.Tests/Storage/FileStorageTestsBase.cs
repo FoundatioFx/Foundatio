@@ -102,7 +102,7 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                await Assert.ThrowsAnyAsync<ArgumentException>(async () => await storage.GetFileInfoAsync(null));
+                await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
                 Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
             }
         }
@@ -185,7 +185,7 @@ namespace Foundatio.Tests.Storage {
                 var info = await storage.GetFileInfoAsync("nope");
                 Assert.Null(info);
 
-                await Run.InParallel(10, async i => {
+                await Run.InParallelAsync(10, async i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,
                         CharSet = "utf8",
@@ -203,7 +203,7 @@ namespace Foundatio.Tests.Storage {
 
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
-                await Run.InParallel(10, async i => {
+                await Run.InParallelAsync(10, async i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                     var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);
                     if (eventPost == null)
