@@ -20,7 +20,7 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build -f net46 Foundatio.sln
+  - ps: dotnet build Foundatio.sln /p:TargetFrameworks=net46
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -28,11 +28,6 @@ before_test:
   - redis-64\tools\redis-server.exe --service-start
   - choco install rabbitmq --ignoredependencies -y
   - ps: (Get-Service -Name RabbitMQ).Status
-  - ps: |
-      $msiPath = "$env:TEMP\MicrosoftAzureStorageEmulator.msi"
-      (New-Object Net.WebClient).DownloadFile('http://download.microsoft.com/download/8/B/9/8B905834-DA6B-4A0A-A6C2-C1B8ACD9141D/MicrosoftAzureStorageEmulator.msi', $msiPath)
-      cmd /c start /wait msiexec /i $msiPath /quiet
-      del $msiPath
 
 artifacts:
   - path: artifacts\*.nupkg
