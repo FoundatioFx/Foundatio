@@ -15,17 +15,22 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 
 namespace Foundatio.Storage {
-    public class S3Storage : IFileStorage {
+    [Obsolete("S3Storage has been renamed to S3FileStorage")]
+    public class S3Storage : S3FileStorage {
+        public S3Storage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) : base(credentials, region, bucket, loggerFactory) {}
+    }
+
+    public class S3FileStorage : IFileStorage {
         private readonly AWSCredentials _credentials;
         private readonly RegionEndpoint _region;
         private readonly string _bucket;
         private readonly ILogger _logger;
 
-        public S3Storage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) {
+        public S3FileStorage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) {
             _credentials = credentials;
             _region = region;
             _bucket = bucket;
-            _logger = loggerFactory.CreateLogger<S3Storage>();
+            _logger = loggerFactory.CreateLogger<S3FileStorage>();
         }
 
         private AmazonS3Client CreateClient() {
@@ -33,6 +38,9 @@ namespace Foundatio.Storage {
         }
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             using (var client = CreateClient()) {
                 var req = new GetObjectRequest {
                     BucketName = _bucket,
@@ -48,6 +56,9 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             using (var client = CreateClient()) {
                 var req = new GetObjectMetadataRequest {
                     BucketName = _bucket,
@@ -73,11 +84,17 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> ExistsAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             var result = await GetFileInfoAsync(path).AnyContext();
             return result != null;
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             using (var client = CreateClient()) {
                 var req = new PutObjectRequest {
                     BucketName = _bucket,
@@ -91,6 +108,11 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrWhiteSpace(oldpath))
+                throw new ArgumentNullException(nameof(oldpath));
+            if (String.IsNullOrWhiteSpace(newpath))
+                throw new ArgumentNullException(nameof(newpath));
+
             using (var client = CreateClient()) {
                 var req = new CopyObjectRequest {
                     SourceBucket = _bucket,
@@ -115,6 +137,11 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrWhiteSpace(targetpath))
+                throw new ArgumentNullException(nameof(targetpath));
+
             using (var client = CreateClient()) {
                 var req = new CopyObjectRequest {
                     SourceBucket = _bucket,
@@ -129,6 +156,9 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             using (var client = CreateClient()) {
                 var req = new DeleteObjectRequest {
                     BucketName = _bucket,
