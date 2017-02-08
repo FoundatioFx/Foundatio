@@ -94,6 +94,19 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanGetNonExistentFileInfoAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await Assert.ThrowsAnyAsync<ArgumentException>(async () => await storage.GetFileInfoAsync(null));
+                Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
+            }
+        }
+
         public virtual async Task CanManageFilesAsync() {
             await ResetAsync();
 

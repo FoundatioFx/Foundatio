@@ -9,8 +9,8 @@ using Xunit.Abstractions;
 using Foundatio.Tests.Utility;
 
 namespace Foundatio.AWS.Tests.Storage {
-    public class S3StorageTests : FileStorageTestsBase {
-        public S3StorageTests(ITestOutputHelper output) : base(output) {}
+    public class S3FileStorageTests : FileStorageTestsBase {
+        public S3FileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
             var section = Configuration.GetSection("AWS");
@@ -19,7 +19,7 @@ namespace Foundatio.AWS.Tests.Storage {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new S3Storage(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio", loggerFactory: Log);
+            return new S3FileStorage(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio", loggerFactory: Log);
         }
 
         [Fact]
@@ -35,6 +35,11 @@ namespace Foundatio.AWS.Tests.Storage {
         [Fact]
         public override Task CanGetFileInfoAsync() {
             return base.CanGetFileInfoAsync();
+        }
+
+        [Fact]
+        public override Task CanGetNonExistentFileInfoAsync() {
+            return base.CanGetNonExistentFileInfoAsync();
         }
 
         [Fact]

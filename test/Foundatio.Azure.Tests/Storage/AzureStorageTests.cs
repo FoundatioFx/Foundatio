@@ -34,6 +34,11 @@ namespace Foundatio.Azure.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanGetNonExistentFileInfoAsync() {
+            return base.CanGetNonExistentFileInfoAsync();
+        }
+
+        [Fact]
         public override Task CanSaveFilesAsync() {
             return base.CanSaveFilesAsync();
         }

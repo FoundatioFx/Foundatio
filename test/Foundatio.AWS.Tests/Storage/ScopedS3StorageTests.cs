@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Storage {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new ScopedFileStorage(new S3Storage(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio", loggerFactory: Log), "scope");
+            return new ScopedFileStorage(new S3FileStorage(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio", loggerFactory: Log), "scope");
         }
 
         [Fact]
@@ -34,6 +34,11 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override Task CanGetFileInfoAsync() {
             return base.CanGetFileInfoAsync();
+        }
+
+        [Fact]
+        public override Task CanGetNonExistentFileInfoAsync() {
+            return base.CanGetNonExistentFileInfoAsync();
         }
 
         [Fact]
