@@ -13,7 +13,7 @@ namespace Foundatio.Messaging {
     public abstract class MessageBusBase : MaintenanceBase, IMessagePublisher {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
-        
+
         public MessageBusBase(ILoggerFactory loggerFactory) : base(loggerFactory) {
             InitializeMaintenance();
         }
