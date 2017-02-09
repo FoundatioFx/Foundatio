@@ -54,11 +54,11 @@ namespace Foundatio.Messaging {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
-                Action = async (message, token) => {
+                Action = (message, token) => {
                     if (!(message is T))
-                        return;
+                        return Task.CompletedTask;
 
-                    await handler((T)message, cancellationToken).AnyContext();
+                    return handler((T)message, cancellationToken);
                 }
             };
 

@@ -8,7 +8,9 @@ using Foundatio.Logging;
 using Foundatio.Messaging;
 
 namespace Foundatio.Caching {
-    public class HybridCacheClient : ICacheClient {
+    public interface IHybridCacheClient : ICacheClient { }
+
+    public class HybridCacheClient : IHybridCacheClient {
         private readonly string _cacheId = Guid.NewGuid().ToString("N");
         protected readonly ICacheClient _distributedCache;
         private readonly InMemoryCacheClient _localCache;
@@ -17,11 +19,11 @@ namespace Foundatio.Caching {
         private long _localCacheHits;
         private long _invalidateCacheCalls;
 
-        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
+        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory.CreateLogger<HybridCacheClient>();
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
-            _messageBus.Subscribe<InvalidateCache>(async cache => await OnRemoteCacheItemExpiredAsync(cache).AnyContext());
+            _messageBus.Subscribe<InvalidateCache>(OnRemoteCacheItemExpiredAsync);
             _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
             _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
         }

@@ -42,7 +42,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
 
@@ -53,7 +52,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
 
@@ -64,7 +62,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
         
