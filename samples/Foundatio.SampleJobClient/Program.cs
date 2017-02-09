@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Logging.InMemory;
+using Foundatio.Logging.NLog;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using StackExchange.Redis;
@@ -15,6 +16,7 @@ namespace Foundatio.SampleJobClient {
         private static IQueue<PingRequest> _queue;
 
         public static void Main(string[] args) {
+            _loggerFactory.AddNLog();
             Console.CursorVisible = false;
             StartDisplayingLogMessages();
 
@@ -52,6 +54,8 @@ namespace Foundatio.SampleJobClient {
         private static void EnqueuePing(int count = 1) {
             for (int i = 0; i < count; i++)
                 _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
+
+            _log.Info(() => $"Enqueued {count} ping requests");
         }
 
         private const int OPTIONS_MENU_LINE_COUNT = 6;
@@ -61,8 +65,8 @@ namespace Foundatio.SampleJobClient {
                 ClearConsoleLines(0, OPTIONS_MENU_LINE_COUNT - 1);
                 Console.WriteLine("1: Enqueue 1");
                 Console.WriteLine("2: Enqueue 100");
-                Console.WriteLine("3: Enqueue continuous");
-                Console.WriteLine("4: Enqueue continuous (random interval)");
+                //Console.WriteLine("3: Enqueue continuous");
+                //Console.WriteLine("4: Enqueue continuous (random interval)");
                 Console.WriteLine();
                 Console.WriteLine("Q: Quit");
             }
