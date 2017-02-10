@@ -14,4 +14,7 @@
     <PackageReference Include="SimpleInjector" Version="3.3.2" />
     <PackageReference Include="Topshelf" Version="4.0.3" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="NLog.config" CopyToOutputDirectory="Always" />
+  </ItemGroup>
 </Project>
