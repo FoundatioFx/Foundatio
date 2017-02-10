@@ -148,19 +148,19 @@ namespace Foundatio.Messaging {
         }
 
         private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
-            _logger.Trace("OnMessage: {messageId}", e.BasicProperties?.MessageId);
-            var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
+            if (_subscribers.IsEmpty)
+                return;
 
-            Type messageType;
+            _logger.Trace("OnMessage({messageId})", e.BasicProperties?.MessageId);
+            MessageBusData message;
             try {
-                messageType = Type.GetType(message.Type);
+                message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", e.BasicProperties?.MessageId, ex.Message);
                 return;
             }
 
-            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
         
         public override void Dispose() {

@@ -9,13 +9,13 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Jobs {
     public class WorkItemJob : IQueueJob, IHaveLogger {
-        protected readonly IMessageBus _messageBus;
+        protected readonly IMessagePublisher _publisher;
         protected readonly WorkItemHandlers _handlers;
         protected readonly IQueue<WorkItemData> _queue;
         protected readonly ILogger _logger;
 
-        public WorkItemJob(IQueue<WorkItemData> queue, IMessageBus messageBus, WorkItemHandlers handlers, ILoggerFactory loggerFactory = null) {
-            _messageBus = messageBus;
+        public WorkItemJob(IQueue<WorkItemData> queue, IMessagePublisher publisher, WorkItemHandlers handlers, ILoggerFactory loggerFactory = null) {
+            _publisher = publisher;
             _handlers = handlers;
             _queue = queue;
             _logger = loggerFactory.CreateLogger(GetType());
@@ -121,7 +121,7 @@ namespace Foundatio.Jobs {
 
         protected async Task ReportProgress(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string message = null) {
             try {
-                await _messageBus.PublishAsync(new WorkItemStatus {
+                await _publisher.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,
                     Type = queueEntry.Value.Type,
                     Progress = progress,

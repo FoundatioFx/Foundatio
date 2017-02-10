@@ -28,7 +28,7 @@ namespace Foundatio.Messaging {
             lock (_lockObject) {
                 if (_isSubscribed)
                     return;
-                
+
                 _logger.Trace("Subscribing to topic: {0}", _topic);
                 _subscriber.Subscribe(_topic, OnMessage);
                 _isSubscribed = true;
@@ -36,20 +36,19 @@ namespace Foundatio.Messaging {
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
-            _logger.Trace("OnMessage: {channel}", channel);
+            if (_subscribers.IsEmpty)
+                return;
 
-            var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
-
-            Type messageType;
+            _logger.Trace("OnMessage({channel})", channel);
+            MessageBusData message;
             try {
-                messageType = Type.GetType(message.Type);
+                message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", channel, ex.Message);
                 return;
             }
 
-            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
