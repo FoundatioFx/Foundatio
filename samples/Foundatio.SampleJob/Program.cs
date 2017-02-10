@@ -10,7 +10,6 @@ namespace Foundatio.SampleJob {
         public static int Main() {
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddNLog();
-            loggerFactory.DefaultLogLevel = LogLevel.Trace;
 
             var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(PingQueueJob), loggerFactory);
             return TopshelfJob.Run<PingQueueJob>(() => serviceProvider.GetService<PingQueueJob>(), loggerFactory: loggerFactory);

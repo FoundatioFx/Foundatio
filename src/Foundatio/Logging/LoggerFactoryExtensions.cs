@@ -10,9 +10,5 @@ namespace Foundatio.Logging {
         public static ILogger CreateLogger(this ILoggerFactory loggerFactory, Type type) {
             return loggerFactory?.CreateLogger(TypeHelper.GetTypeDisplayName(type)) ?? NullLogger.Instance;
         }
-
-        public static void SetLogLevel<T>(this ILoggerFactory loggerFactory, LogLevel minLogLevel) {
-            loggerFactory.SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
-        }
     }
 }

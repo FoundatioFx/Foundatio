@@ -11,7 +11,6 @@ namespace Foundatio.CronJob {
     public class Program {
         public static void Main() {
             var loggerFactory = new LoggerFactory();
-            loggerFactory.DefaultLogLevel = LogLevel.Trace;
             var logger = loggerFactory.CreateLogger<Program>();
 
             var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(EveryMinuteJob), loggerFactory);

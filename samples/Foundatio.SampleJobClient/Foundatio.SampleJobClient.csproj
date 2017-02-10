@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <None Include="App.config" />
+    <None Update="NLog.config" CopyToOutputDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>

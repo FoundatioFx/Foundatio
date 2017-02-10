@@ -15,29 +15,11 @@ namespace Foundatio.Logging {
                 if (_loggers.TryGetValue(categoryName, out logger))
                     return logger;
 
-                LogLevel logLevel;
-                if (!_logLevels.TryGetValue(categoryName, out logLevel))
-                    logLevel = DefaultLogLevel;
-
-                logger = new Logger(this, categoryName, logLevel);
+                logger = new Logger(this, categoryName);
                 _loggers[categoryName] = logger;
             }
 
             return logger;
-        }
-
-        public LogLevel DefaultLogLevel { get; set; } = LogLevel.Information;
-
-        public void SetLogLevel(string categoryName, LogLevel minLogLevel) {
-            lock (_sync) {
-                _logLevels[categoryName] = minLogLevel;
-
-                Logger logger;
-                if (!_loggers.TryGetValue(categoryName, out logger))
-                    return;
-
-                logger.ChangeMinLogLevel(minLogLevel);
-            }
         }
 
         public void AddProvider(ILoggerProvider provider) {
