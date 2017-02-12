@@ -68,10 +68,13 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
+                var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
+                Assert.Null(fileInfo);
+
                 var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
-                var fileInfo = await storage.GetFileInfoAsync(path);
+                fileInfo = await storage.GetFileInfoAsync(path);
                 Assert.NotNull(fileInfo);
                 Assert.True(fileInfo.Path.EndsWith("nested.txt"), "Incorrect file");
                 Assert.True(fileInfo.Size > 0, "Incorrect file size");
