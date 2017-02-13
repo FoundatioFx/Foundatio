@@ -5,10 +5,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
+using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Utility;
@@ -24,6 +27,10 @@ namespace Foundatio.Tests.Queue {
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
+        }
+
+        protected virtual CacheLockProvider GetCacheLockProvider() {
+            return new CacheLockProvider(new InMemoryCacheClient(Log), new InMemoryMessageBus(Log), Log);
         }
 
         public virtual async Task CanQueueAndDequeueWorkItemAsync() {
@@ -398,7 +405,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                const int workItemCount = 50;
+                const int workItemCount = 500;
                 const int workerCount = 3;
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var info = new WorkInfo();
@@ -663,7 +670,7 @@ namespace Foundatio.Tests.Queue {
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.CompleteAsync(workItem));
             }
         }
-        
+
         public virtual async Task CanCompleteQueueEntryOnceAsync() {
             var queue = GetQueue();
             if (queue == null)
@@ -700,7 +707,47 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(1, queueEntry.Attempts);
             }
         }
-        
+
+        public virtual async Task CanDequeueWithLockingAsync() {
+            var queue = GetQueue(retryDelay: TimeSpan.Zero, retries: 0);
+            if (queue == null)
+                return;
+
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Information);
+            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Information);
+            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+
+                using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
+
+                    var resetEvent = new AsyncAutoResetEvent();
+                    var distributedLock = GetCacheLockProvider();
+                    await queue.StartWorkingAsync(async w => {
+                        _logger.Info("Acquiring distributed lock in work item");
+                        var l = await distributedLock.AcquireAsync("test");
+                        Assert.NotNull(l);
+                        _logger.Info("Acquired distributed lock");
+                        SystemClock.Sleep(TimeSpan.FromMilliseconds(500));
+                        await l.ReleaseAsync();
+                        _logger.Info("Released distributed lock");
+                        resetEvent.Set();
+                    });
+
+                    await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                    await resetEvent.WaitAsync(TimeSpan.FromSeconds(30));
+
+                    await SystemClock.SleepAsync(1000);
+                    var stats = await queue.GetQueueStatsAsync();
+                    _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    Assert.Equal(1, stats.Completed);
+                }
+            }
+        }
+
         protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
             _logger.Trace($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);

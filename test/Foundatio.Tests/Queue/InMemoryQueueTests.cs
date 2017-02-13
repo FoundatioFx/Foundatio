@@ -151,5 +151,10 @@ namespace Foundatio.Tests.Queue {
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
         }
+
+        [Fact]
+        public override Task CanDequeueWithLockingAsync() {
+            return base.CanDequeueWithLockingAsync();
+        }
     }
 }
