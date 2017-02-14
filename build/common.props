@@ -11,7 +11,7 @@
     <DebugType>portable</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)\artifacts\</PackageOutputPath>
-    <IncludeSymbols>False</IncludeSymbols>
+    <IncludeSymbols>True</IncludeSymbols>
     <IncludeSource>True</IncludeSource>
 
     <PackageReleaseNotes>https://github.com/exceptionless/Foundatio/releases</PackageReleaseNotes>
