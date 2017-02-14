@@ -29,10 +29,6 @@ namespace Foundatio.Tests.Queue {
             return null;
         }
 
-        protected virtual CacheLockProvider GetCacheLockProvider() {
-            return new CacheLockProvider(new InMemoryCacheClient(Log), new InMemoryMessageBus(Log), Log);
-        }
-
         public virtual async Task CanQueueAndDequeueWorkItemAsync() {
             var queue = GetQueue();
             if (queue == null)
@@ -709,6 +705,15 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDequeueWithLockingAsync() {
+            using (var cache = new InMemoryCacheClient(Log)) {
+                using (var messageBus = new InMemoryMessageBus(Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanDequeueWithLockingImpAsync(distributedLock);
+                }
+            }
+        }
+
+        protected async Task CanDequeueWithLockingImpAsync(CacheLockProvider distributedLock) {
             var queue = GetQueue(retryDelay: TimeSpan.Zero, retries: 0);
             if (queue == null)
                 return;
@@ -725,7 +730,6 @@ namespace Foundatio.Tests.Queue {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
                     var resetEvent = new AsyncAutoResetEvent();
-                    var distributedLock = GetCacheLockProvider();
                     await queue.StartWorkingAsync(async w => {
                         _logger.Info("Acquiring distributed lock in work item");
                         var l = await distributedLock.AcquireAsync("test");
@@ -734,13 +738,15 @@ namespace Foundatio.Tests.Queue {
                         SystemClock.Sleep(TimeSpan.FromMilliseconds(500));
                         await l.ReleaseAsync();
                         _logger.Info("Released distributed lock");
+
+                        await w.CompleteAsync();
                         resetEvent.Set();
                     });
 
                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                     await resetEvent.WaitAsync(TimeSpan.FromSeconds(30));
 
-                    await SystemClock.SleepAsync(1000);
+                    await SystemClock.SleepAsync(1);
                     var stats = await queue.GetQueueStatsAsync();
                     _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(1, stats.Completed);
