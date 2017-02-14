@@ -9,6 +9,6 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="WindowsAzure.ServiceBus" Version="3.4.5" />
+    <PackageReference Include="WindowsAzure.ServiceBus" Version="3.4.6" />
   </ItemGroup>
 </Project>
