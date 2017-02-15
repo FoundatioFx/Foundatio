@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Caching;
+using Foundatio.Lock;
 using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
+using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
@@ -119,6 +122,28 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
+        }
+
+        [Fact]
+        public override async Task CanDequeueWithLockingAsync() {
+            var muxer = SharedConnection.GetMuxer();
+            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanDequeueWithLockingImpAsync(distributedLock);
+                }
+            }
+        }
+
+        [Fact]
+        public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            var muxer = SharedConnection.GetMuxer();
+            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
+                }
+            }
         }
 
         [Fact]
