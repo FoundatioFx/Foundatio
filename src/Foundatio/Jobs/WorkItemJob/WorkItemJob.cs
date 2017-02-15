@@ -8,6 +8,7 @@ using Foundatio.Queues;
 using Foundatio.Serializer;
 
 namespace Foundatio.Jobs {
+    [Job(Description = "Processes adhoc work item queues entries")]
     public class WorkItemJob : IQueueJob, IHaveLogger {
         protected readonly IMessagePublisher _publisher;
         protected readonly WorkItemHandlers _handlers;
