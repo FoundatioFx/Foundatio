@@ -156,5 +156,10 @@ namespace Foundatio.Tests.Queue {
         public override Task CanDequeueWithLockingAsync() {
             return base.CanDequeueWithLockingAsync();
         }
+
+        [Fact]
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            return base.CanHaveMultipleQueueInstancesWithLockingAsync();
+        }
     }
 }

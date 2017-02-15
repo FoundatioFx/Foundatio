@@ -411,7 +411,7 @@ namespace Foundatio.Tests.Queue {
                     for (int i = 0; i < workerCount; i++) {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                         _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
-                        await q.StartWorkingAsync(async w => await DoWorkAsync(w, countdown, info));
+                        await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info));
                         workers.Add(q);
                     }
 
@@ -728,14 +728,14 @@ namespace Foundatio.Tests.Queue {
 
                 using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
-
+                    
                     var resetEvent = new AsyncAutoResetEvent();
                     await queue.StartWorkingAsync(async w => {
                         _logger.Info("Acquiring distributed lock in work item");
                         var l = await distributedLock.AcquireAsync("test");
                         Assert.NotNull(l);
                         _logger.Info("Acquired distributed lock");
-                        SystemClock.Sleep(TimeSpan.FromMilliseconds(500));
+                        SystemClock.Sleep(TimeSpan.FromMilliseconds(250));
                         await l.ReleaseAsync();
                         _logger.Info("Released distributed lock");
 
@@ -744,12 +744,95 @@ namespace Foundatio.Tests.Queue {
                     });
 
                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-                    await resetEvent.WaitAsync(TimeSpan.FromSeconds(30));
+                    await resetEvent.WaitAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
 
                     await SystemClock.SleepAsync(1);
                     var stats = await queue.GetQueueStatsAsync();
                     _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(1, stats.Completed);
+                }
+            }
+        }
+
+        public virtual async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            using (var cache = new InMemoryCacheClient(Log)) {
+                using (var messageBus = new InMemoryMessageBus(Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
+                }
+            }
+        }
+
+        protected async Task CanHaveMultipleQueueInstancesWithLockingImplAsync(CacheLockProvider distributedLock) {
+            var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+            if (queue == null)
+                return;
+
+            using (queue) {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+
+                const int workItemCount = 16;
+                const int workerCount = 4;
+                var countdown = new AsyncCountdownEvent(workItemCount);
+                var info = new WorkInfo();
+                var workers = new List<IQueue<SimpleWorkItem>> { queue };
+
+                Log.MinimumLevel = LogLevel.Trace;
+                try {
+                    for (int i = 0; i < workerCount; i++) {
+                        var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                        _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
+                        await q.StartWorkingAsync(async w => {
+                            _logger.Info("Acquiring distributed lock in work item");
+                            var l = await distributedLock.AcquireAsync("test");
+                            Assert.NotNull(l);
+                            _logger.Info("Acquired distributed lock");
+                            SystemClock.Sleep(TimeSpan.FromMilliseconds(50));
+                            await l.ReleaseAsync();
+                            _logger.Info("Released distributed lock");
+
+                            await w.CompleteAsync();
+                            info.IncrementCompletedCount();
+                            countdown.Signal();
+                        });
+                        workers.Add(q);
+                    }
+
+                    await Run.InParallelAsync(workItemCount, async i => {
+                        var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                            Data = "Hello",
+                            Id = i
+                        });
+                        _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
+                    });
+
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
+                    await SystemClock.SleepAsync(50);
+                    _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+
+                    _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                    Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
+
+                    // In memory queue doesn't share state.
+                    if (queue.GetType() == typeof(InMemoryQueue<SimpleWorkItem>)) {
+                        var stats = await queue.GetQueueStatsAsync();
+                        Assert.Equal(info.CompletedCount, stats.Completed);
+                    } else {
+                        var workerStats = new List<QueueStats>();
+                        for (int i = 0; i < workers.Count; i++) {
+                            var stats = await workers[i].GetQueueStatsAsync();
+                            _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                            workerStats.Add(stats);
+                        }
+
+                        Assert.Equal(info.CompletedCount, workerStats.Sum(s => s.Completed));
+                    }
+                } finally {
+                    foreach (var q in workers) {
+                        await q.DeleteQueueAsync();
+                        q.Dispose();
+                    }
                 }
             }
         }

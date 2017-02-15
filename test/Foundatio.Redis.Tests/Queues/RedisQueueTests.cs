@@ -136,6 +136,17 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            var muxer = SharedConnection.GetMuxer();
+            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
+                }
+            }
+        }
+
+        [Fact]
         public async Task VerifyCacheKeysAreCorrect() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
