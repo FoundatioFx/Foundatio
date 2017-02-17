@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="1.1.27" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0-preview-20170210-02" />
   </ItemGroup>
 </Project>

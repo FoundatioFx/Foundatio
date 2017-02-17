@@ -14,4 +14,7 @@
     <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
     <ProjectReference Include="..\Foundatio.Tests\Foundatio.Tests.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0-preview-20170210-02" />
+  </ItemGroup>
 </Project>
