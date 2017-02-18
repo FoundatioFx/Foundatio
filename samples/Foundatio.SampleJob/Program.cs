@@ -1,7 +1,6 @@
 ﻿using System;
 using Foundatio.Logging;
 using Foundatio.Extensions;
-using Foundatio.Jobs;
 using Foundatio.Logging.NLog;
 using Foundatio.ServiceProviders;
 

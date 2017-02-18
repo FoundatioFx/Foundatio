@@ -12,7 +12,7 @@ namespace Foundatio.Logging.InMemory {
         public int MaxLogEntries = 1000;
 
         public List<LogEntry> GetLogEntries(int entryCount = 10) {
-            return new List<LogEntry>(_logEntries.OrderByDescending(l => l.Date).Take(entryCount).ToArray());
+            return new List<LogEntry>(_logEntries.ToList().OrderByDescending(l => l.Date).Take(entryCount).ToArray());
         }
 
         internal void AddLogEntry(LogEntry logEntry) {

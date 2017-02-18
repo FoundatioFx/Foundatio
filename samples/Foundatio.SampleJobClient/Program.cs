@@ -32,20 +32,21 @@ namespace Foundatio.SampleJobClient {
                 Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 1);
                 ConsoleKeyInfo keyInfo = Console.ReadKey(true);
 
-                if (keyInfo.Key == ConsoleKey.D1)
+                if (keyInfo.Key == ConsoleKey.D1) {
                     EnqueuePing();
-                else if (keyInfo.Key == ConsoleKey.D2)
+                } else if (keyInfo.Key == ConsoleKey.D2) {
                     EnqueuePing(100);
-                //else if (keyInfo.Key == ConsoleKey.D3)
-                //    EnqueueContinuousPings(50, token, 100);
-                //else if (keyInfo.Key == ConsoleKey.D4)
-                //    EnqueueContinuousPings(50, token, 100);
-                else if (keyInfo.Key == ConsoleKey.Q)
+                } else if (keyInfo.Key == ConsoleKey.D3) {
+                    if (tokenSource.IsCancellationRequested) {
+                        tokenSource = new CancellationTokenSource();
+                        token = tokenSource.Token;
+                    }
+
+                    Task.Run(() => EnqueueContinuousPings(25, token), token);
+                } else if (keyInfo.Key == ConsoleKey.Q) {
                     break;
-                else if (keyInfo.Key == ConsoleKey.S) {
+                } else if (keyInfo.Key == ConsoleKey.S) {
                     tokenSource.Cancel();
-                    tokenSource = new CancellationTokenSource();
-                    token = tokenSource.Token;
                     ClearOutputLines();
                 }
             }
@@ -58,6 +59,15 @@ namespace Foundatio.SampleJobClient {
             _log.Info(() => $"Enqueued {count} ping requests");
         }
 
+        private static void EnqueueContinuousPings(int count, CancellationToken token) {
+            do {
+                for (int i = 0; i < count; i++)
+                    _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
+
+                _log.Info(() => $"Enqueued {count} ping requests");
+            } while (!token.IsCancellationRequested);
+        }
+
         private const int OPTIONS_MENU_LINE_COUNT = 6;
         private static void WriteOptionsMenu() {
             lock (_writeLock) {
@@ -65,9 +75,9 @@ namespace Foundatio.SampleJobClient {
                 ClearConsoleLines(0, OPTIONS_MENU_LINE_COUNT - 1);
                 Console.WriteLine("1: Enqueue 1");
                 Console.WriteLine("2: Enqueue 100");
-                //Console.WriteLine("3: Enqueue continuous");
-                //Console.WriteLine("4: Enqueue continuous (random interval)");
+                Console.WriteLine("3: Enqueue continuous");
                 Console.WriteLine();
+                Console.WriteLine("S: Stop");
                 Console.WriteLine("Q: Quit");
             }
         }
