@@ -16,33 +16,13 @@ namespace Foundatio.Utility {
     public class DefaultSystemClock : ISystemClock {
         public static readonly DefaultSystemClock Instance = new DefaultSystemClock();
 
-        public DateTime Now() {
-            return DateTime.Now;
-        }
-
-        public DateTime UtcNow() {
-            return DateTime.UtcNow;
-        }
-
-        public DateTimeOffset OffsetNow() {
-            return DateTimeOffset.Now;
-        }
-
-        public DateTimeOffset OffsetUtcNow() {
-            return DateTimeOffset.UtcNow;
-        }
-
-        public void Sleep(int milliseconds) {
-            Thread.Sleep(milliseconds);
-        }
-
-        public Task SleepAsync(int milliseconds, CancellationToken ct) {
-            return Task.Delay(milliseconds, ct);
-        }
-
-        public TimeSpan TimeZoneOffset() {
-            return DateTimeOffset.Now.Offset;
-        }
+        public DateTime Now() => DateTime.Now;
+        public DateTime UtcNow() => DateTime.UtcNow;
+        public DateTimeOffset OffsetNow() => DateTimeOffset.Now;
+        public DateTimeOffset OffsetUtcNow() => DateTimeOffset.UtcNow;
+        public void Sleep(int milliseconds) => Thread.Sleep(milliseconds);
+        public Task SleepAsync(int milliseconds, CancellationToken ct) => Task.Delay(milliseconds, ct);
+        public TimeSpan TimeZoneOffset() => DateTimeOffset.Now.Offset;
     }
 
     public class TestSystemClock : ISystemClock {
@@ -51,21 +31,16 @@ namespace Foundatio.Utility {
         private TimeSpan _timeZoneOffset = DateTimeOffset.Now.Offset;
         private bool _fakeSleep = false;
 
-        public DateTime UtcNow() {
-            return _fixedUtc ?? DateTime.UtcNow.Add(_offset);
-        }
-
-        public DateTime Now() {
-            return new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
-        }
-
-        public DateTimeOffset OffsetNow() {
-            return new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
-        }
-
-        public DateTimeOffset OffsetUtcNow() {
-            return new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);
-        }
+        public DateTime UtcNow() => _fixedUtc ?? DateTime.UtcNow.Add(_offset);
+        public DateTime Now() => new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
+        public DateTimeOffset OffsetNow() => new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
+        public DateTimeOffset OffsetUtcNow() => new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);
+        public void SetTimeZoneOffset(TimeSpan offset) => _timeZoneOffset = offset;
+        public void AddTime(TimeSpan amount) => _offset = _offset.Add(amount);
+        public void SubtractTime(TimeSpan amount) => _offset = _offset.Subtract(amount);
+        public void UseFakeSleep() => _fakeSleep = true;
+        public void UseRealSleep() => _fakeSleep = false;
+        public static IDisposable Install() => new SwapSystemClock(new TestSystemClock());
 
         public void Sleep(int milliseconds) {
             if (!_fakeSleep) {
@@ -85,9 +60,7 @@ namespace Foundatio.Utility {
             return Task.CompletedTask;
         }
 
-        public TimeSpan TimeZoneOffset() {
-            return _timeZoneOffset;
-        }
+        public TimeSpan TimeZoneOffset() => _timeZoneOffset;
 
         public void SetFixedTime(DateTime time) {
             if (time.Kind == DateTimeKind.Unspecified)
@@ -114,30 +87,6 @@ namespace Foundatio.Utility {
             }
         }
 
-        public void SetTimeZoneOffset(TimeSpan offset) {
-            _timeZoneOffset = offset;
-        }
-
-        public void AddTime(TimeSpan amount) {
-            _offset = _offset.Add(amount);
-        }
-
-        public void SubtractTime(TimeSpan amount) {
-            _offset = _offset.Subtract(amount);
-        }
-
-        public void UseFakeSleep() {
-            _fakeSleep = true;
-        }
-
-        public void UseRealSleep() {
-            _fakeSleep = false;
-        }
-
-        public static IDisposable Install() {
-            return new SwapSystemClock(new TestSystemClock());
-        }
-
         private sealed class SwapSystemClock : IDisposable {
             private ISystemClock _originalInstance;
 
@@ -155,7 +104,12 @@ namespace Foundatio.Utility {
     }
 
     public static class SystemClock {
-        public static ISystemClock Instance { get; set; } = DefaultSystemClock.Instance;
+        private static ISystemClock _instance = DefaultSystemClock.Instance;
+        public static ISystemClock Instance {
+            get => _instance ?? DefaultSystemClock.Instance;
+            set => _instance = value;
+        }
+        
         public static TestSystemClock Test {
             get {
                 var testClock = Instance as TestSystemClock;
@@ -171,21 +125,9 @@ namespace Foundatio.Utility {
         public static DateTimeOffset OffsetNow => Instance.OffsetNow();
         public static DateTimeOffset OffsetUtcNow => Instance.OffsetUtcNow();
         public static TimeSpan TimeZoneOffset => Instance.TimeZoneOffset();
-
-        public static void Sleep(TimeSpan time) {
-            Instance.Sleep((int)time.TotalMilliseconds);
-        }
-
-        public static void Sleep(int milliseconds) {
-            Instance.Sleep(milliseconds);
-        }
-
-        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) {
-            return Instance.SleepAsync((int)time.TotalMilliseconds, cancellationToken);
-        }
-
-        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) {
-            return Instance.SleepAsync(milliseconds, cancellationToken);
-        }
+        public static void Sleep(TimeSpan time) => Instance.Sleep((int)time.TotalMilliseconds);
+        public static void Sleep(int milliseconds) => Instance.Sleep(milliseconds);
+        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) => Instance.SleepAsync((int)time.TotalMilliseconds, cancellationToken);
+        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) => Instance.SleepAsync(milliseconds, cancellationToken);
     }
 }
