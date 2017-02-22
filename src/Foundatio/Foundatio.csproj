@@ -6,7 +6,7 @@
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AsyncFixer" Version="1.1.4" PrivateAssets="All" />
+    <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
     <PackageReference Include="Newtonsoft.Json" Version="9.0.1" />
     <PackageReference Include="Nito.AsyncEx.Coordination" Version="1.0.2" />
   </ItemGroup>
