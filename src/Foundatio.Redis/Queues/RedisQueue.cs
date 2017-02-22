@@ -273,7 +273,6 @@ namespace Foundatio.Queues {
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
 
                 value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
-
                 _logger.Trace("List value: {0}", (value.IsNullOrEmpty ? "<null>" : value.ToString()));
             }
 
@@ -478,17 +477,19 @@ namespace Foundatio.Queues {
             }
         }
 
-        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+        private async void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
 
-            using (_monitor.Enter())
+            // Note: The sync version can and will block the calling thread.
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 
-        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
+        private async void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
             _logger.Info("Redis connection restored.");
 
-            using (_monitor.Enter())
+            // Note: The sync version can and will block the calling thread.
+            using (await _monitor.EnterAsync().AnyContext())
                 _monitor.Pulse();
         }
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 
 namespace Foundatio.Tests.Utility {
@@ -22,10 +23,14 @@ namespace Foundatio.Tests.Utility {
         }
 
         private static string GetBasePath() {
+#if NETSTANDARD
+            string basePath = Path.GetDirectoryName(typeof(Configuration).GetTypeInfo().Assembly.Location);
+#else
             string basePath = Path.GetFullPath("..\\");
+#endif
             for (int i = 0; i < 5; i++) {
                 if (File.Exists(Path.Combine(basePath, "appsettings.json")))
-                    return basePath;
+                    return Path.GetFullPath(basePath);
 
                 basePath += "..\\";
             }
