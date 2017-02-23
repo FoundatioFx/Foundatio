@@ -7,41 +7,37 @@ using System.Reflection;
 using Exceptionless.DateTimeExtensions;
 using Foundatio.Jobs.Commands.Extensions;
 using Foundatio.Logging;
-using Foundatio.Utility;
 using Microsoft.Extensions.CommandLineUtils;
 using Newtonsoft.Json;
 
 namespace Foundatio.Jobs.Commands {
     public class JobCommands {
-        public static int Run(string[] args, Lazy<IServiceProvider> serviceProvider, ILoggerFactory loggerFactory = null, Func<string> shortVersionGetter = null, Func<string> longVersionGetter = null) {
-            var logger = loggerFactory.CreateLogger("Job");
+        public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<CommandLineApplication> configure = null, ILoggerFactory loggerFactory = null) {
+            var logger = loggerFactory.CreateLogger("JobCommands");
+            var lazyServiceProvider = new Lazy<IServiceProvider>(getServiceProvider);
 
-            if (shortVersionGetter == null)
-                shortVersionGetter = () => {
+            var app = new CommandLineApplication {
+                Name = "job",
+                FullName = "Foundatio Job Runner",
+                ShortVersionGetter = () => {
                     try {
                         var versionInfo = FileVersionInfo.GetVersionInfo(Assembly.GetCallingAssembly().Location);
                         return versionInfo.FileVersion;
                     } catch {
                         return String.Empty;
                     }
-                };
-
-            if (longVersionGetter == null)
-                longVersionGetter = () => {
+                },
+                LongVersionGetter = () => {
                     try {
                         var versionInfo = FileVersionInfo.GetVersionInfo(Assembly.GetCallingAssembly().Location);
                         return versionInfo.ProductVersion;
                     } catch {
                         return String.Empty;
                     }
-                };
-
-            var app = new CommandLineApplication {
-                Name = "job",
-                FullName = "Foundatio Job Runner",
-                ShortVersionGetter = shortVersionGetter,
-                LongVersionGetter = longVersionGetter
+                }
             };
+
+            configure?.Invoke(app);
 
             var jobConfiguration = GetJobConfiguration(logger);
             List<Assembly> assemblies = null;
@@ -61,7 +57,7 @@ namespace Foundatio.Jobs.Commands {
             if (assemblies != null && assemblies.Count == 0)
                 assemblies = null;
 
-            var jobTypes = Extensions.TypeHelper.GetDerivedTypes<IJob>(assemblies);
+            var jobTypes = TypeHelper.GetDerivedTypes<IJob>(assemblies);
             if (jobConfiguration?.Exclusions != null && jobConfiguration.Exclusions.Count > 0)
                 jobTypes = jobTypes.Where(t => !t.FullName.AnyWildcardMatches(jobConfiguration.Exclusions, true)).ToList();
 
@@ -83,7 +79,7 @@ namespace Foundatio.Jobs.Commands {
 
                     MethodInfo configureMethod = jobType.GetMethod("Configure", BindingFlags.Static | BindingFlags.Public);
                     if (configureMethod != null) {
-                        configureMethod.Invoke(null, new[] { new JobCommandContext(c, serviceProvider, loggerFactory) });
+                        configureMethod.Invoke(null, new[] { new JobCommandContext(c, lazyServiceProvider, loggerFactory) });
                     } else {
                         var isContinuousOption = c.Option("-c --continuous <BOOL>", "Wether the job should be run continuously.", CommandOptionType.SingleValue);
                         var intervalOption = c.Option("-i --interval <INTERVAL>", "The amount of time to delay between job runs when running continuously.", CommandOptionType.SingleValue);
@@ -117,7 +113,7 @@ namespace Foundatio.Jobs.Commands {
                             if (limitOption.HasValue())
                                 Int32.TryParse(limitOption.Value(), out limit);
 
-                            var job = serviceProvider.Value.GetService(jobType) as IJob;
+                            var job = lazyServiceProvider.Value.GetService(jobType) as IJob;
                             return new JobRunner(job, loggerFactory, runContinuous: isContinuous, interval: interval, initialDelay: delay, iterationLimit: limit).RunInConsole();
                         });
                     }
@@ -153,12 +149,12 @@ namespace Foundatio.Jobs.Commands {
                     if (jobType == null)
                         return -1;
 
-                    return new JobRunner(() => serviceProvider.Value.GetService(jobType) as IJob, loggerFactory, runContinuous: isContinuous, interval: interval).RunInConsole();
+                    return new JobRunner(() => lazyServiceProvider.Value.GetService(jobType) as IJob, loggerFactory, runContinuous: isContinuous, interval: interval).RunInConsole();
                 });
             });
 
             app.HelpOption("-?|-h|--help");
-            app.VersionOption("-v|--version", shortVersionGetter, longVersionGetter);
+            app.VersionOption("-v|--version", app.ShortVersionGetter, app.LongVersionGetter);
 
             int result = -1;
             try {
