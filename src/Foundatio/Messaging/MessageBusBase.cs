@@ -140,7 +140,7 @@ namespace Foundatio.Messaging {
                 DelayedMessage message;
                 if (!_delayedMessages.TryRemove(messageId, out message))
                     continue;
-                
+
                 _logger.Trace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
