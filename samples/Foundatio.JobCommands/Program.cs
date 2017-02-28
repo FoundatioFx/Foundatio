@@ -5,18 +5,28 @@ using Foundatio.Jobs;
 using Foundatio.Jobs.Commands;
 using Foundatio.Logging;
 using Foundatio.Logging.NLog;
-using Foundatio.ServiceProviders;
 using Microsoft.Extensions.CommandLineUtils;
+using SimpleInjector;
 
 namespace Foundatio.CronJob {
     public class Program {
         public static int Main(string[] args) {
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddNLog();
-            var logger = loggerFactory.CreateLogger<Program>();
 
-            var getServiceProvider = new Lazy<IServiceProvider>(() => ServiceProvider.FindAndGetServiceProvider(typeof(Sample1Job), loggerFactory));
-            return JobCommands.Run(args, getServiceProvider, loggerFactory);
+            var getServiceProvider = new Func<IServiceProvider>(() => {
+                var container = new Container();
+                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
+
+                return container;
+            });
+
+            return JobCommands.Run(args, getServiceProvider, app => {
+                app.Name = "Foundatio.JobCommands";
+                app.FullName = "Foundation JobCommands Sample";
+                app.ShortVersionGetter = () => "1.0.0";
+            }, loggerFactory);
         }
     }
 
