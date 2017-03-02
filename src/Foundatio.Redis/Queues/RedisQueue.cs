@@ -33,7 +33,7 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _deadLetterTtl = TimeSpan.FromDays(1);
         private readonly int _deadLetterMaxItems;
         private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly AsyncMonitor _monitor = new AsyncMonitor();
+        private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
         protected readonly ILockProvider _maintenanceLockProvider;
         protected readonly bool _runMaintenanceTasks;
         protected Task _maintenanceTask;
@@ -209,7 +209,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
@@ -219,7 +219,7 @@ namespace Foundatio.Queues {
                 _logger.Trace("WorkerLoop Start {_queueName}", _queueName);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Pass {_queueName}", _queueName);
+                    _logger.Trace("WorkerLoop Signaled {_queueName}", _queueName);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
@@ -253,7 +253,7 @@ namespace Foundatio.Queues {
             await EnsureMaintenanceRunningAsync().AnyContext();
             await EnsureTopicSubscriptionAsync().AnyContext();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
-            
+
             RedisValue value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
             if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
                 return null;
@@ -265,8 +265,7 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
-                        await _monitor.WaitAsync(cancellationToken).AnyContext();
+                    await _autoResetEvent.WaitAsync(cancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
@@ -477,20 +476,14 @@ namespace Foundatio.Queues {
             }
         }
 
-        private async void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
+        private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
             _logger.Trace("Queue OnMessage {0}: {1}", _queueName, redisValue);
-
-            // Note: The sync version can and will block the calling thread.
-            using (await _monitor.EnterAsync().AnyContext())
-                _monitor.Pulse();
+            _autoResetEvent.Set();
         }
 
-        private async void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
+        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
             _logger.Info("Redis connection restored.");
-
-            // Note: The sync version can and will block the calling thread.
-            using (await _monitor.EnterAsync().AnyContext())
-                _monitor.Pulse();
+            _autoResetEvent.Set();
         }
 
         internal async Task DoMaintenanceWorkAsync() {

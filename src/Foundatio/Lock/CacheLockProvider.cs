@@ -14,7 +14,7 @@ namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
-        private readonly ConcurrentDictionary<string, AsyncMonitor> _monitors = new ConcurrentDictionary<string, AsyncMonitor>();
+        private readonly ConcurrentDictionary<string, AsyncAutoResetEvent> _autoResetEvents = new ConcurrentDictionary<string, AsyncAutoResetEvent>();
         private static readonly object _lockObject = new object();
         private bool _isSubscribed;
         protected readonly ILogger _logger;
@@ -32,22 +32,20 @@ namespace Foundatio.Lock {
             lock (_lockObject) {
                 if (_isSubscribed)
                     return;
-                
+
                 _logger.Trace("Subscribing to cache lock released.");
                 _messageBus.Subscribe<CacheLockReleased>(OnLockReleasedAsync);
                 _isSubscribed = true;
             }
         }
 
-        private async Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
+        private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
             _logger.Trace("Got lock released message: {Name}", msg.Name);
+            AsyncAutoResetEvent autoResetEvent;
+            if (_autoResetEvents.TryGetValue(msg.Name, out autoResetEvent))
+                autoResetEvent.Set();
 
-            AsyncMonitor monitor;
-            if (!_monitors.TryGetValue(msg.Name, out monitor))
-                return;
-
-            using (await monitor.EnterAsync().AnyContext())
-                monitor.Pulse();
+            return Task.CompletedTask;
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -58,7 +56,7 @@ namespace Foundatio.Lock {
 
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
-            
+
             bool allowLock = false;
 
             do {
@@ -92,12 +90,11 @@ namespace Foundatio.Lock {
                 var delayCancellationTokenSource = new CancellationTokenSource(delayAmount);
                 var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token).Token;
 
-                var monitor = _monitors.GetOrAdd(name, new AsyncMonitor());
+                var autoResetEvent = _autoResetEvents.GetOrAdd(name, new AsyncAutoResetEvent());
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await monitor.EnterAsync(linkedCancellationToken).AnyContext())
-                        await monitor.WaitAsync(linkedCancellationToken).AnyContext();
+                    await autoResetEvent.WaitAsync(linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) {
                     if (delayCancellationTokenSource.IsCancellationRequested) {
                         _logger.Trace("Retrying: Delay exceeded. Cancellation requested: {0}", cancellationToken.IsCancellationRequested);
