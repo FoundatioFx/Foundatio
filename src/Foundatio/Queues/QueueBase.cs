@@ -21,10 +21,11 @@ namespace Foundatio.Queues {
         }
 
         public void AttachBehavior(IQueueBehavior<T> behavior) {
-            if (behavior != null) {
-                _behaviors.Add(behavior);
-                behavior.Attach(this);
-            }
+            if (behavior == null)
+                return;
+
+            _behaviors.Add(behavior);
+            behavior.Attach(this);
         }
 
         protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken));
@@ -62,7 +63,7 @@ namespace Foundatio.Queues {
         }
 
         public abstract Task DeleteQueueAsync();
-        
+
         protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
         public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
             await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
@@ -74,6 +75,9 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
         protected virtual async Task<bool> OnEnqueuingAsync(T data) {
+            if (Enqueuing == null)
+                return false;
+
             var args = new EnqueuingEventArgs<T> { Queue = this, Data = data };
             await (Enqueuing?.InvokeAsync(this, args) ?? Task.CompletedTask).AnyContext();
             return !args.Cancel;
@@ -82,6 +86,9 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
         protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry) {
+            if (Enqueued == null)
+                return Task.CompletedTask;
+
             var args = new EnqueuedEventArgs<T> { Queue = this, Entry = entry };
             return Enqueued?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
@@ -89,6 +96,9 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
+            if (Dequeued == null)
+                return Task.CompletedTask;
+
             var args = new DequeuedEventArgs<T> { Queue = this, Entry = entry };
             return Dequeued?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
@@ -96,16 +106,22 @@ namespace Foundatio.Queues {
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
 
         protected virtual Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            if (LockRenewed == null)
+                return Task.CompletedTask;
+
             var args = new LockRenewedEventArgs<T> { Queue = this, Entry = entry };
             return LockRenewed?.InvokeAsync(this, args) ?? Task.CompletedTask;
         }
 
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
-        
+
         protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
             var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
+
+            if (Completed == null)
+                return Task.CompletedTask;
 
             var args = new CompletedEventArgs<T> { Queue = this, Entry = entry };
             return Completed?.InvokeAsync(this, args) ?? Task.CompletedTask;
@@ -117,6 +133,9 @@ namespace Foundatio.Queues {
             var metadata = entry as QueueEntry<T>;
             if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
+
+            if (Abandoned == null)
+                return Task.CompletedTask;
 
             var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
             return Abandoned?.InvokeAsync(this, args) ?? Task.CompletedTask;
