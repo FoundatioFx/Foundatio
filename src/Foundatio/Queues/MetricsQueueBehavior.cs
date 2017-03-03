@@ -19,8 +19,6 @@ namespace Foundatio.Queues {
 
             if (!reportCountsInterval.HasValue)
                 reportCountsInterval = TimeSpan.FromMilliseconds(500);
-            else if (reportCountsInterval.Value > TimeSpan.Zero && reportCountsInterval.Value.Milliseconds < 100)
-                reportCountsInterval = TimeSpan.FromMilliseconds(100);
 
             _reportInterval = reportCountsInterval.Value > TimeSpan.Zero ? reportCountsInterval.Value : TimeSpan.FromMilliseconds(250);
             if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
