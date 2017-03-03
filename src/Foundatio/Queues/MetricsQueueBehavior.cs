@@ -28,7 +28,7 @@ namespace Foundatio.Queues {
 
             metricsPrefix += typeof(T).Name.ToLowerInvariant();
             _metricsPrefix = metricsPrefix;
-            _timer = new ScheduledTimer(ReportQueueCountAsync, minimumIntervalTime: reportCountsInterval, loggerFactory: loggerFactory);
+            _timer = new ScheduledTimer(ReportQueueCountAsync, loggerFactory: loggerFactory);
         }
 
         private async Task<DateTime?> ReportQueueCountAsync() {
