@@ -86,7 +86,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDequeueEfficientlyAsync() {
-            const int iterations = 1000;
+            const int iterations = 100;
 
             var queue = GetQueue(runQueueMaintenance: false);
             if (queue == null)
@@ -507,7 +507,6 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
-            Log.MinimumLevel = LogLevel.Trace;
 
             using (queue) {
                 await queue.DeleteQueueAsync();
