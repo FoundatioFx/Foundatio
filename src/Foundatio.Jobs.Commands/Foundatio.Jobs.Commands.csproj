@@ -2,8 +2,10 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;NETSTANDARD;Core</PackageTags>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.65" />

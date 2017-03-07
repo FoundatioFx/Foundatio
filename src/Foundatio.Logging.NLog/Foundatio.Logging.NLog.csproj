@@ -2,8 +2,10 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageTags>Logging;Log;NLog;</PackageTags>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
