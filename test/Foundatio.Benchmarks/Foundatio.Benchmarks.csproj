@@ -5,6 +5,7 @@
     <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
+    <IsPackable>False</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
