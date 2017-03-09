@@ -4,9 +4,6 @@
     <TargetFrameworks>net46</TargetFrameworks>
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>

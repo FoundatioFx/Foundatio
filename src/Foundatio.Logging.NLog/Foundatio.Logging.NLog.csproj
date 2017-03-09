@@ -4,9 +4,6 @@
     <TargetFrameworks>net46</TargetFrameworks>
     <PackageTags>Logging;Log;NLog;</PackageTags>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>

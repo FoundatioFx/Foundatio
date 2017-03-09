@@ -4,9 +4,6 @@
     <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
     <PackageTags>File;Storage;Amazon;AWS;S3;Distributed;</PackageTags>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
