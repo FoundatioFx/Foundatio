@@ -30,7 +30,7 @@ namespace Foundatio.Messaging {
                     return;
 
                 _logger.Trace("Subscribing to topic: {0}", _topic);
-                _subscriber.Subscribe(_topic, OnMessage);
+                _subscriber.Subscribe(_topic, OnMessage, CommandFlags.FireAndForget);
                 _isSubscribed = true;
             }
         }

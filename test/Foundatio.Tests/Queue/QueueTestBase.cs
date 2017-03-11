@@ -812,19 +812,20 @@ namespace Foundatio.Tests.Queue {
                 try {
                     for (int i = 0; i < workerCount; i++) {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                        _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
+                        int instanceCount = i;
                         await q.StartWorkingAsync(async w => {
-                            _logger.Info("Acquiring distributed lock in work item");
+                            _logger.Info("[{0}] Acquiring distributed lock in work item: {1}", instanceCount, w.Id);
                             var l = await distributedLock.AcquireAsync("test");
                             Assert.NotNull(l);
-                            _logger.Info("Acquired distributed lock");
+                            _logger.Info("[{0}] Acquired distributed lock: {1}", instanceCount, w.Id);
                             SystemClock.Sleep(TimeSpan.FromMilliseconds(50));
                             await l.ReleaseAsync();
-                            _logger.Info("Released distributed lock");
+                            _logger.Info("[{0}] Released distributed lock: {1}", instanceCount, w.Id);
 
                             await w.CompleteAsync();
                             info.IncrementCompletedCount();
                             countdown.Signal();
+                            _logger.Info("[{0}] Signaled countdown: {1}", instanceCount, w.Id);
                         });
                         workers.Add(q);
                     }

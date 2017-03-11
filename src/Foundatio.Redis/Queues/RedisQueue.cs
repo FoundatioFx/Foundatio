@@ -553,8 +553,8 @@ namespace Foundatio.Queues {
         private async Task DoMaintenanceWorkLoopAsync(CancellationToken cancellationToken) {
             while (!cancellationToken.IsCancellationRequested) {
                 _logger.Trace("Requesting Maintenance Lock: Name={0} Id={1}", _queueName, QueueId);
-
-                await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", DoMaintenanceWorkAsync, acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
+                bool gotLock = await _maintenanceLockProvider.TryUsingAsync(_queueName + "-maintenance", DoMaintenanceWorkAsync, acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
+                _logger.Trace("{0} Maintenance Lock: Name={1} Id={2}", gotLock ? "Acquired" : "Failed to acquire", _queueName, QueueId);
             }
         }
 
