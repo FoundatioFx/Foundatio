@@ -86,9 +86,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
-            CacheValue<T> cacheValue;
-
-            cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
+            var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 _logger.Trace("Local cache hit: {0}", key);
                 Interlocked.Increment(ref _localCacheHits);
@@ -190,9 +188,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
-            CacheValue<ICollection<T>> cacheValue;
-
-            cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
+            var cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 _logger.Trace("Local cache hit: {0}", key);
                 Interlocked.Increment(ref _localCacheHits);
