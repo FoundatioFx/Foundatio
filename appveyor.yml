@@ -1,5 +1,5 @@
-version: 4.3.{build}
-os: Visual Studio 2017 RC
+version: 5.0.{build}
+os: Visual Studio 2017
 clone_depth: 2
 configuration: Release
 
@@ -20,7 +20,7 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build Foundatio.sln /p:TargetFrameworks=net46
+  - ps: dotnet pack -c Release
 
 before_test:
   - nuget install redis-64 -excludeversion

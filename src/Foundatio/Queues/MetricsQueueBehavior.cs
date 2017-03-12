@@ -11,20 +11,22 @@ namespace Foundatio.Queues {
         private readonly IMetricsClient _metricsClient;
         private readonly ILogger _logger;
         private readonly ScheduledTimer _timer;
+        private readonly TimeSpan _reportInterval;
 
-        public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, ILoggerFactory loggerFactory = null, TimeSpan? reportCountsInterval = null) {
+        public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, TimeSpan? reportCountsInterval = null, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory.CreateLogger<MetricsQueueBehavior<T>>();
             _metricsClient = metrics ?? NullMetricsClient.Instance;
 
             if (!reportCountsInterval.HasValue)
                 reportCountsInterval = TimeSpan.FromMilliseconds(500);
 
+            _reportInterval = reportCountsInterval.Value > TimeSpan.Zero ? reportCountsInterval.Value : TimeSpan.FromMilliseconds(250);
             if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
                 metricsPrefix += ".";
 
             metricsPrefix += typeof(T).Name.ToLowerInvariant();
             _metricsPrefix = metricsPrefix;
-            _timer = new ScheduledTimer(ReportQueueCountAsync, minimumIntervalTime: reportCountsInterval, loggerFactory: loggerFactory);
+            _timer = new ScheduledTimer(ReportQueueCountAsync, loggerFactory: loggerFactory);
         }
 
         private async Task<DateTime?> ReportQueueCountAsync() {
@@ -39,8 +41,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
-            await base.OnEnqueued(sender, enqueuedEventArgs).AnyContext();
-            _timer.ScheduleNext();
+            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             string customMetricName = GetCustomMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(customMetricName))
@@ -50,8 +51,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
-            await base.OnDequeued(sender, dequeuedEventArgs).AnyContext();
-            _timer.ScheduleNext();
+            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
@@ -73,8 +73,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
-            await base.OnCompleted(sender, completedEventArgs).AnyContext();
-            _timer.ScheduleNext();
+            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             var metadata = completedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)
@@ -92,8 +91,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
-            await base.OnAbandoned(sender, abandonedEventArgs).AnyContext();
-            _timer.ScheduleNext();
+            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             var metadata = abandonedEventArgs.Entry as IQueueEntryMetadata;
             if (metadata == null)

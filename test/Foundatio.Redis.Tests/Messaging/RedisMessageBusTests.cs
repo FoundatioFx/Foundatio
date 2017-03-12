@@ -106,7 +106,7 @@ namespace Foundatio.Redis.Tests.Messaging {
                         await queue.DequeueAsync(new CancellationToken(true));
 
                         var countdown = new AsyncCountdownEvent(2);
-                        messageBus1.Subscribe<SimpleMessageA>(msg => {
+                        await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
                             Assert.Equal("Hello", msg.Data);
                             countdown.Signal();
                         });

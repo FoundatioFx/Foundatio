@@ -40,6 +40,18 @@ namespace Foundatio.Utility {
                 return;
             }
 
+            // already have an earlier scheduled time
+            if (_next > utcNow && utcDate > _next) {
+                _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
+                return;
+            }
+
+            // ignore duplicate times
+            if (_next == utcDate) {
+                _logger.Trace("Ignoring because already scheduled for same time");
+                return;
+            }
+
             using (_lock.Lock()) {
                 // already have an earlier scheduled time
                 if (_next > utcNow && utcDate > _next) {

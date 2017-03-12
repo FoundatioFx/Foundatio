@@ -2,17 +2,14 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;NETSTANDARD;Core</PackageTags>
+    <PackageTags>Distributed;Jobs;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.65" />
     <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.0" />
     <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
-  </ItemGroup>
-
 </Project>

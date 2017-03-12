@@ -2,7 +2,6 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
   <ItemGroup>

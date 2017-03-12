@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 
 namespace Foundatio.Metrics {
-    [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count}")]
+    [DebuggerDisplay("Time: {Time} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
     public class TimingStat {
         public DateTime Time { get; set; }
         public int Count { get; set; }

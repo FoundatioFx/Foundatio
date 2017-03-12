@@ -50,6 +50,11 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override Task CanResumeDequeueEfficientlyAsync() {
+            return base.CanResumeDequeueEfficientlyAsync();
+        }
+
+        [Fact]
         public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
@@ -197,7 +202,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
 
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
                         Id = 1
                     });
@@ -264,7 +269,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
 
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
                         Id = 1
                     });
@@ -327,7 +332,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
                     _logger.Trace(id);
                     workItemIds.Add(id);
                 }
@@ -341,7 +346,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 workItemIds.Reverse();
                 await queue.DoMaintenanceWorkAsync();
 
-                foreach (var id in workItemIds.Take(3)) {
+                foreach (object id in workItemIds.Take(3)) {
                     _logger.Trace("Checking: " + id);
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 }

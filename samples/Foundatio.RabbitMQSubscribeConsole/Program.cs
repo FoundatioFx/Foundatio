@@ -6,7 +6,7 @@ namespace Foundatio.RabbitMQSubscribeConsole {
         public static void Main(string[] args) {
             IMessageBus messageBus = new RabbitMQMessageBus("amqp://localhost", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange", defaultMessageTimeToLive: TimeSpan.FromMilliseconds(50));
             Console.WriteLine("Subscriber....");
-            messageBus.Subscribe<string>(msg => { Console.WriteLine(msg); });
+            messageBus.SubscribeAsync<string>(msg => { Console.WriteLine(msg); }).GetAwaiter().GetResult();
             Console.ReadLine();
         }
     }
