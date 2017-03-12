@@ -6,7 +6,7 @@ namespace Foundatio.RabbitMQPublishConsole {
         public static void Main(string[] args) {
             Console.WriteLine("Enter the message and press enter to send:");
 
-            IMessageBus messageBus = new RabbitMQMessageBus("amqp://localhost", "FoundatioQueue", "FoundatioQueueRoutingKey", "FoundatioExchange");
+            IMessageBus messageBus = new RabbitMQMessageBus("amqp://localhost", "FoundatioQueue", "FoundatioExchange");
             string message;
             do {
                 message = Console.ReadLine();

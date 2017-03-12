@@ -13,7 +13,6 @@ using RabbitMQ.Client.Exceptions;
 namespace Foundatio.Messaging {
     public class RabbitMQMessageBus : MessageBusBase, IMessageBus {
         private readonly string _queueName;
-        private readonly string _routingKey;
         private readonly string _exchangeName;
         private readonly IDictionary<string, object> _queueArguments;
         private readonly ISerializer _serializer;
@@ -30,17 +29,15 @@ namespace Foundatio.Messaging {
         /// </summary>
         /// <param name="connectionString">The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.</param>
         /// <param name="queueName">Name of the queue established by the subscriber when they call QueueDeclare. Its not used by publisher.</param>
-        /// <param name="routingKey">The routing key is an "address" that the exchange may use to decide how to route the message</param>
         /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
         /// <param name="queueArguments">queue arguments</param>
         /// <param name="defaultMessageTimeToLive">The value of the expiration field describes the TTL period in milliseconds</param>
         /// <param name="serializer">For data serialization</param>
         /// <param name="loggerFactory">logger</param>
         /// <remarks>https://www.rabbitmq.com/dotnet-api-guide.html#connection-recovery</remarks>
-        public RabbitMQMessageBus(string connectionString, string queueName, string routingKey, string exhangeName, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        public RabbitMQMessageBus(string connectionString, string queueName, string exhangeName, IDictionary<string, object> queueArguments = null, TimeSpan? defaultMessageTimeToLive = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
             _exchangeName = exhangeName;
-            _routingKey = routingKey ?? String.Empty;
             _queueName = queueName;
             _queueArguments = queueArguments;
 
@@ -100,7 +97,7 @@ namespace Foundatio.Messaging {
             }
 
             // The publication occurs with mandatory=false
-            _publisherChannel.BasicPublish(_exchangeName, _routingKey, basicProperties, data);
+            _publisherChannel.BasicPublish(_exchangeName, String.Empty, basicProperties, data);
         }
 
         /// <summary>
