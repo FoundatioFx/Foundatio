@@ -73,7 +73,7 @@ namespace Foundatio.Queues {
 
             _runMaintenanceTasks = runMaintenanceTasks;
             // min is 1 second, max is 1 minute
-            TimeSpan interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
+            var interval = _workItemTimeout > TimeSpan.FromSeconds(1) ? _workItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
             _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
 
             _logger.Trace("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _retries, _retryDelay.ToString());
@@ -255,7 +255,7 @@ namespace Foundatio.Queues {
             await EnsureTopicSubscriptionAsync().AnyContext();
             var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
-            RedisValue value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
+            var value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
             if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
                 return null;
 
