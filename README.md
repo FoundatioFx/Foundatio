@@ -37,7 +37,7 @@ To summarize, if you want pain free development and testing while allowing your 
 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
-1. You will need to have [Visual Studio 2015](http://www.visualstudio.com/products/visual-studio-community-vs) installed.
+1. You will need to have [Visual Studio 2017](http://www.visualstudio.com/products/visual-studio-community-vs) installed.
 2. Open the `Foundatio.sln` Visual Studio solution file.
 
 ## Using Foundatio
@@ -126,7 +126,7 @@ Allows you to publish and subscribe to messages flowing through your application
 using Foundatio.Messaging;
 
 IMessageBus messageBus = new InMemoryMessageBus();
-await messageBus.Subscribe<SimpleMessageA>(msg => {
+await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
   // Got message
 });
 

@@ -6,7 +6,7 @@ configuration: Release
 pull_requests:
   do_not_increment_build_number: true
 
-init: 
+init:
   - git config --global core.autocrlf true
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="pre" }
