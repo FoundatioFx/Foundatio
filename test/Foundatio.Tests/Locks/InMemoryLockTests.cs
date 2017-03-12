@@ -45,30 +45,6 @@ namespace Foundatio.Tests.Locks {
             return base.LockOneAtATimeAsync();
         }
 
-        [Fact(Skip = "Was an experiment")]
-        public async Task WillPulseMonitor() {
-            var monitor = new AsyncMonitor();
-            var sw = Stopwatch.StartNew();
-            // Monitor will not be pulsed and should be cancelled after 100ms.
-            using (await monitor.EnterAsync())
-                await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-                    await monitor.WaitAsync(TimeSpan.FromMilliseconds(100).ToCancellationToken()));
-            sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 75, 125);
-
-            var t = Task.Run(async () => {
-                await SystemClock.SleepAsync(25);
-                using (await monitor.EnterAsync())
-                    monitor.Pulse();
-            });
-
-            sw = Stopwatch.StartNew();
-            using (await monitor.EnterAsync())
-                await monitor.WaitAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
-            sw.Stop();
-            Assert.InRange(sw.ElapsedMilliseconds, 25, 100);
-        }
-
         [Fact]
         public override Task WillThrottleCallsAsync() {
             return base.WillThrottleCallsAsync();

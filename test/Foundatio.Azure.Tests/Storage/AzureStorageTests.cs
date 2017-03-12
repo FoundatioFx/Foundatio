@@ -12,10 +12,11 @@ namespace Foundatio.Azure.Tests.Storage {
         public AzureStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            if (String.IsNullOrEmpty(Configuration.GetConnectionString("AzureStorageConnectionString")))
+            string connectionString = Configuration.GetConnectionString("StorageConnectionString");
+            if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            return new AzureFileStorage(Configuration.GetConnectionString("AzureStorageConnectionString"));
+            return new AzureFileStorage(connectionString);
         }
 
         [Fact]
@@ -31,6 +32,11 @@ namespace Foundatio.Azure.Tests.Storage {
         [Fact]
         public override Task CanGetFileInfoAsync() {
             return base.CanGetFileInfoAsync();
+        }
+
+        [Fact]
+        public override Task CanGetNonExistentFileInfoAsync() {
+            return base.CanGetNonExistentFileInfoAsync();
         }
 
         [Fact]

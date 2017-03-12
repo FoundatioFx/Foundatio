@@ -32,19 +32,19 @@ namespace Foundatio.Messaging {
         }
 
         private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
-            _logger.Trace("OnMessage: {messageId}", brokeredMessage.MessageId);
-            var message = brokeredMessage.GetBody<MessageBusData>();
+            if (_subscribers.IsEmpty)
+                return;
 
-            Type messageType;
+            _logger.Trace("OnMessage({messageId})", brokeredMessage.MessageId);
+            MessageBusData message;
             try {
-                messageType = Type.GetType(message.Type);
+                message = brokeredMessage.GetBody<MessageBusData>();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
                 return;
             }
 
-            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {

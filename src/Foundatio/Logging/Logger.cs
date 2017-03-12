@@ -8,13 +8,11 @@ namespace Foundatio.Logging {
 
         private readonly LoggerFactory _loggerFactory;
         private readonly string _categoryName;
-        private LogLevel _minLogLevel;
         private ILogger[] _loggers;
 
-        public Logger(LoggerFactory loggerFactory, string categoryName, LogLevel minLogLevel) {
+        public Logger(LoggerFactory loggerFactory, string categoryName) {
             _loggerFactory = loggerFactory;
             _categoryName = categoryName;
-            _minLogLevel = minLogLevel;
 
             var providers = loggerFactory.GetProviders();
             if (providers.Length <= 0)
@@ -26,7 +24,7 @@ namespace Foundatio.Logging {
         }
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) {
-            if (_loggers == null || logLevel < _minLogLevel)
+            if (_loggers == null)
                 return;
 
             List<Exception> exceptions = null;
@@ -110,10 +108,6 @@ namespace Foundatio.Logging {
             }
 
             _loggers[logIndex] = logger;
-        }
-
-        internal void ChangeMinLogLevel(LogLevel minLogLevel) {
-            _minLogLevel = minLogLevel;
         }
 
         private class Scope : IDisposable {

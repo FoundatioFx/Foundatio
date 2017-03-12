@@ -5,6 +5,10 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 
 namespace Foundatio.Caching {
+    public class ScopedHybridCacheClient : ScopedCacheClient, IHybridCacheClient {
+        public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null) : base(client, scope) {}
+    }
+
     public class ScopedCacheClient : ICacheClient {
         private string _keyPrefix;
         private bool _isLocked = false;

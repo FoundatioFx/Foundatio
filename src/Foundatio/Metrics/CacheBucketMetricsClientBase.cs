@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,7 +43,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
 
@@ -53,7 +53,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
 
@@ -64,7 +63,6 @@ namespace Foundatio.Metrics {
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
-
             return Task.CompletedTask;
         }
         
@@ -224,7 +222,6 @@ namespace Foundatio.Metrics {
             if (endingCount >= expectedCount)
                 return true;
 
-            // TODO: Should we update this to use monitors?
             long currentCount = 0;
             var resetEvent = _counterEvents.GetOrAdd(statName, s => new AsyncManualResetEvent(false));
             do {
@@ -408,11 +405,13 @@ namespace Foundatio.Metrics {
             _counterEvents?.Clear();
         }
 
+        [DebuggerDisplay("Size: {Size} Ttl: {Ttl}")]
         private struct BucketSettings {
             public TimeSpan Size { get; set; }
             public TimeSpan Ttl { get; set; }
         }
 
+        [DebuggerDisplay("Date: {EnqueuedDate} Type: {Type} Name: {Name} Counter: {Counter} Gauge: {Gauge} Timing: {Timing}")]
         private class MetricEntry {
             public DateTime EnqueuedDate { get; } = SystemClock.UtcNow;
             public string Name { get; set; }
@@ -428,6 +427,7 @@ namespace Foundatio.Metrics {
             Timing
         }
 
+        [DebuggerDisplay("Time: {Time} Key: {Key}")]
         private class MetricBucket {
             public string Key { get; set; }
             public DateTime Time { get; set; }

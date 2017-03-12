@@ -29,7 +29,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     _logger.Trace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
@@ -53,7 +53,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.Subscribe<object>(msg => {
+                await messageBus.SubscribeAsync<object>(msg => {
                     resetEvent.Set();
                     throw new Exception();
                 });
@@ -62,7 +62,7 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.PublishAsync<object>(null);
                 _logger.Trace("Published one...");
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
             }
         }
         
@@ -73,7 +73,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     _logger.Trace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
@@ -99,7 +99,7 @@ namespace Foundatio.Tests.Messaging {
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(numConcurrentMessages);
 
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     if (msg.Count % 500 == 0)
                         _logger.Trace("Got 500 messages");
                     Assert.Equal("Hello", msg.Data);
@@ -110,7 +110,7 @@ namespace Foundatio.Tests.Messaging {
 
                 var sw = Stopwatch.StartNew();
 
-                await Run.InParallel(numConcurrentMessages, async i => {
+                await Run.InParallelAsync(numConcurrentMessages, async i => {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello",
                         Count = i
@@ -134,15 +134,15 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(3);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
@@ -162,14 +162,14 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(2);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     throw new Exception();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
@@ -189,10 +189,10 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var resetEvent = new AsyncManualResetEvent(false);
-                messageBus.Subscribe<SimpleMessageB>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
                     Assert.True(false, "Received wrong message type.");
                 });
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
@@ -211,7 +211,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(2);
-                messageBus.Subscribe<ISimpleMessage>(msg => {
+                await messageBus.SubscribeAsync<ISimpleMessage>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
@@ -237,7 +237,7 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus) {
                 var countdown = new AsyncCountdownEvent(3);
-                messageBus.Subscribe<object>(msg => {
+                await messageBus.SubscribeAsync<object>(msg => {
                     countdown.Signal();
                 });
                 await messageBus.PublishAsync(new SimpleMessageA {
@@ -267,12 +267,12 @@ namespace Foundatio.Tests.Messaging {
 
                 await SystemClock.SleepAsync(100);
                 var resetEvent = new AsyncAutoResetEvent(false);
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
                 });
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             }
         }
         
@@ -286,14 +286,14 @@ namespace Foundatio.Tests.Messaging {
 
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
-                messageBus.Subscribe<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     _logger.Trace("SimpleAMessage received");
                     Interlocked.Increment(ref messageCount);
                     cancellationTokenSource.Cancel();
                     countdown.Signal();
                 }, cancellationTokenSource.Token);
-                
-                messageBus.Subscribe<object>(msg => countdown.Signal());
+
+                await messageBus.SubscribeAsync<object>(msg => countdown.Signal());
 
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
@@ -321,14 +321,14 @@ namespace Foundatio.Tests.Messaging {
 
             using (messageBus1) {
                 var countdown1 = new AsyncCountdownEvent(1);
-                messageBus1.Subscribe<SimpleMessageA>(msg => {
+                await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown1.Signal();
                 });
                 
                 using (var messageBus2 = GetMessageBus()) {
                     var countdown2 = new AsyncCountdownEvent(1);
-                    messageBus2.Subscribe<SimpleMessageA>(msg => {
+                    await messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
                         Assert.Equal("Hello", msg.Data);
                         countdown2.Signal();
                     });

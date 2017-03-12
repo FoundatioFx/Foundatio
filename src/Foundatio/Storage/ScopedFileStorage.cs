@@ -21,10 +21,16 @@ namespace Foundatio.Storage {
         public string Scope { get; private set; }
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), cancellationToken);
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             var file = await UnscopedStorage.GetFileInfoAsync(String.Concat(_pathPrefix, path)).AnyContext();
             if (file != null)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
@@ -33,22 +39,41 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return UnscopedStorage.ExistsAsync(String.Concat(_pathPrefix, path));
         }
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return UnscopedStorage.SaveFileAsync(String.Concat(_pathPrefix, path), stream, cancellationToken);
         }
 
         public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrWhiteSpace(newpath))
+                throw new ArgumentNullException(nameof(newpath));
+
             return UnscopedStorage.RenameFileAsync(String.Concat(_pathPrefix, path), String.Concat(_pathPrefix, newpath), cancellationToken);
         }
 
         public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrWhiteSpace(targetpath))
+                throw new ArgumentNullException(nameof(targetpath));
+
             return UnscopedStorage.CopyFileAsync(String.Concat(_pathPrefix, path), String.Concat(_pathPrefix, targetpath), cancellationToken);
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return UnscopedStorage.DeleteFileAsync(String.Concat(_pathPrefix, path), cancellationToken);
         }
 

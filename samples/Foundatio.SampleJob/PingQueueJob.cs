@@ -33,7 +33,6 @@ namespace Foundatio.SampleJob {
             Interlocked.Increment(ref _runCount);
 
             _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
-
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(1)).AnyContext();
 
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))

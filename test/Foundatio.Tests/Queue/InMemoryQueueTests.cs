@@ -76,6 +76,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public override Task CanResumeDequeueEfficientlyAsync() {
+            return base.CanResumeDequeueEfficientlyAsync();
+        }
+
+        [Fact]
         public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
@@ -150,6 +155,16 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
+        }
+
+        [Fact]
+        public override Task CanDequeueWithLockingAsync() {
+            return base.CanDequeueWithLockingAsync();
+        }
+
+        [Fact]
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
     }
 }

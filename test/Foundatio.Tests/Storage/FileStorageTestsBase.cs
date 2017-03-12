@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;
@@ -67,10 +68,13 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                var startTime = SystemClock.UtcNow;
+                var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
+                Assert.Null(fileInfo);
+
+                var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
-                var fileInfo = await storage.GetFileInfoAsync(path);
+                fileInfo = await storage.GetFileInfoAsync(path);
                 Assert.NotNull(fileInfo);
                 Assert.True(fileInfo.Path.EndsWith("nested.txt"), "Incorrect file");
                 Assert.True(fileInfo.Size > 0, "Incorrect file size");
@@ -90,6 +94,19 @@ namespace Foundatio.Tests.Storage {
                 Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
                 Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
                 Assert.True(startTime <= fileInfo.Modified, $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}.");
+            }
+        }
+
+        public virtual async Task CanGetNonExistentFileInfoAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
+                Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
             }
         }
 
@@ -171,7 +188,7 @@ namespace Foundatio.Tests.Storage {
                 var info = await storage.GetFileInfoAsync("nope");
                 Assert.Null(info);
 
-                await Run.InParallel(10, async i => {
+                await Run.InParallelAsync(10, async i => {
                     var ev = new PostInfo {
                         ApiVersion = 2,
                         CharSet = "utf8",
@@ -189,7 +206,7 @@ namespace Foundatio.Tests.Storage {
 
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count());
 
-                await Run.InParallel(10, async i => {
+                await Run.InParallelAsync(10, async i => {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                     var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);
                     if (eventPost == null)

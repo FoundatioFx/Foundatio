@@ -27,12 +27,10 @@ namespace Foundatio.Tests.Jobs {
             using (var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
 
-                var enqueueTask = Run.InParallel(workItemCount, async index => {
-                    await queue.EnqueueAsync(new SampleQueueWorkItem {
-                        Created = SystemClock.UtcNow,
-                        Path = "somepath" + index
-                    });
-                });
+                var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem {
+                    Created = SystemClock.UtcNow,
+                    Path = "somepath" + index
+                }));
 
                 var job = new SampleQueueJob(queue, null, Log);
                 await SystemClock.SleepAsync(10);
@@ -51,12 +49,10 @@ namespace Foundatio.Tests.Jobs {
             using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
             
-                var enqueueTask = Run.InParallel(workItemCount, async index => {
-                    await queue.EnqueueAsync(new SampleQueueWorkItem {
+                var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem {
                         Created = SystemClock.UtcNow,
                         Path = "somepath" + index
-                    });
-                });
+                    }));
 
                 var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
@@ -85,14 +81,14 @@ namespace Foundatio.Tests.Jobs {
                     for (int i = 0; i < jobCount; i++) {
                         var q = GetSampleWorkItemQueue(retries: 1, retryDelay: TimeSpan.Zero);
                         await q.DeleteQueueAsync();
-                        q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", Log));
+                        q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", loggerFactory: Log));
                         queues.Add(q);
                     }
                     _logger.Info("Done setting up queues");
 
-                    var enqueueTask = Run.InParallel(workItemCount, async index => {
+                    var enqueueTask = Run.InParallelAsync(workItemCount, index => {
                         var queue = queues[RandomData.GetInt(0, jobCount - 1)];
-                        await queue.EnqueueAsync(new SampleQueueWorkItem {
+                        return queue.EnqueueAsync(new SampleQueueWorkItem {
                             Created = SystemClock.UtcNow,
                             Path = RandomData.GetString()
                         });
@@ -100,7 +96,7 @@ namespace Foundatio.Tests.Jobs {
                     _logger.Info("Done enqueueing");
 
                     var cancellationTokenSource = new CancellationTokenSource();
-                    await Run.InParallel(jobCount, async index => {
+                    await Run.InParallelAsync(jobCount, async index => {
                         var queue = queues[index - 1];
                         var job = new SampleQueueJob(queue, metrics, Log);
                         await job.RunUntilEmptyAsync(cancellationTokenSource.Token);

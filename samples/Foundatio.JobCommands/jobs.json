@@ -1,0 +1,7 @@
+﻿// Jobs config file is optional. If no config found, it will search all referenced assemblies for jobs
+{
+  // The assemblies to look for jobs in. If empty or missing it will search all referenced assemblies
+  "assemblies":  [ "Foundatio.JobCommands" ],
+  // List of jobs to exclude which can use wildcards
+  "exclusions":  [ "*ExcludeMe*" ]
+}

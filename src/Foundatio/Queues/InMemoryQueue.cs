@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueEntry<T>> _queue = new ConcurrentQueue<QueueEntry<T>>();
         private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new ConcurrentDictionary<string, QueueEntry<T>>();
         private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new ConcurrentQueue<QueueEntry<T>>();
-        private readonly AsyncMonitor _monitor = new AsyncMonitor();
+        private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -28,7 +28,7 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private readonly CancellationTokenSource _disposeTokenSource;
+        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
             _retries = retries;
@@ -40,7 +40,7 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             InitializeMaintenance();
-            _disposeTokenSource = new CancellationTokenSource();
+            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
@@ -72,8 +72,7 @@ namespace Foundatio.Queues {
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
-            using (await _monitor.EnterAsync().AnyContext())
-                _monitor.Pulse();
+            _autoResetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(entry).AnyContext();
@@ -82,13 +81,13 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             _logger.Trace("Queue {0} start working", _queueName);
 
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
 
             Task.Run(async () => {
                 _logger.Trace("WorkerLoop Start {0}", _queueName);
@@ -103,7 +102,7 @@ namespace Foundatio.Queues {
                         _logger.Error(ex, "Error on Dequeue: " + ex.Message);
                     }
 
-                    if (queueEntry == null)
+                    if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         return;
 
                     try {
@@ -119,7 +118,7 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                _logger.Trace("WorkLoop End");
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
@@ -127,14 +126,14 @@ namespace Foundatio.Queues {
             _logger.Trace("Queue {type} dequeuing item...", _queueName);
             _logger.Trace("Queue count: {0}", _queue.Count);
 
-            if (_queue.Count == 0 && !cancellationToken.IsCancellationRequested) {
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested) {
                 _logger.Trace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (await _monitor.EnterAsync(cancellationToken).AnyContext())
-                        await _monitor.WaitAsync(cancellationToken).AnyContext();
-                } catch (OperationCanceledException) {}
+                    await _autoResetEvent.WaitAsync(cancellationToken).AnyContext();
+                } catch (OperationCanceledException) { }
 
                 sw.Stop();
                 _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
@@ -197,7 +196,7 @@ namespace Foundatio.Queues {
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
-            
+
             if (info.Attempts < _retries + 1) {
                 if (_retryDelay > TimeSpan.Zero) {
                     _logger.Trace("Adding item to wait list for future retry: {0}", entry.Id);
@@ -216,10 +215,11 @@ namespace Foundatio.Queues {
             _logger.Trace("Abandon complete: {0}", entry.Id);
         }
 
-        private async Task RetryAsync(QueueEntry<T> entry) {
+        private Task RetryAsync(QueueEntry<T> entry) {
+            _logger.Trace("Queue {0} retrying item: {1} Attempts: {2}", _queueName, entry.Id, entry.Attempts);
             _queue.Enqueue(entry);
-            using (await _monitor.EnterAsync().AnyContext())
-                _monitor.Pulse();
+            _autoResetEvent.Set();
+            return Task.CompletedTask;
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -269,7 +269,7 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            _disposeTokenSource?.Cancel();
+            _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
             _queue.Clear();
             _deadletterQueue.Clear();

@@ -2,13 +2,12 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageTags>File;Storage;Amazon;AWS;S3;Distributed;</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="3.3.5.3" />
+    <PackageReference Include="AWSSDK.S3" Version="3.3.5.7" />
   </ItemGroup>
 </Project>

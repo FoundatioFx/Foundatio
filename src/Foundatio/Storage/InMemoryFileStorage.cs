@@ -36,10 +36,16 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return await ExistsAsync(path).AnyContext() ? _storage[path].Item1 : null;
         }
 
         public Task<bool> ExistsAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return Task.FromResult(_storage.ContainsKey(path));
         }
 

@@ -42,6 +42,9 @@ namespace Foundatio.Storage {
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             var info = new FileInfo(Path.Combine(Folder, path));
             if (!info.Exists)
                 return Task.FromResult<FileSpec>(null);
@@ -55,6 +58,9 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 

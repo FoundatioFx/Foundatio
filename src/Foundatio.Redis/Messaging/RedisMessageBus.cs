@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -12,7 +13,7 @@ namespace Foundatio.Messaging {
         private readonly ISubscriber _subscriber;
         private readonly string _topic;
         private readonly ISerializer _serializer;
-        private static readonly object _lockObject = new object();
+        private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
 
         public RedisMessageBus(ISubscriber subscriber, string topic = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
@@ -21,35 +22,35 @@ namespace Foundatio.Messaging {
             _serializer = serializer ?? new JsonNetSerializer();
         }
 
-        private void EnsureTopicSubscription() {
+        private async Task EnsureTopicSubscriptionAsync() {
             if (_isSubscribed)
                 return;
 
-            lock (_lockObject) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isSubscribed)
                     return;
-                
+
                 _logger.Trace("Subscribing to topic: {0}", _topic);
-                _subscriber.Subscribe(_topic, OnMessage);
+                await _subscriber.SubscribeAsync(_topic, OnMessage).AnyContext();
                 _isSubscribed = true;
+                _logger.Trace("Subscribed to topic: {0}", _topic);
             }
         }
 
         private async void OnMessage(RedisChannel channel, RedisValue value) {
-            _logger.Trace("OnMessage: {channel}", channel);
+            if (_subscribers.IsEmpty)
+                return;
 
-            var message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
-
-            Type messageType;
+            _logger.Trace("OnMessage({channel})", channel);
+            MessageBusData message;
             try {
-                messageType = Type.GetType(message.Type);
+                message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", channel, ex.Message);
                 return;
             }
 
-            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
 
         public override async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -71,21 +72,24 @@ namespace Foundatio.Messaging {
             await Run.WithRetriesAsync(() => _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
-            EnsureTopicSubscription();
-            base.Subscribe(handler, cancellationToken);
+        public override async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
+            await EnsureTopicSubscriptionAsync().AnyContext();
+            await base.SubscribeAsync(handler, cancellationToken).AnyContext();
         }
 
         public override void Dispose() {
+            _logger.Trace("MessageBus dispose");
             base.Dispose();
 
             if (_isSubscribed) {
-                lock (_lockObject) {
+                using (_lock.Lock()) {
                     if (!_isSubscribed)
                         return;
 
-                    _subscriber.UnsubscribeAll(CommandFlags.FireAndForget);
+                    _logger.Trace("Unsubscribing from topic {0}", _topic);
+                    _subscriber.Unsubscribe(_topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
+                    _logger.Trace("Unsubscribed from topic {0}", _topic);
                 }
             }
         }

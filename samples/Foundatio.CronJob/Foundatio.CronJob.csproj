@@ -5,6 +5,7 @@
     <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
+    <IsPackable>False</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
@@ -13,5 +14,8 @@
     <PackageReference Include="ncrontab" Version="3.3.0" />
     <PackageReference Include="SimpleInjector" Version="3.3.2" />
     <PackageReference Include="Topshelf" Version="4.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="NLog.config" CopyToOutputDirectory="Always" />
   </ItemGroup>
 </Project>

@@ -111,14 +111,14 @@ namespace Foundatio.Messaging {
         /// <typeparam name="T">Type of the subscriber who wants to be notified of the callback</typeparam>
         /// <param name="handler">callback handler</param>
         /// <param name="cancellationToken"></param>
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
             CreateQueue(_subscriberChannel);
             var consumer = new EventingBasicConsumer(_subscriberChannel);
             consumer.Received += OnMessageAsync;
             consumer.Shutdown += OnConsumerShutdown;
 
             _subscriberChannel.BasicConsume(_queueName, true, consumer);
-            base.Subscribe(handler, cancellationToken);
+            return base.SubscribeAsync(handler, cancellationToken);
         }
 
         private void OnConsumerShutdown(object sender, ShutdownEventArgs e) {
@@ -137,20 +137,19 @@ namespace Foundatio.Messaging {
 
         #region private methods
         private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
-            _logger.Trace("OnMessage: {messageId}", e.BasicProperties?.MessageId);
-            var message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
+            if (_subscribers.IsEmpty)
+                return;
 
-            Type messageType;
+            _logger.Trace("OnMessage({messageId})", e.BasicProperties?.MessageId);
+            MessageBusData message;
             try {
-                messageType = Type.GetType(message.Type);
-            }
-            catch (Exception ex) {
-                _logger.Error(ex, "Error getting message body type: {0}", ex.Message);
+                message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
+            } catch (Exception ex) {
+                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", e.BasicProperties?.MessageId, ex.Message);
                 return;
             }
 
-            object body = await _serializer.DeserializeAsync(message.Data, messageType).AnyContext();
-            await SendMessageToSubscribersAsync(messageType, body).AnyContext();
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
 
         /// <summary>

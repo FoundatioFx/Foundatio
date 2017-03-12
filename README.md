@@ -267,8 +267,8 @@ We provide four different file storage implementations that derive from the [`IF
 
 1. [InMemoryFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
-3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob Storage implementation.
-3. [S3Storage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3Storage.cs): An AWS S3 Storage implementation.
+3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
+3. [S3FileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 

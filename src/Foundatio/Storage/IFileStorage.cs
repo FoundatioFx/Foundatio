@@ -23,6 +23,10 @@ namespace Foundatio.Storage {
         public string Path { get; set; }
         public DateTime Created { get; set; }
         public DateTime Modified { get; set; }
+
+        /// <summary>
+        /// In Bytes
+        /// </summary>
         public long Size { get; set; }
         // TODO: Add metadata object for custom properties
     }

@@ -1,5 +1,5 @@
-version: 4.3.{build}
-os: Visual Studio 2017 RC
+version: 5.0.{build}
+os: Visual Studio 2017
 clone_depth: 2
 configuration: Release
 
@@ -12,10 +12,15 @@ init:
   - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="pre" }
 
 before_build:
+  - ps: |
+      [xml]$versionXml = Get-Content .\build\version.props
+      $versionXml.Project.PropertyGroup.VersionPrefix = "$($env:APPVEYOR_BUILD_VERSION)"
+      $versionXml.Project.PropertyGroup.VersionSuffix = "$($env:VERSION_SUFFIX)"
+      $versionXml.Save("$pwd\build\version.props")
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build -f net46 Foundatio.sln /p:VersionPrefix="$($env:APPVEYOR_BUILD_VERSION)" /p:VersionSuffix="$($env:VERSION_SUFFIX)"
+  - ps: dotnet pack -c Release
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -23,11 +28,6 @@ before_test:
   - redis-64\tools\redis-server.exe --service-start
   - choco install rabbitmq --ignoredependencies -y
   - ps: (Get-Service -Name RabbitMQ).Status
-  - ps: |
-      $msiPath = "$env:TEMP\MicrosoftAzureStorageEmulator.msi"
-      (New-Object Net.WebClient).DownloadFile('http://download.microsoft.com/download/8/B/9/8B905834-DA6B-4A0A-A6C2-C1B8ACD9141D/MicrosoftAzureStorageEmulator.msi', $msiPath)
-      cmd /c start /wait msiexec /i $msiPath /quiet
-      del $msiPath
 
 artifacts:
   - path: artifacts\*.nupkg

@@ -8,7 +8,9 @@ using Foundatio.Logging;
 using Foundatio.Messaging;
 
 namespace Foundatio.Caching {
-    public class HybridCacheClient : ICacheClient {
+    public interface IHybridCacheClient : ICacheClient { }
+
+    public class HybridCacheClient : IHybridCacheClient {
         private readonly string _cacheId = Guid.NewGuid().ToString("N");
         protected readonly ICacheClient _distributedCache;
         private readonly InMemoryCacheClient _localCache;
@@ -17,11 +19,11 @@ namespace Foundatio.Caching {
         private long _localCacheHits;
         private long _invalidateCacheCalls;
 
-        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory) {
+        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory.CreateLogger<HybridCacheClient>();
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
-            _messageBus.Subscribe<InvalidateCache>(async cache => await OnRemoteCacheItemExpiredAsync(cache).AnyContext());
+            _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).GetAwaiter().GetResult();
             _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
             _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
         }
@@ -54,7 +56,7 @@ namespace Foundatio.Caching {
                 _logger.Trace("Fushed local cache");
             } else if (message.Keys != null && message.Keys.Length > 0) {
                 var keysToRemove = new List<string>(message.Keys.Length);
-                foreach (var key in message.Keys) {
+                foreach (string key in message.Keys) {
                     if (message.Expired)
                         await _localCache.RemoveExpiredKeyAsync(key, false).AnyContext();
                     else if (key.EndsWith("*"))
@@ -112,7 +114,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             _logger.Trace("Adding key \"{0}\" to local cache with expiration: {1}", key, expiresIn);
-            var added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
+            bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
             if (added)
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
 

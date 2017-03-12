@@ -27,7 +27,7 @@ namespace Foundatio.Jobs {
                 Message = message ?? exception.Message
             };
         }
-        
+
         public static JobResult CancelledWithMessage(string message) {
             return new JobResult {
                 IsCancelled = true,

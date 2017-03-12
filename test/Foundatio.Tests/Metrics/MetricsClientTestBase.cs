@@ -63,24 +63,25 @@ namespace Foundatio.Tests.Metrics {
                 if (stats == null)
                     return;
 
-                using (var queue = new InMemoryQueue<SimpleWorkItem>(behaviors: new[] { new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log) }, loggerFactory: Log)) {
-                    await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
-                    await SystemClock.SleepAsync(50);
-                    var entry = await queue.DequeueAsync(TimeSpan.Zero);
-                    await SystemClock.SleepAsync(30);
-                    await entry.CompleteAsync();
-                    await SystemClock.SleepAsync(500); // give queue metrics time
+                using (var behavior = new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(25), loggerFactory: Log)) {
+                    using (var queue = new InMemoryQueue<SimpleWorkItem>(behaviors: new[] { behavior }, loggerFactory: Log)) {
+                        await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
+                        await SystemClock.SleepAsync(50);
+                        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+                        await SystemClock.SleepAsync(15);
+                        await entry.CompleteAsync();
 
-                    await metrics.FlushAsync();
-
-                    var queueStats = await stats.GetQueueStatsAsync("simpleworkitem");
-                    Assert.Equal(1, queueStats.Count.Max);
-                    Assert.Equal(0, queueStats.Count.Last);
-                    Assert.Equal(1, queueStats.Enqueued.Count);
-                    Assert.Equal(1, queueStats.Dequeued.Count);
-                    Assert.Equal(1, queueStats.Completed.Count);
-                    Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 250);
-                    Assert.InRange(queueStats.ProcessTime.AverageDuration, 30, 250);
+                        await SystemClock.SleepAsync(100); // give queue metrics time
+                        await metrics.FlushAsync();
+                        var queueStats = await stats.GetQueueStatsAsync("simpleworkitem");
+                        Assert.Equal(1, queueStats.Count.Max);
+                        Assert.Equal(0, queueStats.Count.Last);
+                        Assert.Equal(1, queueStats.Enqueued.Count);
+                        Assert.Equal(1, queueStats.Dequeued.Count);
+                        Assert.Equal(1, queueStats.Completed.Count);
+                        Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 250);
+                        Assert.InRange(queueStats.ProcessTime.AverageDuration, 15, 250);
+                    }
                 }
             }
         }
@@ -163,7 +164,7 @@ namespace Foundatio.Tests.Metrics {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 Assert.True(await task, "Expected at least 4 count within 500 ms");
 
-                task = metrics.WaitForCounterAsync(CounterName, async () => await metrics.CounterAsync(CounterName), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                task = metrics.WaitForCounterAsync(CounterName, () => metrics.CounterAsync(CounterName), cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
                 Assert.True(await task, "Expected at least 5 count within 500 ms");
 

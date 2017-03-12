@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.Caching;
+using Foundatio.Lock;
 using Foundatio.Tests.Extensions;
 using Foundatio.Logging;
+using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
@@ -44,6 +47,11 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override Task CanDequeueEfficientlyAsync() {
             return base.CanDequeueEfficientlyAsync();
+        }
+
+        [Fact]
+        public override Task CanResumeDequeueEfficientlyAsync() {
+            return base.CanResumeDequeueEfficientlyAsync();
         }
 
         [Fact]
@@ -122,6 +130,28 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
+        public override async Task CanDequeueWithLockingAsync() {
+            var muxer = SharedConnection.GetMuxer();
+            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanDequeueWithLockingImpAsync(distributedLock);
+                }
+            }
+        }
+
+        [Fact]
+        public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            var muxer = SharedConnection.GetMuxer();
+            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
+                }
+            }
+        }
+
+        [Fact]
         public async Task VerifyCacheKeysAreCorrect() {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
@@ -172,7 +202,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
 
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
                         Id = 1
                     });
@@ -239,7 +269,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
 
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
                         Id = 1
                     });
@@ -302,7 +332,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
-                    var id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
                     _logger.Trace(id);
                     workItemIds.Add(id);
                 }
@@ -316,7 +346,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 workItemIds.Reverse();
                 await queue.DoMaintenanceWorkAsync();
 
-                foreach (var id in workItemIds.Take(3)) {
+                foreach (object id in workItemIds.Take(3)) {
                     _logger.Trace("Checking: " + id);
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 }
