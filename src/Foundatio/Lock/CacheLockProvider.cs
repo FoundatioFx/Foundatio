@@ -15,9 +15,9 @@ namespace Foundatio.Lock {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
         private readonly ConcurrentDictionary<string, AsyncAutoResetEvent> _autoResetEvents = new ConcurrentDictionary<string, AsyncAutoResetEvent>();
-        private static readonly object _lockObject = new object();
+        private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
-        protected readonly ILogger _logger;
+        private readonly ILogger _logger;
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory.CreateLogger<CacheLockProvider>();
@@ -25,24 +25,24 @@ namespace Foundatio.Lock {
             _messageBus = messageBus;
         }
 
-        private void EnsureTopicSubscription() {
+        private async Task EnsureTopicSubscriptionAsync() {
             if (_isSubscribed)
                 return;
 
-            lock (_lockObject) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isSubscribed)
                     return;
 
                 _logger.Trace("Subscribing to cache lock released.");
-                _messageBus.Subscribe<CacheLockReleased>(OnLockReleasedAsync);
+                await _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleasedAsync).AnyContext();
                 _isSubscribed = true;
+                _logger.Trace("Subscribed to cache lock released.");
             }
         }
 
         private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
             _logger.Trace("Got lock released message: {Name}", msg.Name);
-            AsyncAutoResetEvent autoResetEvent;
-            if (_autoResetEvents.TryGetValue(msg.Name, out autoResetEvent))
+            if (_autoResetEvents.TryGetValue(msg.Name, out AsyncAutoResetEvent autoResetEvent))
                 autoResetEvent.Set();
 
             return Task.CompletedTask;
@@ -52,7 +52,7 @@ namespace Foundatio.Lock {
             _logger.Trace(() => $"AcquireAsync Name: {name} WillWait: {!cancellationToken.IsCancellationRequested}");
 
             if (!cancellationToken.IsCancellationRequested)
-                EnsureTopicSubscription();
+                await EnsureTopicSubscriptionAsync().AnyContext();
 
             if (!lockTimeout.HasValue)
                 lockTimeout = TimeSpan.FromMinutes(20);
@@ -113,7 +113,6 @@ namespace Foundatio.Lock {
                 return null;
 
             _logger.Trace("Returning lock: {name}", name);
-
             return new DisposableLock(name, this, _logger);
         }
 
@@ -131,7 +130,7 @@ namespace Foundatio.Lock {
             _logger.Trace("ReleaseAsync Complete: {name}", name);
         }
 
-        public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
+        public Task RenewAsync(string name, TimeSpan? lockExtension = null) {
             _logger.Trace("RenewAsync: {0}", name);
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);

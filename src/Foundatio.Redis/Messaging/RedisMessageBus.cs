@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -12,7 +13,7 @@ namespace Foundatio.Messaging {
         private readonly ISubscriber _subscriber;
         private readonly string _topic;
         private readonly ISerializer _serializer;
-        private static readonly object _lockObject = new object();
+        private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
 
         public RedisMessageBus(ISubscriber subscriber, string topic = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
@@ -21,17 +22,18 @@ namespace Foundatio.Messaging {
             _serializer = serializer ?? new JsonNetSerializer();
         }
 
-        private void EnsureTopicSubscription() {
+        private async Task EnsureTopicSubscriptionAsync() {
             if (_isSubscribed)
                 return;
 
-            lock (_lockObject) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_isSubscribed)
                     return;
 
                 _logger.Trace("Subscribing to topic: {0}", _topic);
-                _subscriber.Subscribe(_topic, OnMessage, CommandFlags.FireAndForget);
+                await _subscriber.SubscribeAsync(_topic, OnMessage).AnyContext();
                 _isSubscribed = true;
+                _logger.Trace("Subscribed to topic: {0}", _topic);
             }
         }
 
@@ -70,9 +72,9 @@ namespace Foundatio.Messaging {
             await Run.WithRetriesAsync(() => _subscriber.PublishAsync(_topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
-            EnsureTopicSubscription();
-            base.Subscribe(handler, cancellationToken);
+        public override async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
+            await EnsureTopicSubscriptionAsync().AnyContext();
+            await base.SubscribeAsync(handler, cancellationToken).AnyContext();
         }
 
         public override void Dispose() {
@@ -80,13 +82,14 @@ namespace Foundatio.Messaging {
             base.Dispose();
 
             if (_isSubscribed) {
-                lock (_lockObject) {
+                using (_lock.Lock()) {
                     if (!_isSubscribed)
                         return;
 
                     _logger.Trace("Unsubscribing from topic {0}", _topic);
                     _subscriber.Unsubscribe(_topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
+                    _logger.Trace("Unsubscribed from topic {0}", _topic);
                 }
             }
         }

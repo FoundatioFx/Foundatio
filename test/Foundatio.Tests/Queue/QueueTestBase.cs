@@ -319,7 +319,7 @@ namespace Foundatio.Tests.Queue {
                     });
 
                     await SystemClock.SleepAsync(1);
-                    var success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", () => queue.EnqueueAsync(new SimpleWorkItem {
+                    bool success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", () => queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
                     Assert.True(success);
@@ -450,7 +450,7 @@ namespace Foundatio.Tests.Queue {
                     }
 
                     await Run.InParallelAsync(workItemCount, async i => {
-                            var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                            string id = await queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello",
                             Id = i
                             });
@@ -683,8 +683,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, stats.Timeouts);
                 Assert.Equal(0, stats.Working);
 
-                var queueEntry = workItem as QueueEntry<SimpleWorkItem>;
-                if (queueEntry != null)
+                if (workItem is QueueEntry<SimpleWorkItem> queueEntry)
                     Assert.Equal(1, queueEntry.Attempts);
 
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
@@ -729,8 +728,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, stats.Timeouts);
                 Assert.Equal(0, stats.Working);
 
-                var queueEntry = workItem as QueueEntry<SimpleWorkItem>;
-                if (queueEntry != null)
+                if (workItem is QueueEntry<SimpleWorkItem> queueEntry)
                     Assert.Equal(1, queueEntry.Attempts);
             }
         }
@@ -831,7 +829,7 @@ namespace Foundatio.Tests.Queue {
                     }
 
                     await Run.InParallelAsync(workItemCount, async i => {
-                        var id = await queue.EnqueueAsync(new SimpleWorkItem {
+                        string id = await queue.EnqueueAsync(new SimpleWorkItem {
                             Data = "Hello",
                             Id = i
                         });

@@ -139,12 +139,12 @@ namespace Foundatio.Messaging {
         /// <typeparam name="T">Type of the subscriber who wants to be notified of the callback</typeparam>
         /// <param name="handler">callback handler</param>
         /// <param name="cancellationToken"></param>
-        public override void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
+        public override Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) {
             var consumer = new EventingBasicConsumer(_subscriberChannel);
             consumer.Received += OnMessageAsync;
 
             _subscriberChannel.BasicConsume(_queueName, true, consumer);
-            base.Subscribe(handler, cancellationToken);
+            return base.SubscribeAsync(handler, cancellationToken);
         }
 
         private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {

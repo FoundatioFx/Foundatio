@@ -28,10 +28,11 @@ namespace Foundatio.Lock {
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
             _logger.Trace("Renewing lock: {0}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
-            _logger.Trace("Renewing lock: {0}", _name);
+            _logger.Trace("Renewed lock: {0}", _name);
         }
 
         public Task ReleaseAsync() {
+            _logger.Trace("Releasing lock: {0}", _name);
             return _lockProvider.ReleaseAsync(_name);
         }
     }
