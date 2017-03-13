@@ -113,7 +113,7 @@ using (await locker.AcquireAsync("test")) {
 
 ### [Messaging](https://github.com/exceptionless/Foundatio/tree/master/src/Foundatio/Messaging)
 
-Allows you to publish and subscribe to messages flowing through your application.  We provide three different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
+Allows you to publish and subscribe to messages flowing through your application.  We provide four different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
 
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
