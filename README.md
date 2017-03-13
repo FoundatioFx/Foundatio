@@ -118,7 +118,7 @@ Allows you to publish and subscribe to messages flowing through your application
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
 3. [RabbitMQMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
-3. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
+4. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample
 
@@ -268,7 +268,7 @@ We provide four different file storage implementations that derive from the [`IF
 1. [InMemoryFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
-3. [S3FileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
+4. [S3FileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 
@@ -287,9 +287,9 @@ string content = await storage.GetFileContentsAsync("test.txt")
 We provide multiple implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
 
 1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-1. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
-2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
-3. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
+2. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
+3. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
+4. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons. 
 
