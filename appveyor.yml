@@ -20,6 +20,7 @@ before_build:
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
+  - ps: dotnet build -c Release
   - ps: dotnet pack -c Release
 
 before_test:
