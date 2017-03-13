@@ -284,7 +284,7 @@ string content = await storage.GetFileContentsAsync("test.txt")
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Foundatio/Metrics)
 
-We provide multiple implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
+We provide four implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
 
 1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
 2. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
