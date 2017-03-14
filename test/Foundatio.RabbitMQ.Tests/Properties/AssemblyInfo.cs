@@ -1,1 +1,1 @@
-﻿[assembly: Xunit.CollectionBehaviorAttribute(DisableTestParallelization = true)]
+﻿[assembly: Xunit.CollectionBehaviorAttribute(DisableTestParallelization = true, MaxParallelThreads = 1)]

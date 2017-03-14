@@ -81,7 +81,7 @@ namespace Foundatio.Tests.Jobs {
                     for (int i = 0; i < jobCount; i++) {
                         var q = GetSampleWorkItemQueue(retries: 1, retryDelay: TimeSpan.Zero);
                         await q.DeleteQueueAsync();
-                        q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", Log));
+                        q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", loggerFactory: Log));
                         queues.Add(q);
                     }
                     _logger.Info("Done setting up queues");

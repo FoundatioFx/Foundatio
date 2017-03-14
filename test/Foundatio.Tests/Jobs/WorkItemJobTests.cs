@@ -37,12 +37,12 @@ namespace Foundatio.Tests.Jobs {
                         }
                     });
 
-                    var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
                         SomeData = "Test"
                     }, true);
 
                     int statusCount = 0;
-                    messageBus.Subscribe<WorkItemStatus>(status => {
+                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         _logger.Trace("Progress: {progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
@@ -74,7 +74,7 @@ namespace Foundatio.Tests.Jobs {
                             var jobData = ctx.GetData<MyWorkItem>();
                             Assert.Equal("Test", jobData.SomeData);
 
-                            var jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
+                            int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
                             if (jobData.Index % 100 == 0)
                                 _logger.Trace("Job {jobId} processing work item #: {jobWorkTotal}", ctx.JobId, jobWorkTotal);
 
@@ -95,7 +95,7 @@ namespace Foundatio.Tests.Jobs {
 
                         var completedItems = new List<string>();
                         object completedItemsLock = new object();
-                        messageBus.Subscribe<WorkItemStatus>(status => {
+                        await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                             if (status.Progress == 100)
                                 _logger.Trace("Progress: {progress}", status.Progress);
 
@@ -146,12 +146,12 @@ namespace Foundatio.Tests.Jobs {
 
                     handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
 
-                    var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
                         SomeData = "Test"
                     }, true);
 
                     int statusCount = 0;
-                    messageBus.Subscribe<WorkItemStatus>(status => {
+                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         _logger.Trace("Progress: {progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
@@ -181,12 +181,12 @@ namespace Foundatio.Tests.Jobs {
                         }
                     }, Log.CreateLogger("MyWorkItem"));
 
-                    var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
                         SomeData = "Test"
                     }, true);
 
                     int statusCount = 0;
-                    messageBus.Subscribe<WorkItemStatus>(status => {
+                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         _logger.Trace("Progress: {progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
@@ -212,12 +212,12 @@ namespace Foundatio.Tests.Jobs {
                         throw new Exception();
                     });
 
-                    var jobId = await queue.EnqueueAsync(new MyWorkItem {
+                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
                         SomeData = "Test"
                     }, true);
 
                     int statusCount = 0;
-                    messageBus.Subscribe<WorkItemStatus>(status => {
+                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         _logger.Trace("Progress: {progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;

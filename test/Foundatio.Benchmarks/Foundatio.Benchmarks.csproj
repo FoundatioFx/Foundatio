@@ -5,12 +5,13 @@
     <RuntimeIdentifiers>win7-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="!$(TargetFramework.StartsWith('netcoreapp'))">win7-x64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
+    <IsPackable>False</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.10.2" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.10.3" />
   </ItemGroup>
 </Project>

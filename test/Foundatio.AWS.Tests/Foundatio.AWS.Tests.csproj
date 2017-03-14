@@ -1,13 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="..\..\build\common.props" />
+  <Import Project="..\..\build\test.props" />
   <PropertyGroup>
     <TargetFrameworks>netcoreapp1.1;net46</TargetFrameworks>
   </PropertyGroup>
-  <ItemGroup>
-    <Content Include="xunit.runner.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.AWS\Foundatio.AWS.csproj" />
@@ -16,7 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="log4net" Version="2.0.8" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0-preview-20170210-02" />
   </ItemGroup>
   <ItemGroup>
     <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
