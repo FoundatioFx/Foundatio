@@ -113,12 +113,12 @@ using (await locker.AcquireAsync("test")) {
 
 ### [Messaging](https://github.com/exceptionless/Foundatio/tree/master/src/Foundatio/Messaging)
 
-Allows you to publish and subscribe to messages flowing through your application.  We provide four different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
+Allows you to publish and subscribe to messages flowing through your application. We provide four different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
 
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
 3. [RabbitMQMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
-3. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
+4. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample
 
@@ -137,7 +137,7 @@ await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
 
 Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide three different ways of defining a job, based on your use case:
 
-1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs) and calling one of the Run methods.  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs) and calling one of the Run methods. The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -161,7 +161,7 @@ Allows you to run a long running process (in process or out of process) with out
   await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
   ```
 
-2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -203,7 +203,7 @@ Allows you to run a long running process (in process or out of process) with out
   await job.RunUntilEmptyAsync(); // job.RunCount = 3;
   ```
 
-3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the  [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/WorkItemJob/WorkItemHandlerBase.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs).  The JobRunner can be used to easily run your jobs as Azure Web Jobs.
+3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the [`WorkItemHandlerBase` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/WorkItemJob/WorkItemHandlerBase.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
   #### Sample
 
@@ -268,7 +268,7 @@ We provide four different file storage implementations that derive from the [`IF
 1. [InMemoryFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
-3. [S3FileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
+4. [S3FileStorage](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 
@@ -284,12 +284,12 @@ string content = await storage.GetFileContentsAsync("test.txt")
 
 ### [Metrics](https://github.com/exceptionless/Foundatio/tree/master/src/Foundatio/Metrics)
 
-We provide multiple implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
+We provide four implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
 
 1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-1. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
-2. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
-3. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
+2. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
+3. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
+4. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons. 
 
