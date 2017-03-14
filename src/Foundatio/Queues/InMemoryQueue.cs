@@ -186,6 +186,7 @@ namespace Foundatio.Queues {
                 throw new Exception("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
+            entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
             _logger.Trace("Complete done: {0}", entry.Id);
         }
@@ -209,8 +210,9 @@ namespace Foundatio.Queues {
                 _logger.Trace("Exceeded retry limit moving to deadletter: {0}", entry.Id);
                 _deadletterQueue.Enqueue(info);
             }
-
+            
             Interlocked.Increment(ref _abandonedCount);
+            entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
             _logger.Trace("Abandon complete: {0}", entry.Id);
         }

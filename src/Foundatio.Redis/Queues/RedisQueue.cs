@@ -344,6 +344,7 @@ namespace Foundatio.Queues {
             ), logger: _logger).AnyContext();
 
             Interlocked.Increment(ref _completedCount);
+            entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
 
             _logger.Trace("Complete done: {0}", entry.Id);
@@ -412,6 +413,7 @@ namespace Foundatio.Queues {
             }
 
             Interlocked.Increment(ref _abandonedCount);
+            entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
 
             _logger.Trace("Abandon complete: {entryId}", entry.Id);

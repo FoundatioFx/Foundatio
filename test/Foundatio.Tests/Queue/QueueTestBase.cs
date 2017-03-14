@@ -48,6 +48,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
                 await workItem.CompleteAsync();
+                Assert.False(workItem.IsAbandoned);
+                Assert.True(workItem.IsCompleted);
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
@@ -668,6 +670,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
                 await workItem.AbandonAsync();
+                Assert.True(workItem.IsAbandoned);
+                Assert.False(workItem.IsCompleted);
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.AbandonAsync());
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.CompleteAsync());
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.CompleteAsync());
@@ -690,6 +694,8 @@ namespace Foundatio.Tests.Queue {
                 workItem = await queue.DequeueAsync(TimeSpan.Zero);
 
                 await queue.AbandonAsync(workItem);
+                Assert.True(workItem.IsAbandoned);
+                Assert.False(workItem.IsCompleted);
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.CompleteAsync());
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.AbandonAsync());
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.AbandonAsync(workItem));

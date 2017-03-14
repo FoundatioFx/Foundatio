@@ -5,6 +5,8 @@ namespace Foundatio.Queues {
         string Id { get; }
         bool IsCompleted { get; }
         bool IsAbandoned { get; }
+        void MarkAbandoned();
+        void MarkCompleted();
         T Value { get; }
         Task RenewLockAsync();
         Task AbandonAsync();
