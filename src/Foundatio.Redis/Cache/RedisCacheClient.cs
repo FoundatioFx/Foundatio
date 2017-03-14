@@ -163,7 +163,7 @@ namespace Foundatio.Caching {
                 redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
             }
             
-            var result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
+            long result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
@@ -186,7 +186,7 @@ namespace Foundatio.Caching {
                 redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
             }
 
-            var result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+            long result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 

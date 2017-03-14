@@ -1,6 +1,6 @@
 <Project ToolsVersion="15.0">
   <Import Project="version.props" />
-  
+
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
@@ -10,7 +10,7 @@
     <WarningsAsErrors>true</WarningsAsErrors>
     <DebugType>portable</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <PackageOutputPath>$(SolutionDir)\artifacts\</PackageOutputPath>
+    <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
     <IncludeSymbols>True</IncludeSymbols>
     <IncludeSource>True</IncludeSource>
 

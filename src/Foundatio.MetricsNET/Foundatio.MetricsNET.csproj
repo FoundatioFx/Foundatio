@@ -2,7 +2,6 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>net46</TargetFrameworks>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageTags>MetricsNET;Metrics;Stats;StatsD;Logging;Log;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
   <ItemGroup>

@@ -54,12 +54,10 @@ namespace Foundatio.Messaging {
             _logger.Trace(() => $"Found {subscribers.Count} subscribers for message type {messageType.Name}.");
             foreach (var subscriber in subscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
-                    Subscriber sub;
-                    if (_subscribers.TryRemove(subscriber.Id, out sub)) {
+                    if (_subscribers.TryRemove(subscriber.Id, out Subscriber sub))
                         _logger.Trace("Removed cancelled subscriber: {subscriberId}", subscriber.Id);
-                    } else {
+                    else
                         _logger.Trace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
-                    }
 
                     continue;
                 }
@@ -73,7 +71,7 @@ namespace Foundatio.Messaging {
             _logger.Trace(() => $"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
         }
 
-        public virtual void Subscribe<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public virtual Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
@@ -88,6 +86,8 @@ namespace Foundatio.Messaging {
 
             if (!_subscribers.TryAdd(subscriber.Id, subscriber))
                 _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
+
+            return Task.CompletedTask;
         }
 
         protected Type GetMessageBodyType(MessageBusData message) {
@@ -137,10 +137,9 @@ namespace Foundatio.Messaging {
             }
 
             foreach (var messageId in messagesToSend) {
-                DelayedMessage message;
-                if (!_delayedMessages.TryRemove(messageId, out message))
+                if (!_delayedMessages.TryRemove(messageId, out DelayedMessage message))
                     continue;
-                
+
                 _logger.Trace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
