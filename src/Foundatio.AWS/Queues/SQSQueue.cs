@@ -110,9 +110,16 @@ namespace Foundatio.AWS.Queues {
                 AttributeNames = new List<string> { "ApproximateReceiveCount", "SentTimestamp" }
             };
 
-            var response = await _client.Value.ReceiveMessageAsync(request, cancel).ConfigureAwait(false);
+            ReceiveMessageResponse response = null;
 
-            if (response.Messages.Count == 0)
+            try {
+                response = await _client.Value.ReceiveMessageAsync(request, cancel).ConfigureAwait(false);
+            }
+            catch (TaskCanceledException) {
+                // return null on cancel
+            }
+
+            if (response == null || response.Messages.Count == 0)
                 return null;
 
             Interlocked.Increment(ref _dequeuedCount);
