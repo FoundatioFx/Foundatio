@@ -27,6 +27,14 @@ namespace Foundatio.Queues {
         public TimeSpan ProcessingTime { get; set; }
         public DataDictionary Data { get; } = new DataDictionary();
 
+        void IQueueEntry<T>.MarkCompleted() {
+            IsCompleted = true;
+        }
+
+        void IQueueEntry<T>.MarkAbandoned() {
+            IsAbandoned = true;
+        }
+
         public Task RenewLockAsync() {
             RenewedTimeUtc = SystemClock.UtcNow;
             return _queue.RenewLockAsync(this);

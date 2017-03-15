@@ -205,16 +205,18 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
-            Interlocked.Increment(ref _completedCount);
             await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
+            Interlocked.Increment(ref _completedCount);
+            entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
         }
         
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
             await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
-            Interlocked.Increment(ref _abandonedCount);
             await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
+            Interlocked.Increment(ref _abandonedCount);
+            entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
         }
         

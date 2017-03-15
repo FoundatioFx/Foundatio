@@ -120,6 +120,7 @@ namespace Foundatio.Queues {
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
 
             Interlocked.Increment(ref _completedCount);
+            queueEntry.MarkCompleted();
             await OnCompletedAsync(queueEntry).AnyContext();
         }
 
@@ -136,6 +137,7 @@ namespace Foundatio.Queues {
             }
 
             Interlocked.Increment(ref _abandonedCount);
+            queueEntry.MarkAbandoned();
             await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
