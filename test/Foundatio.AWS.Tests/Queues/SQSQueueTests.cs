@@ -18,7 +18,6 @@ namespace Foundatio.AWS.Tests.Queues {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
 
-
             BasicAWSCredentials credentials = null;
 
             var section = Configuration.GetSection("AWS");
@@ -40,6 +39,9 @@ namespace Foundatio.AWS.Tests.Queues {
                 loggerFactory: Log);
         }
 
+        protected override Task CloseQueue(IQueue<SimpleWorkItem> queue) {
+            return queue.DeleteQueueAsync();
+        }
 
         [Fact]
         public override async Task CanQueueAndDequeueWorkItemAsync() {
@@ -71,7 +73,6 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.CanUseQueueWorkerAsync();
         }
 
-        [Fact]
         public override async Task CanHandleErrorInWorkerAsync() {
             await base.CanHandleErrorInWorkerAsync();
         }
@@ -81,7 +82,6 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.WorkItemsWillTimeoutAsync();
         }
 
-        [Fact]
         public override async Task WorkItemsWillGetMovedToDeadletterAsync() {
             await base.WorkItemsWillGetMovedToDeadletterAsync();
         }
@@ -91,7 +91,7 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.CanAutoCompleteWorkerAsync();
         }
 
-        [Fact]
+
         public override async Task CanHaveMultipleQueueInstancesAsync() {
             await base.CanHaveMultipleQueueInstancesAsync();
         }
@@ -119,6 +119,10 @@ namespace Foundatio.AWS.Tests.Queues {
         // NOTE: Not using this test because you can set specific delay times for storage queue
         public override async Task CanDelayRetryAsync() {
             await base.CanDelayRetryAsync();
+        }
+
+        public override void Dispose() {
+            // do nothing
         }
     }
 }

@@ -157,6 +157,7 @@ namespace Foundatio.AWS.Queues {
             await _client.Value.DeleteMessageAsync(request).ConfigureAwait(false);
 
             Interlocked.Increment(ref _completedCount);
+            queueEntry.MarkCompleted();
             await OnCompletedAsync(queueEntry).ConfigureAwait(false);
 
         }
@@ -175,6 +176,7 @@ namespace Foundatio.AWS.Queues {
             await _client.Value.ChangeMessageVisibilityAsync(request).ConfigureAwait(false);
 
             Interlocked.Increment(ref _abandonedCount);
+            queueEntry.MarkAbandoned();
             await OnAbandonedAsync(queueEntry).ConfigureAwait(false);
         }
 

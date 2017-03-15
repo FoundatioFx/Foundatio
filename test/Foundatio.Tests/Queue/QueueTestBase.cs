@@ -28,6 +28,10 @@ namespace Foundatio.Tests.Queue {
             return null;
         }
 
+        protected virtual Task CloseQueue(IQueue<SimpleWorkItem> queue) {
+            return Task.CompletedTask;
+        }
+
         public virtual async Task CanQueueAndDequeueWorkItemAsync() {
             var queue = GetQueue();
             if (queue == null)
@@ -53,9 +57,11 @@ namespace Foundatio.Tests.Queue {
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
+
+                await CloseQueue(queue);
             }
         }
-        
+
         /// <summary>
         /// When a cancelled token is passed into Dequeue, it will only try to dequeue one time and then exit.
         /// </summary>
@@ -84,6 +90,8 @@ namespace Foundatio.Tests.Queue {
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -120,6 +128,8 @@ namespace Foundatio.Tests.Queue {
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
                     _logger.Trace(() => $"AverageDuration: {timing.AverageDuration}");
                     Assert.InRange(timing.AverageDuration, 0, 75);
+
+                    await CloseQueue(queue);
                 }
             }
         }
@@ -155,6 +165,8 @@ namespace Foundatio.Tests.Queue {
                         Assert.InRange(timing.AverageDuration, 0, 75);
                     }
                 }
+
+                await CloseQueue(queue);
             }
         }
 
@@ -190,6 +202,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(workItemCount, stats.Dequeued);
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -208,6 +222,8 @@ namespace Foundatio.Tests.Queue {
                 _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(50));
+
+                await CloseQueue(queue);
             }
         }
 
@@ -242,6 +258,8 @@ namespace Foundatio.Tests.Queue {
                 await workItem.CompleteAsync();
                 sw.Stop();
                 _logger.Trace("Time {0}", sw.Elapsed);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -267,6 +285,8 @@ namespace Foundatio.Tests.Queue {
                 _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+
+                await CloseQueue(queue);
             }
         }
 
@@ -295,6 +315,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
                 Assert.Equal(0, stats.Errors);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -332,7 +354,9 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(0, stats.Completed);
                     Assert.Equal(1, stats.Errors);
                     Assert.Equal(1, stats.Deadletter);
+
                 }
+                await CloseQueue(queue);
             }
         }
 
@@ -362,6 +386,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -396,6 +422,8 @@ namespace Foundatio.Tests.Queue {
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Deadletter);
                 Assert.Equal(2, stats.Abandoned);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -425,6 +453,8 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(0, stats.Errors);
                     Assert.Equal(1, stats.Completed);
                 }
+
+                await CloseQueue(queue);
             }
         }
 
@@ -469,7 +499,7 @@ namespace Foundatio.Tests.Queue {
 
                     _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                     Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
-                
+
                     // In memory queue doesn't share state.
                     if (queue.GetType() == typeof (InMemoryQueue<SimpleWorkItem>)) {
                         var stats = await queue.GetQueueStatsAsync();
@@ -500,6 +530,8 @@ namespace Foundatio.Tests.Queue {
                         q.Dispose();
                     }
                 }
+
+                await CloseQueue(queue);
             }
         }
 
@@ -533,6 +565,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.True(elapsed > TimeSpan.FromSeconds(.95));
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -649,6 +683,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Null(nullWorkItem);
                 await entry.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -700,6 +736,8 @@ namespace Foundatio.Tests.Queue {
                 await Assert.ThrowsAnyAsync<Exception>(() => workItem.AbandonAsync());
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.AbandonAsync(workItem));
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.CompleteAsync(workItem));
+
+                await CloseQueue(queue);
             }
         }
 
@@ -736,6 +774,8 @@ namespace Foundatio.Tests.Queue {
 
                 if (workItem is QueueEntry<SimpleWorkItem> queueEntry)
                     Assert.Equal(1, queueEntry.Attempts);
+
+                await CloseQueue(queue);
             }
         }
 
@@ -869,6 +909,8 @@ namespace Foundatio.Tests.Queue {
                         q.Dispose();
                     }
                 }
+
+                await CloseQueue(queue);
             }
         }
 
@@ -896,7 +938,7 @@ namespace Foundatio.Tests.Queue {
                 countdown.Signal();
             }
         }
-        
+
         private async Task AssertEmptyQueueAsync(IQueue<SimpleWorkItem> queue) {
             var stats = await queue.GetQueueStatsAsync();
             Assert.Equal(0, stats.Abandoned);
