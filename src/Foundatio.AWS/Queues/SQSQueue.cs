@@ -115,7 +115,7 @@ namespace Foundatio.Queues {
                 ? CancellationToken.None
                 : cancellationToken;
 
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancel).Token;
 
             var request = new ReceiveMessageRequest {
                 QueueUrl = _queueUrl,

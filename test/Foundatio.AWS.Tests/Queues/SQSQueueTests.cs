@@ -12,7 +12,9 @@ namespace Foundatio.AWS.Tests.Queues {
     public class SQSQueueTests : QueueTestBase {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N");
 
-        public SQSQueueTests(ITestOutputHelper output) : base(output) { }
+        public SQSQueueTests(ITestOutputHelper output) : base(output) {
+            Log.MinimumLevel = Logging.LogLevel.Trace;
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
 
@@ -37,8 +39,17 @@ namespace Foundatio.AWS.Tests.Queues {
                 loggerFactory: Log);
         }
 
-        protected override Task CloseQueue(IQueue<SimpleWorkItem> queue) {
-            return queue.DeleteQueueAsync();
+        protected override async Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+            }
+            catch (Exception ex) {
+                // don't throw on cleanup errror
+                _logger.Error(ex, () => $"Cleanup Error: {ex.Message}");
+            }
         }
 
         [Fact]
