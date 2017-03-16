@@ -311,7 +311,7 @@ namespace Foundatio.Metrics {
                 Last = s.Last().Last
             }, dataPoints);
 
-            return new GaugeStatSummary(stats, start.Value, end.Value);
+            return new GaugeStatSummary(name, stats, start.Value, end.Value);
         }
 
         public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
@@ -357,7 +357,7 @@ namespace Foundatio.Metrics {
                 TotalDuration = s.Sum(i => i.TotalDuration)
             }, dataPoints);
 
-            return new TimingStatSummary(stats, start.Value, end.Value);
+            return new TimingStatSummary(name, stats, start.Value, end.Value);
         }
 
         private string GetBucketKey(string metricType, string statName, DateTime? dateTime = null, TimeSpan? interval = null, string suffix = null) {

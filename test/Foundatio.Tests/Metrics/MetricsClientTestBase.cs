@@ -12,8 +12,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {
-        public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
-        }
+        public MetricsClientTestBase(ITestOutputHelper output) : base(output) {}
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
 

@@ -9,8 +9,10 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.AWS.Tests.Metrics {
-    public class CloudWatchMetricsTests : MetricsClientTestBase, IDisposable {
-        public CloudWatchMetricsTests(ITestOutputHelper output) : base(output) {}
+    public class CloudWatchMetricsTests : MetricsClientTestBase {
+        public CloudWatchMetricsTests(ITestOutputHelper output) : base(output) {
+            Log.MinimumLevel = Logging.LogLevel.Trace;
+        }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
             var section = Configuration.GetSection("AWS");
@@ -19,7 +21,8 @@ namespace Foundatio.AWS.Tests.Metrics {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new CloudWatchMetricsClient(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio/tests/metrics", buffered, Log);
+            string id = Guid.NewGuid().ToString("N").Substring(0, 10);
+            return new CloudWatchMetricsClient(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio/tests/metrics", id, buffered, Log);
         }
 
         [Fact]
@@ -50,10 +53,6 @@ namespace Foundatio.AWS.Tests.Metrics {
         [Fact]
         public override Task CanSendBufferedMetricsAsync() {
             return base.CanSendBufferedMetricsAsync();
-        }
-
-        public void Dispose() {
-            throw new NotImplementedException();
         }
     }
 }

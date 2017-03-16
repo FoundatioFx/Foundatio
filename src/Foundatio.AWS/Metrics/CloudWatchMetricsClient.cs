@@ -15,8 +15,9 @@ namespace Foundatio.Metrics {
         private readonly Lazy<AmazonCloudWatchClient> _client;
         private readonly string _namespace;
         private readonly Dimension _instanceIdDimension;
+        private readonly string _metricPrefix;
 
-        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, bool buffered = true, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
+        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
                 credentials ?? FallbackCredentialsFactory.GetCredentials(),
                 new AmazonCloudWatchConfig {
@@ -24,13 +25,10 @@ namespace Foundatio.Metrics {
                     DisableLogging = true,
                     RegionEndpoint = region ?? RegionEndpoint.USEast1
                 }));
-            
+
+            _metricPrefix = metricPrefix ?? String.Empty;
             _namespace = @namespace ?? "app/metrics";
-            string instanceId = null;
-            
-#if NET46
-            instanceId = Amazon.Util.EC2InstanceMetadata.InstanceId ?? instanceId;
-#endif
+            string instanceId = Amazon.Util.EC2InstanceMetadata.InstanceId;
             if (String.IsNullOrEmpty(instanceId))
                 instanceId = Environment.MachineName;
 
@@ -120,7 +118,18 @@ namespace Foundatio.Metrics {
         }
 
         private string GetMetricName(MetricType metricType, string name) {
-            return String.Concat(metricType, " ", name);
+            return String.Concat(_metricPrefix, metricType, " ", name);
+        }
+
+        private TimeSpan GetStatsInterval(DateTime start, DateTime end) {
+            var totalMinutes = end.Subtract(start).TotalMinutes;
+            TimeSpan interval = TimeSpan.FromMinutes(1);
+            if (totalMinutes >= 60 * 24 * 7)
+                interval = TimeSpan.FromDays(1);
+            else if (totalMinutes >= 60 * 2)
+                interval = TimeSpan.FromMinutes(5);
+
+            return interval;
         }
 
         public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
@@ -130,7 +139,7 @@ namespace Foundatio.Metrics {
             if (!end.HasValue)
                 end = SystemClock.UtcNow;
 
-            var interval = end.Value.Subtract(start.Value).TotalMinutes > 60 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
+            var interval = GetStatsInterval(start.Value, end.Value);
 
             var request = new GetMetricStatisticsRequest {
                 Namespace = _namespace,
@@ -142,6 +151,9 @@ namespace Foundatio.Metrics {
             };
 
             var response = await _client.Value.GetMetricStatisticsAsync(request).AnyContext();
+            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new AmazonCloudWatchException("Unable to retrieve metrics.");
+
             return new CounterStatSummary(
                 name,
                 response.Datapoints.Select(dp => new CounterStat {
@@ -152,12 +164,74 @@ namespace Foundatio.Metrics {
                 end.Value);
         }
 
-        public Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
-            throw new NotImplementedException();
+        public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
+            if (!start.HasValue)
+                start = SystemClock.UtcNow.AddHours(-4);
+
+            if (!end.HasValue)
+                end = SystemClock.UtcNow;
+
+            var interval = GetStatsInterval(start.Value, end.Value);
+
+            var request = new GetMetricStatisticsRequest {
+                Namespace = _namespace,
+                MetricName = GetMetricName(MetricType.Counter, name),
+                Period = (int)interval.TotalMinutes,
+                StartTime = start.Value,
+                EndTime = end.Value,
+                Statistics = new List<string> { "Sum", "Minimum", "Maximum" }
+            };
+
+            var response = await _client.Value.GetMetricStatisticsAsync(request).AnyContext();
+            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new AmazonCloudWatchException("Unable to retrieve metrics.");
+
+            return new GaugeStatSummary(
+                name,
+                response.Datapoints.Select(dp => new GaugeStat {
+                    Max = dp.Maximum,
+                    Min = dp.Minimum,
+                    Total = dp.Sum,
+                    Time = dp.Timestamp
+                }).ToList(),
+                start.Value,
+                end.Value);
         }
 
-        public Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
-            throw new NotImplementedException();
+        public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
+            if (!start.HasValue)
+                start = SystemClock.UtcNow.AddHours(-4);
+
+            if (!end.HasValue)
+                end = SystemClock.UtcNow;
+
+            var interval = GetStatsInterval(start.Value, end.Value);
+
+            var request = new GetMetricStatisticsRequest {
+                Namespace = _namespace,
+                MetricName = GetMetricName(MetricType.Counter, name),
+                Period = (int)interval.TotalMinutes,
+                StartTime = start.Value,
+                EndTime = end.Value,
+                Unit = StandardUnit.Milliseconds,
+                Statistics = new List<string> { "Sum", "Minimum", "Maximum" }
+            };
+
+            var response = await _client.Value.GetMetricStatisticsAsync(request).AnyContext();
+            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new AmazonCloudWatchException("Unable to retrieve metrics.");
+
+            return new TimingStatSummary(
+                name,
+                response.Datapoints.Select(dp => new TimingStat {
+                    MinDuration = (int)dp.Minimum,
+                    MaxDuration = (int)dp.Maximum,
+                    TotalDuration = (long)dp.Sum,
+                    Count = (int)dp.SampleCount,
+                    Time = dp.Timestamp
+                }).ToList(),
+                start.Value,
+                end.Value);
         }
     }
 }

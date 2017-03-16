@@ -17,7 +17,8 @@ namespace Foundatio.Metrics {
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}")]
     public class GaugeStatSummary {
-        public GaugeStatSummary(ICollection<GaugeStat> stats, DateTime start, DateTime end) {
+        public GaugeStatSummary(string name, ICollection<GaugeStat> stats, DateTime start, DateTime end) {
+            Name = name;
             Stats = stats;
             Count = Stats.Sum(s => s.Count);
             Total = Stats.Sum(s => s.Total);
@@ -29,6 +30,7 @@ namespace Foundatio.Metrics {
             Average = Count > 0 ? Total / Count : 0;
         }
 
+        public string Name { get; }
         public DateTime StartTime { get; }
         public DateTime EndTime { get; }
         public ICollection<GaugeStat> Stats { get; }
@@ -38,5 +40,9 @@ namespace Foundatio.Metrics {
         public double Min { get; set; }
         public double Max { get; }
         public double Average { get; }
+
+        public override string ToString() {
+            return $"Counter: {Name} Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}";
+        }
     }
 }
