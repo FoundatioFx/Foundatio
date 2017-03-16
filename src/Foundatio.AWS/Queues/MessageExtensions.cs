@@ -1,7 +1,7 @@
 ﻿using System;
 using Amazon.SQS.Model;
 
-namespace Foundatio.AWS.Queues {
+namespace Foundatio.Queues {
     public static class MessageExtensions {
         public static int ApproximateReceiveCount(this Message message) {
             if (message == null || message.Attributes == null)

@@ -2,8 +2,7 @@ using System;
 using Amazon.SQS.Model;
 using Foundatio.Queues;
 
-namespace Foundatio.AWS.Queues
-{
+namespace Foundatio.Queues {
     internal class SQSQueueEntry<T>
         : QueueEntry<T> where T : class {
 

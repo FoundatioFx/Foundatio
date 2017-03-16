@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon;
 using Amazon.Runtime;
-using Foundatio.AWS.Queues;
 using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;

@@ -225,7 +225,7 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueImplAsync(cancellationToken: cancellationToken).AnyContext();
-                    } catch (TimeoutException) { }
+                    } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
