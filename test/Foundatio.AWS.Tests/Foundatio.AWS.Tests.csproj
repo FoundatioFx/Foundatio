@@ -4,7 +4,9 @@
     <TargetFrameworks>netcoreapp1.1;net46</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.AWS\Foundatio.AWS.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Logging.Xunit\Foundatio.Logging.Xunit.csproj" />
     <ProjectReference Include="..\Foundatio.Tests\Foundatio.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>
