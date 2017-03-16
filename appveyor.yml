@@ -10,7 +10,8 @@ init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:VERSION_SUFFIX="pre" }
-  - ps: Add-AppveyorMessage "Version: $env:APPVEYOR_BUILD_VERSION $env:VERSION_SUFFIX"
+  - ps: |
+      Add-AppveyorMessage "Version: $env:APPVEYOR_BUILD_VERSION $env:VERSION_SUFFIX"
 
 before_build:
   - ps: |
