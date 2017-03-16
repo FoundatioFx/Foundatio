@@ -286,6 +286,8 @@ namespace Foundatio.Queues {
         public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
 
+            _queueDisposedCancellationTokenSource?.Cancel();
+
             if (_client.IsValueCreated)
                 _client.Value.Dispose();
 
