@@ -1,4 +1,4 @@
-version: 5.0.{build}
+version: 5.1.{build}
 os: Visual Studio 2017
 clone_depth: 2
 configuration: Release
@@ -7,9 +7,9 @@ pull_requests:
   do_not_increment_build_number: true
 
 init:
-  - git config --global core.autocrlf true
+  - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
-  - ps: If ("$env:APPVEYOR_REPO_BRANCH" -ne "master") { $env:VERSION_SUFFIX="pre" }
+  - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:VERSION_SUFFIX="pre" }
 
 before_build:
   - ps: |
@@ -37,6 +37,9 @@ artifacts:
 deploy:
   - provider: Environment
     name: NuGet
+    on:
+      branch: master
+      appveyor_repo_tag: true
   - provider: GitHub
     auth_token:
       secure: 0s81q7bweVLTFSOKxnIhan7el6bIFiN8HJ1kYJzOkeFXX7wgGSq9bs/rV53X9qpf
