@@ -2,16 +2,20 @@ using System;
 
 namespace Foundatio.Metrics {
     public struct MetricKey : IEquatable<MetricKey> {
-        public MetricKey(DateTime time, string name) {
-            Time = time;
+        public MetricKey(DateTime startTimeUtc, TimeSpan duration, string name) {
+            StartTimeUtc = startTimeUtc;
+            Duration = duration;
             Name = name;
         }
 
-        public DateTime Time { get; }
+        public DateTime StartTimeUtc { get; }
+        public TimeSpan Duration { get; }
         public string Name { get; }
 
+        public DateTime EndTimeUtc => StartTimeUtc.Add(Duration);
+
         public bool Equals(MetricKey other) {
-            return Time == other.Time && String.Equals(Name, other.Name);
+            return StartTimeUtc == other.StartTimeUtc && Duration == other.Duration && String.Equals(Name, other.Name);
         }
 
         public override bool Equals(object obj) {
@@ -23,7 +27,7 @@ namespace Foundatio.Metrics {
 
         public override int GetHashCode() {
             unchecked {
-                return (Time.GetHashCode() * 397) ^ (Name?.GetHashCode() ?? 0);
+                return (StartTimeUtc.GetHashCode() * 397) ^ (Duration.GetHashCode() * 397) ^ (Name?.GetHashCode() ?? 0);
             }
         }
 

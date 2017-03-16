@@ -111,94 +111,86 @@ namespace Foundatio.Metrics {
             foreach (var bucket in _buckets) {
                 // counters
                 var counters = metrics.Where(e => e.Type == MetricType.Counter)
-                    .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
-                    .Select(e => new { e.Key.Name, e.Key.Time, Count = e.Sum(c => c.Counter) }).ToList();
+                    .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), bucket.Size, e.Name))
+                    .Select(e => new { e.Key, Count = e.Sum(c => c.Counter) }).ToList();
 
                 if (metrics.Count > 1)
                     _logger.Trace(() => $"Aggregated {counters.Count} counters");
                 if (counters.Count > 0)
-                    await Run.WithRetriesAsync(() => Task.WhenAll(counters.Select(c => StoreCounterAsync(c.Name, c.Time, c.Count, bucket)))).AnyContext();
+                    await Run.WithRetriesAsync(() => Task.WhenAll(counters.Select(c => StoreCounterAsync(c.Key, c.Count, bucket)))).AnyContext();
 
                 // gauges
                 var gauges = metrics.Where(e => e.Type == MetricType.Gauge)
-                .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
-                .Select(e => new { e.Key.Name, Minute = e.Key.Time, Count = e.Count(), Total = e.Sum(c => c.Gauge), Last = e.Last().Gauge, Min = e.Min(c => c.Gauge), Max = e.Max(c => c.Gauge) }).ToList();
+                    .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), bucket.Size, e.Name))
+                    .Select(e => new { e.Key, Count = e.Count(), Total = e.Sum(c => c.Gauge), Last = e.Last().Gauge, Min = e.Min(c => c.Gauge), Max = e.Max(c => c.Gauge) }).ToList();
 
                 if (metrics.Count > 1)
                     _logger.Trace(() => $"Aggregated {gauges.Count} gauges");
                 if (gauges.Count > 0)
-                    await Run.WithRetriesAsync(() => Task.WhenAll(gauges.Select(g => StoreGaugeAsync(g.Name, g.Minute, g.Count, g.Total, g.Last, g.Min, g.Max, bucket)))).AnyContext();
+                    await Run.WithRetriesAsync(() => Task.WhenAll(gauges.Select(g => StoreGaugeAsync(g.Key, g.Count, g.Total, g.Last, g.Min, g.Max, bucket)))).AnyContext();
 
                 // timings
                 var timings = metrics.Where(e => e.Type == MetricType.Timing)
-                .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), e.Name))
-                .Select(e => new { e.Key.Name, Minute = e.Key.Time, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) }).ToList();
+                    .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(bucket.Size), bucket.Size, e.Name))
+                    .Select(e => new { e.Key, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing) }).ToList();
 
                 if (metrics.Count > 1)
                     _logger.Trace(() => $"Aggregated {timings.Count} timings");
                 if (timings.Count > 0)
-                    await Run.WithRetriesAsync(() => Task.WhenAll(timings.Select(t => StoreTimingAsync(t.Name, t.Minute, t.Count, t.Total, t.Max, t.Min, bucket)))).AnyContext();
+                    await Run.WithRetriesAsync(() => Task.WhenAll(timings.Select(t => StoreTimingAsync(t.Key, t.Count, t.Total, t.Max, t.Min, bucket)))).AnyContext();
             }
         }
 
-        private async Task StoreCounterAsync(string name, DateTime time, int value, BucketSettings settings) {
-            _logger.Trace(() => $"Storing counter name={name} value={value} time={time}");
+        private async Task StoreCounterAsync(MetricKey key, int value, BucketSettings settings) {
+            _logger.Trace(() => $"Storing counter name={key.Name} value={value} time={key.Duration}");
 
-            string key = GetBucketKey(MetricNames.Counter, name, time, settings.Size);
-            await _cache.IncrementAsync(key, value, settings.Ttl).AnyContext();
+            string bucketKey = GetBucketKey(MetricNames.Counter, key.Name, key.StartTimeUtc, settings.Size);
+            await _cache.IncrementAsync(bucketKey, value, settings.Ttl).AnyContext();
 
             AsyncManualResetEvent waitHandle;
-            _counterEvents.TryGetValue(name, out waitHandle);
+            _counterEvents.TryGetValue(key.Name, out waitHandle);
             waitHandle?.Set();
 
-            _logger.Trace(() => $"Done storing counter name={name}");
+            _logger.Trace(() => $"Done storing counter name={key.Name}");
         }
 
-        private Task StoreGaugeAsync(string name, DateTime time, double value, BucketSettings settings) {
-            return StoreGaugeAsync(name, time, 1, value, value, value, value, settings);
-        }
+        private async Task StoreGaugeAsync(MetricKey key, int count, double total, double last, double min, double max, BucketSettings settings) {
+            _logger.Trace(() => $"Storing gauge name={key.Name} count={count} total={total} last={last} min={min} max={max} time={key.StartTimeUtc}");
 
-        private async Task StoreGaugeAsync(string name, DateTime time, int count, double total, double last, double min, double max, BucketSettings settings) {
-            _logger.Trace(() => $"Storing gauge name={name} count={count} total={total} last={last} min={min} max={max} time={time}");
-
-            string countKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Count);
+            string countKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Count);
             await _cache.IncrementAsync(countKey, count, settings.Ttl).AnyContext();
 
-            string totalDurationKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Total);
+            string totalDurationKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Total);
             await _cache.IncrementAsync(totalDurationKey, total, settings.Ttl).AnyContext();
 
-            string lastKey = GetBucketKey(MetricNames.Gauge, name, time, settings.Size, MetricNames.Last);
+            string lastKey = GetBucketKey(MetricNames.Gauge, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Last);
             await _cache.SetAsync(lastKey, last, settings.Ttl).AnyContext();
 
-            string minKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Min);
+            string minKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Min);
             await _cache.SetIfLowerAsync(minKey, min, settings.Ttl).AnyContext();
 
-            string maxKey = GetBucketKey(MetricNames.Gauge, name, time, settings.Size, MetricNames.Max);
+            string maxKey = GetBucketKey(MetricNames.Gauge, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Max);
             await _cache.SetIfHigherAsync(maxKey, max, settings.Ttl).AnyContext();
 
-            _logger.Trace(() => $"Done storing gauge name={name}");
+            _logger.Trace(() => $"Done storing gauge name={key.Name}");
         }
 
-        private Task StoreTimingAsync(string name, DateTime time, int duration, BucketSettings settings) {
-            return StoreTimingAsync(name, time, 1, duration, duration, duration, settings);
-        }
+        private async Task StoreTimingAsync(MetricKey key, int count, int totalDuration, int maxDuration, int minDuration, BucketSettings settings) {
+            _logger.Trace(() => $"Storing timing name={key.Name} count={count} total={totalDuration} min={minDuration} max={maxDuration} time={key.StartTimeUtc}");
 
-        private async Task StoreTimingAsync(string name, DateTime time, int count, int totalDuration, int maxDuration, int minDuration, BucketSettings settings) {
-            _logger.Trace(() => $"Storing timing name={name} count={count} total={totalDuration} min={minDuration} max={maxDuration} time={time}");
-
-            string countKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Count);
+            string countKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Count);
             await _cache.IncrementAsync(countKey, count, settings.Ttl).AnyContext();
 
-            string totalDurationKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Total);
+            string totalDurationKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Total);
             await _cache.IncrementAsync(totalDurationKey, totalDuration, settings.Ttl).AnyContext();
 
-            string maxKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Max);
+            string maxKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Max);
             await _cache.SetIfHigherAsync(maxKey, maxDuration, settings.Ttl).AnyContext();
 
-            string minKey = GetBucketKey(MetricNames.Timing, name, time, settings.Size, MetricNames.Min);
+            string minKey = GetBucketKey(MetricNames.Timing, key.Name, key.StartTimeUtc, settings.Size, MetricNames.Min);
             await _cache.SetIfLowerAsync(minKey, minDuration, settings.Ttl).AnyContext();
 
-            _logger.Trace(() => $"Done storing timing name={name}");
+            _logger.Trace(() => $"Done storing timing name={key.Name}");
         }
 
         public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
