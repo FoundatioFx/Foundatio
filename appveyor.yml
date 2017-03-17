@@ -13,16 +13,16 @@ init:
   - ps: 'Write-Output "Version: $($env:APPVEYOR_BUILD_VERSION)-$($env:VERSION_SUFFIX)"'
 
 before_build:
-  - ps: |
-      [xml]$versionXml = Get-Content .\build\version.props
-      $versionXml.Project.PropertyGroup.VersionPrefix = "$($env:APPVEYOR_BUILD_VERSION)"
-      $versionXml.Project.PropertyGroup.VersionSuffix = "$($env:VERSION_SUFFIX)"
-      $versionXml.Save("$pwd\build\version.props")
+  - ps: .\build\Set-BuildVersion -Version $env:APPVEYOR_BUILD_VERSION -Suffix $env:VERSION_SUFFIX
   - appveyor-retry dotnet restore -v Minimal
 
 build_script:
   - ps: dotnet build -c Release
   - ps: dotnet pack -c Release
+
+nuget:
+  project_feed: true
+  disable_publish_on_pr: true
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -39,14 +39,12 @@ deploy:
   - provider: Environment
     name: NuGet
     on:
-      branch: master
       appveyor_repo_tag: true
   - provider: GitHub
     auth_token:
       secure: 0s81q7bweVLTFSOKxnIhan7el6bIFiN8HJ1kYJzOkeFXX7wgGSq9bs/rV53X9qpf
     draft: true
     on:
-      branch: master
       appveyor_repo_tag: true
 
 notifications:
