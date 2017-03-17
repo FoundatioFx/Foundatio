@@ -22,7 +22,7 @@ namespace Foundatio.Metrics {
             Stats = stats;
             Count = Stats.Sum(s => s.Count);
             Total = Stats.Sum(s => s.Total);
-            Last = Stats.Last().Last;
+            Last = Stats.LastOrDefault()?.Last ?? 0;
             Min = Stats.Min(s => s.Min);
             Max = Stats.Max(s => s.Max);
             StartTime = start;

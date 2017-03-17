@@ -38,83 +38,87 @@ namespace Foundatio.Metrics {
             };
         }
 
-        protected override async Task StoreCounterAsync(MetricKey key, int value, List<MetricEntry> entries) {
+        protected override async Task StoreAggregatedMetricsAsync(ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
             var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
                 Namespace = _namespace,
-                MetricData = new List<MetricDatum> {
-                    new MetricDatum {
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Counter, key.Name),
-                        Value = value
-                    },
-                    new MetricDatum {
-                        Dimensions = new List<Dimension>{ _instanceIdDimension },
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Counter, key.Name),
-                        Value = value
-                    }
-                }
+                MetricData = ConvertToDatums(counters).Union(ConvertToDatums(gauges).Union(ConvertToDatums(timings))).ToList()
             }).AnyContext();
+
+            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new AmazonCloudWatchException("Unable to post metrics.");
         }
 
-        protected override async Task StoreGaugeAsync(MetricKey key, int count, double total, double last, double min, double max, List<MetricEntry> entries) {
-            await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
-                Namespace = _namespace,
-                MetricData = new List<MetricDatum> {
-                    new MetricDatum {
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Gauge, key.Name),
-                        StatisticValues = new StatisticSet {
-                            SampleCount = count,
-                            Sum = total,
-                            Minimum = min,
-                            Maximum = max
-                        }
-                    },
-                    new MetricDatum {
-                        Dimensions = new List<Dimension>{ _instanceIdDimension },
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Gauge, key.Name),
-                        StatisticValues = new StatisticSet {
-                            SampleCount = count,
-                            Sum = total,
-                            Minimum = min,
-                            Maximum = max
-                        }
-                    }
-                }
-            }).AnyContext();
+        private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedCounterMetric> counters) {
+            foreach (var counter in counters) {
+                yield return new MetricDatum {
+                    Timestamp = counter.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
+                    Value = counter.Value
+                };
+
+                yield return new MetricDatum {
+                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Timestamp = counter.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
+                    Value = counter.Value
+                };
+            }
         }
 
-        protected override async Task StoreTimingAsync(MetricKey key, int count, int totalDuration, int minDuration, int maxDuration, List<MetricEntry> entries) {
-            await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
-                Namespace = _namespace,
-                MetricData = new List<MetricDatum> {
-                    new MetricDatum {
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Timing, key.Name),
-                        StatisticValues = new StatisticSet {
-                            SampleCount = count,
-                            Sum = totalDuration,
-                            Minimum = minDuration,
-                            Maximum = maxDuration
-                        },
-                        Unit = StandardUnit.Milliseconds
-                    },
-                    new MetricDatum {
-                        Dimensions = new List<Dimension>{ _instanceIdDimension },
-                        Timestamp = key.StartTimeUtc,
-                        MetricName = GetMetricName(MetricType.Timing, key.Name),
-                        StatisticValues = new StatisticSet {
-                            SampleCount = count,
-                            Sum = totalDuration,
-                            Minimum = minDuration,
-                            Maximum = maxDuration
-                        },
-                        Unit = StandardUnit.Milliseconds
+        private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedGaugeMetric> gauges) {
+            foreach (var gauge in gauges) {
+                yield return new MetricDatum {
+                    Timestamp = gauge.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
+                    StatisticValues = new StatisticSet {
+                        SampleCount = gauge.Count,
+                        Sum = gauge.Total,
+                        Minimum = gauge.Min,
+                        Maximum = gauge.Max
                     }
-                }
-            }).AnyContext();
+                };
+
+                yield return new MetricDatum {
+                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Timestamp = gauge.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
+                    StatisticValues = new StatisticSet {
+                        SampleCount = gauge.Count,
+                        Sum = gauge.Total,
+                        Minimum = gauge.Min,
+                        Maximum = gauge.Max
+                    }
+                };
+            }
+        }
+
+        private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedTimingMetric> timings) {
+            foreach (var timing in timings) {
+                yield return new MetricDatum {
+                    Timestamp = timing.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
+                    StatisticValues = new StatisticSet {
+                        SampleCount = timing.Count,
+                        Sum = timing.TotalDuration,
+                        Minimum = timing.MinDuration,
+                        Maximum = timing.MaxDuration
+                    },
+                    Unit = StandardUnit.Milliseconds
+                };
+
+                yield return new MetricDatum {
+                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Timestamp = timing.Key.StartTimeUtc,
+                    MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
+                    StatisticValues = new StatisticSet {
+                        SampleCount = timing.Count,
+                        Sum = timing.TotalDuration,
+                        Minimum = timing.MinDuration,
+                        Maximum = timing.MaxDuration
+                    },
+                    Unit = StandardUnit.Milliseconds
+                };
+            }
         }
 
         private string GetMetricName(MetricType metricType, string name) {
@@ -175,7 +179,7 @@ namespace Foundatio.Metrics {
                 Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
                 EndTime = end.Value,
-                Statistics = new List<string> { "Sum", "Minimum", "Maximum" }
+                Statistics = new List<string> { "Sum", "Minimum", "Maximum", "SampleCount", "Average" }
             };
 
             var response = await _client.Value.GetMetricStatisticsAsync(request).AnyContext();
@@ -188,7 +192,9 @@ namespace Foundatio.Metrics {
                     Max = dp.Maximum,
                     Min = dp.Minimum,
                     Total = dp.Sum,
-                    Time = dp.Timestamp
+                    Time = dp.Timestamp,
+                    Count = (int)dp.SampleCount,
+                    Last = dp.Average
                 }).ToList(),
                 start.Value,
                 end.Value);
@@ -208,7 +214,7 @@ namespace Foundatio.Metrics {
                 StartTime = start.Value,
                 EndTime = end.Value,
                 Unit = StandardUnit.Milliseconds,
-                Statistics = new List<string> { "Sum", "Minimum", "Maximum" }
+                Statistics = new List<string> { "Sum", "Minimum", "Maximum", "SampleCount" }
             };
 
             var response = await _client.Value.GetMetricStatisticsAsync(request).AnyContext();

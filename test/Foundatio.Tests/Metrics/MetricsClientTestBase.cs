@@ -40,10 +40,10 @@ namespace Foundatio.Tests.Metrics {
                     return;
 
                 await metrics.CounterAsync("c1");
-                Assert.Equal(1, await stats.GetCounterCountAsync("c1"));
+                await AssertCounterAsync(stats, "c1", 1);
 
                 await metrics.CounterAsync("c1", 5);
-                Assert.Equal(6, await stats.GetCounterCountAsync("c1"));
+                await AssertCounterAsync(stats, "c1", 6);
 
                 await metrics.GaugeAsync("g1", 2.534);
                 Assert.Equal(2.534, await stats.GetLastGaugeValueAsync("g1"));
@@ -55,7 +55,14 @@ namespace Foundatio.Tests.Metrics {
                 _logger.Info((await stats.GetCounterStatsAsync("c1")).ToString());
             }
         }
-        
+
+        private async Task AssertCounterAsync(IMetricsClientStats client, string name, long expected) {
+            await Run.WithRetriesAsync(async () => {
+                var actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
+                Assert.Equal(expected, actual);
+            }, 8, logger: _logger);
+        }
+
         public virtual async Task CanGetBufferedQueueMetricsAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
                 var stats = metrics as IMetricsClientStats;

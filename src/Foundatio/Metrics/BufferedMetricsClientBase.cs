@@ -113,65 +113,44 @@ namespace Foundatio.Metrics {
             // counters
             var counters = metrics.Where(e => e.Type == MetricType.Counter)
                 .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(_groupSize), _groupSize, e.Name))
-                .Select(e => new { e.Key, Count = e.Sum(c => c.Counter), Entries = e.ToList() }).ToList();
+                .Select(e => new AggregatedCounterMetric { Key = e.Key, Value = e.Sum(c => c.Counter), Entries = e.ToList() }).ToList();
 
             if (metrics.Count > 1 && counters.Count > 0)
                 _logger.Trace(() => $"Aggregated {counters.Count} counters");
-            if (counters.Count > 0)
-                await Run.WithRetriesAsync(() => Task.WhenAll(counters.Select(c => StoreCounterInternalAsync(c.Key, c.Count, c.Entries)))).AnyContext();
 
             // gauges
             var gauges = metrics.Where(e => e.Type == MetricType.Gauge)
                 .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(_groupSize), _groupSize, e.Name))
-                .Select(e => new { e.Key, Count = e.Count(), Total = e.Sum(c => c.Gauge), Last = e.Last().Gauge, Min = e.Min(c => c.Gauge), Max = e.Max(c => c.Gauge), Entries = e.ToList() }).ToList();
+                .Select(e => new AggregatedGaugeMetric { Key = e.Key, Count = e.Count(), Total = e.Sum(c => c.Gauge), Last = e.Last().Gauge, Min = e.Min(c => c.Gauge), Max = e.Max(c => c.Gauge), Entries = e.ToList() }).ToList();
 
             if (metrics.Count > 1 && gauges.Count > 0)
                 _logger.Trace(() => $"Aggregated {gauges.Count} gauges");
-            if (gauges.Count > 0)
-                await Run.WithRetriesAsync(() => Task.WhenAll(gauges.Select(g => StoreGaugeInternalAsync(g.Key, g.Count, g.Total, g.Last, g.Min, g.Max, g.Entries)))).AnyContext();
 
             // timings
             var timings = metrics.Where(e => e.Type == MetricType.Timing)
                 .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(_groupSize), _groupSize, e.Name))
-                .Select(e => new { e.Key, Count = e.Count(), Total = e.Sum(c => c.Timing), Min = e.Min(c => c.Timing), Max = e.Max(c => c.Timing), Entries = e.ToList() }).ToList();
+                .Select(e => new AggregatedTimingMetric { Key = e.Key, Count = e.Count(), TotalDuration = e.Sum(c => c.Timing), MinDuration = e.Min(c => c.Timing), MaxDuration = e.Max(c => c.Timing), Entries = e.ToList() }).ToList();
 
             if (metrics.Count > 1 && timings.Count > 0)
                 _logger.Trace(() => $"Aggregated {timings.Count} timings");
-            if (timings.Count > 0)
-                await Run.WithRetriesAsync(() => Task.WhenAll(timings.Select(t => StoreTimingInternalAsync(t.Key, t.Count, t.Total, t.Max, t.Min, t.Entries)))).AnyContext();
+
+            // store aggregated metrics
+
+            if (counters.Count > 0 || gauges.Count > 0 || timings.Count > 0)
+                await Run.WithRetriesAsync(() => StoreAggregatedMetricsAsync(counters, gauges, timings)).AnyContext();
         }
 
-        private async Task StoreCounterInternalAsync(MetricKey key, int value, List<MetricEntry> entries) {
-            _logger.Trace(() => $"Storing counter name={key.Name} value={value} time={key.Duration}");
+        private async Task StoreAggregatedMetricsInternalAsync(ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
+            _logger.Trace(() => $"Storing {counters.Count} counters, {gauges.Count} gauges, {timings.Count} timings.");
+            
+            await StoreAggregatedMetricsAsync(counters, gauges, timings).AnyContext();
 
-            await StoreCounterAsync(key, value, entries).AnyContext();
+            await OnCountedAsync(counters.Sum(c => c.Value)).AnyContext();
 
-            await OnCountedAsync(value).AnyContext();
-
-            _logger.Trace(() => $"Done storing counter name={key.Name}");
+            _logger.Trace("Done storing aggregated metrics");
         }
 
-        protected abstract Task StoreCounterAsync(MetricKey key, int value, List<MetricEntry> entries);
-
-        private async Task StoreGaugeInternalAsync(MetricKey key, int count, double total, double last, double min, double max, List<MetricEntry> entries) {
-            _logger.Trace(() => $"Storing gauge name={key.Name} count={count} total={total} last={last} min={min} max={max} time={key.Duration}");
-
-            await StoreGaugeAsync(key, count, total, last, min, max, entries).AnyContext();
-
-            _logger.Trace(() => $"Done storing gauge name={key.Name}");
-        }
-
-        protected abstract Task StoreGaugeAsync(MetricKey key, int count, double total, double last, double min, double max, List<MetricEntry> entries);
-
-        private async Task StoreTimingInternalAsync(MetricKey key, int count, int totalDuration, int maxDuration, int minDuration, List<MetricEntry> entries) {
-            _logger.Trace(() => $"Storing timing name={key.Name} count={count} total={totalDuration} min={minDuration} max={maxDuration} time={key.Duration}");
-
-            await StoreTimingAsync(key, count, totalDuration, minDuration, maxDuration, entries).AnyContext();
-
-            _logger.Trace(() => $"Done storing timing name={key.Name}");
-        }
-
-        protected abstract Task StoreTimingAsync(MetricKey key, int count, int totalDuration, int minDuration, int maxDuration, List<MetricEntry> entries);
+        protected abstract Task StoreAggregatedMetricsAsync(ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
 
         public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
             return WaitForCounterAsync(statName, () => Task.CompletedTask, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
@@ -238,6 +217,31 @@ namespace Foundatio.Metrics {
         protected class MetricBucket {
             public string Key { get; set; }
             public DateTime Time { get; set; }
+        }
+
+        protected class AggregatedCounterMetric {
+            public MetricKey Key { get; set; }
+            public int Value { get; set; }
+            public ICollection<MetricEntry> Entries { get; set; }
+        }
+
+        protected class AggregatedGaugeMetric {
+            public MetricKey Key { get; set; }
+            public int Count { get; set; }
+            public double Total { get; set; }
+            public double Last { get; set; }
+            public double Min { get; set; }
+            public double Max { get; set; }
+            public ICollection<MetricEntry> Entries { get; set; }
+        }
+
+        protected class AggregatedTimingMetric {
+            public MetricKey Key { get; set; }
+            public int Count { get; set; }
+            public int TotalDuration { get; set; }
+            public int MinDuration { get; set; }
+            public int MaxDuration { get; set; }
+            public ICollection<MetricEntry> Entries { get; set; }
         }
     }
 
