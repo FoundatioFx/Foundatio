@@ -121,7 +121,7 @@ namespace Foundatio.Metrics {
             return String.Concat(_metricPrefix, metricType, " ", name);
         }
 
-        private TimeSpan GetStatsInterval(DateTime start, DateTime end) {
+        private int GetStatsPeriod(DateTime start, DateTime end) {
             var totalMinutes = end.Subtract(start).TotalMinutes;
             TimeSpan interval = TimeSpan.FromMinutes(1);
             if (totalMinutes >= 60 * 24 * 7)
@@ -129,7 +129,7 @@ namespace Foundatio.Metrics {
             else if (totalMinutes >= 60 * 2)
                 interval = TimeSpan.FromMinutes(5);
 
-            return interval;
+            return (int)interval.TotalSeconds;
         }
 
         public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = default(DateTime?), DateTime? end = default(DateTime?), int dataPoints = 20) {
@@ -139,12 +139,10 @@ namespace Foundatio.Metrics {
             if (!end.HasValue)
                 end = SystemClock.UtcNow;
 
-            var interval = GetStatsInterval(start.Value, end.Value);
-
             var request = new GetMetricStatisticsRequest {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
-                Period = (int)interval.TotalMinutes,
+                Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
                 EndTime = end.Value,
                 Statistics = new List<string> { "Sum" }
@@ -171,12 +169,10 @@ namespace Foundatio.Metrics {
             if (!end.HasValue)
                 end = SystemClock.UtcNow;
 
-            var interval = GetStatsInterval(start.Value, end.Value);
-
             var request = new GetMetricStatisticsRequest {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
-                Period = (int)interval.TotalMinutes,
+                Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
                 EndTime = end.Value,
                 Statistics = new List<string> { "Sum", "Minimum", "Maximum" }
@@ -205,12 +201,10 @@ namespace Foundatio.Metrics {
             if (!end.HasValue)
                 end = SystemClock.UtcNow;
 
-            var interval = GetStatsInterval(start.Value, end.Value);
-
             var request = new GetMetricStatisticsRequest {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
-                Period = (int)interval.TotalMinutes,
+                Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
                 EndTime = end.Value,
                 Unit = StandardUnit.Milliseconds,

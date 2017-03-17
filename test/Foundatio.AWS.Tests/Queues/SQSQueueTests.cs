@@ -13,24 +13,22 @@ namespace Foundatio.AWS.Tests.Queues {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N");
 
         public SQSQueueTests(ITestOutputHelper output) : base(output) {
-            Log.MinimumLevel = Logging.LogLevel.Trace;
+            Log.MinimumLevel = LogLevel.Trace;
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-
-            BasicAWSCredentials credentials = null;
-
             var section = Configuration.GetSection("AWS");
             string accessKey = section["ACCESS_KEY_ID"];
             string secretKey = section["SECRET_ACCESS_KEY"];
-            if (!String.IsNullOrEmpty(accessKey) && !String.IsNullOrEmpty(secretKey))
-                credentials = new BasicAWSCredentials(accessKey, secretKey);
+            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
+                return null;
+
+            var credentials = new BasicAWSCredentials(accessKey, secretKey);
 
             if (!retryDelay.HasValue)
                 retryDelay = TimeSpan.Zero;
 
             _logger.Debug("Queue Id: {queueId}", _queueName);
-
 
             return new SQSQueue<SimpleWorkItem>(
                 _queueName,
@@ -45,8 +43,7 @@ namespace Foundatio.AWS.Tests.Queues {
 
             try {
                 await queue.DeleteQueueAsync();
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 // don't throw on cleanup errror
                 _logger.Error(ex, () => $"Cleanup Error: {ex.Message}");
             }
