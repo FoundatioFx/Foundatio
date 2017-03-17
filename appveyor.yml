@@ -18,11 +18,9 @@ before_build:
 
 build_script:
   - ps: dotnet build -c Release
-  - ps: dotnet pack -c Release
 
-nuget:
-  project_feed: true
-  disable_publish_on_pr: true
+#on_failure:
+#  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
 before_test:
   - nuget install redis-64 -excludeversion
@@ -31,11 +29,16 @@ before_test:
   - choco install rabbitmq --ignoredependencies -y
   - ps: (Get-Service -Name RabbitMQ).Status
 
+after_test:
+  - ps: dotnet pack -c Release
+
 artifacts:
   - path: artifacts\*.nupkg
-    name: ReleaseArtifacts
+    name: NuGet
 
 deploy:
+  - provider: Environment
+    name: MyGet
   - provider: Environment
     name: NuGet
     on:
