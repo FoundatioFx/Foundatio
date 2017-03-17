@@ -79,7 +79,7 @@ namespace Foundatio.Jobs.Commands {
 
                     MethodInfo configureMethod = jobType.GetMethod("Configure", BindingFlags.Static | BindingFlags.Public);
                     if (configureMethod != null) {
-                        configureMethod.Invoke(null, new[] { new JobCommandContext(c, lazyServiceProvider, loggerFactory) });
+                        configureMethod.Invoke(null, new[] { new JobCommandContext(c, jobType, lazyServiceProvider, loggerFactory) });
                     } else {
                         var isContinuousOption = c.Option("-c --continuous <BOOL>", "Wether the job should be run continuously.", CommandOptionType.SingleValue);
                         var intervalOption = c.Option("-i --interval <INTERVAL>", "The amount of time to delay between job runs when running continuously.", CommandOptionType.SingleValue);
