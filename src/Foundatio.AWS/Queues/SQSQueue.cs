@@ -15,9 +15,7 @@ using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
     public class SQSQueue<T> : QueueBase<T> where T : class {
-
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
-        private readonly AsyncLock _lock;
+        private readonly AsyncLock _lock = new AsyncLock();
 
         private readonly Lazy<AmazonSQSClient> _client;
         private readonly TimeSpan _workItemTimeout;
@@ -36,7 +34,6 @@ namespace Foundatio.Queues {
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
-
 
         public SQSQueue(
             string queueName,
@@ -62,9 +59,6 @@ namespace Foundatio.Queues {
             _readQueueTimeoutSeconds = Convert.ToInt32(_readQueueTimeout.TotalSeconds);
 
             _dequeueInterval = dequeueInterval ?? TimeSpan.FromSeconds(1);
-
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
-            _lock = new AsyncLock();
 
             _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(_credentials, _regionEndpoint));
         }
@@ -103,19 +97,12 @@ namespace Foundatio.Queues {
             return response.MessageId;
         }
 
-        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
-
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
             var visibilityTimeout = _workItemTimeoutSeconds;
 
-
             // sqs doesn't support already canceled token, change timeout and token for sqs pattern
-            var waitTimeout = cancellationToken.IsCancellationRequested ? 0 : _readQueueTimeoutSeconds;
-
-            var cancel = cancellationToken.IsCancellationRequested
-                ? CancellationToken.None
-                : cancellationToken;
-
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancel).Token;
+            var waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : _readQueueTimeoutSeconds;
+            var cancel = linkedCancellationToken.IsCancellationRequested ? CancellationToken.None : linkedCancellationToken;
 
             var request = new ReceiveMessageRequest {
                 QueueUrl = _queueUrl,
@@ -130,8 +117,7 @@ namespace Foundatio.Queues {
             {
                 try {
                     return await _client.Value.ReceiveMessageAsync(request, linkedCancellationToken).AnyContext();
-                }
-                catch (OperationCanceledException) {
+                } catch (OperationCanceledException) {
                     return null;
                 }
             }
@@ -140,9 +126,8 @@ namespace Foundatio.Queues {
             // retry loop
             while (response == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
-                }
-                catch (OperationCanceledException) { }
+                    await SystemClock.SleepAsync(_dequeueInterval, GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
+                } catch (OperationCanceledException) { }
 
                 response = await receiveMessageAsync().AnyContext();
             }
@@ -247,7 +232,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
                 _logger.Trace("WorkerLoop Start {_queueName}", _queueName);
@@ -255,22 +240,19 @@ namespace Foundatio.Queues {
                 while (!linkedCancellationToken.IsCancellationRequested) {
                     _logger.Trace("WorkerLoop Signaled {_queueName}", _queueName);
 
-
                     IQueueEntry<T> entry = null;
                     try {
-                        entry = await DequeueImplAsync(cancellationToken).AnyContext();
-                    }
-                    catch (OperationCanceledException) { }
+                        entry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
+                    } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || entry == null)
                         continue;
 
                     try {
-                        await handler(entry, cancellationToken).AnyContext();
+                        await handler(entry, linkedCancellationToken).AnyContext();
                         if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted)
                             await entry.CompleteAsync().AnyContext();
-                    }
-                    catch (Exception ex) {
+                    } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
                         _logger.Error(ex, "Worker error: {0}", ex.Message);
 
@@ -279,19 +261,15 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueName, cancellationToken.IsCancellationRequested);
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
         public override void Dispose() {
-            _logger.Trace("Queue {0} dispose", _queueName);
-
-            _queueDisposedCancellationTokenSource?.Cancel();
+            base.Dispose();
 
             if (_client.IsValueCreated)
                 _client.Value.Dispose();
-
-            base.Dispose();
         }
 
         private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry) {
@@ -301,7 +279,5 @@ namespace Foundatio.Queues {
 
             return result;
         }
-
     }
-
 }

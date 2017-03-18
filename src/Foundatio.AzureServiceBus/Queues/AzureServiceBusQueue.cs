@@ -35,28 +35,23 @@ namespace Foundatio.Queues {
             _retries = retries;
             _retryPolicy = retryPolicy;
 
-            if (workItemTimeout.HasValue && workItemTimeout.Value < TimeSpan.FromMinutes(5)) {
+            if (workItemTimeout.HasValue && workItemTimeout.Value < TimeSpan.FromMinutes(5))
                 _workItemTimeout = workItemTimeout.Value;
-            }
 
-            if (autoDeleteOnIdle.HasValue && autoDeleteOnIdle.Value >= TimeSpan.FromMinutes(5)) {
+            if (autoDeleteOnIdle.HasValue && autoDeleteOnIdle.Value >= TimeSpan.FromMinutes(5))
                 _autoDeleteOnIdle = autoDeleteOnIdle.Value;
-            }
 
-            if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero) {
+            if (defaultMessageTimeToLive.HasValue && defaultMessageTimeToLive.Value > TimeSpan.Zero)
                 _defaultMessageTimeToLive = defaultMessageTimeToLive.Value;
-            }
         }
-            
+
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
-            if (_queueClient != null) {
+            if (_queueClient != null)
                 return;
-            }
 
             using (await _lock.LockAsync(cancellationToken).AnyContext()) {
-                if (_queueClient != null) {
+                if (_queueClient != null)
                     return;
-                }
 
                 QueueDescription queueDescription;
                 if (!await _namespaceManager.QueueExistsAsync(_queueName).AnyContext()) {
@@ -105,19 +100,16 @@ namespace Foundatio.Queues {
 
                 _queueClient = QueueClient.CreateFromConnectionString(_connectionString, queueDescription.Path);
 
-                if (_retryPolicy != null) {
+                if (_retryPolicy != null)
                     _queueClient.RetryPolicy = _retryPolicy;
-                }
             }
         }
 
         public override async Task DeleteQueueAsync() {
-            if (await _namespaceManager.QueueExistsAsync(_queueName).AnyContext()) {
+            if (await _namespaceManager.QueueExistsAsync(_queueName).AnyContext())
                 await _namespaceManager.DeleteQueueAsync(_queueName).AnyContext();
-            }
 
             _queueClient = null;
-
             _enqueuedCount = 0;
             _dequeuedCount = 0;
             _completedCount = 0;
@@ -143,7 +135,7 @@ namespace Foundatio.Queues {
         protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
             throw new NotImplementedException();
         }
-        
+
         protected override async Task<string> EnqueueImplAsync(T data) {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
@@ -157,16 +149,21 @@ namespace Foundatio.Queues {
 
             return message.MessageId;
         }
-        
+
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-            
+
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
+
+            // TODO: How do you unsubscribe from this or bail out on queue disposed?
+            _logger.Trace("WorkerLoop Start {_queueName}", _queueName);
             _queueClient.OnMessageAsync(async msg => {
+                _logger.Trace("WorkerLoop Signaled {_queueName}", _queueName);
                 var queueEntry = await HandleDequeueAsync(msg).AnyContext();
 
                 try {
-                    await handler(queueEntry, cancellationToken).AnyContext();
+                    await handler(queueEntry, linkedCancellationToken).AnyContext();
                     if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
@@ -176,9 +173,7 @@ namespace Foundatio.Queues {
                     if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.AbandonAsync().AnyContext();
                 }
-            }, new OnMessageOptions {
-                AutoComplete = false
-            });
+            }, new OnMessageOptions { AutoComplete = false });
         }
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
@@ -191,7 +186,6 @@ namespace Foundatio.Queues {
 
         protected override Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
             _logger.Warn("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.");
-
             return DequeueAsync();
         }
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -10,7 +11,6 @@ using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
 using Nito.AsyncEx;
-using Nito.AsyncEx.Synchronous;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T> where T : class {
@@ -21,7 +21,6 @@ namespace Foundatio.Queues {
         private long _completedCount;
         private long _abandonedCount;
         private long _workerErrorCount;
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private readonly int _retries;
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(5);
         private readonly TimeSpan _dequeueInterval = TimeSpan.FromSeconds(1);
@@ -39,11 +38,8 @@ namespace Foundatio.Queues {
 
             _queueReference = client.GetQueueReference(queueName);
             _deadletterQueueReference = client.GetQueueReference($"{queueName}-deadletter");
-            
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
             _retries = retries;
-
             if (workItemTimeout.HasValue)
                 _workItemTimeout = workItemTimeout.Value;
             if (dequeueInterval.HasValue)
@@ -53,15 +49,13 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            if (_queueCreated) {
+            if (_queueCreated)
                 return;
-            }
 
             using (await _lock.LockAsync(cancellationToken).AnyContext()) {
-                if (_queueCreated) {
+                if (_queueCreated)
                     return;
-                }
-                
+
                 await _queueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
                 await _deadletterQueueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
 
@@ -83,20 +77,25 @@ namespace Foundatio.Queues {
             return message.Id;
         }
 
-        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
-            // TODO: Use cancellation token overloads
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
-
-            // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
+            // TODO: Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
             var message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
+            _logger.Trace("Initial message id: {0}", message?.Id);
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
+                _logger.Trace("Waiting to dequeue item...");
+                var sw = Stopwatch.StartNew();
+
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
+                    await SystemClock.SleepAsync(_dequeueInterval, GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
                 } catch (OperationCanceledException) { }
+
+                sw.Stop();
+                _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
 
                 // TODO Pass linkedCancellationToken to GetMessageAsync once weird timeout issue is resolved.
                 message = await _queueReference.GetMessageAsync(_workItemTimeout, null, null).AnyContext();
+                _logger.Trace("Message id: {0}", message?.Id);
             }
 
             if (message == null)
@@ -173,24 +172,28 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
         }
 
-        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = new CancellationToken()) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-            
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
+                _logger.Trace("WorkerLoop Start {_queueName}", _queueName);
+
                 while (!linkedCancellationToken.IsCancellationRequested) {
+                    _logger.Trace("WorkerLoop Signaled {_queueName}", _queueName);
+
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueImplAsync(cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try { 
-                        await handler(queueEntry, cancellationToken).AnyContext();
+                        await handler(queueEntry, linkedCancellationToken).AnyContext();
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     }
@@ -207,16 +210,8 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        public override void Dispose() {
-            _logger.Trace("Queue {0} dispose", _queueName);
-
-            base.Dispose();
-            _queueDisposedCancellationTokenSource?.Cancel();
-        }
-        
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
             var azureQueueEntry = queueEntry as AzureStorageQueueEntry<T>;
-
             if (azureQueueEntry == null)
                 throw new ArgumentException($"Unknown entry type. Can only process entries of type '{nameof(AzureStorageQueueEntry<T>)}'");
 

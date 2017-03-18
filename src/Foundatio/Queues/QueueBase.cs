@@ -13,11 +13,14 @@ namespace Foundatio.Queues {
         protected string _queueName = typeof(T).Name;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
+        protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
 
         protected QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             QueueId = Guid.NewGuid().ToString("N");
             _serializer = serializer ?? new JsonNetSerializer();
             behaviors.ForEach(AttachBehavior);
+
+            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
         public void AttachBehavior(IQueueBehavior<T> behavior) {
@@ -36,10 +39,11 @@ namespace Foundatio.Queues {
             return await EnqueueImplAsync(data).AnyContext();
         }
 
-        protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken);
+        protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
-            return await DequeueImplAsync(cancellationToken).AnyContext();
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
+            await EnsureQueueCreatedAsync(linkedCancellationToken).AnyContext();
+            return await DequeueImplAsync(linkedCancellationToken).AnyContext();
         }
         public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
             => DequeueAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30)).ToCancellationToken());
@@ -151,8 +155,23 @@ namespace Foundatio.Queues {
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
+        protected CancellationToken GetLinkedDisposableCanncellationToken(CancellationToken cancellationToken) {
+            if (cancellationToken.IsCancellationRequested)
+                return cancellationToken;
+
+            return CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+        }
+
+        protected CancellationToken GetDequeueCanncellationToken(CancellationToken linkedDisposedCancellationToken) {
+            if (linkedDisposedCancellationToken.IsCancellationRequested)
+                return linkedDisposedCancellationToken;
+
+            return CancellationTokenSource.CreateLinkedTokenSource(linkedDisposedCancellationToken, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).Token;
+        }
+
         public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
+            _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
 
             Abandoned?.Dispose();

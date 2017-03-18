@@ -28,7 +28,6 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
 
         public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
             _retries = retries;
@@ -40,7 +39,6 @@ namespace Foundatio.Queues {
                 _workItemTimeout = workItemTimeout.Value;
 
             InitializeMaintenance();
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
@@ -86,8 +84,7 @@ namespace Foundatio.Queues {
                 throw new ArgumentNullException(nameof(handler));
 
             _logger.Trace("Queue {0} start working", _queueName);
-
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
                 _logger.Trace("WorkerLoop Start {0}", _queueName);
@@ -97,7 +94,7 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueImplAsync(cancellationToken: cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
                     } catch (Exception ex) {
                         _logger.Error(ex, "Error on Dequeue: " + ex.Message);
                     }
@@ -122,17 +119,16 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken);
         }
 
-        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
             _logger.Trace("Queue {type} dequeuing item...", _queueName);
             _logger.Trace("Queue count: {0}", _queue.Count);
 
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
             while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested) {
                 _logger.Trace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    await _autoResetEvent.WaitAsync(cancellationToken).AnyContext();
+                    await _autoResetEvent.WaitAsync(GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
@@ -271,7 +267,6 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
             _queue.Clear();
             _deadletterQueue.Clear();
