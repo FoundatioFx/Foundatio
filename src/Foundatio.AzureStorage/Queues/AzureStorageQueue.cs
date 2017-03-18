@@ -87,7 +87,7 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
+                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();

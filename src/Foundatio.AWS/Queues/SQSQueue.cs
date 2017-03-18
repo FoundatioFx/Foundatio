@@ -126,7 +126,7 @@ namespace Foundatio.Queues {
             // retry loop
             while (response == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
+                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 response = await receiveMessageAsync().AnyContext();
