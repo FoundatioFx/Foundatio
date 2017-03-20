@@ -328,6 +328,9 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             long result = await Run.WithRetriesAsync(() => Database.ListRemoveAsync(WorkListName, entry.Id), logger: _logger).AnyContext();
             if (result == 0)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
@@ -350,6 +353,9 @@ namespace Foundatio.Queues {
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
             _logger.Debug("Queue {_queueName}:{QueueId} abandon item: {entryId}", _queueName, QueueId, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 

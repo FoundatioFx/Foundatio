@@ -115,6 +115,9 @@ namespace Foundatio.Queues {
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
+            if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
             await _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage).AnyContext();
 
@@ -124,6 +127,9 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
+            if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             var azureQueueEntry = ToAzureEntryWithCheck(queueEntry);
 
             if (azureQueueEntry.Attempts > _retries) {

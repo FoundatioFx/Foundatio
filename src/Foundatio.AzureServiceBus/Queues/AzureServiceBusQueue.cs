@@ -197,6 +197,9 @@ namespace Foundatio.Queues {
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
             await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
@@ -206,6 +209,9 @@ namespace Foundatio.Queues {
         }
         
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
             await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
