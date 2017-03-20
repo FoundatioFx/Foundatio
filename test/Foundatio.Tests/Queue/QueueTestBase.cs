@@ -249,28 +249,28 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                TimeSpan timeToWait = TimeSpan.FromSeconds(1);
-
                 var sw = Stopwatch.StartNew();
-                var workItem = await queue.DequeueAsync(timeToWait);
+                var workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
                 sw.Stop();
                 _logger.Trace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
-                Assert.True(sw.Elapsed > timeToWait.Subtract(TimeSpan.FromMilliseconds(100)));
+                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(700);
+                    await SystemClock.SleepAsync(500);
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     });
                 });
 
                 sw.Restart();
-                workItem = await queue.DequeueAsync(timeToWait);
-                Assert.NotNull(workItem);
-                await workItem.CompleteAsync();
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(1));
                 sw.Stop();
                 _logger.Trace("Time {0}", sw.Elapsed);
+                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(400));
+                Assert.NotNull(workItem);
+                await workItem.CompleteAsync();
+
             } finally {
                 // clean even on error
                 await CleanupQueue(queue);
