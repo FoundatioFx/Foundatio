@@ -173,6 +173,8 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             _logger.Trace("Queue {0} complete item: {1}", _queueName, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
@@ -186,6 +188,8 @@ namespace Foundatio.Queues {
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
             _logger.Trace("Queue {0} abandon item: {1}", _queueName, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             QueueEntry<T> info;
             if (!_dequeued.TryRemove(entry.Id, out info) || info == null)

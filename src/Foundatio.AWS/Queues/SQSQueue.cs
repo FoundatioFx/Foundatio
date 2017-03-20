@@ -12,22 +12,25 @@ using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Nito.AsyncEx;
+using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
+
+
     public class SQSQueue<T> : QueueBase<T> where T : class {
         private readonly AsyncLock _lock = new AsyncLock();
 
         private readonly Lazy<AmazonSQSClient> _client;
-        private readonly TimeSpan _workItemTimeout;
-        private readonly TimeSpan _readQueueTimeout;
-        private readonly TimeSpan _dequeueInterval;
         private readonly AWSCredentials _credentials;
         private readonly RegionEndpoint _regionEndpoint;
+        private readonly SQSQueueOptions _options;
 
         private readonly int _workItemTimeoutSeconds;
         private readonly int _readQueueTimeoutSeconds;
 
         private string _queueUrl;
+        private string _deadUrl;
+
 
         private long _enqueuedCount;
         private long _dequeuedCount;
@@ -39,9 +42,7 @@ namespace Foundatio.Queues {
             string queueName,
             AWSCredentials credentials = null,
             RegionEndpoint regionEndpoint = null,
-            TimeSpan? workItemTimeout = null,
-            TimeSpan? readQueueTimeout = null,
-            TimeSpan? dequeueInterval = null,
+            SQSQueueOptions options = null,
             ISerializer serializer = null,
             IEnumerable<IQueueBehavior<T>> behaviors = null,
             ILoggerFactory loggerFactory = null)
@@ -51,14 +52,10 @@ namespace Foundatio.Queues {
 
             _credentials = credentials ?? FallbackCredentialsFactory.GetCredentials();
             _regionEndpoint = regionEndpoint ?? RegionEndpoint.USEast1;
+            _options = options ?? new SQSQueueOptions();
 
-            _workItemTimeout = workItemTimeout ?? TimeSpan.FromMinutes(5);
-            _workItemTimeoutSeconds = Convert.ToInt32(_workItemTimeout.TotalSeconds);
-
-            _readQueueTimeout = readQueueTimeout ?? TimeSpan.FromSeconds(2);
-            _readQueueTimeoutSeconds = Convert.ToInt32(_readQueueTimeout.TotalSeconds);
-
-            _dequeueInterval = dequeueInterval ?? TimeSpan.FromSeconds(1);
+            _workItemTimeoutSeconds = Convert.ToInt32(_options.WorkItemTimeout.TotalSeconds);
+            _readQueueTimeoutSeconds = Convert.ToInt32(_options.ReadQueueTimeout.TotalSeconds);
 
             _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(_credentials, _regionEndpoint));
         }
@@ -71,11 +68,20 @@ namespace Foundatio.Queues {
                 if (!String.IsNullOrEmpty(_queueUrl))
                     return;
 
-                // per sqs documentation, create will get existing or create new queue
-                var createRequest = new CreateQueueRequest { QueueName = _queueName };
-                var createResponse = await _client.Value.CreateQueueAsync(createRequest, cancellationToken).AnyContext();
+                try {
+                    var urlResponse = await _client.Value.GetQueueUrlAsync(_queueName, cancellationToken).AnyContext();
+                    _queueUrl = urlResponse.QueueUrl;
+                }
+                catch (QueueDoesNotExistException ex) {
+                    if (!_options.CanCreateQueue)
+                        throw;
+                }
 
-                _queueUrl = createResponse.QueueUrl;
+
+                if (!String.IsNullOrEmpty(_queueUrl))
+                    return;
+
+                await CreateQueueAsync();
             }
         }
 
@@ -116,8 +122,9 @@ namespace Foundatio.Queues {
             async Task<ReceiveMessageResponse> receiveMessageAsync()
             {
                 try {
-                    return await _client.Value.ReceiveMessageAsync(request, linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) {
+                    return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
+                }
+                catch (OperationCanceledException) {
                     return null;
                 }
             }
@@ -126,8 +133,9 @@ namespace Foundatio.Queues {
             // retry loop
             while (response == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
-                    await SystemClock.SleepAsync(_dequeueInterval, linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) { }
+                    await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                }
+                catch (OperationCanceledException) { }
 
                 response = await receiveMessageAsync().AnyContext();
             }
@@ -161,6 +169,9 @@ namespace Foundatio.Queues {
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
             var entry = ToQueueEntry(queueEntry);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+
             var request = new DeleteMessageRequest {
                 QueueUrl = _queueUrl,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle,
@@ -170,12 +181,15 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _completedCount);
             queueEntry.MarkCompleted();
+
             await OnCompletedAsync(queueEntry).AnyContext();
 
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
             var entry = ToQueueEntry(queueEntry);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             // re-queue and wait for processing
             var request = new ChangeMessageVisibilityRequest {
@@ -188,6 +202,7 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _abandonedCount);
             queueEntry.MarkAbandoned();
+
             await OnAbandonedAsync(queueEntry).AnyContext();
         }
 
@@ -196,15 +211,48 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
-            var attributeNames = new List<string> { QueueAttributeName.ApproximateNumberOfMessages };
-            var request = new GetQueueAttributesRequest(_queueUrl, attributeNames);
+            var attributeNames = new List<string> { QueueAttributeName.ApproximateNumberOfMessages, QueueAttributeName.RedrivePolicy };
+            var queueRequest = new GetQueueAttributesRequest(_queueUrl, attributeNames);
+            var queueAttributes = await _client.Value.GetQueueAttributesAsync(queueRequest).AnyContext();
 
-            var queueAttributes = await _client.Value.GetQueueAttributesAsync(request).AnyContext();
+            int queueCount = queueAttributes.ApproximateNumberOfMessages;
+            int deadCount = 0;
+
+            // dead letter supported
+            if (!_options.SupportDeadLetter) {
+                return new QueueStats {
+                    Queued = queueCount,
+                    Working = 0,
+                    Deadletter = deadCount,
+                    Enqueued = _enqueuedCount,
+                    Dequeued = _dequeuedCount,
+                    Completed = _completedCount,
+                    Abandoned = _abandonedCount,
+                    Errors = _workerErrorCount,
+                    Timeouts = 0
+                };
+            }
+
+            // lookup dead letter url
+            if (String.IsNullOrEmpty(_deadUrl)) {
+                var deadLetterName = queueAttributes.Attributes.DeadLetterQueue();
+                if (!String.IsNullOrEmpty(deadLetterName)) {
+                    var deadResponse = await _client.Value.GetQueueUrlAsync(deadLetterName).AnyContext();
+                    _deadUrl = deadResponse.QueueUrl;
+                }
+            }
+
+            // get attributes from dead letter
+            if (!String.IsNullOrEmpty(_deadUrl)) {
+                var deadRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
+                var deadAttributes = await _client.Value.GetQueueAttributesAsync(deadRequest).AnyContext();
+                deadCount = deadAttributes.ApproximateNumberOfMessages;
+            }
 
             return new QueueStats {
-                Queued = queueAttributes.ApproximateNumberOfMessages,
+                Queued = queueCount,
                 Working = 0,
-                Deadletter = 0,
+                Deadletter = deadCount,
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
                 Completed = _completedCount,
@@ -215,11 +263,12 @@ namespace Foundatio.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
-            if (String.IsNullOrEmpty(_queueUrl))
-                return;
-
-            var request = new DeleteQueueRequest(_queueUrl);
-            var response = await _client.Value.DeleteQueueAsync(request).AnyContext();
+            if (!String.IsNullOrEmpty(_queueUrl)) {
+                var response = await _client.Value.DeleteQueueAsync(_queueUrl).AnyContext();
+            }
+            if (!String.IsNullOrEmpty(_deadUrl)) {
+                var response = await _client.Value.DeleteQueueAsync(_deadUrl).AnyContext();
+            }
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
@@ -243,7 +292,8 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> entry = null;
                     try {
                         entry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
-                    } catch (OperationCanceledException) { }
+                    }
+                    catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || entry == null)
                         continue;
@@ -252,7 +302,8 @@ namespace Foundatio.Queues {
                         await handler(entry, linkedCancellationToken).AnyContext();
                         if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted)
                             await entry.CompleteAsync().AnyContext();
-                    } catch (Exception ex) {
+                    }
+                    catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
                         _logger.Error(ex, "Worker error: {0}", ex.Message);
 
@@ -270,6 +321,38 @@ namespace Foundatio.Queues {
 
             if (_client.IsValueCreated)
                 _client.Value.Dispose();
+        }
+
+        protected virtual async Task CreateQueueAsync() {
+            // step 1, create queue
+            var createQueueRequest = new CreateQueueRequest { QueueName = _queueName };
+            var createQueueResponse = await _client.Value.CreateQueueAsync(createQueueRequest).AnyContext();
+            _queueUrl = createQueueResponse.QueueUrl;
+
+            if (!_options.SupportDeadLetter)
+                return;
+
+            // step 2, create dead letter queue
+            var createDeadRequest = new CreateQueueRequest { QueueName = _queueName + "-deadletter" };
+            var createDeadResponse = await _client.Value.CreateQueueAsync(createDeadRequest).AnyContext();
+            _deadUrl = createDeadResponse.QueueUrl;
+
+
+            // step 3, get dead letter attributes
+            var attributeNames = new List<string> { QueueAttributeName.QueueArn };
+            var deadAttributeRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
+            var deadAttributeResponse = await _client.Value.GetQueueAttributesAsync(deadAttributeRequest).AnyContext();
+
+            // step 4, set redrive policy
+            var redrivePolicy = new JsonData();
+            redrivePolicy["maxReceiveCount"] = _options.RetryCount.ToString();
+            redrivePolicy["deadLetterTargetArn"] = deadAttributeResponse.QueueARN;
+
+            var attributes = new Dictionary<string, string>();
+            attributes[QueueAttributeName.RedrivePolicy] = JsonMapper.ToJson(redrivePolicy);
+
+            var setAttributeRequest = new SetQueueAttributesRequest(_queueUrl, attributes);
+            var setAttributeResponse = await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();
         }
 
         private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry) {
