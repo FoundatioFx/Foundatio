@@ -21,10 +21,10 @@ namespace Foundatio.Metrics {
             Name = name;
             Stats = stats;
             Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
-            Total = Count > 0 ? Stats.Sum(s => s.Total) : 0;
+            Total = stats.Count > 0 ? Stats.Sum(s => s.Total) : 0;
             Last = Stats.LastOrDefault()?.Last ?? 0;
-            Min = Count > 0 ? Stats.Min(s => s.Min) : 0;
-            Max = Count > 0 ? Stats.Max(s => s.Max) : 0;
+            Min = stats.Count > 0 ? Stats.Min(s => s.Min) : 0;
+            Max = stats.Count > 0 ? Stats.Max(s => s.Max) : 0;
             StartTime = start;
             EndTime = end;
             Average = Count > 0 ? Total / Count : 0;

@@ -20,9 +20,9 @@ namespace Foundatio.Metrics {
             Name = name;
             Stats = stats;
             Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
-            MinDuration = Count > 0 ? Stats.Min(s => s.MinDuration) : 0;
-            MaxDuration = Count > 0 ? Stats.Max(s => s.MaxDuration) : 0;
-            TotalDuration = Count > 0 ? Stats.Sum(s => s.TotalDuration) : 0;
+            MinDuration = stats.Count > 0 ? Stats.Min(s => s.MinDuration) : 0;
+            MaxDuration = stats.Count > 0 ? Stats.Max(s => s.MaxDuration) : 0;
+            TotalDuration = stats.Count > 0 ? Stats.Sum(s => s.TotalDuration) : 0;
             AverageDuration = Count > 0 ? (double)TotalDuration / Count : 0;
             StartTime = start;
             EndTime = end;
