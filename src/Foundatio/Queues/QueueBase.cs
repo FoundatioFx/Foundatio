@@ -162,6 +162,13 @@ namespace Foundatio.Queues {
             return CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
         }
 
+        protected CancellationToken GetDequeueCanncellationToken(CancellationToken linkedDisposedCancellationToken) {
+            if (linkedDisposedCancellationToken.IsCancellationRequested)
+                return linkedDisposedCancellationToken;
+
+            return CancellationTokenSource.CreateLinkedTokenSource(linkedDisposedCancellationToken, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).Token;
+        }
+
         public override void Dispose() {
             _logger.Trace("Queue {0} dispose", _queueName);
             _queueDisposedCancellationTokenSource?.Cancel();

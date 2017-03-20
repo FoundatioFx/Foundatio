@@ -16,6 +16,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueEntry<T>> _queue = new ConcurrentQueue<QueueEntry<T>>();
         private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new ConcurrentDictionary<string, QueueEntry<T>>();
         private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new ConcurrentQueue<QueueEntry<T>>();
+        private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
         private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
         private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
         private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
@@ -69,7 +70,9 @@ namespace Foundatio.Queues {
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
+            _autoResetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
+
             await OnEnqueuedAsync(entry).AnyContext();
             _logger.Trace("Enqueue done");
 
@@ -125,7 +128,7 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    await SystemClock.SleepAsync(100, linkedCancellationToken).AnyContext();
+                    await _autoResetEvent.WaitAsync(GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
@@ -213,6 +216,7 @@ namespace Foundatio.Queues {
         private Task RetryAsync(QueueEntry<T> entry) {
             _logger.Trace("Queue {0} retrying item: {1} Attempts: {2}", _queueName, entry.Id, entry.Attempts);
             _queue.Enqueue(entry);
+            _autoResetEvent.Set();
             return Task.CompletedTask;
         }
 
