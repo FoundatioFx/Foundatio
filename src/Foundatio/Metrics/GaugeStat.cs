@@ -20,11 +20,11 @@ namespace Foundatio.Metrics {
         public GaugeStatSummary(string name, ICollection<GaugeStat> stats, DateTime start, DateTime end) {
             Name = name;
             Stats = stats;
-            Count = Stats.Sum(s => s.Count);
-            Total = Stats.Sum(s => s.Total);
+            Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
+            Total = Count > 0 ? Stats.Sum(s => s.Total) : 0;
             Last = Stats.LastOrDefault()?.Last ?? 0;
-            Min = Stats.Min(s => s.Min);
-            Max = Stats.Max(s => s.Max);
+            Min = Count > 0 ? Stats.Min(s => s.Min) : 0;
+            Max = Count > 0 ? Stats.Max(s => s.Max) : 0;
             StartTime = start;
             EndTime = end;
             Average = Count > 0 ? Total / Count : 0;

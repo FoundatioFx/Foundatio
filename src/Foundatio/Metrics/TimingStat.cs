@@ -19,10 +19,10 @@ namespace Foundatio.Metrics {
         public TimingStatSummary(string name, ICollection<TimingStat> stats, DateTime start, DateTime end) {
             Name = name;
             Stats = stats;
-            Count = Stats.Sum(s => s.Count);
-            MinDuration = Stats.Min(s => s.MinDuration);
-            MaxDuration = Stats.Max(s => s.MaxDuration);
-            TotalDuration = Stats.Sum(s => s.TotalDuration);
+            Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
+            MinDuration = Count > 0 ? Stats.Min(s => s.MinDuration) : 0;
+            MaxDuration = Count > 0 ? Stats.Max(s => s.MaxDuration) : 0;
+            TotalDuration = Count > 0 ? Stats.Sum(s => s.TotalDuration) : 0;
             AverageDuration = Count > 0 ? (double)TotalDuration / Count : 0;
             StartTime = start;
             EndTime = end;
