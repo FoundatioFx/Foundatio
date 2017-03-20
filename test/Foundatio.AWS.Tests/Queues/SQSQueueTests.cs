@@ -33,10 +33,14 @@ namespace Foundatio.AWS.Tests.Queues {
 
             _logger.Debug("Queue Id: {queueId}", _queueName);
 
+            var options = new SQSQueueOptions {
+                RetryCount = retries,
+                WorkItemTimeout = workItemTimeout ?? TimeSpan.FromMinutes(5)
+            };
             return new SQSQueue<SimpleWorkItem>(
                 _queueName,
                 credentials,
-                workItemTimeout: workItemTimeout,
+                options: options,
                 loggerFactory: Log);
         }
 
@@ -46,7 +50,8 @@ namespace Foundatio.AWS.Tests.Queues {
 
             try {
                 await queue.DeleteQueueAsync();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex) {
                 // don't throw on cleanup errror
                 _logger.Error(ex, () => $"Cleanup Error: {ex.Message}");
             }
