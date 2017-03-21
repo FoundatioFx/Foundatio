@@ -134,7 +134,7 @@ namespace Foundatio.Metrics {
         }
 
         private string GetMetricName(MetricType metricType, string name) {
-            return String.Concat(_metricPrefix, metricType, " ", name);
+            return String.Concat(_metricPrefix, name);
         }
 
         private int GetStatsPeriod(DateTime start, DateTime end) {

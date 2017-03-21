@@ -15,8 +15,6 @@ using Nito.AsyncEx;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
-
-
     public class SQSQueue<T> : QueueBase<T> where T : class {
         private readonly AsyncLock _lock = new AsyncLock();
 
@@ -71,12 +69,10 @@ namespace Foundatio.Queues {
                 try {
                     var urlResponse = await _client.Value.GetQueueUrlAsync(_queueName, cancellationToken).AnyContext();
                     _queueUrl = urlResponse.QueueUrl;
-                }
-                catch (QueueDoesNotExistException ex) {
+                } catch (QueueDoesNotExistException) {
                     if (!_options.CanCreateQueue)
                         throw;
                 }
-
 
                 if (!String.IsNullOrEmpty(_queueUrl))
                     return;
@@ -123,8 +119,7 @@ namespace Foundatio.Queues {
             {
                 try {
                     return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
-                }
-                catch (OperationCanceledException) {
+                } catch (OperationCanceledException) {
                     return null;
                 }
             }
@@ -134,8 +129,7 @@ namespace Foundatio.Queues {
             while (response == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
                     await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
-                }
-                catch (OperationCanceledException) { }
+                } catch (OperationCanceledException) { }
 
                 response = await receiveMessageAsync().AnyContext();
             }
@@ -186,7 +180,6 @@ namespace Foundatio.Queues {
             queueEntry.MarkCompleted();
 
             await OnCompletedAsync(queueEntry).AnyContext();
-
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
@@ -217,18 +210,19 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
-            var attributeNames = new List<string> { QueueAttributeName.ApproximateNumberOfMessages, QueueAttributeName.RedrivePolicy };
+            var attributeNames = new List<string> { QueueAttributeName.All };
             var queueRequest = new GetQueueAttributesRequest(_queueUrl, attributeNames);
             var queueAttributes = await _client.Value.GetQueueAttributesAsync(queueRequest).AnyContext();
 
             int queueCount = queueAttributes.ApproximateNumberOfMessages;
+            int workingCount = queueAttributes.ApproximateNumberOfMessagesNotVisible;
             int deadCount = 0;
 
             // dead letter supported
             if (!_options.SupportDeadLetter) {
                 return new QueueStats {
                     Queued = queueCount,
-                    Working = 0,
+                    Working = workingCount,
                     Deadletter = deadCount,
                     Enqueued = _enqueuedCount,
                     Dequeued = _dequeuedCount,
@@ -257,7 +251,7 @@ namespace Foundatio.Queues {
 
             return new QueueStats {
                 Queued = queueCount,
-                Working = 0,
+                Working = workingCount,
                 Deadletter = deadCount,
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
@@ -298,8 +292,7 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> entry = null;
                     try {
                         entry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
-                    }
-                    catch (OperationCanceledException) { }
+                    } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || entry == null)
                         continue;
@@ -308,8 +301,7 @@ namespace Foundatio.Queues {
                         await handler(entry, linkedCancellationToken).AnyContext();
                         if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted)
                             await entry.CompleteAsync().AnyContext();
-                    }
-                    catch (Exception ex) {
+                    } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
                         _logger.Error(ex, "Worker error: {0}", ex.Message);
 

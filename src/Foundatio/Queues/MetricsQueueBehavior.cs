@@ -30,12 +30,16 @@ namespace Foundatio.Queues {
         }
 
         private async Task<DateTime?> ReportQueueCountAsync() {
-            var stats = await _queue.GetQueueStatsAsync().AnyContext();
-            _logger.Trace("Reporting queue count");
+            try {
+                var stats = await _queue.GetQueueStatsAsync().AnyContext();
+                _logger.Trace("Reporting queue count");
 
-            await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
-            await _metricsClient.GaugeAsync(GetFullMetricName("working"), stats.Working).AnyContext();
-            await _metricsClient.GaugeAsync(GetFullMetricName("deadletter"), stats.Deadletter).AnyContext();
+                await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
+                await _metricsClient.GaugeAsync(GetFullMetricName("working"), stats.Working).AnyContext();
+                await _metricsClient.GaugeAsync(GetFullMetricName("deadletter"), stats.Deadletter).AnyContext();
+            } catch (Exception ex) {
+                _logger.Error(ex, "Error reporting queue metrics.");
+            }
 
             return null;
         }
