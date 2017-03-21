@@ -14,10 +14,10 @@ namespace Foundatio.Metrics {
     public class CloudWatchMetricsClient : BufferedMetricsClientBase, IMetricsClientStats {
         private readonly Lazy<AmazonCloudWatchClient> _client;
         private readonly string _namespace;
-        private readonly Dimension _instanceIdDimension;
+        private readonly List<Dimension> _dimensions = new List<Dimension>();
         private readonly string _metricPrefix;
 
-        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
+        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, IEnumerable<Dimension> dimensions = null, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
                 credentials ?? FallbackCredentialsFactory.GetCredentials(),
                 new AmazonCloudWatchConfig {
@@ -28,24 +28,36 @@ namespace Foundatio.Metrics {
 
             _metricPrefix = metricPrefix ?? String.Empty;
             _namespace = @namespace ?? "app/metrics";
-            string instanceId = Amazon.Util.EC2InstanceMetadata.InstanceId;
-            if (String.IsNullOrEmpty(instanceId))
-                instanceId = Environment.MachineName;
-
-            _instanceIdDimension = new Dimension {
-                Name = "InstanceId",
-                Value = instanceId
-            };
+            if (dimensions != null)
+                _dimensions.AddRange(dimensions);
         }
 
         protected override async Task StoreAggregatedMetricsAsync(ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
-            var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
-                Namespace = _namespace,
-                MetricData = ConvertToDatums(counters).Union(ConvertToDatums(gauges).Union(ConvertToDatums(timings))).ToList()
-            }).AnyContext();
+            var metrics = new List<MetricDatum>();
+            metrics.AddRange(ConvertToDatums(counters));
+            metrics.AddRange(ConvertToDatums(gauges));
+            metrics.AddRange(ConvertToDatums(timings));
 
-            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
-                throw new AmazonCloudWatchException("Unable to post metrics.");
+            int page = 1;
+            int pageSize = 20; // CloudWatch only allows max 20 metrics at once.
+
+            do {
+                var metricsPage = metrics.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+                if (metricsPage.Count == 0)
+                    break;
+
+                _logger.Trace(() => $"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
+                // do retries
+                var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
+                    Namespace = _namespace,
+                    MetricData = metricsPage
+                }).AnyContext();
+
+                if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                    throw new AmazonCloudWatchException("Unable to post metrics.");
+
+                page++;
+            } while (true);
         }
 
         private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedCounterMetric> counters) {
@@ -57,7 +69,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Dimensions = _dimensions,
                     Timestamp = counter.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
                     Value = counter.Value
@@ -79,7 +91,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Dimensions = _dimensions,
                     Timestamp = gauge.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
                     StatisticValues = new StatisticSet {
@@ -107,7 +119,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = new List<Dimension> { _instanceIdDimension },
+                    Dimensions = _dimensions,
                     Timestamp = timing.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
                     StatisticValues = new StatisticSet {
