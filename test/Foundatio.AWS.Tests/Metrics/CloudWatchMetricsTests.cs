@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Amazon;
+using Amazon.CloudWatch.Model;
 using Amazon.Runtime;
 using Foundatio.Metrics;
 using Foundatio.Tests.Metrics;
@@ -26,7 +27,7 @@ namespace Foundatio.AWS.Tests.Metrics {
                 return null;
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
-            return new CloudWatchMetricsClient(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio/tests/metrics", id, buffered, Log);
+            return new CloudWatchMetricsClient(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio/tests/metrics", null, buffered, new[] { new Dimension { Name = "Test Id", Value = id } }, Log);
         }
 
         [Fact]
