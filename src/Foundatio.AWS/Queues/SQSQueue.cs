@@ -29,7 +29,6 @@ namespace Foundatio.Queues {
         private string _queueUrl;
         private string _deadUrl;
 
-
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
