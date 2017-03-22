@@ -96,7 +96,10 @@ namespace Foundatio.Redis.Tests.Messaging {
             var cache = new RedisCacheClient(muxer);
             Assert.NotNull(cache);
 
-            var queue = new RedisQueue<SimpleWorkItem>(muxer);
+            var queue = new RedisQueue<SimpleWorkItem>(new RedisQueueOptions<SimpleWorkItem> {
+                ConnectionMultiplexer = muxer,
+                LoggerFactory = Log
+            });
             Assert.NotNull(queue);
 
             using (messageBus1) {

@@ -607,7 +607,8 @@ namespace Foundatio.Tests.Queue {
 
             using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
                 var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
-                using (var queue = new InMemoryQueue<WorkItemData>(behaviors: new[] { behavior }, loggerFactory: Log)) {
+                var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
+                using (var queue = new InMemoryQueue<WorkItemData>(options)) {
                     Func<object, CompletedEventArgs<WorkItemData>, Task> handler = (sender, e) => {
                         completedCount++;
                         return Task.CompletedTask;

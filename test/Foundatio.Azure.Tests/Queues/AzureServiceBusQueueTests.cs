@@ -15,7 +15,8 @@ namespace Foundatio.Azure.Tests.Queue {
         public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
+            string connectionString = Configuration.GetConnectionString("ServiceBusConnectionString");
+            if (String.IsNullOrEmpty(connectionString))
                 return null;
 
             if (!retryDelay.HasValue)
@@ -27,15 +28,26 @@ namespace Foundatio.Azure.Tests.Queue {
             var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
 
             _logger.Debug("Queue Id: {queueId}", _queueName);
-            return new AzureServiceBusQueue<SimpleWorkItem>(Configuration.GetConnectionString("ServiceBusConnectionString"),
-                _queueName, retries, workItemTimeout, retryPolicy, loggerFactory: Log);
+            return new AzureServiceBusQueue<SimpleWorkItem>(new AzureServiceBusQueueOptions<SimpleWorkItem> {
+                ConnectionString = connectionString,
+                Name = _queueName,
+                AutoDeleteOnIdle = TimeSpan.FromMinutes(5),
+                EnableBatchedOperations = true,
+                EnableExpress = true,
+                EnablePartitioning = true,
+                SupportOrdering = false,
+                Retries = retries,
+                RetryPolicy = retryPolicy,
+                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
+                LoggerFactory = Log
+            });
         }
 
         [Fact]
         public override Task CanQueueAndDequeueWorkItemAsync() {
             return base.CanQueueAndDequeueWorkItemAsync();
         }
-        
+
         [Fact]
         public override Task CanDequeueWithCancelledTokenAsync() {
             return base.CanDequeueWithCancelledTokenAsync();

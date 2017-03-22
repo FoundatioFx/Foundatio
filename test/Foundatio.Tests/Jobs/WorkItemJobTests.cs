@@ -17,12 +17,11 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs {
     public class WorkItemJobTests : TestWithLoggingBase {
-        public WorkItemJobTests(ITestOutputHelper output) : base(output) {
-        }
+        public WorkItemJobTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
         public async Task CanRunWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>()) {
+            using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus()) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -59,7 +58,8 @@ namespace Foundatio.Tests.Jobs {
             const int workItemCount = 1000;
 
             using (var metrics = new InMemoryMetricsClient(loggerFactory: Log)) {
-                using (var queue = new InMemoryQueue<WorkItemData>(retries: 0, retryDelay: TimeSpan.Zero, loggerFactory: Log)) {
+                var options = new InMemoryQueueOptions<WorkItemData> { Retries = 0, RetryDelay = TimeSpan.Zero, LoggerFactory = Log };
+                using (var queue = new InMemoryQueue<WorkItemData>(options)) {
                     queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
                     using (var messageBus = new InMemoryMessageBus(Log)) {
                         var handlerRegistry = new WorkItemHandlers();
@@ -125,10 +125,10 @@ namespace Foundatio.Tests.Jobs {
                         try {
                             await Task.WhenAll(tasks);
                             await SystemClock.SleepAsync(100);
-                        } catch (OperationCanceledException) {}
+                        }
+                        catch (OperationCanceledException) { }
 
                         _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
-            
                         Assert.Equal(workItemCount, completedItems.Count + errors);
                         Assert.Equal(3, jobIds.Count);
                         Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
@@ -139,7 +139,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemWithClassHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>()) {
+            using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus()) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -166,7 +166,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemWithDelegateHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>()) {
+            using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus()) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -201,7 +201,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunBadWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>(retries: 2, retryDelay: TimeSpan.FromMilliseconds(500))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { RetryDelay = TimeSpan.FromMilliseconds(500), LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus()) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);

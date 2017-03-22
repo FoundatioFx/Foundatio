@@ -12,36 +12,25 @@ namespace Foundatio.AWS.Tests.Queues {
     public class SQSQueueTests : QueueTestBase {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N");
 
-        public SQSQueueTests(ITestOutputHelper output) : base(output) {
-            Log.MinimumLevel = LogLevel.Trace;
-        }
+        public SQSQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            // skip tests for now
-            return null;
-
             var section = Configuration.GetSection("AWS");
             string accessKey = section["ACCESS_KEY_ID"];
             string secretKey = section["SECRET_ACCESS_KEY"];
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            var credentials = new BasicAWSCredentials(accessKey, secretKey);
+            var queue = new SQSQueue<SimpleWorkItem>(new SQSQueueOptions<SimpleWorkItem> {
+                Credentials = new BasicAWSCredentials(accessKey, secretKey),
+                Name = _queueName,
+                Retries = retries,
+                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
+                LoggerFactory = Log,
+            });
 
-            if (!retryDelay.HasValue)
-                retryDelay = TimeSpan.Zero;
-
-            _logger.Debug("Queue Id: {queueId}", _queueName);
-
-            var options = new SQSQueueOptions {
-                RetryCount = retries,
-                WorkItemTimeout = workItemTimeout ?? TimeSpan.FromMinutes(5)
-            };
-            return new SQSQueue<SimpleWorkItem>(
-                _queueName,
-                credentials,
-                options: options,
-                loggerFactory: Log);
+            _logger.Debug("Queue Id: {queueId}", queue.QueueId);
+            return queue;
         }
 
         protected override async Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
@@ -104,7 +93,6 @@ namespace Foundatio.AWS.Tests.Queues {
         public override async Task CanAutoCompleteWorkerAsync() {
             await base.CanAutoCompleteWorkerAsync();
         }
-
 
         public override async Task CanHaveMultipleQueueInstancesAsync() {
             await base.CanHaveMultipleQueueInstancesAsync();

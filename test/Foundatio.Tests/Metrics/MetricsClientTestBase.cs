@@ -58,7 +58,7 @@ namespace Foundatio.Tests.Metrics {
 
         private async Task AssertCounterAsync(IMetricsClientStats client, string name, long expected) {
             await Run.WithRetriesAsync(async () => {
-                var actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
+                long actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
                 Assert.Equal(expected, actual);
             }, 8, logger: _logger);
         }
@@ -70,7 +70,7 @@ namespace Foundatio.Tests.Metrics {
                     return;
 
                 using (var behavior = new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(25), loggerFactory: Log)) {
-                    using (var queue = new InMemoryQueue<SimpleWorkItem>(behaviors: new[] { behavior }, loggerFactory: Log)) {
+                    using (var queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> { Behaviors = new [] { behavior }, LoggerFactory = Log })) {
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
                         await SystemClock.SleepAsync(50);
                         var entry = await queue.DequeueAsync(TimeSpan.Zero);

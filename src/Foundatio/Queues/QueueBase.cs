@@ -9,16 +9,18 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T> : MaintenanceBase, IQueue<T> where T : class {
-        protected string _queueName = typeof(T).Name;
+    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : QueueOptions<T> {
+        protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
 
-        protected QueueBase(ISerializer serializer, IEnumerable<IQueueBehavior<T>> behaviors, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+
             QueueId = Guid.NewGuid().ToString("N");
-            _serializer = serializer ?? new JsonNetSerializer();
-            behaviors.ForEach(AttachBehavior);
+            _serializer = options.Serializer ?? new JsonNetSerializer();
+            options.Behaviors.ForEach(AttachBehavior);
 
             _queueDisposedCancellationTokenSource = new CancellationTokenSource();
         }
@@ -124,8 +126,7 @@ namespace Foundatio.Queues {
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
         protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
-            var metadata = entry as QueueEntry<T>;
-            if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
+            if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
             var completed = Completed;
@@ -139,8 +140,7 @@ namespace Foundatio.Queues {
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual Task OnAbandonedAsync(IQueueEntry<T> entry) {
-            var metadata = entry as QueueEntry<T>;
-            if (metadata != null && metadata.DequeuedTimeUtc > DateTime.MinValue)
+            if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
             var abandoned = Abandoned;
@@ -170,7 +170,7 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            _logger.Trace("Queue {0} dispose", _queueName);
+            _logger.Trace("Queue {0} dispose", _options.Name);
             _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
 

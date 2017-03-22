@@ -27,9 +27,16 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            var muxer = SharedConnection.GetMuxer();
-            var queue = new RedisQueue<SimpleWorkItem>(muxer, workItemTimeout: workItemTimeout,
-                retries: retries, retryDelay: retryDelay, deadLetterMaxItems: deadLetterMaxItems, runMaintenanceTasks: runQueueMaintenance, loggerFactory: Log);
+            var queue = new RedisQueue<SimpleWorkItem>(new RedisQueueOptions<SimpleWorkItem> {
+                ConnectionMultiplexer = SharedConnection.GetMuxer(),
+                Retries = retries,
+                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
+                DeadLetterMaxItems = deadLetterMaxItems,
+                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
+                RunMaintenanceTasks = runQueueMaintenance,
+                LoggerFactory = Log
+            });
+
             _logger.Debug("Queue Id: {queueId}", queue.QueueId);
             return queue;
         }
@@ -118,7 +125,7 @@ namespace Foundatio.Redis.Tests.Queues {
         public override Task CanRunWorkItemWithMetricsAsync() {
             return base.CanRunWorkItemWithMetricsAsync();
         }
-        
+
         [Fact]
         public override Task CanAbandonQueueEntryOnceAsync() {
             return base.CanAbandonQueueEntryOnceAsync();
@@ -156,7 +163,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 var muxer = SharedConnection.GetMuxer();
                 var db = muxer.GetDatabase();
@@ -325,7 +332,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 var muxer = SharedConnection.GetMuxer();
                 var db = muxer.GetDatabase();
@@ -358,7 +365,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.InRange(await muxer.CountAllKeysAsync(), 10, 11);
             }
         }
-        
+
         // TODO: Need to write tests that verify the cache data is correct after each operation.
 
         [Fact(Skip = "Performance Test")]
@@ -366,7 +373,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 await queue.DeleteQueueAsync();
 
@@ -408,7 +415,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 await queue.DeleteQueueAsync();
 
@@ -446,7 +453,7 @@ namespace Foundatio.Redis.Tests.Queues {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
-            
+
             using (queue) {
                 await queue.DeleteQueueAsync();
 
