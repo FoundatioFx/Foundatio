@@ -8,7 +8,7 @@ namespace Foundatio.Extensions {
         public static bool IsNumeric(this Type type) {
             if (type.IsArray)
                 return false;
-            
+
             if (type == TypeHelper.ByteType ||
                 type == TypeHelper.DecimalType ||
                 type == TypeHelper.DoubleType ||
@@ -21,7 +21,7 @@ namespace Foundatio.Extensions {
                 type == TypeHelper.UInt32Type ||
                 type == TypeHelper.UInt64Type)
                 return true;
-            
+
             switch (Type.GetTypeCode(type)) {
                 case TypeCode.Byte:
                 case TypeCode.Decimal:
@@ -40,7 +40,6 @@ namespace Foundatio.Extensions {
             return false;
         }
 
-
         public static bool IsNullableNumeric(this Type type) {
             if (type.IsArray)
                 return false;
@@ -50,10 +49,15 @@ namespace Foundatio.Extensions {
         }
 
         public static T ToType<T>(this object value) {
-            if (value == null)
-                throw new ArgumentNullException(nameof(value));
-
             Type targetType = typeof(T);
+            if (value == null) {
+                try {
+                    return (T)Convert.ChangeType(value, targetType);
+                } catch {
+                    throw new ArgumentNullException(nameof(value));
+                }
+            }
+
             TypeConverter converter = TypeDescriptor.GetConverter(targetType);
             Type valueType = value.GetType();
 
@@ -68,7 +72,7 @@ namespace Foundatio.Extensions {
                     return (T)parsedValue;
                 }
 
-                var message = $"The Enum value of '{value}' is not defined as a valid value for '{targetType.FullName}'.";
+                string message = $"The Enum value of '{value}' is not defined as a valid value for '{targetType.FullName}'.";
                 throw new ArgumentException(message);
             }
 

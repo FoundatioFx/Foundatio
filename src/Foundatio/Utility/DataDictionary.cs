@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Foundatio.Extensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -17,18 +16,15 @@ namespace Foundatio.Utility {
         }
 
         public object GetValueOrDefault(string key) {
-            object value;
-            return TryGetValue(key, out value) ? value : null;
+            return TryGetValue(key, out object value) ? value : null;
         }
 
         public object GetValueOrDefault(string key, object defaultValue) {
-            object value;
-            return TryGetValue(key, out value) ? value : defaultValue;
+            return TryGetValue(key, out object value) ? value : defaultValue;
         }
 
         public object GetValueOrDefault(string key, Func<object> defaultValueProvider) {
-            object value;
-            return TryGetValue(key, out value) ? value : defaultValueProvider();
+            return TryGetValue(key, out object value) ? value : defaultValueProvider();
         }
 
         public T GetValue<T>(string key) {
@@ -73,9 +69,7 @@ namespace Foundatio.Utility {
         }
 
         public string GetString(string name, string @default) {
-            object value;
-
-            if (!TryGetValue(name, out value))
+            if (!TryGetValue(name, out object value))
                 return @default;
 
             if (value is string)

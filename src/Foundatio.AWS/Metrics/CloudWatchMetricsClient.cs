@@ -138,7 +138,7 @@ namespace Foundatio.Metrics {
         }
 
         private int GetStatsPeriod(DateTime start, DateTime end) {
-            var totalMinutes = end.Subtract(start).TotalMinutes;
+            double totalMinutes = end.Subtract(start).TotalMinutes;
             TimeSpan interval = TimeSpan.FromMinutes(1);
             if (totalMinutes >= 60 * 24 * 7)
                 interval = TimeSpan.FromDays(1);

@@ -25,11 +25,11 @@ namespace Foundatio.Utility {
         public static readonly Type Int64Type = typeof(long);
         public static readonly Type UInt64Type = typeof(ulong);
         public static readonly Type DoubleType = typeof(double);
-        
+
         public static Type ResolveType(string fullTypeName, Type expectedBase = null, ILogger logger = null) {
             if (String.IsNullOrEmpty(fullTypeName))
                 return null;
-            
+
             var type = Type.GetType(fullTypeName);
             if (type == null) {
                 logger?.Error("Unable to resolve type: \"{0}\".", fullTypeName);
@@ -63,8 +63,9 @@ namespace Foundatio.Utility {
         };
 
         public static string GetTypeDisplayName(Type type) {
+            string fullName = null;
             if (type.GetTypeInfo().IsGenericType) {
-                var fullName = type.GetGenericTypeDefinition().FullName;
+                fullName = type.GetGenericTypeDefinition().FullName;
 
                 // Nested types (public or private) have a '+' in their full name
                 var parts = fullName.Split('+');
@@ -90,16 +91,16 @@ namespace Foundatio.Utility {
                 }
 
                 return String.Join(".", parts);
-            } else if (_builtInTypeNames.ContainsKey(type)) {
-                return _builtInTypeNames[type];
-            } else {
-                var fullName = type.FullName;
-
-                if (type.IsNested)
-                    fullName = fullName.Replace('+', '.');
-
-                return fullName;
             }
+
+            if (_builtInTypeNames.ContainsKey(type))
+                return _builtInTypeNames[type];
+
+            fullName = type.FullName;
+            if (type.IsNested)
+                fullName = fullName.Replace('+', '.');
+
+            return fullName;
         }
     }
 }

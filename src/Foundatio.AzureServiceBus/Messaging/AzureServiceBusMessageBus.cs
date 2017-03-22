@@ -13,7 +13,7 @@ namespace Foundatio.Messaging {
         private readonly ISerializer _serializer;
         private readonly TopicClient _topicClient;
         private readonly SubscriptionClient _subscriptionClient;
-        
+
         public AzureServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
             _serializer = serializer ?? new JsonNetSerializer();
 
@@ -53,7 +53,7 @@ namespace Foundatio.Messaging {
 
             var brokeredMessage = new BrokeredMessage(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = await _serializer.SerializeToStringAsync(message).AnyContext() 
+                Data = await _serializer.SerializeToStringAsync(message).AnyContext()
             });
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero)

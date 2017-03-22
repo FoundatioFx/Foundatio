@@ -1,13 +1,10 @@
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Locks {

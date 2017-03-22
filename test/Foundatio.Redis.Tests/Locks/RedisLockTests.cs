@@ -2,7 +2,6 @@
 using System.Threading.Tasks;
 using Foundatio.Lock;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Messaging;

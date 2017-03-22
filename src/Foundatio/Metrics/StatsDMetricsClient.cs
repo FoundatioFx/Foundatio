@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
-using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
