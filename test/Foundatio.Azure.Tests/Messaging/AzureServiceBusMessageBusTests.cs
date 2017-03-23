@@ -13,10 +13,12 @@ namespace Foundatio.Azure.Tests.Messaging {
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
+            var connectionString = Configuration.GetConnectionString("ServiceBusConnectionString");
+
+            if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            return new AzureServiceBusMessageBus(Configuration.GetConnectionString("ServiceBusConnectionString"), _topicName, loggerFactory: Log);
+            return new AzureServiceBusMessageBus(connectionString, _topicName, loggerFactory: Log);
         }
 
         [Fact]
