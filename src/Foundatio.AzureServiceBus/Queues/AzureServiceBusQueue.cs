@@ -41,10 +41,19 @@ namespace Foundatio.Queues {
                 throw new ArgumentException("ConnectionString is required.");
 
             if (options.Name.Length > 260)
-                throw new ArgumentException("Queue name must and less than 260 characters");
+                throw new ArgumentException("Queue name must be set and be less than 260 characters.");
 
             if (options.WorkItemTimeout > TimeSpan.FromMinutes(5))
-                throw new ArgumentException("The maximum work item timeout value for is 5 minutes; the default value is 1 minute.");
+                throw new ArgumentException("The maximum WorkItemTimeout value for is 5 minutes; the default value is 1 minute.");
+
+            if (options.AutoDeleteOnIdle.HasValue && options.AutoDeleteOnIdle < TimeSpan.FromMinutes(5))
+                throw new ArgumentException("The minimum AutoDeleteOnIdle duration is 5 minutes.");
+
+            if (options.DuplicateDetectionHistoryTimeWindow.HasValue && (options.DuplicateDetectionHistoryTimeWindow < TimeSpan.FromSeconds(20.0) || options.DuplicateDetectionHistoryTimeWindow > TimeSpan.FromDays(7.0)))
+                throw new ArgumentException("The minimum DuplicateDetectionHistoryTimeWindow duration is 20 seconds and maximum is 7 days.");
+
+            if (options.UserMetadata != null && options.UserMetadata.Length > 260)
+                throw new ArgumentException("Queue UserMetadata must be less than 1024 characters.");
 
             _namespaceManager = NamespaceManager.CreateFromConnectionString(options.ConnectionString);
         }
