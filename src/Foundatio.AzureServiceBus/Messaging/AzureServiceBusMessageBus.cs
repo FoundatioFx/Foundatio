@@ -41,6 +41,8 @@ namespace Foundatio.Messaging {
                 message = brokeredMessage.GetBody<MessageBusData>();
             } catch (Exception ex) {
                 _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
+                await brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message);
+
                 return;
             }
 
