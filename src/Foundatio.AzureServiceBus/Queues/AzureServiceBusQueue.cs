@@ -87,7 +87,7 @@ namespace Foundatio.Queues {
                 }
 
                 _queueClient = QueueClient.CreateFromConnectionString(_options.ConnectionString, queueDescription.Path);
-                if (_options != null)
+                if (_options.RetryPolicy != null)
                     _queueClient.RetryPolicy = _options.RetryPolicy;
             }
         }

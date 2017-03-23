@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
@@ -8,8 +9,6 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Messaging {
     public class AzureServiceBusMessageBusTests : MessageBusTestBase {
-        protected readonly string _topicName = Guid.NewGuid().ToString("N");
-
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
@@ -17,7 +16,11 @@ namespace Foundatio.Azure.Tests.Messaging {
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            return new AzureServiceBusMessageBus(connectionString, _topicName, loggerFactory: Log);
+            return new AzureServiceBusMessageBus(new AzureServiceBusMessageBusOptions {
+                ConnectionString = connectionString,
+                Topic = "test-messages",
+                LoggerFactory = Log
+            });
         }
 
         [Fact]
@@ -37,6 +40,7 @@ namespace Foundatio.Azure.Tests.Messaging {
 
         [Fact]
         public override Task CanSendDelayedMessageAsync() {
+            Log.SetLogLevel<AzureServiceBusMessageBus>(LogLevel.Information);
             return base.CanSendDelayedMessageAsync();
         }
 

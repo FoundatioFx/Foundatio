@@ -25,7 +25,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 ConnectionString = connectionString,
                 Name = _queueName,
                 Retries = retries,
-                RetryPolicy = new ExponentialRetry(retryDelay.Value, retries),
+                RetryPolicy = new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries),
                 WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
                 DequeueInterval = TimeSpan.FromMilliseconds(50),
                 LoggerFactory = Log

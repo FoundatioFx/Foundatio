@@ -15,7 +15,7 @@ namespace Foundatio.Benchmarks.Caching {
             var muxer = ConnectionMultiplexer.Connect("localhost");
             _redisCache = new RedisCacheClient(muxer);
             _redisCache.RemoveAllAsync().GetAwaiter().GetResult();
-            _hybridCacheClient = new HybridCacheClient(_redisCache, new RedisMessageBus(muxer.GetSubscriber(), "cache-tests"));
+            _hybridCacheClient = new HybridCacheClient(_redisCache, new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-cache" }));
         }
 
         [Benchmark]

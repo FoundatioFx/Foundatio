@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new InMemoryMessageBus(Log);
+            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
             return _messageBus;
         }
 

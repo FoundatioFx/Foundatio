@@ -140,7 +140,7 @@ namespace Foundatio.Redis.Tests.Queues {
         public override async Task CanDequeueWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
             using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
-                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanDequeueWithLockingImpAsync(distributedLock);
                 }
@@ -151,7 +151,7 @@ namespace Foundatio.Redis.Tests.Queues {
         public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
             using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
-                using (var messageBus = new RedisMessageBus(muxer.GetSubscriber(), "test", loggerFactory: Log)) {
+                using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
                 }

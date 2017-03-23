@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Locks {
 
         public InMemoryLockTests(ITestOutputHelper output) : base(output) {
             _cache = new InMemoryCacheClient(Log);
-            _messageBus = new InMemoryMessageBus(Log);
+            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {

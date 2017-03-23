@@ -18,11 +18,8 @@ namespace Foundatio.Utility {
         private bool _shouldRunAgainImmediately = false;
 
         public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, ILoggerFactory loggerFactory = null) {
-            if (timerCallback == null)
-                throw new ArgumentNullException(nameof(timerCallback));
-
             _logger = loggerFactory.CreateLogger<ScheduledTimer>();
-            _timerCallback = timerCallback;
+            _timerCallback = timerCallback ?? throw new ArgumentNullException(nameof(timerCallback));
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
             int dueTimeMs = dueTime.HasValue ? (int)dueTime.Value.TotalMilliseconds : Timeout.Infinite;
@@ -42,7 +39,7 @@ namespace Foundatio.Utility {
 
             // already have an earlier scheduled time
             if (_next > utcNow && utcDate > _next) {
-                _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
+                _logger.Trace(() => $"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
                 return;
             }
 
@@ -55,7 +52,7 @@ namespace Foundatio.Utility {
             using (_lock.Lock()) {
                 // already have an earlier scheduled time
                 if (_next > utcNow && utcDate > _next) {
-                    _logger.Trace(() => $"Ignoring because already scheduled for earlier time {utcDate.Value.Ticks} {_next.Ticks}");
+                    _logger.Trace(() => $"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
                     return;
                 }
 

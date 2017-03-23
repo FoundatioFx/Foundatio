@@ -17,7 +17,7 @@ namespace Foundatio.Redis.Tests.Locks {
             var muxer = SharedConnection.GetMuxer();
             muxer.FlushAllAsync().GetAwaiter().GetResult();
             _cache = new RedisCacheClient(muxer, loggerFactory: Log);
-            _messageBus = new RedisMessageBus(muxer.GetSubscriber(), loggerFactory: Log);
+            _messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-lock", LoggerFactory = Log });
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {

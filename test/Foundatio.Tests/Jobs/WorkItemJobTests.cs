@@ -22,7 +22,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunWorkItem() {
             using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus()) {
+                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -61,7 +61,7 @@ namespace Foundatio.Tests.Jobs {
                 var options = new InMemoryQueueOptions<WorkItemData> { Retries = 0, RetryDelay = TimeSpan.Zero, LoggerFactory = Log };
                 using (var queue = new InMemoryQueue<WorkItemData>(options)) {
                     queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
-                    using (var messageBus = new InMemoryMessageBus(Log)) {
+                    using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                         var handlerRegistry = new WorkItemHandlers();
                         var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
                         var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -140,7 +140,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunWorkItemWithClassHandler() {
             using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus()) {
+                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -167,7 +167,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunWorkItemWithDelegateHandler() {
             using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus()) {
+                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -202,7 +202,7 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanRunBadWorkItem() {
             using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { RetryDelay = TimeSpan.FromMilliseconds(500), LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus()) {
+                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 

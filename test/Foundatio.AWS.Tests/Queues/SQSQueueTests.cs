@@ -33,19 +33,6 @@ namespace Foundatio.AWS.Tests.Queues {
             return queue;
         }
 
-        protected override async Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
-            if (queue == null)
-                return;
-
-            try {
-                await queue.DeleteQueueAsync();
-            }
-            catch (Exception ex) {
-                // don't throw on cleanup errror
-                _logger.Error(ex, () => $"Cleanup Error: {ex.Message}");
-            }
-        }
-
         [Fact]
         public override async Task CanQueueAndDequeueWorkItemAsync() {
             await base.CanQueueAndDequeueWorkItemAsync().ConfigureAwait(false);

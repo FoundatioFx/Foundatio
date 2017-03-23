@@ -20,7 +20,7 @@ namespace Foundatio.Redis.Tests.Messaging {
         }
 
         protected override IMessageBus GetMessageBus() {
-            return new RedisMessageBus(SharedConnection.GetMuxer().GetSubscriber(), "test-messages", loggerFactory: Log);
+            return new RedisMessageBus(new RedisMessageBusOptions { Subscriber = SharedConnection.GetMuxer().GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
         }
 
         [Fact]
@@ -91,7 +91,7 @@ namespace Foundatio.Redis.Tests.Messaging {
         [Fact]
         public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages() {
             var muxer = SharedConnection.GetMuxer();
-            var messageBus1 = new RedisMessageBus(muxer.GetSubscriber(), "test-messages", loggerFactory: Log);
+            var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
 
             var cache = new RedisCacheClient(muxer);
             Assert.NotNull(cache);
