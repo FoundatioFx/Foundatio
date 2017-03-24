@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
-        private static readonly string _queueName = Guid.NewGuid().ToString("N");
+        private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
         public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
 
@@ -19,13 +19,9 @@ namespace Foundatio.Azure.Tests.Queue {
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            if (!retryDelay.HasValue)
-                retryDelay = TimeSpan.Zero;
-
-            var maxBackoff = retryDelay.Value > TimeSpan.Zero
-                ? retryDelay.Value + retryDelay.Value
-                : TimeSpan.FromSeconds(1);
-            var retryPolicy = new RetryExponential(retryDelay.Value, maxBackoff, retries + 1);
+            var retryPolicy = retryDelay.GetValueOrDefault() > TimeSpan.Zero
+                ? new RetryExponential(retryDelay.GetValueOrDefault(), retryDelay.GetValueOrDefault() + retryDelay.GetValueOrDefault(), retries + 1)
+                : RetryPolicy.NoRetry;
 
             _logger.Debug("Queue Id: {queueId}", _queueName);
             return new AzureServiceBusQueue<SimpleWorkItem>(new AzureServiceBusQueueOptions<SimpleWorkItem> {
@@ -36,11 +32,19 @@ namespace Foundatio.Azure.Tests.Queue {
                 EnableExpress = true,
                 EnablePartitioning = true,
                 SupportOrdering = false,
+                RequiresDuplicateDetection = false,
+                RequiresSession = false,
                 Retries = retries,
                 RetryPolicy = retryPolicy,
                 WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
                 LoggerFactory = Log
             });
+        }
+
+        protected override Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
+            // Don't delete the queue, it's super expensive and will be cleaned up later.
+            queue?.Dispose();
+            return Task.CompletedTask;
         }
 
         [Fact]
@@ -84,8 +88,33 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
+        public override Task WillNotWaitForItemAsync() {
+            return base.WillNotWaitForItemAsync();
+        }
+
+        [Fact]
         public override Task WorkItemsWillGetMovedToDeadletterAsync() {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
+        }
+
+        [Fact]
+        public override Task CanResumeDequeueEfficientlyAsync() {
+            return base.CanResumeDequeueEfficientlyAsync();
+        }
+
+        [Fact]
+        public override Task CanDequeueEfficientlyAsync() {
+            return base.CanDequeueEfficientlyAsync();
+        }
+
+        [Fact]
+        public override Task CanDequeueWithLockingAsync() {
+            return base.CanDequeueWithLockingAsync();
+        }
+
+        [Fact]
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
 
         [Fact]

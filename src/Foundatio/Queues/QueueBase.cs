@@ -18,7 +18,7 @@ namespace Foundatio.Queues {
         protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
 
-            QueueId = Guid.NewGuid().ToString("N");
+            QueueId = options.Name + Guid.NewGuid().ToString("N").Substring(10);
             _serializer = options.Serializer ?? new JsonNetSerializer();
             options.Behaviors.ForEach(AttachBehavior);
 

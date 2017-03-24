@@ -111,13 +111,13 @@ namespace Foundatio.Tests.Messaging {
             try {
                 var countdown = new AsyncCountdownEvent(numConcurrentMessages);
 
+                int messages = 0;
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-                    if (msg.Count % 500 == 0)
-                        _logger.Trace("Got 500 messages");
+                    if (++messages % 50 == 0)
+                        _logger.Trace($"Processed {messages} messages");
+
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
-                    if (msg.Count % 500 == 0)
-                        _logger.Trace("Set 500 events");
                 });
 
                 var sw = Stopwatch.StartNew();
@@ -130,7 +130,7 @@ namespace Foundatio.Tests.Messaging {
                         _logger.Trace("Published 500 messages...");
                 });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(15));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
 
                 _logger.Trace($"Processed {numConcurrentMessages - countdown.CurrentCount} in {sw.ElapsedMilliseconds}ms");

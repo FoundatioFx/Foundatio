@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -62,33 +63,23 @@ namespace Foundatio.Queues {
             if (_queueClient != null)
                 return;
 
-            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_queueClient != null)
                     return;
 
-                bool shouldUpdateQueueSettings = false;
-                QueueDescription queueDescription;
+                var sw = Stopwatch.StartNew();
                 if (!await _namespaceManager.QueueExistsAsync(_options.Name).AnyContext()) {
                     try {
-                        queueDescription = await _namespaceManager.CreateQueueAsync(CreateQueueDescription()).AnyContext();
-                    } catch (MessagingException) {
-                        shouldUpdateQueueSettings = true;
-                        queueDescription = await _namespaceManager.GetQueueAsync(_options.Name).AnyContext();
-                    }
-                } else {
-                    shouldUpdateQueueSettings = true;
-                    queueDescription = await _namespaceManager.GetQueueAsync(_options.Name).AnyContext();
+                        await _namespaceManager.CreateQueueAsync(CreateQueueDescription()).AnyContext();
+                    } catch (MessagingEntityAlreadyExistsException) { }
                 }
 
-                if (shouldUpdateQueueSettings) {
-                    bool changes = UpdateQueueDescription(queueDescription);
-                    if (changes)
-                        await _namespaceManager.UpdateQueueAsync(queueDescription).AnyContext();
-                }
-
-                _queueClient = QueueClient.CreateFromConnectionString(_options.ConnectionString, queueDescription.Path);
+                _queueClient = QueueClient.CreateFromConnectionString(_options.ConnectionString, _options.Name);
                 if (_options.RetryPolicy != null)
                     _queueClient.RetryPolicy = _options.RetryPolicy;
+
+                sw.Stop();
+                _logger.Trace("Ensure queue exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
@@ -165,8 +156,7 @@ namespace Foundatio.Queues {
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
             await EnsureQueueCreatedAsync().AnyContext();
-
-            using (var msg = await _queueClient.ReceiveAsync(timeout ?? TimeSpan.FromSeconds(30)).AnyContext()) {
+            using (var msg = await _queueClient.ReceiveAsync(timeout.GetValueOrDefault(TimeSpan.FromSeconds(30))).AnyContext()) {
                 return await HandleDequeueAsync(msg).AnyContext();
             }
         }
@@ -177,8 +167,6 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
-
             await _queueClient.RenewMessageLockAsync(new Guid(entry.Id)).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
         }
@@ -186,8 +174,6 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
-
-            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
 
             await _queueClient.CompleteAsync(new Guid(entry.Id)).AnyContext();
             Interlocked.Increment(ref _completedCount);
@@ -199,17 +185,10 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            await EnsureQueueCreatedAsync().AnyContext(); // Azure SB needs to call this as it populates the _queueClient field
-
             await _queueClient.AbandonAsync(new Guid(entry.Id)).AnyContext();
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-        }
-
-        public override void Dispose() {
-            base.Dispose();
-            _queueClient?.Close();
         }
 
         private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {
@@ -280,74 +259,9 @@ namespace Foundatio.Queues {
             return qd;
         }
 
-        private bool UpdateQueueDescription(QueueDescription qd) {
-            bool changes = false;
-            if (_options.AutoDeleteOnIdle.HasValue && qd.AutoDeleteOnIdle != _options.AutoDeleteOnIdle.Value) {
-                qd.AutoDeleteOnIdle = _options.AutoDeleteOnIdle.Value;
-                changes = true;
-            }
-
-            if (_options.DefaultMessageTimeToLive.HasValue && qd.DefaultMessageTimeToLive != _options.DefaultMessageTimeToLive.Value) {
-                qd.DefaultMessageTimeToLive = _options.DefaultMessageTimeToLive.Value;
-                changes = true;
-            }
-
-            if (_options.DuplicateDetectionHistoryTimeWindow.HasValue && qd.DuplicateDetectionHistoryTimeWindow != _options.DuplicateDetectionHistoryTimeWindow.Value) {
-                qd.DuplicateDetectionHistoryTimeWindow = _options.DuplicateDetectionHistoryTimeWindow.Value;
-                changes = true;
-            }
-
-            if (_options.EnableBatchedOperations.HasValue && qd.EnableBatchedOperations != _options.EnableBatchedOperations.Value) {
-                qd.EnableBatchedOperations = _options.EnableBatchedOperations.Value;
-                changes = true;
-            }
-
-            if (_options.EnableDeadLetteringOnMessageExpiration.HasValue && qd.EnableDeadLetteringOnMessageExpiration != _options.EnableDeadLetteringOnMessageExpiration.Value) {
-                qd.EnableDeadLetteringOnMessageExpiration = _options.EnableDeadLetteringOnMessageExpiration.Value;
-                changes = true;
-            }
-
-            if (qd.ForwardDeadLetteredMessagesTo != _options.ForwardDeadLetteredMessagesTo) {
-                qd.ForwardDeadLetteredMessagesTo = _options.ForwardDeadLetteredMessagesTo;
-                changes = true;
-            }
-
-            if (qd.ForwardTo != _options.ForwardTo) {
-                qd.ForwardTo = _options.ForwardTo;
-                changes = true;
-            }
-
-            if (_options.IsAnonymousAccessible.HasValue && qd.IsAnonymousAccessible != _options.IsAnonymousAccessible.Value) {
-                qd.IsAnonymousAccessible = _options.IsAnonymousAccessible.Value;
-                changes = true;
-            }
-
-            if (qd.LockDuration != _options.WorkItemTimeout) {
-                qd.LockDuration = _options.WorkItemTimeout;
-                changes = true;
-            }
-
-            if (qd.MaxDeliveryCount != _options.Retries + 1) {
-                qd.MaxDeliveryCount = _options.Retries + 1;
-                changes = true;
-            }
-
-            if (_options.Status.HasValue && qd.Status != _options.Status.Value) {
-                qd.Status = _options.Status.Value;
-                changes = true;
-            }
-
-            if (_options.SupportOrdering.HasValue && qd.SupportOrdering != _options.SupportOrdering.Value) {
-                qd.SupportOrdering = _options.SupportOrdering.Value;
-                changes = true;
-            }
-
-            if (qd.UserMetadata != _options.UserMetadata) {
-                qd.UserMetadata = _options.UserMetadata;
-                changes = true;
-            }
-
-            return changes;
+        public override void Dispose() {
+            base.Dispose();
+            _queueClient?.Close();
         }
     }
 }

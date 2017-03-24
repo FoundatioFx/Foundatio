@@ -7,6 +7,11 @@ namespace Foundatio.Queues {
         public string ConnectionString { get; set; }
 
         /// <summary>
+        /// The queue idle interval after which the queue is automatically deleted.
+        /// </summary>
+        public TimeSpan? AutoDeleteOnIdle { get; set; }
+
+        /// <summary>
         /// The maximum size of the queue in megabytes.
         /// </summary>
         public long? MaxSizeInMegabytes { get; set; }
@@ -25,11 +30,6 @@ namespace Foundatio.Queues {
         /// The default message time to live.
         /// </summary>
         public TimeSpan? DefaultMessageTimeToLive { get; set; }
-
-        /// <summary>
-        /// The queue idle interval after which the queue is automatically deleted.
-        /// </summary>
-        public TimeSpan? AutoDeleteOnIdle { get; set; }
 
         /// <summary>
         /// Returns true if the queue has dead letter support when a message expires.
