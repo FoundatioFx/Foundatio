@@ -92,6 +92,10 @@ namespace Foundatio.Jobs {
             }
 
             var job = _options.JobFactory();
+            if (job == null) {
+                _logger.Error("JobFactory returned null job instance.");
+                return false;
+            }
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
 
             if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
