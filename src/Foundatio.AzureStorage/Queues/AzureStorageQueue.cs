@@ -44,26 +44,28 @@ namespace Foundatio.Queues {
 
             var account = CloudStorageAccount.Parse(options.ConnectionString);
             var client = account.CreateCloudQueueClient();
+            if (options.RetryPolicy != null)
+                client.DefaultRequestOptions.RetryPolicy = options.RetryPolicy;
 
             _queueReference = client.GetQueueReference(_options.Name);
             _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-deadletter");
-
-            if (options.RetryPolicy != null)
-                client.DefaultRequestOptions.RetryPolicy = options.RetryPolicy;
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_queueCreated)
                 return;
 
-            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_queueCreated)
                     return;
 
+                var sw = Stopwatch.StartNew();
                 await _queueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
                 await _deadletterQueueReference.CreateIfNotExistsAsync(cancellationToken).AnyContext();
-
                 _queueCreated = true;
+
+                sw.Stop();
+                _logger.Trace("Ensure queue exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
@@ -152,8 +154,11 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+            var sw = Stopwatch.StartNew();
             await _queueReference.FetchAttributesAsync().AnyContext();
             await _deadletterQueueReference.FetchAttributesAsync().AnyContext();
+            sw.Stop();
+            _logger.Trace("Fetching stats took {0}ms.", sw.ElapsedMilliseconds);
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
@@ -169,14 +174,19 @@ namespace Foundatio.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
+            var sw = Stopwatch.StartNew();
             await _queueReference.DeleteIfExistsAsync().AnyContext();
             await _deadletterQueueReference.DeleteIfExistsAsync().AnyContext();
+            _queueCreated = false;
 
             _enqueuedCount = 0;
             _dequeuedCount = 0;
             _completedCount = 0;
             _abandonedCount = 0;
             _workerErrorCount = 0;
+
+            sw.Stop();
+            _logger.Trace("Deleting queue took {0}ms.", sw.ElapsedMilliseconds);
         }
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {

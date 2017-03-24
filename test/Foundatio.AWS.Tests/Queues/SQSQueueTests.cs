@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.AWS.Tests.Queues {
     public class SQSQueueTests : QueueTestBase {
-        private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N");
+        private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
         public SQSQueueTests(ITestOutputHelper output) : base(output) {}
 
@@ -63,6 +63,7 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.CanUseQueueWorkerAsync();
         }
 
+        [Fact]
         public override async Task CanHandleErrorInWorkerAsync() {
             await base.CanHandleErrorInWorkerAsync();
         }
@@ -72,6 +73,7 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.WorkItemsWillTimeoutAsync();
         }
 
+        [Fact]
         public override async Task WorkItemsWillGetMovedToDeadletterAsync() {
             await base.WorkItemsWillGetMovedToDeadletterAsync();
         }
@@ -81,6 +83,7 @@ namespace Foundatio.AWS.Tests.Queues {
             await base.CanAutoCompleteWorkerAsync();
         }
 
+        [Fact]
         public override async Task CanHaveMultipleQueueInstancesAsync() {
             await base.CanHaveMultipleQueueInstancesAsync();
         }

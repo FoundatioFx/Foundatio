@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Azure.Tests.Queue {
     [Collection("AzureStorageIntegrationTests")]
     public class AzureStorageQueueTests : QueueTestBase {
-        private static readonly string _queueName = Guid.NewGuid().ToString("N");
+        private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
 
@@ -30,6 +30,12 @@ namespace Foundatio.Azure.Tests.Queue {
                 DequeueInterval = TimeSpan.FromMilliseconds(50),
                 LoggerFactory = Log
             });
+        }
+
+        protected override Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
+            // Don't delete the queue, it's super expensive and will be cleaned up later.
+            queue?.Dispose();
+            return Task.CompletedTask;
         }
 
         [Fact]
@@ -70,6 +76,31 @@ namespace Foundatio.Azure.Tests.Queue {
         [Fact]
         public override Task WorkItemsWillTimeoutAsync() {
             return base.WorkItemsWillTimeoutAsync();
+        }
+
+        [Fact]
+        public override Task WillNotWaitForItemAsync() {
+            return base.WillNotWaitForItemAsync();
+        }
+
+        [Fact]
+        public override Task CanResumeDequeueEfficientlyAsync() {
+            return base.CanResumeDequeueEfficientlyAsync();
+        }
+
+        [Fact]
+        public override Task CanDequeueEfficientlyAsync() {
+            return base.CanDequeueEfficientlyAsync();
+        }
+
+        [Fact]
+        public override Task CanDequeueWithLockingAsync() {
+            return base.CanDequeueWithLockingAsync();
+        }
+
+        [Fact]
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+            return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
 
         [Fact]

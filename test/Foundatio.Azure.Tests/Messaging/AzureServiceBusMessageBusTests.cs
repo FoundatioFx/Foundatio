@@ -19,6 +19,15 @@ namespace Foundatio.Azure.Tests.Messaging {
             return new AzureServiceBusMessageBus(new AzureServiceBusMessageBusOptions {
                 ConnectionString = connectionString,
                 Topic = "test-messages",
+                TopicEnableBatchedOperations = true,
+                TopicEnableExpress = true,
+                TopicEnablePartitioning = true,
+                TopicSupportOrdering = false,
+                TopicRequiresDuplicateDetection = false,
+                SubscriptionAutoDeleteOnIdle = TimeSpan.FromMinutes(5),
+                SubscriptionEnableBatchedOperations = true,
+                SubscriptionMaxDeliveryCount = int.MaxValue,
+                PrefetchCount = 500,
                 LoggerFactory = Log
             });
         }
