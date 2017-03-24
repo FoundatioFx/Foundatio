@@ -16,6 +16,8 @@ namespace Foundatio.Azure.Tests.Queue {
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+            return null;
+
             string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;

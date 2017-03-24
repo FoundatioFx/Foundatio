@@ -92,33 +92,38 @@ namespace Foundatio.Jobs {
             }
 
             var job = _options.JobFactory();
+            if (job == null) {
+                _logger.Error("JobFactory returned null job instance.");
+                return false;
+            }
+
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
+            using (_logger.BeginScope(s => s.Property("job", _jobName))) {
+                _logger.Info("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
 
-            if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
+                if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
+                    await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
-            if (_options.RunContinuous && _options.InstanceCount > 1) {
-                var tasks = new List<Task>();
-                for (int i = 0; i < _options.InstanceCount; i++) {
-                    var task = new Task(() => {
-                        try {
-                            var jobInstance = _options.JobFactory();
-                            jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
-                        } catch (Exception ex) {
-                            _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
-                            throw;
-                        }
-                    }, cancellationToken, TaskCreationOptions.LongRunning);
-                    tasks.Add(task);
-                    task.Start();
-                }
+                if (_options.RunContinuous && _options.InstanceCount > 1) {
+                    var tasks = new List<Task>();
+                    for (int i = 0; i < _options.InstanceCount; i++) {
+                        var task = new Task(() => {
+                            try {
+                                var jobInstance = _options.JobFactory();
+                                jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                            } catch (Exception ex) {
+                                _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
+                                throw;
+                            }
+                        }, cancellationToken, TaskCreationOptions.LongRunning);
+                        tasks.Add(task);
+                        task.Start();
+                    }
 
-                await Task.WhenAll(tasks).AnyContext();
-            } else if (_options.RunContinuous && _options.InstanceCount == 1) {
-                await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
-            } else {
-                using (_logger.BeginScope(s => s.Property("job", _jobName))) {
-                    _logger.Trace("Job run \"{0}\" starting...", _jobName);
+                    await Task.WhenAll(tasks).AnyContext();
+                } else if (_options.RunContinuous && _options.InstanceCount == 1) {
+                    await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                } else {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 

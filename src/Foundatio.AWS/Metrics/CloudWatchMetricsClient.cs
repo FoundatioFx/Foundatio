@@ -32,7 +32,7 @@ namespace Foundatio.Metrics {
                 _dimensions.AddRange(dimensions);
         }
 
-        protected override async Task StoreAggregatedMetricsAsync(ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
+        protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
             var metrics = new List<MetricDatum>();
             metrics.AddRange(ConvertToDatums(counters));
             metrics.AddRange(ConvertToDatums(gauges));
