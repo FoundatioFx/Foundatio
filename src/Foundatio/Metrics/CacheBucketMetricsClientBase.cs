@@ -18,7 +18,7 @@ namespace Foundatio.Metrics {
 
             _timeBuckets.Clear();
             _timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromMinutes(5), Ttl = TimeSpan.FromHours(1) });
-            //_timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromHours(1), Ttl = TimeSpan.FromDays(7) });
+            _timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromHours(1), Ttl = TimeSpan.FromDays(7) });
         }
 
         protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
