@@ -18,7 +18,7 @@ namespace Foundatio.Metrics {
 
             _timeBuckets.Clear();
             _timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromMinutes(5), Ttl = TimeSpan.FromHours(1) });
-            _timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromHours(1), Ttl = TimeSpan.FromDays(7) });
+            //_timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromHours(1), Ttl = TimeSpan.FromDays(7) });
         }
 
         protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
@@ -44,16 +44,16 @@ namespace Foundatio.Metrics {
         private async Task StoreGaugeAsync(TimeBucket timeBucket, AggregatedGaugeMetric gauge) {
             _logger.Trace(() => $"Storing gauge name={gauge.Key.Name} count={gauge.Count} total={gauge.Total} last={gauge.Last} min={gauge.Min} max={gauge.Max} time={gauge.Key.StartTimeUtc}");
 
-            string countKey = GetBucketKey(CacheMetricNames.Timing, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Count);
+            string countKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Count);
             await _cache.IncrementAsync(countKey, gauge.Count, timeBucket.Ttl).AnyContext();
 
-            string totalDurationKey = GetBucketKey(CacheMetricNames.Timing, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Total);
+            string totalDurationKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Total);
             await _cache.IncrementAsync(totalDurationKey, gauge.Total, timeBucket.Ttl).AnyContext();
 
             string lastKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Last);
             await _cache.SetAsync(lastKey, gauge.Last, timeBucket.Ttl).AnyContext();
 
-            string minKey = GetBucketKey(CacheMetricNames.Timing, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Min);
+            string minKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Min);
             await _cache.SetIfLowerAsync(minKey, gauge.Min, timeBucket.Ttl).AnyContext();
 
             string maxKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Max);
