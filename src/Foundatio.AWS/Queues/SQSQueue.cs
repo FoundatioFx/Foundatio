@@ -120,8 +120,9 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
-            var entry = ToQueueEntry(queueEntry);
+            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, queueEntry.Id);
 
+            var entry = ToQueueEntry(queueEntry);
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
                 VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
@@ -129,16 +130,15 @@ namespace Foundatio.Queues {
             };
 
             await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
+            _logger.Trace("Renew lock done: {0}", queueEntry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
+            _logger.Debug("Queue {0} complete item: {1}", _options.Name, queueEntry.Id);
             if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             var entry = ToQueueEntry(queueEntry);
-            if (entry.IsAbandoned || entry.IsCompleted)
-                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
-
             var request = new DeleteMessageRequest {
                 QueueUrl = _queueUrl,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle,
@@ -150,16 +150,15 @@ namespace Foundatio.Queues {
             queueEntry.MarkCompleted();
 
             await OnCompletedAsync(queueEntry).AnyContext();
+            _logger.Trace("Complete done: {0}", queueEntry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
+            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, queueEntry.Id);
             if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             var entry = ToQueueEntry(queueEntry);
-            if (entry.IsAbandoned || entry.IsCompleted)
-                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
-
             // re-queue and wait for processing
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
@@ -173,6 +172,7 @@ namespace Foundatio.Queues {
             queueEntry.MarkAbandoned();
 
             await OnAbandonedAsync(queueEntry).AnyContext();
+            _logger.Trace("Abandon complete: {entryId}", entry.Id);
         }
 
         protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {

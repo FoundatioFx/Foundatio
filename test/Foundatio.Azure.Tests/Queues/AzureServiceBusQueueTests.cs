@@ -17,8 +17,6 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            return null;
-
             string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
@@ -86,12 +84,12 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.CanHandleErrorInWorkerAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task WorkItemsWillTimeoutAsync() {
             return base.WorkItemsWillTimeoutAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task WillNotWaitForItemAsync() {
             return base.WillNotWaitForItemAsync();
         }
@@ -101,12 +99,12 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task CanResumeDequeueEfficientlyAsync() {
             return base.CanResumeDequeueEfficientlyAsync();
         }
 
-        [Fact]
+        [Fact (Skip = "Dequeue Time takes forever")]
         public override Task CanDequeueEfficientlyAsync() {
             return base.CanDequeueEfficientlyAsync();
         }
@@ -136,7 +134,7 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.CanRunWorkItemWithMetricsAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task CanRenewLockAsync() {
             return base.CanRenewLockAsync();
         }

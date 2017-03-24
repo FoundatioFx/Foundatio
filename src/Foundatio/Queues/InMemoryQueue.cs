@@ -139,7 +139,6 @@ namespace Foundatio.Queues {
                 return null;
 
             _logger.Trace("Dequeue: Attempt");
-
             if (!_queue.TryDequeue(out QueueEntry<T> info) || info == null)
                 return null;
 
@@ -159,10 +158,10 @@ namespace Foundatio.Queues {
             return entry;
         }
 
-        public override Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
-            var item = entry as QueueEntry<T>;
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
 
+            var item = entry as QueueEntry<T>;
             _dequeued.AddOrUpdate(entry.Id, item, (key, value) => {
                 if (item != null)
                     value.RenewedTimeUtc = item.RenewedTimeUtc;
@@ -170,11 +169,12 @@ namespace Foundatio.Queues {
                 return value;
             });
 
-            return OnLockRenewedAsync(entry);
+            await OnLockRenewedAsync(entry).AnyContext();
+            _logger.Trace("Renew lock done: {0}", entry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} complete item: {1}", _options.Name, entry.Id);
+            _logger.Debug("Queue {0} complete item: {1}", _options.Name, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -188,7 +188,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} abandon item: {1}", _options.Name, entry.Id);
+            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -211,7 +211,7 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.Trace("Abandon complete: {0}", entry.Id);
+            _logger.Trace("Abandon complete: {entryId}", entry.Id);
         }
 
         private Task RetryAsync(QueueEntry<T> entry) {

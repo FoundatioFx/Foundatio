@@ -16,8 +16,6 @@ namespace Foundatio.Azure.Tests.Queue {
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            return null;
-
             string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
@@ -27,9 +25,9 @@ namespace Foundatio.Azure.Tests.Queue {
                 ConnectionString = connectionString,
                 Name = _queueName,
                 Retries = retries,
-                RetryPolicy = new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries),
+                RetryPolicy = retries > 0 ? (IRetryPolicy)new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries) : new NoRetry(),
                 WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                DequeueInterval = TimeSpan.FromMilliseconds(50),
+                DequeueInterval = TimeSpan.FromMilliseconds(100),
                 LoggerFactory = Log
             });
         }
@@ -80,17 +78,17 @@ namespace Foundatio.Azure.Tests.Queue {
             return base.WorkItemsWillTimeoutAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task WillNotWaitForItemAsync() {
             return base.WillNotWaitForItemAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task CanResumeDequeueEfficientlyAsync() {
             return base.CanResumeDequeueEfficientlyAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Dequeue Time takes forever")]
         public override Task CanDequeueEfficientlyAsync() {
             return base.CanDequeueEfficientlyAsync();
         }
