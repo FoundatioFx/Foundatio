@@ -21,7 +21,7 @@ namespace Foundatio.Jobs {
 
         public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
-            var jobName = job.GetType().Name;
+            string jobName = job.GetType().Name;
             var logger = job.GetLogger();
 
             using (logger.BeginScope(s => s.Property("job", jobName))) {
@@ -40,10 +40,10 @@ namespace Foundatio.Jobs {
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
                             SystemClock.Sleep(1);
                     } catch (OperationCanceledException) { }
-                    
+
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;
-                    
+
                     try {
                         if (!await continuationCallback().AnyContext())
                             break;
@@ -51,7 +51,7 @@ namespace Foundatio.Jobs {
                         logger.Error(ex, "Error in continuation callback: {0}", ex.Message);
                     }
                 }
-                
+
                 if (cancellationToken.IsCancellationRequested)
                     logger.Trace("Job cancellation requested.");
 

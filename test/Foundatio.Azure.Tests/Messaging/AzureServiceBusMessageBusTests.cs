@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
@@ -8,22 +9,25 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Messaging {
     public class AzureServiceBusMessageBusTests : MessageBusTestBase {
-        protected readonly string _topicName = Guid.NewGuid().ToString("N");
-
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 
         protected override IMessageBus GetMessageBus() {
-            if (String.IsNullOrEmpty(Configuration.GetConnectionString("ServiceBusConnectionString")))
+            string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
+            if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            return new AzureServiceBusMessageBus(Configuration.GetConnectionString("ServiceBusConnectionString"), _topicName, loggerFactory: Log);
+            return new AzureServiceBusMessageBus(new AzureServiceBusMessageBusOptions {
+                ConnectionString = connectionString,
+                Topic = "test-messages",
+                LoggerFactory = Log
+            });
         }
 
         [Fact]
         public override Task CanSendMessageAsync() {
             return base.CanSendMessageAsync();
         }
-        
+
         [Fact]
         public override Task CanHandleNullMessageAsync() {
             return base.CanHandleNullMessageAsync();
@@ -36,6 +40,7 @@ namespace Foundatio.Azure.Tests.Messaging {
 
         [Fact]
         public override Task CanSendDelayedMessageAsync() {
+            Log.SetLogLevel<AzureServiceBusMessageBus>(LogLevel.Information);
             return base.CanSendDelayedMessageAsync();
         }
 
@@ -63,7 +68,7 @@ namespace Foundatio.Azure.Tests.Messaging {
         public override Task CanSubscribeToAllMessageTypesAsync() {
             return base.CanSubscribeToAllMessageTypesAsync();
         }
-        
+
         [Fact]
         public override Task CanCancelSubscriptionAsync() {
             return base.CanCancelSubscriptionAsync();

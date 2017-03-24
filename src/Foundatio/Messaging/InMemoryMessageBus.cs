@@ -6,15 +6,20 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 
 namespace Foundatio.Messaging {
-    public class InMemoryMessageBus : MessageBusBase, IMessageBus {
-        public InMemoryMessageBus(ILoggerFactory loggerFactory = null) : base(loggerFactory) {}
+    public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {
+        [Obsolete("Use the options overload")]
+        public InMemoryMessageBus(ILoggerFactory loggerFactory = null) : this(new InMemoryMessageBusOptions { LoggerFactory = loggerFactory }) { }
 
-        public override Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (message == null || _subscribers.IsEmpty)
+        public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
+
+        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+            if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero)
+            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
+            }
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
@@ -22,6 +27,7 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
             }
 
+            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
             return SendMessageToSubscribersAsync(subscribers, messageType, message.Copy());
         }
     }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Amazon.SQS.Model;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
@@ -57,7 +56,7 @@ namespace Foundatio.Queues {
             var redrivePolicy = JsonMapper.ToObject(v);
 
 
-            var arn =  redrivePolicy["deadLetterTargetArn"]?.ToString();
+            string arn =  redrivePolicy["deadLetterTargetArn"]?.ToString();
             if (string.IsNullOrEmpty(arn))
                 return null;
 

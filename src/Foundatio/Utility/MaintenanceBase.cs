@@ -24,7 +24,7 @@ namespace Foundatio.Utility {
         protected virtual Task<DateTime?> DoMaintenanceAsync() {
             return Task.FromResult<DateTime?>(DateTime.MaxValue);
         }
-        
+
         public virtual void Dispose() {
             _maintenanceTimer?.Dispose();
         }

@@ -20,8 +20,7 @@ namespace Foundatio.SampleJobClient {
             Console.CursorVisible = false;
             StartDisplayingLogMessages();
 
-            var muxer = ConnectionMultiplexer.Connect("localhost");
-            _queue = new RedisQueue<PingRequest>(muxer);
+            _queue = new RedisQueue<PingRequest>(new RedisQueueOptions<PingRequest> { ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost") });
 
             var tokenSource = new CancellationTokenSource();
             CancellationToken token = tokenSource.Token;

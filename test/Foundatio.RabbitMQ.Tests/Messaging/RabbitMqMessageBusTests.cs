@@ -10,7 +10,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
 
         protected override IMessageBus GetMessageBus() {
-            return new RabbitMQMessageBus("amqp://localhost", "FoundatioQueue", "FoundatioExchange", defaultMessageTimeToLive: TimeSpan.FromMilliseconds(50), loggerFactory: Log);
+            return new RabbitMQMessageBus(new RabbitMQMessageBusOptions { ConnectionString = "amqp://localhost", Topic = "test-messages", ExchangeName = "FoundatioExchange", LoggerFactory = Log });
         }
 
         [Fact]

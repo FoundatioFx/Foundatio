@@ -46,7 +46,7 @@ namespace Foundatio.Jobs {
             int result;
             try {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(GetShutdownCancellationToken(_logger));
-                var success = RunAsync(CancellationTokenSource.Token).GetAwaiter().GetResult();
+                bool success = RunAsync(CancellationTokenSource.Token).GetAwaiter().GetResult();
                 result = success ? 0 : -1;
 
                 if (Debugger.IsAttached)
@@ -149,7 +149,7 @@ namespace Foundatio.Jobs {
                     logger?.Info("Job shutdown event signaled: {0}", args.Reason);
                 };
 
-                var webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
+                string webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
                 if (String.IsNullOrEmpty(webJobsShutdownFile))
                     return _jobShutdownCancellationTokenSource.Token;
 

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Amazon;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -15,17 +14,9 @@ using Nito.AsyncEx;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
-    public class SQSQueue<T> : QueueBase<T> where T : class {
+    public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class {
         private readonly AsyncLock _lock = new AsyncLock();
-
         private readonly Lazy<AmazonSQSClient> _client;
-        private readonly AWSCredentials _credentials;
-        private readonly RegionEndpoint _regionEndpoint;
-        private readonly SQSQueueOptions _options;
-
-        private readonly int _workItemTimeoutSeconds;
-        private readonly int _readQueueTimeoutSeconds;
-
         private string _queueUrl;
         private string _deadUrl;
 
@@ -35,38 +26,20 @@ namespace Foundatio.Queues {
         private long _abandonedCount;
         private long _workerErrorCount;
 
-        public SQSQueue(
-            string queueName,
-            AWSCredentials credentials = null,
-            RegionEndpoint regionEndpoint = null,
-            SQSQueueOptions options = null,
-            ISerializer serializer = null,
-            IEnumerable<IQueueBehavior<T>> behaviors = null,
-            ILoggerFactory loggerFactory = null)
-            : base(serializer, behaviors, loggerFactory) {
-
-            _queueName = queueName ?? throw new ArgumentNullException(nameof(queueName));
-
-            _credentials = credentials ?? FallbackCredentialsFactory.GetCredentials();
-            _regionEndpoint = regionEndpoint ?? RegionEndpoint.USEast1;
-            _options = options ?? new SQSQueueOptions();
-
-            _workItemTimeoutSeconds = Convert.ToInt32(_options.WorkItemTimeout.TotalSeconds);
-            _readQueueTimeoutSeconds = Convert.ToInt32(_options.ReadQueueTimeout.TotalSeconds);
-
-            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(_credentials, _regionEndpoint));
+        public SQSQueue(SQSQueueOptions<T> options) : base(options) {
+            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(options.Credentials ?? FallbackCredentialsFactory.GetCredentials(), options.RegionEndpoint));
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (!String.IsNullOrEmpty(_queueUrl))
                 return;
 
-            using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false)) {
+            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
                 if (!String.IsNullOrEmpty(_queueUrl))
                     return;
 
                 try {
-                    var urlResponse = await _client.Value.GetQueueUrlAsync(_queueName, cancellationToken).AnyContext();
+                    var urlResponse = await _client.Value.GetQueueUrlAsync(_options.Name, cancellationToken).AnyContext();
                     _queueUrl = urlResponse.QueueUrl;
                 } catch (QueueDoesNotExistException) {
                     if (!_options.CanCreateQueue)
@@ -76,7 +49,7 @@ namespace Foundatio.Queues {
                 if (!String.IsNullOrEmpty(_queueUrl))
                     return;
 
-                await CreateQueueAsync();
+                await CreateQueueAsync().AnyContext();
             }
         }
 
@@ -99,16 +72,14 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            var visibilityTimeout = _workItemTimeoutSeconds;
-
             // sqs doesn't support already canceled token, change timeout and token for sqs pattern
-            var waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : _readQueueTimeoutSeconds;
+            int waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : (int)_options.ReadQueueTimeout.TotalSeconds;
             var cancel = linkedCancellationToken.IsCancellationRequested ? CancellationToken.None : linkedCancellationToken;
 
             var request = new ReceiveMessageRequest {
                 QueueUrl = _queueUrl,
                 MaxNumberOfMessages = 1,
-                VisibilityTimeout = visibilityTimeout,
+                VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
                 WaitTimeSeconds = waitTimeout,
                 AttributeNames = new List<string> { "ApproximateReceiveCount", "SentTimestamp" }
             };
@@ -139,7 +110,7 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _dequeuedCount);
 
             var message = response.Messages.First();
-            var body = message.Body;
+            string body = message.Body;
             var data = await _serializer.DeserializeAsync<T>(body).AnyContext();
             var entry = new SQSQueueEntry<T>(message, data, this);
 
@@ -153,7 +124,7 @@ namespace Foundatio.Queues {
 
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
-                VisibilityTimeout = _workItemTimeoutSeconds,
+                VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle
             };
 
@@ -192,7 +163,7 @@ namespace Foundatio.Queues {
             // re-queue and wait for processing
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
-                VisibilityTimeout = _workItemTimeoutSeconds,
+                VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle,
             };
 
@@ -234,7 +205,7 @@ namespace Foundatio.Queues {
 
             // lookup dead letter url
             if (String.IsNullOrEmpty(_deadUrl)) {
-                var deadLetterName = queueAttributes.Attributes.DeadLetterQueue();
+                string deadLetterName = queueAttributes.Attributes.DeadLetterQueue();
                 if (!String.IsNullOrEmpty(deadLetterName)) {
                     var deadResponse = await _client.Value.GetQueueUrlAsync(deadLetterName).AnyContext();
                     _deadUrl = deadResponse.QueueUrl;
@@ -283,10 +254,10 @@ namespace Foundatio.Queues {
             var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {_queueName}", _queueName);
+                _logger.Trace("WorkerLoop Start {_options.Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {_queueName}", _queueName);
+                    _logger.Trace("WorkerLoop Signaled {_options.Name}", _options.Name);
 
                     IQueueEntry<T> entry = null;
                     try {
@@ -309,7 +280,7 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested);
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
@@ -322,7 +293,7 @@ namespace Foundatio.Queues {
 
         protected virtual async Task CreateQueueAsync() {
             // step 1, create queue
-            var createQueueRequest = new CreateQueueRequest { QueueName = _queueName };
+            var createQueueRequest = new CreateQueueRequest { QueueName = _options.Name };
             var createQueueResponse = await _client.Value.CreateQueueAsync(createQueueRequest).AnyContext();
             _queueUrl = createQueueResponse.QueueUrl;
 
@@ -330,7 +301,7 @@ namespace Foundatio.Queues {
                 return;
 
             // step 2, create dead letter queue
-            var createDeadRequest = new CreateQueueRequest { QueueName = _queueName + "-deadletter" };
+            var createDeadRequest = new CreateQueueRequest { QueueName = _options.Name + "-deadletter" };
             var createDeadResponse = await _client.Value.CreateQueueAsync(createDeadRequest).AnyContext();
             _deadUrl = createDeadResponse.QueueUrl;
 
@@ -340,13 +311,15 @@ namespace Foundatio.Queues {
             var deadAttributeRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
             var deadAttributeResponse = await _client.Value.GetQueueAttributesAsync(deadAttributeRequest).AnyContext();
 
-            // step 4, set redrive policy
-            var redrivePolicy = new JsonData();
-            redrivePolicy["maxReceiveCount"] = _options.RetryCount.ToString();
-            redrivePolicy["deadLetterTargetArn"] = deadAttributeResponse.QueueARN;
+            // step 4, set retry policy
+            var redrivePolicy = new JsonData {
+                ["maxReceiveCount"] = _options.Retries.ToString(),
+                ["deadLetterTargetArn"] = deadAttributeResponse.QueueARN
+            };
 
-            var attributes = new Dictionary<string, string>();
-            attributes[QueueAttributeName.RedrivePolicy] = JsonMapper.ToJson(redrivePolicy);
+            var attributes = new Dictionary<string, string> {
+                [QueueAttributeName.RedrivePolicy] = JsonMapper.ToJson(redrivePolicy)
+            };
 
             var setAttributeRequest = new SetQueueAttributesRequest(_queueUrl, attributes);
             var setAttributeResponse = await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();

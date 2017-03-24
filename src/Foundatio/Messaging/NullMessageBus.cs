@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public class NullMessageBus : IMessageBus {

@@ -11,17 +11,55 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase : MaintenanceBase, IMessagePublisher {
+    public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : MesssageBusOptions {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
+        protected readonly TOptions _options;
+        protected readonly ISerializer _serializer;
 
-        public MessageBusBase(ILoggerFactory loggerFactory) : base(loggerFactory) {
+        public MessageBusBase(TOptions options) : base(options?.LoggerFactory) {
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            _serializer = options.Serializer ?? new JsonNetSerializer();
+            MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
+
             InitializeMaintenance();
         }
 
-        public abstract Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
+        protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        protected abstract Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
+        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (message == null)
+                return;
 
+            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
+            await PublishImplAsync(messageType, message, delay, cancellationToken).AnyContext();
+        }
+
+        protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
+            var subscriber = new Subscriber {
+                CancellationToken = cancellationToken,
+                Type = typeof(T),
+                Action = (message, token) => {
+                    if (!(message is T))
+                        return Task.CompletedTask;
+
+                    return handler((T)message, cancellationToken);
+                }
+            };
+
+            if (!_subscribers.TryAdd(subscriber.Id, subscriber))
+                _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
+
+            return Task.CompletedTask;
+        }
+
+        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+            _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
+            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
+            await SubscribeImplAsync(handler, cancellationToken).AnyContext();
+        }
 
         protected async Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
             Type messageType = GetMessageBodyType(message);
@@ -64,30 +102,12 @@ namespace Foundatio.Messaging {
 
                 try {
                     await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                } catch (Exception ex) {
+                }
+                catch (Exception ex) {
                     _logger.Error(ex, "Error sending message to subscriber: {0}", ex.Message);
                 }
             }
             _logger.Trace(() => $"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
-        }
-
-        public virtual Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
-            var subscriber = new Subscriber {
-                CancellationToken = cancellationToken,
-                Type = typeof(T),
-                Action = (message, token) => {
-                    if (!(message is T))
-                        return Task.CompletedTask;
-
-                    return handler((T)message, cancellationToken);
-                }
-            };
-
-            if (!_subscribers.TryAdd(subscriber.Id, subscriber))
-                _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
-
-            return Task.CompletedTask;
         }
 
         protected Type GetMessageBodyType(MessageBusData message) {
@@ -107,7 +127,7 @@ namespace Foundatio.Messaging {
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
-            
+
             var sendTime = SystemClock.UtcNow.Add(delay);
             _delayedMessages.TryAdd(Guid.NewGuid(), new DelayedMessage {
                 Message = message,
@@ -126,7 +146,7 @@ namespace Foundatio.Messaging {
             DateTime nextMessageSendTime = DateTime.MaxValue;
             var messagesToSend = new List<Guid>();
 
-            // Add 50ms to the current time so we can batch up any other messages that will 
+            // Add 50ms to the current time so we can batch up any other messages that will
             // happen very shortly. Also the timer may run earilier than requested.
             var sendTime = SystemClock.UtcNow.AddMilliseconds(50);
             foreach (var pair in _delayedMessages) {
@@ -148,7 +168,10 @@ namespace Foundatio.Messaging {
             return nextMessageSendTime;
         }
 
+        public string MessageBusId { get; protected set; }
+
         public override void Dispose() {
+            _logger.Trace("Disposing");
             base.Dispose();
             _delayedMessages?.Clear();
             _subscribers?.Clear();
@@ -159,7 +182,7 @@ namespace Foundatio.Messaging {
             public Type MessageType { get; set; }
             public object Message { get; set; }
         }
-        
+
         protected class Subscriber {
             private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new ConcurrentDictionary<Type, bool>();
 

@@ -1,6 +1,4 @@
 ﻿using System;
-using System.ComponentModel;
-using System.Reflection;
 using Foundatio.Utility;
 
 namespace Foundatio.Extensions {

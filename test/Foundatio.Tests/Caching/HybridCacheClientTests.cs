@@ -12,7 +12,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Caching {
     public class HybridCacheClientTests: CacheClientTestsBase, IDisposable {
         private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
-        private readonly IMessageBus _messageBus = new InMemoryMessageBus();
+        private readonly IMessageBus _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
 
         public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}
 
@@ -44,7 +44,7 @@ namespace Foundatio.Tests.Caching {
         public override Task CanUseScopedCachesAsync() {
             return base.CanUseScopedCachesAsync();
         }
-        
+
         [Fact]
         public override Task CanSetAndGetObjectAsync() {
             return base.CanSetAndGetObjectAsync();
@@ -82,7 +82,7 @@ namespace Foundatio.Tests.Caching {
                     await firstCache.IncrementAsync("first2");
                     Assert.Equal(1, firstCache.LocalCache.Count);
 
-                    var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+                    string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                     await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
                     Assert.Equal(2, firstCache.LocalCache.Count);
                     Assert.Equal(0, secondCache.LocalCache.Count);
