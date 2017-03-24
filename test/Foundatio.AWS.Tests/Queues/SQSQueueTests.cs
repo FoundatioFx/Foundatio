@@ -15,6 +15,9 @@ namespace Foundatio.AWS.Tests.Queues {
         public SQSQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+            // Don't run this as part of the tests yet
+            return null;
+
             var section = Configuration.GetSection("AWS");
             string accessKey = section["ACCESS_KEY_ID"];
             string secretKey = section["SECRET_ACCESS_KEY"];
