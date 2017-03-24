@@ -13,7 +13,7 @@ namespace Foundatio.Logging.Xunit {
             _testOutputHelper = output;
         }
 
-        public LogLevel MinimumLevel { get; set; } = LogLevel.Trace;
+        public LogLevel MinimumLevel { get; set; } = LogLevel.Information;
         public IReadOnlyList<LogEntry> LogEntries => _logEntries;
         public int MaxLogEntries = 1000;
 

@@ -76,7 +76,7 @@ namespace Foundatio.Messaging {
             try {
                 body = await serializer.DeserializeAsync(message.Data, messageType).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error while deserializing messsage body: {0}", ex.Message);
+                _logger.Warn(ex, "Error deserializing messsage body: {0}", ex.Message);
                 return;
             }
 
@@ -102,9 +102,8 @@ namespace Foundatio.Messaging {
 
                 try {
                     await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                }
-                catch (Exception ex) {
-                    _logger.Error(ex, "Error sending message to subscriber: {0}", ex.Message);
+                } catch (Exception ex) {
+                    _logger.Warn(ex, "Error sending message to subscriber: {0}", ex.Message);
                 }
             }
             _logger.Trace(() => $"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
@@ -118,7 +117,7 @@ namespace Foundatio.Messaging {
                 try {
                     return Type.GetType(type);
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Error getting message body type: {0}", type);
+                    _logger.Warn(ex, "Error getting message body type: {0}", type);
                     return null;
                 }
             });

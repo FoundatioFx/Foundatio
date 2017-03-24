@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Messaging {
                 int messages = 0;
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     if (++messages % 50 == 0)
-                        _logger.Trace($"Processed {messages} messages");
+                        _logger.Trace($"Totoal Processed {messages} messages");
 
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();

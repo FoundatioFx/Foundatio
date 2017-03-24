@@ -107,13 +107,12 @@ namespace Foundatio.Messaging {
             if (_subscribers.IsEmpty)
                 return;
 
-            _logger.Trace("OnMessage({messageId})", e.BasicProperties?.MessageId);
+            _logger.Trace("OnMessageAsync({messageId})", e.BasicProperties?.MessageId);
             MessageBusData message;
             try {
                 message = await _serializer.DeserializeAsync<MessageBusData>(e.Body).AnyContext();
-            }
-            catch (Exception ex) {
-                _logger.Error(ex, "OnMessage({0}) Error while deserializing messsage: {1}", e.BasicProperties?.MessageId, ex.Message);
+            } catch (Exception ex) {
+                _logger.Warn(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", e.BasicProperties?.MessageId, ex.Message);
                 return;
             }
 
