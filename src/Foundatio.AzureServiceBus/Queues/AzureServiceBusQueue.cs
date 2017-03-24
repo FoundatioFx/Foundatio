@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -68,11 +69,9 @@ namespace Foundatio.Queues {
                     return;
 
                 var sw = Stopwatch.StartNew();
-                if (!await _namespaceManager.QueueExistsAsync(_options.Name).AnyContext()) {
-                    try {
-                        await _namespaceManager.CreateQueueAsync(CreateQueueDescription()).AnyContext();
-                    } catch (MessagingEntityAlreadyExistsException) { }
-                }
+                try {
+                    await _namespaceManager.CreateQueueAsync(CreateQueueDescription()).AnyContext();
+                } catch (MessagingEntityAlreadyExistsException) { }
 
                 _queueClient = QueueClient.CreateFromConnectionString(_options.ConnectionString, _options.Name);
                 if (_options.RetryPolicy != null)
@@ -119,13 +118,14 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            var message = new BrokeredMessage(data);
-            await _queueClient.SendAsync(message).AnyContext();
+            var message = await _serializer.SerializeToStreamAsync(data).AnyContext();
+            var brokeredMessage = new BrokeredMessage(message, true);
+            await _queueClient.SendAsync(brokeredMessage).AnyContext(); // TODO: See if there is a way to send a batch of messages.
 
-            var entry = new QueueEntry<T>(message.MessageId, data, this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(brokeredMessage.MessageId, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
-            return message.MessageId;
+            return brokeredMessage.MessageId;
         }
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
@@ -146,7 +146,7 @@ namespace Foundatio.Queues {
                         await queueEntry.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
                     Interlocked.Increment(ref _workerErrorCount);
-                    _logger.Error(ex, "Error sending work item to worker: {0}", ex.Message);
+                    _logger.Warn(ex, "Error sending work item to worker: {0}", ex.Message);
 
                     if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.AbandonAsync().AnyContext();
@@ -191,13 +191,13 @@ namespace Foundatio.Queues {
             await OnAbandonedAsync(entry).AnyContext();
         }
 
-        private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage msg) {
-            if (msg == null)
+        private async Task<IQueueEntry<T>> HandleDequeueAsync(BrokeredMessage brokeredMessage) {
+            if (brokeredMessage == null)
                 return null;
 
-            var data = msg.GetBody<T>();
+            var message = await _serializer.DeserializeAsync<T>(brokeredMessage.GetBody<Stream>()).AnyContext();
             Interlocked.Increment(ref _dequeuedCount);
-            var entry = new QueueEntry<T>(msg.LockToken.ToString(), data, this, msg.EnqueuedTimeUtc, msg.DeliveryCount);
+            var entry = new QueueEntry<T>(brokeredMessage.LockToken.ToString(), message, this, brokeredMessage.EnqueuedTimeUtc, brokeredMessage.DeliveryCount);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
         }

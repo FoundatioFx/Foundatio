@@ -23,7 +23,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
+            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Information);
         }
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
@@ -336,10 +337,6 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue(retries: 0);
             if (queue == null)
                 return;
-
-            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Trace);
-            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Trace);
-            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
             try {
                 await queue.DeleteQueueAsync();
@@ -804,10 +801,6 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue(retryDelay: TimeSpan.Zero, retries: 0);
             if (queue == null)
                 return;
-
-            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Information);
-            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Information);
-            Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
 
             try {
                 await queue.DeleteQueueAsync();

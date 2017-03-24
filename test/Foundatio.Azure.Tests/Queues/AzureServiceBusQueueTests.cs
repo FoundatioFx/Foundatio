@@ -12,7 +12,9 @@ namespace Foundatio.Azure.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
-        public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {}
+        public AzureServiceBusQueueTests(ITestOutputHelper output) : base(output) {
+            Log.SetLogLevel<AzureServiceBusQueue<SimpleWorkItem>>(LogLevel.Trace);
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;

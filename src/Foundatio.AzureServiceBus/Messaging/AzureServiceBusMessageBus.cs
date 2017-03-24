@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -44,8 +45,9 @@ namespace Foundatio.Messaging {
                     await _namespaceManager.CreateSubscriptionAsync(CreateSubscriptionDescription()).AnyContext();
                 } catch (MessagingEntityAlreadyExistsException) { }
 
+                // Look into message factory with multiple recievers so more than one connection is made and managed....
                 _subscriptionClient = SubscriptionClient.CreateFromConnectionString(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete);
-                _subscriptionClient.OnMessageAsync(OnMessageAsync, new OnMessageOptions { AutoComplete = true });
+                _subscriptionClient.OnMessageAsync(OnMessageAsync, new OnMessageOptions { /* AutoComplete = true, // Don't run with recieve and delete */ MaxConcurrentCalls = 6 /* calculate this based on the the thread count. */ });
                 if (_options.SubscriptionRetryPolicy != null)
                     _subscriptionClient.RetryPolicy = _options.SubscriptionRetryPolicy;
                 if (_options.PrefetchCount.HasValue)
@@ -56,21 +58,21 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private Task OnMessageAsync(BrokeredMessage brokeredMessage) {
+        private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
             if (_subscribers.IsEmpty)
-                return Task.CompletedTask;
+                return;
 
             _logger.Trace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             MessageBusData message;
             try {
-                message = brokeredMessage.GetBody<MessageBusData>();
-            }
-            catch (Exception ex) {
-                _logger.Warn(ex, "OnMessageAsync({0}) Error while deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
-                return brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message);
+                message = await _serializer.DeserializeAsync<MessageBusData>(brokeredMessage.GetBody<Stream>()).AnyContext();
+            } catch (Exception ex) {
+                _logger.Warn(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
+                await brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message).AnyContext();
+                return;
             }
 
-            return SendMessageToSubscribersAsync(message, _serializer);
+            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
@@ -93,10 +95,12 @@ namespace Foundatio.Messaging {
         }
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var brokeredMessage = new BrokeredMessage(new MessageBusData {
+            var data = await _serializer.SerializeToStreamAsync(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
-            });
+            }).AnyContext();
+
+            var brokeredMessage = new BrokeredMessage(data, true);
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
