@@ -135,7 +135,7 @@ namespace Foundatio.Tests.Messaging {
 
                 _logger.Trace($"Processed {numConcurrentMessages - countdown.CurrentCount} in {sw.ElapsedMilliseconds}ms");
                 Assert.Equal(0, countdown.CurrentCount);
-                Assert.InRange(sw.Elapsed.TotalMilliseconds, 70, 5000);
+                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
             } finally {
                 await CleanupMessageBusAsync(messageBus);
             }
