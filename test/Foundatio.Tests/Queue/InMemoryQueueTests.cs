@@ -27,6 +27,17 @@ namespace Foundatio.Tests.Queue {
             return _queue;
         }
 
+        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+            } catch (Exception ex) {
+                _logger.Error(ex, "Error cleaning up queue");
+            }
+        }
+
         [Fact]
         public async Task TestAsyncEvents() {
             using (var q = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> { LoggerFactory = Log })) {

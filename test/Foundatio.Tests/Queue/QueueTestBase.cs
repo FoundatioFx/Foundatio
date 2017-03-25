@@ -23,17 +23,17 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {
         protected QueueTestBase(ITestOutputHelper output) : base(output) {
-            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
-            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Information);
-            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Information);
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Debug);
+            Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Debug);
+            Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Debug);
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
         }
 
         protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
         }
 
-        protected virtual async Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
+        protected virtual async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
             if (queue == null)
                 return;
 
@@ -73,7 +73,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, stats.Queued);
 
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -106,7 +106,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -149,7 +149,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.InRange(timing.AverageDuration, 0, 75);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -186,7 +186,7 @@ namespace Foundatio.Tests.Queue {
                     }
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -223,7 +223,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(workItemCount, stats.Completed);
                 Assert.Equal(0, stats.Queued);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -243,7 +243,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Null(workItem);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 100);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -279,7 +279,7 @@ namespace Foundatio.Tests.Queue {
                 await workItem.CompleteAsync();
 
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -306,7 +306,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.InRange(sw.Elapsed.TotalSeconds, 0, 2);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -336,7 +336,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, stats.Queued);
                 Assert.Equal(0, stats.Errors);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -371,7 +371,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(1, stats.Deadletter);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -402,7 +402,7 @@ namespace Foundatio.Tests.Queue {
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -438,7 +438,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, stats.Deadletter);
                 Assert.Equal(2, stats.Abandoned);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -469,7 +469,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(1, stats.Completed);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -541,10 +541,10 @@ namespace Foundatio.Tests.Queue {
                     }
                 } finally {
                     foreach (var q in workers)
-                        await CleanupQueue(q);
+                        await CleanupQueueAsync(q);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -577,7 +577,7 @@ namespace Foundatio.Tests.Queue {
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -696,7 +696,7 @@ namespace Foundatio.Tests.Queue {
                 await entry.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -749,7 +749,7 @@ namespace Foundatio.Tests.Queue {
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.AbandonAsync(workItem));
                 await Assert.ThrowsAnyAsync<Exception>(() => queue.CompleteAsync(workItem));
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -787,7 +787,7 @@ namespace Foundatio.Tests.Queue {
                 if (workItem is QueueEntry<SimpleWorkItem> queueEntry)
                     Assert.Equal(1, queueEntry.Attempts);
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -835,7 +835,7 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(1, stats.Completed);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 
@@ -915,10 +915,10 @@ namespace Foundatio.Tests.Queue {
                     }
                 } finally {
                     foreach (var q in workers)
-                        await CleanupQueue(q);
+                        await CleanupQueueAsync(q);
                 }
             } finally {
-                await CleanupQueue(queue);
+                await CleanupQueueAsync(queue);
             }
         }
 

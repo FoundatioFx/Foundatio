@@ -43,7 +43,7 @@ namespace Foundatio.Azure.Tests.Queue {
             });
         }
 
-        protected override Task CleanupQueue(IQueue<SimpleWorkItem> queue) {
+        protected override Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
             // Don't delete the queue, it's super expensive and will be cleaned up later.
             queue?.Dispose();
             return Task.CompletedTask;
