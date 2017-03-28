@@ -47,9 +47,9 @@ namespace Foundatio.Queues {
         protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
-            string customMetricName = GetCustomMetricName(enqueuedEventArgs.Entry.Value);
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "enqueued")).AnyContext();
+            string subMetricName = GetSubMetricName(enqueuedEventArgs.Entry.Value);
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "enqueued")).AnyContext();
 
             await _metricsClient.CounterAsync(GetFullMetricName("enqueued")).AnyContext();
         }
@@ -58,10 +58,10 @@ namespace Foundatio.Queues {
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
-            string customMetricName = GetCustomMetricName(dequeuedEventArgs.Entry.Value);
+            string subMetricName = GetSubMetricName(dequeuedEventArgs.Entry.Value);
 
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "dequeued")).AnyContext();
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "dequeued")).AnyContext();
             await _metricsClient.CounterAsync(GetFullMetricName("dequeued")).AnyContext();
 
             if (metadata == null || metadata.EnqueuedTimeUtc == DateTime.MinValue || metadata.DequeuedTimeUtc == DateTime.MinValue)
@@ -71,8 +71,8 @@ namespace Foundatio.Queues {
             var end = metadata.DequeuedTimeUtc;
             var time = (int)(end - start).TotalMilliseconds;
 
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(customMetricName, "queuetime"), time).AnyContext();
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "queuetime"), time).AnyContext();
             await _metricsClient.TimerAsync(GetFullMetricName("queuetime"), time).AnyContext();
         }
 
@@ -83,14 +83,14 @@ namespace Foundatio.Queues {
             if (metadata == null)
                 return;
 
-            string customMetricName = GetCustomMetricName(completedEventArgs.Entry.Value);
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "completed")).AnyContext();
+            string subMetricName = GetSubMetricName(completedEventArgs.Entry.Value);
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "completed")).AnyContext();
             await _metricsClient.CounterAsync(GetFullMetricName("completed")).AnyContext();
 
             var time = (int)metadata.ProcessingTime.TotalMilliseconds;
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(customMetricName, "processtime"), time).AnyContext();
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time).AnyContext();
             await _metricsClient.TimerAsync(GetFullMetricName("processtime"), time).AnyContext();
         }
 
@@ -101,20 +101,20 @@ namespace Foundatio.Queues {
             if (metadata == null)
                 return;
 
-            string customMetricName = GetCustomMetricName(abandonedEventArgs.Entry.Value);
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(customMetricName, "abandoned")).AnyContext();
+            string subMetricName = GetSubMetricName(abandonedEventArgs.Entry.Value);
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "abandoned")).AnyContext();
             await _metricsClient.CounterAsync(GetFullMetricName("abandoned")).AnyContext();
 
             var time = (int)metadata.ProcessingTime.TotalMilliseconds;
-            if (!String.IsNullOrEmpty(customMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(customMetricName, "processtime"), time).AnyContext();
+            if (!String.IsNullOrEmpty(subMetricName))
+                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time).AnyContext();
             await _metricsClient.TimerAsync(GetFullMetricName("processtime"), time).AnyContext();
         }
 
-        protected string GetCustomMetricName(T data) {
-            var haveStatName = data as IHaveMetricName;
-            return haveStatName?.GetMetricName();
+        protected string GetSubMetricName(T data) {
+            var haveStatName = data as IHaveSubMetricName;
+            return haveStatName?.GetSubMetricName();
         }
 
         protected string GetFullMetricName(string name) {

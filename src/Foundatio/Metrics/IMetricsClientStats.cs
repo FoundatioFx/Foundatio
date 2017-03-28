@@ -21,21 +21,21 @@ namespace Foundatio.Metrics {
             return result.Last;
         }
 
-        public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, string subQueueName = null, DateTime? utcStart = null, DateTime? utcEnd = null, int dataPoints = 20) {
-            if (subQueueName == null)
-                subQueueName = String.Empty;
+        public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, string subMetricName = null, DateTime? utcStart = null, DateTime? utcEnd = null, int dataPoints = 20) {
+            if (subMetricName == null)
+                subMetricName = String.Empty;
             else
-                subQueueName = "." + subQueueName;
+                subMetricName = "." + subMetricName;
 
             var countTask = stats.GetGaugeStatsAsync($"{name}.count", utcStart, utcEnd, dataPoints);
             var workingTask = stats.GetGaugeStatsAsync($"{name}.working", utcStart, utcEnd, dataPoints);
             var deadletterTask = stats.GetGaugeStatsAsync($"{name}.deadletter", utcStart, utcEnd, dataPoints);
-            var enqueuedTask = stats.GetCounterStatsAsync($"{name}{subQueueName}.enqueued", utcStart, utcEnd, dataPoints);
-            var queueTimeTask = stats.GetTimerStatsAsync($"{name}{subQueueName}.queuetime", utcStart, utcEnd, dataPoints);
-            var dequeuedTask = stats.GetCounterStatsAsync($"{name}{subQueueName}.dequeued", utcStart, utcEnd, dataPoints);
-            var completedTask = stats.GetCounterStatsAsync($"{name}{subQueueName}.completed", utcStart, utcEnd, dataPoints);
-            var abandonedTask = stats.GetCounterStatsAsync($"{name}{subQueueName}.abandoned", utcStart, utcEnd, dataPoints);
-            var processTimeTask = stats.GetTimerStatsAsync($"{name}{subQueueName}.processtime", utcStart, utcEnd, dataPoints);
+            var enqueuedTask = stats.GetCounterStatsAsync($"{name}{subMetricName}.enqueued", utcStart, utcEnd, dataPoints);
+            var queueTimeTask = stats.GetTimerStatsAsync($"{name}{subMetricName}.queuetime", utcStart, utcEnd, dataPoints);
+            var dequeuedTask = stats.GetCounterStatsAsync($"{name}{subMetricName}.dequeued", utcStart, utcEnd, dataPoints);
+            var completedTask = stats.GetCounterStatsAsync($"{name}{subMetricName}.completed", utcStart, utcEnd, dataPoints);
+            var abandonedTask = stats.GetCounterStatsAsync($"{name}{subMetricName}.abandoned", utcStart, utcEnd, dataPoints);
+            var processTimeTask = stats.GetTimerStatsAsync($"{name}{subMetricName}.processtime", utcStart, utcEnd, dataPoints);
 
             await Task.WhenAll(countTask, workingTask, deadletterTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask).AnyContext();
 
