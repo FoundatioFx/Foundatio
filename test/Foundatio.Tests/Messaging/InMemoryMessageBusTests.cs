@@ -18,6 +18,10 @@ namespace Foundatio.Tests.Messaging {
             return _messageBus;
         }
 
+        protected override Task CleanupMessageBusAsync(IMessageBus messageBus) {
+            return Task.CompletedTask;
+        }
+
         [Fact]
         public override Task CanSendMessageAsync() {
             return base.CanSendMessageAsync();

@@ -88,8 +88,7 @@ namespace Foundatio.Metrics {
 
                 var startTime = SystemClock.UtcNow;
                 var entries = new List<MetricEntry>();
-                MetricEntry entry;
-                while (_queue.TryDequeue(out entry)) {
+                while (_queue.TryDequeue(out MetricEntry entry)) {
                     entries.Add(entry);
                     if (entry.EnqueuedDate > startTime)
                         break;
@@ -180,7 +179,6 @@ namespace Foundatio.Metrics {
             }
 
             await OnCountedAsync(counters.Sum(c => c.Value)).AnyContext();
-
             _logger.Trace("Done storing aggregated metrics");
         }
 

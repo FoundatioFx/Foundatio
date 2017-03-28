@@ -85,8 +85,8 @@ namespace Foundatio.Tests.Metrics {
                         Assert.Equal(1, queueStats.Enqueued.Count);
                         Assert.Equal(1, queueStats.Dequeued.Count);
                         Assert.Equal(1, queueStats.Completed.Count);
-                        Assert.InRange(queueStats.QueueTime.AverageDuration, 50, 250);
-                        Assert.InRange(queueStats.ProcessTime.AverageDuration, 15, 250);
+                        Assert.InRange(queueStats.QueueTime.AverageDuration, 45, 250);
+                        Assert.InRange(queueStats.ProcessTime.AverageDuration, 10, 250);
                     }
                 }
             }

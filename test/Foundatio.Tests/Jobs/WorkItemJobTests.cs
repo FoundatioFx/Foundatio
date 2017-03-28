@@ -124,10 +124,11 @@ namespace Foundatio.Tests.Jobs {
 
                         try {
                             await Task.WhenAll(tasks);
-                            await SystemClock.SleepAsync(100);
+                        } catch (OperationCanceledException ex) {
+                            _logger.Error(ex, $"One or more tasks were cancelled: {ex.Message}");
                         }
-                        catch (OperationCanceledException) { }
 
+                        await SystemClock.SleepAsync(100);
                         _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
                         Assert.Equal(workItemCount, completedItems.Count + errors);
                         Assert.Equal(3, jobIds.Count);

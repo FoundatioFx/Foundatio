@@ -15,13 +15,15 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : TestWithLoggingBase {
-        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {}
+        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
+        }
 
         protected virtual IMessageBus GetMessageBus() {
             return null;
         }
 
-        protected virtual Task CleanupMessageBus(IMessageBus messageBus) {
+        protected virtual Task CleanupMessageBusAsync(IMessageBus messageBus) {
             messageBus?.Dispose();
             return Task.CompletedTask;
         }
@@ -48,7 +50,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -70,7 +72,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -96,7 +98,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -105,8 +107,6 @@ namespace Foundatio.Tests.Messaging {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
-
-            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
 
             try {
                 var countdown = new AsyncCountdownEvent(numConcurrentMessages);
@@ -135,9 +135,9 @@ namespace Foundatio.Tests.Messaging {
 
                 _logger.Trace($"Processed {numConcurrentMessages - countdown.CurrentCount} in {sw.ElapsedMilliseconds}ms");
                 Assert.Equal(0, countdown.CurrentCount);
-                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(80));
+                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -167,7 +167,7 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -196,7 +196,7 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -220,7 +220,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(2));
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -248,7 +248,7 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -275,7 +275,7 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -298,7 +298,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromMilliseconds(100)));
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -338,7 +338,7 @@ namespace Foundatio.Tests.Messaging {
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(1, messageCount);
             } finally {
-                await CleanupMessageBus(messageBus);
+                await CleanupMessageBusAsync(messageBus);
             }
         }
 
@@ -371,10 +371,10 @@ namespace Foundatio.Tests.Messaging {
                     await countdown2.WaitAsync(TimeSpan.FromSeconds(20));
                     Assert.Equal(0, countdown2.CurrentCount);
                 } finally {
-                    await CleanupMessageBus(messageBus2);
+                    await CleanupMessageBusAsync(messageBus2);
                 }
             } finally {
-                await CleanupMessageBus(messageBus1);
+                await CleanupMessageBusAsync(messageBus1);
             }
         }
 
