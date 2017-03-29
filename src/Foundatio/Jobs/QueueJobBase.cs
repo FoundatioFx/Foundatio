@@ -36,6 +36,10 @@ namespace Foundatio.Jobs {
                 return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
             }
 
+            return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
+        }
+
+        public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = new CancellationToken()) {
             if (queueEntry == null)
                 return JobResult.Success;
 
