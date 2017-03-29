@@ -148,30 +148,29 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _completedCount);
             queueEntry.MarkCompleted();
-
             await OnCompletedAsync(queueEntry).AnyContext();
             _logger.Trace("Complete done: {0}", queueEntry.Id);
         }
 
-        public override async Task AbandonAsync(IQueueEntry<T> queueEntry) {
-            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, queueEntry.Id);
-            if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
+        public override async Task AbandonAsync(IQueueEntry<T> entry) {
+            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            var entry = ToQueueEntry(queueEntry);
+            var sqsQueueEntry = ToQueueEntry(entry);
             // re-queue and wait for processing
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
                 VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
-                ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle,
+                ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
             };
 
             await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
 
             Interlocked.Increment(ref _abandonedCount);
-            queueEntry.MarkAbandoned();
+            entry.MarkAbandoned();
 
-            await OnAbandonedAsync(queueEntry).AnyContext();
+            await OnAbandonedAsync(sqsQueueEntry).AnyContext();
             _logger.Trace("Abandon complete: {entryId}", entry.Id);
         }
 
