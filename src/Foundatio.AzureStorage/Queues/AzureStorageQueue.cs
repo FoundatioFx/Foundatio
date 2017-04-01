@@ -143,7 +143,15 @@ namespace Foundatio.Queues {
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             var azureQueueEntry = ToAzureEntryWithCheck(entry);
-            await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, TimeSpan.Zero, MessageUpdateFields.Visibility).AnyContext();
+            if (azureQueueEntry.Attempts > _options.Retries) {
+                await Task.WhenAll(
+                    _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage), 
+                    _deadletterQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage)
+                ).AnyContext();
+            } else {
+                // Make the item visible immediately
+                await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, TimeSpan.Zero, MessageUpdateFields.Visibility).AnyContext();
+            }
 
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();

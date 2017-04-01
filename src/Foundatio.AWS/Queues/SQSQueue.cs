@@ -165,6 +165,7 @@ namespace Foundatio.Queues {
                 ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
             };
 
+            // TODO: Ensure that we don't need to move this to a deadletter queue
             await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
 
             Interlocked.Increment(ref _abandonedCount);
