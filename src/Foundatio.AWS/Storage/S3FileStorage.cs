@@ -201,8 +201,7 @@ namespace Foundatio.Storage {
 
                     // TODO: Implement paging
                     objects.AddRange(res.S3Objects.MatchesPattern(patternRegex));
-                }
-                while (req != null && objects.Count < limit);
+                } while (req != null && objects.Count < limit.GetValueOrDefault(int.MaxValue));
 
                 if (limit.HasValue)
                     objects = objects.Take(limit.Value).ToList();
