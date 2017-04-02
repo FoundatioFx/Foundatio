@@ -48,7 +48,7 @@ namespace Foundatio.Queues {
                 client.DefaultRequestOptions.RetryPolicy = options.RetryPolicy;
 
             _queueReference = client.GetQueueReference(_options.Name);
-            _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-deadletter");
+            _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-poison");
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
