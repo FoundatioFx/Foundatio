@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -137,6 +138,98 @@ namespace Foundatio.Tests.Messaging {
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
             } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
+        public virtual async Task CanSubscribeConcurrentlyAsync() {
+            const int iterations = 100;
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(iterations * 10);
+                await Run.InParallelAsync(10, i => {
+                    return messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                        Assert.Equal("Hello", msg.Data);
+                        countdown.Signal();
+                    });
+                });
+
+                await Run.InParallelAsync(iterations, i => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+            }
+            finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
+        public virtual async Task CanReceiveMessagesConcurrentlyAsync() {
+            const int iterations = 100;
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            var messageBuses = new List<IMessageBus>(10);
+            try {
+                var countdown = new AsyncCountdownEvent(iterations * 10);
+                await Run.InParallelAsync(10, async i => {
+                    var bus = GetMessageBus();
+                    await bus.SubscribeAsync<SimpleMessageA>(msg => {
+                        Assert.Equal("Hello", msg.Data);
+                        countdown.Signal();
+                    });
+
+                    messageBuses.Add(bus);
+                });
+                var subscribe = Run.InParallelAsync(iterations,
+                    i => {
+                        SystemClock.Sleep(RandomData.GetInt(0, 10));
+                        return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
+                    });
+
+                var publish = Run.InParallelAsync(iterations + 3, i => {
+                    switch (i) {
+                        case 1:
+                            return messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" });
+                        case 2:
+                            return messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" });
+                        case 3:
+                            return messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" });
+                        case 4:
+                            return messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" });
+                        case 5:
+                            return messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" });
+                        case 6:
+                            return messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" });
+                        case 7:
+                            return messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" });
+                        case 8:
+                            return messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" });
+                        case 9:
+                            return messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" });
+                        case 10:
+                            return messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" });
+                        case iterations + 1:
+                            return messageBus.PublishAsync(new { Data = "Hello" });
+                        case iterations + 2:
+                            return messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" });
+                        case iterations + 3:
+                            return messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" });
+                        default:
+                            return messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
+                    }
+                });
+
+                await Task.WhenAll(subscribe, publish);
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                foreach (var mb in messageBuses)
+                    await CleanupMessageBusAsync(mb);
+
                 await CleanupMessageBusAsync(messageBus);
             }
         }

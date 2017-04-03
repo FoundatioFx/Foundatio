@@ -48,7 +48,7 @@ namespace Foundatio.Queues {
                 client.DefaultRequestOptions.RetryPolicy = options.RetryPolicy;
 
             _queueReference = client.GetQueueReference(_options.Name);
-            _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-deadletter");
+            _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-poison");
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
@@ -145,7 +145,7 @@ namespace Foundatio.Queues {
             var azureQueueEntry = ToAzureEntryWithCheck(entry);
             if (azureQueueEntry.Attempts > _options.Retries) {
                 await Task.WhenAll(
-                    _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage),
+                    _queueReference.DeleteMessageAsync(azureQueueEntry.UnderlyingMessage), 
                     _deadletterQueueReference.AddMessageAsync(azureQueueEntry.UnderlyingMessage)
                 ).AnyContext();
             } else {

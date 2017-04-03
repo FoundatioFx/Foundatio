@@ -54,6 +54,16 @@ namespace Foundatio.Azure.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanSubscribeConcurrentlyAsync() {
+            return base.CanSubscribeConcurrentlyAsync();
+        }
+
+        [Fact]
+        public override Task CanReceiveMessagesConcurrentlyAsync() {
+            return base.CanReceiveMessagesConcurrentlyAsync();
+        }
+
+        [Fact]
         public override Task CanSendMessageToMultipleSubscribersAsync() {
             return base.CanSendMessageToMultipleSubscribersAsync();
         }

@@ -351,24 +351,24 @@ namespace Foundatio.Tests.Queue {
 
                 using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
-
                     await queue.StartWorkingAsync(w => {
                         _logger.Debug("WorkAction");
                         Assert.Equal("Hello", w.Value.Data);
                         throw new Exception();
                     });
 
-                    bool success = await metrics.WaitForCounterAsync("simpleworkitem.hello.abandoned", () => queue.EnqueueAsync(new SimpleWorkItem {
-                        Data = "Hello"
-                    }), cancellationToken: TimeSpan.FromSeconds(2).ToCancellationToken());
-                    Assert.True(success);
+                    var resetEvent = new AsyncManualResetEvent(false);
+                    using (queue.Abandoned.AddSyncHandler((o, args) => resetEvent.Set())) {
+                        await queue.EnqueueAsync(new SimpleWorkItem {  Data = "Hello" });
+                        await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
 
-                    await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
-                    var stats = await queue.GetQueueStatsAsync();
-                    _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
-                    Assert.Equal(0, stats.Completed);
-                    Assert.Equal(1, stats.Errors);
-                    Assert.Equal(1, stats.Deadletter);
+                        await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
+                        var stats = await queue.GetQueueStatsAsync();
+                        _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                        Assert.Equal(0, stats.Completed);
+                        Assert.Equal(1, stats.Errors);
+                        Assert.Equal(1, stats.Deadletter);
+                    }
                 }
             } finally {
                 await CleanupQueueAsync(queue);

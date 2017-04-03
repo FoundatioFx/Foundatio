@@ -59,16 +59,6 @@ namespace Foundatio.Jobs {
             }
         }
 
-        public static async Task RunUntilEmptyAsync(this IQueueJob job, CancellationToken cancellationToken = default(CancellationToken)) {
-            var logger = job.GetLogger();
-            await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
-                var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-                logger.Trace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
-
-                return stats.Queued + stats.Working > 0;
-            }).AnyContext();
-        }
-
         internal static void LogResult(JobResult result, ILogger logger, string jobName) {
             if (result != null) {
                 if (result.IsCancelled)
