@@ -12,4 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.0" />
     <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="SourceLink.Create.GitHub" Version="2.1.0" />
+  </ItemGroup>
 </Project>

@@ -10,4 +10,7 @@
   <ItemGroup>
     <PackageReference Include="WindowsAzure.Storage" Version="8.1.1" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="SourceLink.Create.GitHub" Version="2.1.0" />
+  </ItemGroup>
 </Project>

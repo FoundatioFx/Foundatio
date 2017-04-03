@@ -21,7 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="1.1.27" />
-    <PackageReference Include="SimpleInjector" Version="3.3.2" />
+    <PackageReference Include="SimpleInjector" Version="4.0.0" />
     <PackageReference Include="Topshelf" Version="4.0.3" />
   </ItemGroup>
 </Project>
