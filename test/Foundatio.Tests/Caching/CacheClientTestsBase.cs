@@ -258,10 +258,13 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, (await cache.GetAsync<int>(prefix + "test")).Value);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
 
-                await cache.RemoveByPrefixAsync(prefix);
+                Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
+                Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
                 Assert.False((await cache.GetAsync<int>(prefix + "test")).HasValue);
                 Assert.False((await cache.GetAsync<int>(prefix + "test2")).HasValue);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+
+                Assert.Equal(1, await cache.RemoveByPrefixAsync(String.Empty));
             }
         }
 

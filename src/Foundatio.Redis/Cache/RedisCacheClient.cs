@@ -73,7 +73,7 @@ namespace Foundatio.Caching {
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentException("Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             var redisValue = await Database.StringGetAsync(key).AnyContext();
             
@@ -323,7 +323,7 @@ namespace Foundatio.Caching {
         public void Dispose() {
             _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         }
-        
+
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         private const string SET_IF_HIGHER = @"local c = tonumber(redis.call('get', @key))
@@ -378,6 +378,11 @@ else
   return tonumber(v)
 end";
 
-        private const string DEL_BY_WILDCARD = @"return redis.call('del', unpack(redis.call('keys', @keys)))";
+        private const string DEL_BY_WILDCARD = @"local remove = redis.call('keys', @keys)
+if unpack(remove) ~= nil then
+  return redis.call('del', unpack(remove))
+else
+  return 0
+end";
     }
 }
