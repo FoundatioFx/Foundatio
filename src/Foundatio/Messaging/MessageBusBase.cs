@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -176,12 +177,14 @@ namespace Foundatio.Messaging {
             _subscribers?.Clear();
         }
 
+        [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
         protected class DelayedMessage {
             public DateTime SendTime { get; set; }
             public Type MessageType { get; set; }
             public object Message { get; set; }
         }
 
+        [DebuggerDisplay("Id: {Id} Type: {Type} CancellationToken: {CancellationToken}")]
         protected class Subscriber {
             private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new ConcurrentDictionary<Type, bool>();
 

@@ -34,6 +34,16 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanSubscribeConcurrentlyAsync() {
+            return base.CanSubscribeConcurrentlyAsync();
+        }
+
+        [Fact(Skip = "TODO: Ensure this is not broken")]
+        public override Task CanReceiveMessagesConcurrentlyAsync() {
+            return base.CanReceiveMessagesConcurrentlyAsync();
+        }
+
+        [Fact]
         public override Task CanSendMessageToMultipleSubscribersAsync() {
             return base.CanSendMessageToMultipleSubscribersAsync();
         }
