@@ -222,7 +222,6 @@ namespace Foundatio.Caching {
 
         private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
             var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
-
             return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
         }
 
@@ -232,10 +231,9 @@ namespace Foundatio.Caching {
 
             var tasks = new List<Task>();
             foreach (var value in values)
-                tasks.Add(Database.StringSetAsync(value.Key, await _serializer.SerializeAsync(value.Value).AnyContext(), expiresIn));
+                tasks.Add(Database.StringSetAsync(value.Key, await value.ToRedisValueAsync(_serializer).AnyContext(), expiresIn));
 
             await Task.WhenAll(tasks).AnyContext();
-
             return values.Count;
         }
 
