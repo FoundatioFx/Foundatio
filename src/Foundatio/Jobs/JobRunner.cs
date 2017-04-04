@@ -72,14 +72,14 @@ namespace Foundatio.Jobs {
 
         public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_options.InstanceCount == 1) {
-                new Task(() => {
+                new Task(async () => {
                     try {
-                        RunAsync(cancellationToken).GetAwaiter().GetResult();
+                        await RunAsync(cancellationToken).AnyContext();
                     } catch (Exception ex) {
                         _logger.Error(ex, () => $"Error running job in background: {ex.Message}");
                         throw;
                     }
-                }, cancellationToken, TaskCreationOptions.LongRunning).Start();
+                }, cancellationToken, TaskCreationOptions.LongRunning).TryStart();
             } else {
                 var ignored = RunAsync(cancellationToken);
             }
@@ -107,17 +107,17 @@ namespace Foundatio.Jobs {
                 if (_options.RunContinuous && _options.InstanceCount > 1) {
                     var tasks = new List<Task>();
                     for (int i = 0; i < _options.InstanceCount; i++) {
-                        var task = new Task(() => {
+                        var task = new Task(async () => {
                             try {
                                 var jobInstance = _options.JobFactory();
-                                jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).GetAwaiter().GetResult();
+                                await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
                             } catch (Exception ex) {
                                 _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
                                 throw;
                             }
                         }, cancellationToken, TaskCreationOptions.LongRunning);
                         tasks.Add(task);
-                        task.Start();
+                        task.TryStart();
                     }
 
                     await Task.WhenAll(tasks).AnyContext();

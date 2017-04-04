@@ -93,8 +93,7 @@ namespace Foundatio.Tests.Jobs {
                 await jobTask;
                 Assert.Equal(1, job.RunCount);
 
-                var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1))
-                    .RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
+                var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
                 await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
                 await runnerTask;
             }
