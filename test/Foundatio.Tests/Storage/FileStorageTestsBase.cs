@@ -132,6 +132,26 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanRenameFilesAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                Assert.True(await storage.SaveFileAsync("test.txt", "test"));
+                Assert.True(await storage.RenameFileAsync("test.txt", @"archive\new.txt"));
+                Assert.Equal("test", await storage.GetFileContentsAsync(@"archive\new.txt"));
+                Assert.Equal(1, (await storage.GetFileListAsync()).Count());
+
+                Assert.True(await storage.SaveFileAsync("test2.txt", "test2"));
+                Assert.True(await storage.RenameFileAsync("test2.txt", @"archive\new.txt"));
+                Assert.Equal("test2", await storage.GetFileContentsAsync(@"archive\new.txt"));
+                Assert.Equal(1, (await storage.GetFileListAsync()).Count());
+            }
+        }
+
         public virtual async Task CanSaveFilesAsync() {
             await ResetAsync();
 

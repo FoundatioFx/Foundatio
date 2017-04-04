@@ -98,7 +98,14 @@ namespace Foundatio.Storage {
                     if (directory != null && !Directory.Exists(Path.Combine(Folder, directory)))
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
-                    File.Move(Path.Combine(Folder, path), Path.Combine(Folder, newpath));
+                    string oldFullPath = Path.Combine(Folder, path);
+                    string newFullPath = Path.Combine(Folder, newpath);
+                    try {
+                        File.Move(oldFullPath, newFullPath);
+                    } catch (IOException) {
+                        File.Delete(newFullPath);
+                        File.Move(oldFullPath, newFullPath);
+                    }
                 }
             } catch (Exception) {
                 return Task.FromResult(false);

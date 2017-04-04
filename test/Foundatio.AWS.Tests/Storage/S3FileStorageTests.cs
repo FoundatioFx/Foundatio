@@ -57,6 +57,11 @@ namespace Foundatio.AWS.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanRenameFilesAsync() {
+            return base.CanRenameFilesAsync();
+        }
+
+        [Fact]
         public override Task CanConcurrentlyManageFilesAsync() {
             return base.CanConcurrentlyManageFilesAsync();
         }
