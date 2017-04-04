@@ -61,8 +61,8 @@ namespace Foundatio.Queues {
 
                 var sw = Stopwatch.StartNew();
                 await Task.WhenAll(
-                    _queueReference.CreateIfNotExistsAsync(cancellationToken),
-                    _deadletterQueueReference.CreateIfNotExistsAsync(cancellationToken)
+                    _queueReference.CreateIfNotExistsAsync(),
+                    _deadletterQueueReference.CreateIfNotExistsAsync()
                 ).AnyContext();
                 _queueCreated = true;
 
