@@ -131,7 +131,6 @@ namespace Foundatio.Storage {
                 };
 
                 var delRes = await client.DeleteObjectAsync(delReq, cancellationToken).AnyContext();
-
                 return delRes.HttpStatusCode.IsSuccessful();
             }
         }

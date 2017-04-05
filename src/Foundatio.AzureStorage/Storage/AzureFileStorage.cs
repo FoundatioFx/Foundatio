@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Azure.Extensions;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 
@@ -67,16 +68,11 @@ namespace Foundatio.Storage {
             var oldBlob = _container.GetBlockBlobReference(path);
             var newBlob = _container.GetBlockBlobReference(targetpath);
 
-            using (var stream = new MemoryStream()) {
-                await oldBlob.DownloadToStreamAsync(stream, cancellationToken).AnyContext();
-                
-                if (stream.CanSeek)
-                    stream.Seek(0, SeekOrigin.Begin);
+            await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
+            while (newBlob.CopyState.Status == CopyStatus.Pending)
+                await SystemClock.SleepAsync(10, cancellationToken).AnyContext();
 
-                await newBlob.UploadFromStreamAsync(stream, cancellationToken).AnyContext();
-            }
-
-            return true;
+            return newBlob.CopyState.Status == CopyStatus.Success;
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -87,7 +83,7 @@ namespace Foundatio.Storage {
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (limit.HasValue && limit.Value <= 0)
                 return new List<FileSpec>();
-            
+
             searchPattern = searchPattern?.Replace('\\', '/');
             string prefix = searchPattern;
             Regex patternRegex = null;
