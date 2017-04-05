@@ -70,7 +70,7 @@ namespace Foundatio.Storage {
 
             await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
             while (newBlob.CopyState.Status == CopyStatus.Pending)
-                await SystemClock.SleepAsync(10, cancellationToken).AnyContext();
+                await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
 
             return newBlob.CopyState.Status == CopyStatus.Success;
         }
