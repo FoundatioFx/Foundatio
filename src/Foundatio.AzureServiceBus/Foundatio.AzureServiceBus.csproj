@@ -10,7 +10,4 @@
   <ItemGroup>
     <PackageReference Include="WindowsAzure.ServiceBus" Version="4.0.0" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Update="SourceLink.Create.GitHub" Version="2.1.0" />
-  </ItemGroup>
 </Project>

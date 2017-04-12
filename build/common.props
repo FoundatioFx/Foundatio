@@ -8,6 +8,10 @@
 
   <Import Project="sourcelink.props" Condition="'$(ProjectParentDirectoryName)' == 'src'" />
 
+  <ItemGroup>
+    <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
+  </ItemGroup>
+
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>

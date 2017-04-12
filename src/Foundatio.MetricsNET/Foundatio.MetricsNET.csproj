@@ -10,7 +10,4 @@
   <ItemGroup>
     <PackageReference Include="Metrics.NET" Version="0.4.8" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Update="SourceLink.Create.GitHub" Version="2.1.0" />
-  </ItemGroup>
 </Project>
