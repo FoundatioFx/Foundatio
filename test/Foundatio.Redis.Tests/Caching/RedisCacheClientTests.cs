@@ -23,6 +23,11 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetAllWithOverlapAsync() {
+            return base.CanGetAllWithOverlapAsync();
+        }
+
+        [Fact]
         public override Task CanSetAndGetValueAsync() {
             return base.CanSetAndGetValueAsync();
         }
@@ -41,7 +46,7 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanSetAndGetObjectAsync() {
             return base.CanSetAndGetObjectAsync();
         }
-        
+
         [Fact]
         public override Task CanTryGetAsync() {
             return base.CanTryGetAsync();
@@ -56,7 +61,7 @@ namespace Foundatio.Redis.Tests.Caching {
         public override Task CanIncrementAndExpireAsync() {
             return base.CanIncrementAndExpireAsync();
         }
-        
+
         [Fact]
         public override Task CanRemoveByPrefixAsync() {
             return base.CanRemoveByPrefixAsync();

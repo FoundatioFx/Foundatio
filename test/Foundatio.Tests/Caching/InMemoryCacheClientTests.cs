@@ -15,10 +15,20 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetAllAsync() {
+            return base.CanGetAllAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAllWithOverlapAsync() {
+            return base.CanGetAllWithOverlapAsync();
+        }
+
+        [Fact]
         public override Task CanSetAndGetValueAsync() {
             return base.CanSetAndGetValueAsync();
         }
-        
+
         [Fact]
         public override Task CanAddAsync() {
             return base.CanAddAsync();

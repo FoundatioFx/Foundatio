@@ -76,7 +76,6 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             var redisValue = await Database.StringGetAsync(key).AnyContext();
-            
             return await RedisValueToCacheValueAsync<T>(redisValue).AnyContext();
         }
 
@@ -157,12 +156,12 @@ namespace Foundatio.Caching {
                 await this.RemoveAsync(key).AnyContext();
                 return default(long);
             }
-            
+
             var redisValues = new List<RedisValue>();
             foreach (var value in values) {
                 redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
             }
-            
+
             long result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
@@ -230,8 +229,8 @@ namespace Foundatio.Caching {
                 return 0;
 
             var tasks = new List<Task>();
-            foreach (var value in values)
-                tasks.Add(Database.StringSetAsync(value.Key, await value.ToRedisValueAsync(_serializer).AnyContext(), expiresIn));
+            foreach (var pair in values)
+                tasks.Add(Database.StringSetAsync(pair.Key, await pair.Value.ToRedisValueAsync(_serializer).AnyContext(), expiresIn));
 
             await Task.WhenAll(tasks).AnyContext();
             return values.Count;
@@ -261,7 +260,7 @@ namespace Foundatio.Caching {
 
             return await Database.StringIncrementAsync(key, amount).AnyContext();
         }
-        
+
         public Task<bool> ExistsAsync(string key) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentException("Key cannot be null or empty.");
@@ -287,7 +286,7 @@ namespace Foundatio.Caching {
         }
 
         private IDatabase Database => _connectionMultiplexer.GetDatabase();
-        
+
         private async Task LoadScriptsAsync() {
             if (_scriptsLoaded)
                 return;

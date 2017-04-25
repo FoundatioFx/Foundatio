@@ -35,6 +35,9 @@ namespace Foundatio.Tests.Caching {
                 var result = await cache.GetAllAsync<int>(new [] { "test1", "test2", "test3" });
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Count);
+                Assert.Equal(1, result["test1"].Value);
+                Assert.Equal(2, result["test2"].Value);
+                Assert.Equal(3, result["test3"].Value);
 
                 await cache.SetAsync("obj1", new SimpleModel {Data1 = "data 1", Data2 = 1 });
                 await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
@@ -56,6 +59,34 @@ namespace Foundatio.Tests.Caching {
                 var result3 = await cache.GetAllAsync<string>(new[] { "str1", "str2", "str3" });
                 Assert.NotNull(result3);
                 Assert.Equal(3, result3.Count);
+            }
+        }
+
+        public virtual async Task CanGetAllWithOverlapAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                await cache.SetAsync("test1", 1.0);
+                await cache.SetAsync("test2", 2.0);
+                await cache.SetAsync("test3", 3.0);
+                await cache.SetAllAsync(new Dictionary<string, double> {
+                    { "test3", 3.5 },
+                    { "test4", 4.0 },
+                    { "test5", 5.0 }
+                });
+
+                var result = await cache.GetAllAsync<double>(new[] { "test1", "test2", "test3", "test4", "test5" });
+                Assert.NotNull(result);
+                Assert.Equal(5, result.Count);
+                Assert.Equal(1.0, result["test1"].Value);
+                Assert.Equal(2.0, result["test2"].Value);
+                Assert.Equal(3.5, result["test3"].Value);
+                Assert.Equal(4.0, result["test4"].Value);
+                Assert.Equal(5.0, result["test5"].Value);
             }
         }
 
@@ -96,10 +127,10 @@ namespace Foundatio.Tests.Caching {
 
                 Assert.True(await cache.RemoveAsync("test"));
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
-                
+
                 Assert.True(await cache.AddAsync("test", 2));
                 Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
-                
+
                 Assert.True(await cache.ReplaceAsync("test", new MyData { Message = "Testing" }));
                 var result = await cache.GetAsync<MyData>("test");
                 Assert.NotNull(result);
@@ -137,7 +168,7 @@ namespace Foundatio.Tests.Caching {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
-            
+
             using (cache) {
                 await cache.RemoveAllAsync();
 
@@ -227,7 +258,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
                 Assert.False((await scopedCache2.GetAsync<int>("test")).HasValue);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-                
+
                 Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
                 Assert.Equal(10, await scopedCache1.IncrementAsync("total", 10));
                 Assert.Equal(10, await scopedCache1.GetAsync<double>("total", 0));
@@ -237,7 +268,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(20, await nestedScopedCache1.GetAsync<double>("total", 0));
                 Assert.Equal(1, await nestedScopedCache1.RemoveAllAsync(new[] { "id", "total" }));
                 Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
-                
+
                 Assert.Equal(1, await scopedCache1.RemoveAllAsync(new[] { "id", "total" }));
                 Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
             }
@@ -354,7 +385,7 @@ namespace Foundatio.Tests.Caching {
 
                 await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(null));
                 await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(String.Empty));
-                
+
                 await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
                 var result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
@@ -384,7 +415,7 @@ namespace Foundatio.Tests.Caching {
                 result = await cache.GetSetAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
-                
+
                 await Assert.ThrowsAnyAsync<Exception>(async () => {
                     await cache.AddAsync("key1", 1);
                     await cache.SetAddAsync("key1", 1);
@@ -506,7 +537,7 @@ namespace Foundatio.Tests.Caching {
         public ICollection<SimpleModel> Simples { get; set; }
         public bool Data3 { get; set; }
         public IDictionary<string, SimpleModel> DictionarySimples { get; set; }
-        public SampleDictionary<string, SimpleModel> DerivedDictionarySimples { get; set; } 
+        public SampleDictionary<string, SimpleModel> DerivedDictionarySimples { get; set; }
     }
 
     public class MyData {
