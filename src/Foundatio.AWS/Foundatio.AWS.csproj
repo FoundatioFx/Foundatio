@@ -8,9 +8,9 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.2" />
-    <PackageReference Include="AWSSDK.Core" Version="3.3.11" />
-    <PackageReference Include="AWSSDK.S3" Version="3.3.5.11" />
-    <PackageReference Include="AWSSDK.SQS" Version="3.3.1.11" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.2.2" />
+    <PackageReference Include="AWSSDK.Core" Version="3.3.13" />
+    <PackageReference Include="AWSSDK.S3" Version="3.3.5.13" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.3.1.13" />
   </ItemGroup>
 </Project>
