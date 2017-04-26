@@ -397,14 +397,14 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetAddAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetAddAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetAddAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetAddAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetRemoveAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.SetRemoveAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetRemoveAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetRemoveAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(null));
-                await Assert.ThrowsAsync<ArgumentException>(() => cache.GetSetAsync<ICollection<int>>(String.Empty));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetSetAsync<ICollection<int>>(null));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetSetAsync<ICollection<int>>(String.Empty));
 
                 await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
                 var result = await cache.GetSetAsync<int>("test1");
