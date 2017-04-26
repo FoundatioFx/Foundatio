@@ -28,6 +28,11 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanSetAsync() {
+            return base.CanSetAsync();
+        }
+
+        [Fact]
         public override Task CanSetAndGetValueAsync() {
             return base.CanSetAndGetValueAsync();
         }

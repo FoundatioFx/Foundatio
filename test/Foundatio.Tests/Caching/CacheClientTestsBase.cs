@@ -90,6 +90,26 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanSetAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                Assert.Equal(3, await cache.SetAddAsync("set", new List<int> { 1, 1, 2, 3 }));
+                var result = await cache.GetSetAsync<int>("set");
+                Assert.NotNull(result);
+                Assert.Equal(3, result.Value.Count);
+
+                Assert.True(await cache.SetRemoveAsync("set", 1));
+                result = await cache.GetSetAsync<int>("set");
+                Assert.NotNull(result);
+                Assert.Equal(2, result.Value.Count);
+            }
+        }
+
         public virtual async Task CanSetAndGetValueAsync() {
             var cache = GetCacheClient();
             if (cache == null)
