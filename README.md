@@ -25,12 +25,6 @@ When building several big cloud applications we found a lack of great solutions 
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
 
-## Primary Sponsors
-
-[![Exceptionless](https://github.com/exceptionless/MediaKit/blob/master/Exceptionless_350.png)](http://exceptionless.com)
-
-[![Learning Machine](http://www.learningmachine.com/assets/images/LearningMachine.png)](http://learningmachine.com)
-
 ## Getting Started (Development)
 
 [Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/exceptionless/Foundatio/issues/new) or join our [Slack](https://slack.exceptionless.com) chat room. We’re always here to help if you have any questions!
