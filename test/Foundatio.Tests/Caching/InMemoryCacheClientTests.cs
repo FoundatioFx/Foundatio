@@ -40,8 +40,8 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanAddConncurrentlyAsync() {
-            return base.CanAddConncurrentlyAsync();
+        public override Task CanAddConcurrentlyAsync() {
+            return base.CanAddConcurrentlyAsync();
         }
 
         [Fact]
@@ -67,6 +67,11 @@ namespace Foundatio.Tests.Caching {
         [Fact]
         public override Task CanSetExpirationAsync() {
             return base.CanSetExpirationAsync();
+        }
+
+        [Fact]
+        public override Task CanIncrementAsync() {
+            return base.CanIncrementAsync();
         }
 
         [Fact]

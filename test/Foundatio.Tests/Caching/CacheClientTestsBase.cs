@@ -184,7 +184,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanAddConncurrentlyAsync() {
+        public virtual async Task CanAddConcurrentlyAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -365,6 +365,27 @@ namespace Foundatio.Tests.Caching {
                 Assert.Null(await cache.GetExpirationAsync("test"));
                 Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                 Assert.Null(await cache.GetExpirationAsync("test2"));
+            }
+        }
+
+        public virtual async Task CanIncrementAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                Assert.True(await cache.SetAsync("test", 0));
+                Assert.Equal(1, await cache.IncrementAsync("test"));
+                Assert.Equal(1, await cache.IncrementAsync("test1"));
+                Assert.Equal(0, await cache.IncrementAsync("test3", 0));
+
+                // The following is not supported by redis.
+                if (cache is InMemoryCacheClient) {
+                    Assert.True(await cache.SetAsync("test2", "stringValue"));
+                    Assert.Equal(1, await cache.IncrementAsync("test2"));
+                }
             }
         }
 
