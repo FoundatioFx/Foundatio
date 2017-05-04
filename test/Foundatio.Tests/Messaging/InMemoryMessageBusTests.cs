@@ -23,6 +23,17 @@ namespace Foundatio.Tests.Messaging {
         }
 
         [Fact]
+        public async Task CanCheckMessageCounts() {
+            var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            await messageBus.PublishAsync(new SimpleMessageA {
+                Data = "Hello"
+            });
+            Assert.Equal(1, messageBus.MessagesSent);
+            Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
+            Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
+        }
+
+        [Fact]
         public override Task CanSendMessageAsync() {
             return base.CanSendMessageAsync();
         }
