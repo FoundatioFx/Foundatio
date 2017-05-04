@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Jobs {
         }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
-        
+
         public virtual async Task CanRunQueueJobAsync() {
             const int workItemCount = 100;
             using (var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
@@ -48,7 +48,7 @@ namespace Foundatio.Tests.Jobs {
             const int allowedLockCount = 5;
             using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
-            
+
                 var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem {
                         Created = SystemClock.UtcNow,
                         Path = "somepath" + index
