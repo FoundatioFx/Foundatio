@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     [DebuggerDisplay("Time: {Time} Count: {Count}")]

@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -66,7 +65,7 @@ namespace Foundatio.Queues {
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
-            var entry = new QueueEntry<T>(id, data.Copy(), this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(id, data.DeepClone(), this, SystemClock.UtcNow, 0);
             _queue.Enqueue(entry);
             _logger.Trace("Enqueue: Set Event");
 
@@ -151,7 +150,7 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _dequeuedCount);
             _logger.Trace("Dequeue: Got Item");
 
-            var entry = new QueueEntry<T>(info.Id, info.Value.Copy(), this, info.EnqueuedTimeUtc, info.Attempts);
+            var entry = new QueueEntry<T>(info.Id, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
             await OnDequeuedAsync(entry).AnyContext();
             ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
 

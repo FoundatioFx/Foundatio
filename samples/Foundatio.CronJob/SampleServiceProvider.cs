@@ -19,7 +19,7 @@ namespace Foundatio.SampleJob {
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
-            container.RegisterSingleton<ICacheClient>(() => new InMemoryCacheClient());
+            container.RegisterSingleton<ICacheClient>(() => new InMemoryCacheClient(new InMemoryCacheClientOptions()));
             container.RegisterSingleton<ILockProvider>(() => new CacheLockProvider(container.GetInstance<ICacheClient>(), container.GetInstance<IMessageBus>(), loggerFactory));
 
             return container;

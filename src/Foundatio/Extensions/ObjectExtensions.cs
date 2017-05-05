@@ -3,10 +3,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using FastClone.Internal;
-using Foundatio.Utility;
 
-namespace Foundatio.Extensions {
-    internal static class ObjectExtensions {
+namespace Foundatio.Utility {
+    public static class ObjectExtensions {
         public static bool IsPrimitive(this Type type) {
             if (type == TypeHelper.StringType)
                 return true;
@@ -15,7 +14,7 @@ namespace Foundatio.Extensions {
             return typeInfo.IsValueType && typeInfo.IsPrimitive;
         }
 
-        public static object Copy(this object original) {
+        public static object DeepClone(this object original) {
             if (original == null)
                 return null;
 
@@ -35,8 +34,8 @@ namespace Foundatio.Extensions {
 
         private static readonly ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>> _typeCloners = new ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>>();
 
-        public static T Copy<T>(this T original) {
-            return (T)Copy((object)original);
+        public static T DeepClone<T>(this T original) {
+            return (T)DeepClone((object)original);
         }
     }
 }

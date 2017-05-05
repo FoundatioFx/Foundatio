@@ -474,7 +474,7 @@ namespace Foundatio.Tests.Caching {
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
                     await cache.SetAsync("test", 13422);
                     await cache.SetAsync("flag", true);
@@ -498,7 +498,7 @@ namespace Foundatio.Tests.Caching {
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
                     await cache.SetAsync("test", new SimpleModel {
                                              Data1 = "Hello",
@@ -525,7 +525,7 @@ namespace Foundatio.Tests.Caching {
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
                     await cache.SetAsync("test", new ComplexModel {
                         Data1 = "Hello",

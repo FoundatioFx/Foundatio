@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Reflection;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class EnumExtensions {
         /// <summary>
         /// Will try and parse an enum and it's default type.

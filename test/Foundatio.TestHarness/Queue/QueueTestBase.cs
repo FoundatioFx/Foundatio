@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Caching;
-using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Logging;
@@ -123,7 +122,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Initialize queue to create more accurate metrics" });
                 Assert.NotNull(await queue.DequeueAsync(TimeSpan.FromSeconds(1)));
 
-                using (var metrics = new InMemoryMetricsClient()) {
+                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions())) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
                     Task.Run(async () => {
@@ -164,7 +163,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                using (var metrics = new InMemoryMetricsClient()) {
+                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions())) {
                     for (int index = 0; index < iterations; index++)
                         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
@@ -349,7 +348,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
                     await queue.StartWorkingAsync(w => {
                         _logger.Debug("WorkAction");
@@ -584,7 +583,7 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CanRunWorkItemWithMetricsAsync() {
             int completedCount = 0;
 
-            using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+            using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
                 var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
                 var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
                 using (var queue = new InMemoryQueue<WorkItemData>(options)) {
@@ -792,7 +791,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDequeueWithLockingAsync() {
-            using (var cache = new InMemoryCacheClient(Log)) {
+            using (var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanDequeueWithLockingImpAsync(distributedLock);
@@ -809,7 +808,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                using (var metrics = new InMemoryMetricsClient(false, loggerFactory: Log)) {
+                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions{ Buffered = false, LoggerFactory = Log })) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
                     var resetEvent = new AsyncAutoResetEvent();
@@ -840,7 +839,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
-            using (var cache = new InMemoryCacheClient(Log)) {
+            using (var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);

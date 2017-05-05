@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Utility;
 
@@ -507,10 +506,10 @@ namespace Foundatio.Caching {
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
-                    return _shouldClone ? _cacheValue.Copy() : _cacheValue;
+                    return _shouldClone ? _cacheValue.DeepClone() : _cacheValue;
                 }
                 set {
-                    _cacheValue = _shouldClone ? value.Copy() : value;
+                    _cacheValue = _shouldClone ? value.DeepClone() : value;
                     LastAccessTicks = SystemClock.UtcNow.Ticks;
                     LastModifiedTicks = SystemClock.UtcNow.Ticks;
                 }

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class ConcurrentQueueExtensions {
         public static void Clear<T>(this ConcurrentQueue<T> queue) {
             T item;

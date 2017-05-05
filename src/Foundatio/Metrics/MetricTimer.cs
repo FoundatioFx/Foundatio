@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Metrics {

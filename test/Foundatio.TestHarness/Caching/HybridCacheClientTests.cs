@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Nito.AsyncEx;
@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
     public class HybridCacheClientTests: CacheClientTestsBase, IDisposable {
-        private readonly ICacheClient _distributedCache = new InMemoryCacheClient();
+        private readonly ICacheClient _distributedCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
         private readonly IMessageBus _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
 
         public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}

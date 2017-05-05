@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Jobs {
         private readonly ILockProvider _locker;
 
         public WithLockingJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
-            _locker = new CacheLockProvider(new InMemoryCacheClient(loggerFactory), new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = loggerFactory }), loggerFactory);
+            _locker = new CacheLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = loggerFactory } ), new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = loggerFactory }), loggerFactory);
         }
 
         public int RunCount { get; set; }

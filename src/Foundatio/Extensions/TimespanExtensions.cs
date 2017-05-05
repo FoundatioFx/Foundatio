@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class TimespanExtensions {
         public static CancellationToken ToCancellationToken(this TimeSpan timeout) {
             if (timeout == TimeSpan.Zero)

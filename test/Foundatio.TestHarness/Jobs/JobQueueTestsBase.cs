@@ -54,7 +54,7 @@ namespace Foundatio.Tests.Jobs {
                         Path = "somepath" + index
                     }));
 
-                var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(), allowedLockCount, TimeSpan.FromDays(1), Log);
+                var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
                 await SystemClock.SleepAsync(10);
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
@@ -75,7 +75,7 @@ namespace Foundatio.Tests.Jobs {
             Log.SetLogLevel<SampleQueueJob>(LogLevel.Information);
             Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.None);
 
-            using (var metrics = new InMemoryMetricsClient(true, loggerFactory: Log)) {
+            using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log, Buffered = true })) {
                 var queues = new List<IQueue<SampleQueueWorkItem>>();
                 try {
                     for (int i = 0; i < jobCount; i++) {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 
@@ -24,7 +24,7 @@ namespace Foundatio.Caching {
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
             _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).GetAwaiter().GetResult();
-            _localCache = new InMemoryCacheClient(loggerFactory) { MaxItems = 100 };
+            _localCache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }) { MaxItems = 100 };
             _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
         }
 

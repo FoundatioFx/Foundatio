@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Utility;
-using Foundatio.Extensions;
 
 namespace Foundatio.Caching {
     public static class CacheClientExtensions {

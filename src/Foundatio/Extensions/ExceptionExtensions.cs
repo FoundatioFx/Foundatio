@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class ExceptionExtensions {
         public static Exception GetInnermostException(this Exception exception) {
             if (exception == null)

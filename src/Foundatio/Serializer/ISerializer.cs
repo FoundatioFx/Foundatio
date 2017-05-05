@@ -2,7 +2,7 @@
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Serializer {
     public interface ISerializer {

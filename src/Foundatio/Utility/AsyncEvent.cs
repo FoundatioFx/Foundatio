@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 
 namespace Foundatio.Utility {
     public class AsyncEvent<TEventArgs> : IObservable<TEventArgs>, IDisposable where TEventArgs : EventArgs {

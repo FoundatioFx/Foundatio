@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Lock {

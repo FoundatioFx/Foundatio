@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class NumericExtensions {
         public static string ToFileSizeDisplay(this int i) {
             return ToFileSizeDisplay((long)i, 2);

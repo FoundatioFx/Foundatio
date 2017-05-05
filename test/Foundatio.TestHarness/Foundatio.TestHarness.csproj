@@ -4,7 +4,6 @@
     <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.65" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.1.27" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="1.1.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="1.1.1" />

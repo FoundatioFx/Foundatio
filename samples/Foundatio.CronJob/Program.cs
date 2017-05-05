@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.ServiceProviders;

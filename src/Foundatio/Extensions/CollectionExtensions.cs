@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class CollectionExtensions {
         public static ICollection<T> ReduceTimeSeries<T>(this ICollection<T> items, Func<T, DateTime> dateSelector, Func<ICollection<T>, DateTime, T> reducer, int dataPoints) {
             if (items.Count <= dataPoints)

@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Foundatio.Logging;
 
 namespace Foundatio.Lock {

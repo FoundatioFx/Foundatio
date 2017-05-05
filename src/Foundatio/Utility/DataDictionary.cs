@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 

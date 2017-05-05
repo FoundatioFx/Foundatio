@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class DateTimeExtensions {
         public static DateTime Floor(this DateTime date, TimeSpan interval) {
             return date.AddTicks(-(date.Ticks % interval.Ticks));

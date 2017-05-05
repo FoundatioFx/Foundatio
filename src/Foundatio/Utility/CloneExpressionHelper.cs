@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace FastClone.Internal {

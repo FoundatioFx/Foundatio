@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Extensions;
+using Foundatio.Utility;
 using Foundatio.Logging;
 
 namespace Foundatio.Messaging {
@@ -51,7 +51,7 @@ namespace Foundatio.Messaging {
 
             _logger.Trace("Message Publish: {messageType}", messageType.FullName);
 
-            return SendMessageToSubscribersAsync(subscribers, messageType, message.Copy());
+            return SendMessageToSubscribersAsync(subscribers, messageType, message.DeepClone());
         }
     }
 }

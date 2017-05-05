@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 
-namespace Foundatio.Extensions {
+namespace Foundatio.Utility {
     internal static class ConcurrentDictionaryExtensions {
         public static bool TryUpdate<TKey, TValue>(this ConcurrentDictionary<TKey,TValue> concurrentDictionary, TKey key, Func<TKey, TValue, TValue> updateValueFactory) {
             if ((object)key == null)
