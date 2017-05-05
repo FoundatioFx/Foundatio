@@ -9,6 +9,6 @@
     <PackageReference Include="AWSSDK.Core" Version="3.3.13.2" />
     <PackageReference Include="AWSSDK.S3" Version="3.3.5.15" />
     <PackageReference Include="AWSSDK.SQS" Version="3.3.2" />
-    <PackageReference Include="Foundatio" Version="5.1.1438-pre" />
+    <PackageReference Include="Foundatio" Version="5.1.*" />
   </ItemGroup>
 </Project>
