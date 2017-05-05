@@ -10,6 +10,5 @@
   <ItemGroup>
     <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.65" />
     <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.0" />
-    <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
   </ItemGroup>
 </Project>

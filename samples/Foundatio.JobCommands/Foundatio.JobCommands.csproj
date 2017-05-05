@@ -13,7 +13,7 @@
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SimpleInjector" Version="3.3.2" />
+    <PackageReference Include="SimpleInjector" Version="4.0.6" />
   </ItemGroup>
   <ItemGroup>
     <None Update="jobs.json">

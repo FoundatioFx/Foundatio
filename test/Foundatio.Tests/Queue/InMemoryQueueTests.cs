@@ -16,15 +16,31 @@ namespace Foundatio.Tests.Queue {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
-                _queue = new InMemoryQueue<SimpleWorkItem>(retries, retryDelay, workItemTimeout: workItemTimeout, loggerFactory: Log);
+                _queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> {
+                    Retries = retries,
+                    RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
+                    WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
+                    LoggerFactory = Log
+                });
 
             _logger.Debug("Queue Id: {queueId}", _queue.QueueId);
             return _queue;
         }
 
+        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+            } catch (Exception ex) {
+                _logger.Error(ex, "Error cleaning up queue");
+            }
+        }
+
         [Fact]
         public async Task TestAsyncEvents() {
-            using (var q = new InMemoryQueue<SimpleWorkItem>(loggerFactory: Log)) {
+            using (var q = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> { LoggerFactory = Log })) {
                 var disposables = new List<IDisposable>(5);
                 try {
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
@@ -48,7 +64,7 @@ namespace Foundatio.Tests.Queue {
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();
                     _logger.Trace("Time {0}", sw.Elapsed);
-                    
+
                     sw.Restart();
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();

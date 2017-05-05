@@ -12,15 +12,11 @@ using Foundatio.Utility;
 using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
-    public class InMemoryQueue<T> : QueueBase<T> where T : class {
+    public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : class {
         private readonly ConcurrentQueue<QueueEntry<T>> _queue = new ConcurrentQueue<QueueEntry<T>>();
         private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new ConcurrentDictionary<string, QueueEntry<T>>();
         private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new ConcurrentQueue<QueueEntry<T>>();
         private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
-        private readonly TimeSpan _workItemTimeout = TimeSpan.FromMinutes(10);
-        private readonly TimeSpan _retryDelay = TimeSpan.FromMinutes(1);
-        private readonly int[] _retryMultipliers = { 1, 3, 5, 10 };
-        private readonly int _retries;
 
         private int _enqueuedCount;
         private int _dequeuedCount;
@@ -28,19 +24,21 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-        private readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
 
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null) : base(serializer, behaviors, loggerFactory) {
-            _retries = retries;
-            if (retryDelay.HasValue)
-                _retryDelay = retryDelay.Value;
-            if (retryMultipliers != null)
-                _retryMultipliers = retryMultipliers;
-            if (workItemTimeout.HasValue)
-                _workItemTimeout = workItemTimeout.Value;
+        [Obsolete("Use the options overload")]
+        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
+            : this(new InMemoryQueueOptions<T> {
+                Retries = retries,
+                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
+                RetryMultipliers = retryMultipliers ?? new[] { 1, 3, 5, 10 },
+                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
+                Behaviors = behaviors,
+                Serializer = serializer,
+                LoggerFactory = loggerFactory
+            }) { }
 
+        public InMemoryQueue(InMemoryQueueOptions<T> options) : base(options) {
             InitializeMaintenance();
-            _queueDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
@@ -63,7 +61,7 @@ namespace Foundatio.Queues {
 
         protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
-            _logger.Trace("Queue {0} enqueue item: {1}", _queueName, id);
+            _logger.Trace("Queue {0} enqueue item: {1}", _options.Name, id);
 
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
@@ -85,19 +83,18 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            _logger.Trace("Queue {0} start working", _queueName);
-
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
+            _logger.Trace("Queue {0} start working", _options.Name);
+            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {0}", _queueName);
+                _logger.Trace("WorkerLoop Start {0}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {0}", _queueName);
+                    _logger.Trace("WorkerLoop Signaled {0}", _options.Name);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueImplAsync(cancellationToken: cancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
                     } catch (Exception ex) {
                         _logger.Error(ex, "Error on Dequeue: " + ex.Message);
                     }
@@ -118,21 +115,20 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueName, linkedCancellationToken.IsCancellationRequested);
+                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
-        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken) {
-            _logger.Trace("Queue {type} dequeuing item...", _queueName);
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
+            _logger.Trace("Queue {type} dequeuing item...", _options.Name);
             _logger.Trace("Queue count: {0}", _queue.Count);
 
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken).Token;
             while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested) {
                 _logger.Trace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    await _autoResetEvent.WaitAsync(cancellationToken).AnyContext();
+                    await _autoResetEvent.WaitAsync(GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
@@ -143,9 +139,7 @@ namespace Foundatio.Queues {
                 return null;
 
             _logger.Trace("Dequeue: Attempt");
-
-            QueueEntry<T> info;
-            if (!_queue.TryDequeue(out info) || info == null)
+            if (!_queue.TryDequeue(out QueueEntry<T> info) || info == null)
                 return null;
 
             info.Attempts++;
@@ -159,15 +153,15 @@ namespace Foundatio.Queues {
 
             var entry = new QueueEntry<T>(info.Id, info.Value.Copy(), this, info.EnqueuedTimeUtc, info.Attempts);
             await OnDequeuedAsync(entry).AnyContext();
-            ScheduleNextMaintenance(SystemClock.UtcNow.Add(_workItemTimeout));
+            ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
 
             return entry;
         }
 
-        public override Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} renew lock item: {1}", _queueName, entry.Id);
-            var item = entry as QueueEntry<T>;
+        public override async Task RenewLockAsync(IQueueEntry<T> entry) {
+            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
 
+            var item = entry as QueueEntry<T>;
             _dequeued.AddOrUpdate(entry.Id, item, (key, value) => {
                 if (item != null)
                     value.RenewedTimeUtc = item.RenewedTimeUtc;
@@ -175,14 +169,16 @@ namespace Foundatio.Queues {
                 return value;
             });
 
-            return OnLockRenewedAsync(entry);
+            await OnLockRenewedAsync(entry).AnyContext();
+            _logger.Trace("Renew lock done: {0}", entry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} complete item: {1}", _queueName, entry.Id);
+            _logger.Debug("Queue {0} complete item: {1}", _options.Name, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            QueueEntry<T> info;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
@@ -192,14 +188,15 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Trace("Queue {0} abandon item: {1}", _queueName, entry.Id);
+            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            if (entry.IsAbandoned || entry.IsCompleted)
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            QueueEntry<T> info;
-            if (!_dequeued.TryRemove(entry.Id, out info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
-            if (info.Attempts < _retries + 1) {
-                if (_retryDelay > TimeSpan.Zero) {
+            if (info.Attempts < _options.Retries + 1) {
+                if (_options.RetryDelay > TimeSpan.Zero) {
                     _logger.Trace("Adding item to wait list for future retry: {0}", entry.Id);
                     var unawaited = Run.DelayedAsync(GetRetryDelay(info.Attempts), () => RetryAsync(info));
                 } else {
@@ -210,24 +207,24 @@ namespace Foundatio.Queues {
                 _logger.Trace("Exceeded retry limit moving to deadletter: {0}", entry.Id);
                 _deadletterQueue.Enqueue(info);
             }
-            
+
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.Trace("Abandon complete: {0}", entry.Id);
+            _logger.Trace("Abandon complete: {entryId}", entry.Id);
         }
 
         private Task RetryAsync(QueueEntry<T> entry) {
-            _logger.Trace("Queue {0} retrying item: {1} Attempts: {2}", _queueName, entry.Id, entry.Attempts);
+            _logger.Trace("Queue {0} retrying item: {1} Attempts: {2}", _options.Name, entry.Id, entry.Attempts);
             _queue.Enqueue(entry);
             _autoResetEvent.Set();
             return Task.CompletedTask;
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
-            int maxMultiplier = _retryMultipliers.Length > 0 ? _retryMultipliers.Last() : 1;
-            int multiplier = attempts <= _retryMultipliers.Length ? _retryMultipliers[attempts - 1] : maxMultiplier;
-            return TimeSpan.FromMilliseconds((int)(_retryDelay.TotalMilliseconds * multiplier));
+            int maxMultiplier = _options.RetryMultipliers.Length > 0 ? _options.RetryMultipliers.Last() : 1;
+            int multiplier = attempts <= _options.RetryMultipliers.Length ? _options.RetryMultipliers[attempts - 1] : maxMultiplier;
+            return TimeSpan.FromMilliseconds((int)(_options.RetryDelay.TotalMilliseconds * multiplier));
         }
 
         protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
@@ -235,7 +232,7 @@ namespace Foundatio.Queues {
         }
 
         public override Task DeleteQueueAsync() {
-            _logger.Trace("Deleting queue: {type}", _queueName);
+            _logger.Trace("Deleting queue: {type}", _options.Name);
             _queue.Clear();
             _deadletterQueue.Clear();
             _dequeued.Clear();
@@ -247,14 +244,14 @@ namespace Foundatio.Queues {
 
             return Task.CompletedTask;
         }
-        
+
         protected override async Task<DateTime?> DoMaintenanceAsync() {
             DateTime utcNow = SystemClock.UtcNow;
             DateTime minAbandonAt = DateTime.MaxValue;
 
             try {
                 foreach (var entry in _dequeued.Values.ToList()) {
-                    var abandonAt = entry.RenewedTimeUtc.Add(_workItemTimeout);
+                    var abandonAt = entry.RenewedTimeUtc.Add(_options.WorkItemTimeout);
                     if (abandonAt < utcNow) {
                         _logger.Info("DoMaintenance Abandon: {entryId}", entry.Id);
 
@@ -271,7 +268,6 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
             _queue.Clear();
             _deadletterQueue.Clear();

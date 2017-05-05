@@ -13,7 +13,7 @@ namespace Foundatio.Extensions {
             if (type == null || value == null || !type.GetTypeInfo().IsEnum)
                 return false;
 
-            // Return true if the value is an enum and is a matching type. 
+            // Return true if the value is an enum and is a matching type.
             if (type == value.GetType())
                 return true;
 
@@ -39,7 +39,7 @@ namespace Foundatio.Extensions {
             return false;
         }
 
-        private static bool TryEnumIsDefined<T>(Type type, object value) {
+        public static bool TryEnumIsDefined<T>(Type type, object value) {
             // Catch any casting errors that can occur or if 0 is not defined as a default value.
             try {
                 if (value is T && Enum.IsDefined(type, (T)value))

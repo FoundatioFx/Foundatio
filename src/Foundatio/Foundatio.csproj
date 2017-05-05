@@ -5,8 +5,7 @@
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
-    <PackageReference Include="Newtonsoft.Json" Version="9.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="10.0.2" />
     <PackageReference Include="Nito.AsyncEx.Coordination" Version="1.0.2" />
   </ItemGroup>
   <ItemGroup Condition="$(TargetFramework.StartsWith('netstandard'))">
@@ -14,12 +13,5 @@
     <PackageReference Include="System.ComponentModel.TypeConverter" Version="4.3.0" />
     <PackageReference Include="System.Threading.Thread" Version="4.3.0" />
     <PackageReference Include="System.IO.FileSystem.Watcher" Version="4.3.0" />
-  </ItemGroup>
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('netstandard'))">
-    <DefineConstants>$(DefineConstants);NETSTANDARD</DefineConstants>
-  </PropertyGroup>
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
-    <Reference Include="System" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 </Project>

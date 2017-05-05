@@ -9,7 +9,7 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Jobs {
     [Job(Description = "Processes adhoc work item queues entries")]
-    public class WorkItemJob : IQueueJob, IHaveLogger {
+    public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger {
         protected readonly IMessagePublisher _publisher;
         protected readonly WorkItemHandlers _handlers;
         protected readonly IQueue<WorkItemData> _queue;
@@ -23,7 +23,7 @@ namespace Foundatio.Jobs {
         }
 
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
-        IQueue IQueueJob.Queue => _queue;
+        IQueue<WorkItemData> IQueueJob<WorkItemData>.Queue => _queue;
         ILogger IHaveLogger.Logger => _logger;
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
@@ -36,6 +36,10 @@ namespace Foundatio.Jobs {
                 return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
             }
 
+            return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
+        }
+
+        public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken) {
             if (queueEntry == null)
                 return JobResult.Success;
 

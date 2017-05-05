@@ -8,7 +8,7 @@ using Foundatio.Queues;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs {
-    public abstract class QueueJobBase<T> : IQueueJob, IHaveLogger where T : class {
+    public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : class {
         protected readonly ILogger _logger;
         protected readonly Lazy<IQueue<T>> _queue;
         protected readonly string _queueEntryName = typeof(T).Name;
@@ -23,7 +23,7 @@ namespace Foundatio.Jobs {
 
         protected bool AutoComplete { get; set; }
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
-        IQueue IQueueJob.Queue => _queue.Value;
+        IQueue<T> IQueueJob<T>.Queue => _queue.Value;
         ILogger IHaveLogger.Logger => _logger;
 
         public async Task<JobResult> RunAsync(CancellationToken cancellationToken = new CancellationToken()) {
@@ -36,6 +36,10 @@ namespace Foundatio.Jobs {
                 return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
             }
 
+            return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
+        }
+
+        public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken) {
             if (queueEntry == null)
                 return JobResult.Success;
 

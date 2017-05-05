@@ -1,8 +1,8 @@
 <Project ToolsVersion="15.0">
-  <Import Project="common.props" />
-
   <PropertyGroup>
     <IsPackable>False</IsPackable>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(TargetFramework.StartsWith('netcoreapp'))">
@@ -10,8 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
-    <ProjectReference Include="..\..\src\Foundatio.Logging.Xunit\Foundatio.Logging.Xunit.csproj" />
+    <ProjectReference Include="..\..\test\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
 
   <ItemGroup>

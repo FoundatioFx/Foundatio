@@ -14,8 +14,23 @@ namespace Foundatio.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new InMemoryMessageBus(Log);
+            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
             return _messageBus;
+        }
+
+        protected override Task CleanupMessageBusAsync(IMessageBus messageBus) {
+            return Task.CompletedTask;
+        }
+
+        [Fact]
+        public async Task CanCheckMessageCounts() {
+            var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            await messageBus.PublishAsync(new SimpleMessageA {
+                Data = "Hello"
+            });
+            Assert.Equal(1, messageBus.MessagesSent);
+            Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
+            Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
         }
 
         [Fact]
@@ -36,6 +51,16 @@ namespace Foundatio.Tests.Messaging {
         [Fact]
         public override Task CanSendDelayedMessageAsync() {
             return base.CanSendDelayedMessageAsync();
+        }
+
+        [Fact]
+        public override Task CanSubscribeConcurrentlyAsync() {
+            return base.CanSubscribeConcurrentlyAsync();
+        }
+
+        [Fact]
+        public override Task CanReceiveMessagesConcurrentlyAsync() {
+            return base.CanReceiveMessagesConcurrentlyAsync();
         }
 
         [Fact]

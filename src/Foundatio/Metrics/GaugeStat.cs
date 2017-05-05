@@ -17,18 +17,20 @@ namespace Foundatio.Metrics {
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}")]
     public class GaugeStatSummary {
-        public GaugeStatSummary(ICollection<GaugeStat> stats, DateTime start, DateTime end) {
+        public GaugeStatSummary(string name, ICollection<GaugeStat> stats, DateTime start, DateTime end) {
+            Name = name;
             Stats = stats;
-            Count = Stats.Sum(s => s.Count);
-            Total = Stats.Sum(s => s.Total);
-            Last = Stats.Last().Last;
-            Min = Stats.Min(s => s.Min);
-            Max = Stats.Max(s => s.Max);
+            Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
+            Total = stats.Count > 0 ? Stats.Sum(s => s.Total) : 0;
+            Last = Stats.LastOrDefault()?.Last ?? 0;
+            Min = stats.Count > 0 ? Stats.Min(s => s.Min) : 0;
+            Max = stats.Count > 0 ? Stats.Max(s => s.Max) : 0;
             StartTime = start;
             EndTime = end;
             Average = Count > 0 ? Total / Count : 0;
         }
 
+        public string Name { get; }
         public DateTime StartTime { get; }
         public DateTime EndTime { get; }
         public ICollection<GaugeStat> Stats { get; }
@@ -38,5 +40,9 @@ namespace Foundatio.Metrics {
         public double Min { get; set; }
         public double Max { get; }
         public double Average { get; }
+
+        public override string ToString() {
+            return $"Counter: {Name} Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}";
+        }
     }
 }

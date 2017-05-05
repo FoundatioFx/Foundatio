@@ -2,13 +2,13 @@
 using Foundatio.Metrics;
 
 namespace Foundatio.Jobs {
-    public class WorkItemData : IHaveMetricName {
+    public class WorkItemData : IHaveSubMetricName {
         public string WorkItemId { get; set; }
         public string Type { get; set; }
         public string Data { get; set; }
         public bool SendProgressReports { get; set; }
 
-        public string GetMetricName() {
+        public string GetSubMetricName() {
             if (String.IsNullOrEmpty(Type))
                 return null;
 

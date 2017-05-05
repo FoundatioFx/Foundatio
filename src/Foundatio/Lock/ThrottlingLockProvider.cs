@@ -20,14 +20,14 @@ namespace Foundatio.Lock {
 
             if (maxHitsPerPeriod <= 0)
                 throw new ArgumentException("Must be a positive number.", nameof(maxHitsPerPeriod));
-            
+
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
             _logger.Trace("AcquireLockAsync: {name}", name);
-			            
+
             bool allowLock = false;
             byte errors = 0;
 
@@ -41,7 +41,7 @@ namespace Foundatio.Lock {
                     _logger.Trace("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod);
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
-                        
+
                         // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
                             allowLock = true;
@@ -52,7 +52,7 @@ namespace Foundatio.Lock {
                     } else {
                         _logger.Trace("Max hits exceeded for {0}.", name);
                     }
-                    
+
                     if (cancellationToken.IsCancellationRequested) {
                         _logger.Trace("Cancellation Requested.");
                         break;
@@ -91,19 +91,16 @@ namespace Foundatio.Lock {
 
         public async Task<bool> IsLockedAsync(string name) {
             string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
-            var hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
-
+            long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
             return hitCount >= _maxHitsPerPeriod;
         }
 
         public Task ReleaseAsync(string name) {
             _logger.Trace("ReleaseAsync: {0}", name);
-
             return Task.CompletedTask;
         }
         public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
             _logger.Trace("RenewAsync: {0}", name);
-
             return Task.CompletedTask;
         }
 

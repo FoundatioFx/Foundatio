@@ -16,7 +16,7 @@ namespace Foundatio.Metrics {
         public CounterStatSummary(string name, ICollection<CounterStat> stats, DateTime start, DateTime end) {
             Name = name;
             Stats.AddRange(stats);
-            Count = Stats.Sum(s => s.Count);
+            Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
             StartTime = start;
             EndTime = end;
         }

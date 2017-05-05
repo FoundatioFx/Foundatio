@@ -41,8 +41,7 @@ namespace Foundatio.Logging.Xunit {
         public bool ShouldWriteToTestOutput { get; set; } = true;
 
         public bool IsEnabled(string category, LogLevel logLevel) {
-            LogLevel categoryLevel;
-            if (_logLevels.TryGetValue(category, out categoryLevel))
+            if (_logLevels.TryGetValue(category, out LogLevel categoryLevel))
                 return logLevel >= categoryLevel;
 
             return logLevel >= MinimumLevel;

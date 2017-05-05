@@ -42,6 +42,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanRenameFilesAsync() {
+            return base.CanRenameFilesAsync();
+        }
+
+        [Fact]
         public override Task CanConcurrentlyManageFilesAsync() {
             return base.CanConcurrentlyManageFilesAsync();
         }

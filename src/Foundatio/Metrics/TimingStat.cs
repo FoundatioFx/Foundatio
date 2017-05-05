@@ -16,17 +16,19 @@ namespace Foundatio.Metrics {
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
     public class TimingStatSummary {
-        public TimingStatSummary(ICollection<TimingStat> stats, DateTime start, DateTime end) {
+        public TimingStatSummary(string name, ICollection<TimingStat> stats, DateTime start, DateTime end) {
+            Name = name;
             Stats = stats;
-            Count = Stats.Sum(s => s.Count);
-            MinDuration = Stats.Min(s => s.MinDuration);
-            MaxDuration = Stats.Max(s => s.MaxDuration);
-            TotalDuration = Stats.Sum(s => s.TotalDuration);
+            Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
+            MinDuration = stats.Count > 0 ? Stats.Min(s => s.MinDuration) : 0;
+            MaxDuration = stats.Count > 0 ? Stats.Max(s => s.MaxDuration) : 0;
+            TotalDuration = stats.Count > 0 ? Stats.Sum(s => s.TotalDuration) : 0;
             AverageDuration = Count > 0 ? (double)TotalDuration / Count : 0;
             StartTime = start;
             EndTime = end;
         }
 
+        public string Name { get; }
         public DateTime StartTime { get; }
         public DateTime EndTime { get; }
         public ICollection<TimingStat> Stats { get; }
@@ -35,5 +37,9 @@ namespace Foundatio.Metrics {
         public int MaxDuration { get; }
         public long TotalDuration { get; }
         public double AverageDuration { get; }
+
+        public override string ToString() {
+            return $"Timing: {Name} Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}";
+        }
     }
 }

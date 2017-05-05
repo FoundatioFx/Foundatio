@@ -21,7 +21,7 @@ namespace Foundatio.Jobs {
 
         public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
-            var jobName = job.GetType().Name;
+            string jobName = job.GetType().Name;
             var logger = job.GetLogger();
 
             using (logger.BeginScope(s => s.Property("job", jobName))) {
@@ -38,12 +38,12 @@ namespace Foundatio.Jobs {
                         else if (interval.HasValue)
                             await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                            SystemClock.Sleep(1);
+                            await SystemClock.SleepAsync(1, cancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
-                    
+
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;
-                    
+
                     try {
                         if (!await continuationCallback().AnyContext())
                             break;
@@ -51,22 +51,12 @@ namespace Foundatio.Jobs {
                         logger.Error(ex, "Error in continuation callback: {0}", ex.Message);
                     }
                 }
-                
+
                 if (cancellationToken.IsCancellationRequested)
                     logger.Trace("Job cancellation requested.");
 
                 logger.Info("Stopping continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
             }
-        }
-
-        public static async Task RunUntilEmptyAsync(this IQueueJob job, CancellationToken cancellationToken = default(CancellationToken)) {
-            var logger = job.GetLogger();
-            await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
-                var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-                logger.Trace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
-
-                return stats.Queued + stats.Working > 0;
-            }).AnyContext();
         }
 
         internal static void LogResult(JobResult result, ILogger logger, string jobName) {

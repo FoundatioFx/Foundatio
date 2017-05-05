@@ -5,22 +5,37 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Logging;
-using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
+    public class StatsDMetricsClientOptions : MetricsClientOptionsBase {
+        public string ServerName { get; set; }
+        public int Port { get; set; }
+    }
+
     public class StatsDMetricsClient : IMetricsClient {
         private readonly object _lock = new object();
         private Socket _socket;
         private readonly IPEndPoint _endPoint;
-        private readonly string _prefix;
+        private readonly StatsDMetricsClientOptions _options;
         private readonly ILogger _logger;
 
-        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<StatsDMetricsClient>();
-            _endPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
+        [Obsolete("Use the options overload")]
+        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null, ILoggerFactory loggerFactory = null)
+            : this(new StatsDMetricsClientOptions {
+                ServerName = serverName,
+                Port = port,
+                Buffered = false,
+                Prefix = prefix,
+                LoggerFactory = loggerFactory
+            }) { }
 
-            if (!String.IsNullOrEmpty(prefix))
-                _prefix = prefix.EndsWith(".") ? prefix : String.Concat(prefix, ".");
+        public StatsDMetricsClient(StatsDMetricsClientOptions options) {
+            _options = options;
+            _logger = options.LoggerFactory.CreateLogger<StatsDMetricsClient>();
+            _endPoint = new IPEndPoint(IPAddress.Parse(options.ServerName), options.Port);
+
+            if (!String.IsNullOrEmpty(options.Prefix))
+                options.Prefix = options.Prefix.EndsWith(".") ? options.Prefix : String.Concat(options.Prefix, ".");
         }
 
         public Task CounterAsync(string name, int value = 1) {
@@ -39,7 +54,7 @@ namespace Foundatio.Metrics {
         }
 
         private string BuildMetric(string type, string statName, string value) {
-            return String.Concat(_prefix, statName, ":", value, "|", type);
+            return String.Concat(_options.Prefix, statName, ":", value, "|", type);
         }
 
         private void Send(string metric) {

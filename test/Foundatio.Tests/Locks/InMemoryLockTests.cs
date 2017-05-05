@@ -1,13 +1,10 @@
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Nito.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Locks {
@@ -17,7 +14,7 @@ namespace Foundatio.Tests.Locks {
 
         public InMemoryLockTests(ITestOutputHelper output) : base(output) {
             _cache = new InMemoryCacheClient(Log);
-            _messageBus = new InMemoryMessageBus(Log);
+            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {

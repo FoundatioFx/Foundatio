@@ -33,6 +33,10 @@ namespace Foundatio.Utility {
 
             int attempts = 1;
             var startTime = SystemClock.UtcNow;
+            int currentBackoffTime = _defaultBackoffIntervals[0];
+            if (retryInterval != null)
+                currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
+
             do {
                 if (attempts > 1)
                     logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
@@ -44,13 +48,17 @@ namespace Foundatio.Utility {
                         throw;
 
                     logger?.Error(ex, $"Retry error: {ex.Message}");
-                    await SystemClock.SleepAsync(retryInterval ?? TimeSpan.FromMilliseconds(attempts * 100), cancellationToken).AnyContext();
+                    await SystemClock.SleepAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 
+                if (retryInterval == null)
+                    currentBackoffTime = _defaultBackoffIntervals[Math.Min(attempts, _defaultBackoffIntervals.Length - 1)];
                 attempts++;
             } while (attempts <= maxAttempts && !cancellationToken.IsCancellationRequested);
 
             throw new TaskCanceledException("Should not get here.");
         }
+
+        private static int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
     }
 }
