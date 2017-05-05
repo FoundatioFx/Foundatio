@@ -4,7 +4,11 @@ using Foundatio.Logging;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : CacheBucketMetricsClientBase {
-        public InMemoryMetricsClient(bool buffered = true, string prefix = null, ILoggerFactory loggerFactory = null) : base(new InMemoryCacheClient(loggerFactory), buffered, prefix, loggerFactory) { }
+        [Obsolete("Use the options overload")]
+        public InMemoryMetricsClient(bool buffered = true, string prefix = null, ILoggerFactory loggerFactory = null)
+            : this(new InMemoryMetricsClientOptions { Buffered = buffered, Prefix = prefix, LoggerFactory = loggerFactory }) { }
+
+        public InMemoryMetricsClient(InMemoryMetricsClientOptions options) : base(new InMemoryCacheClient(options.LoggerFactory),  options) { }
 
         public override void Dispose() {
             base.Dispose();

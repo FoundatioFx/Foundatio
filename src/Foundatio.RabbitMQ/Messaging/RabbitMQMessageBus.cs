@@ -12,7 +12,7 @@ using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
 
 namespace Foundatio.Messaging {
-    public class RabbitMQMessageBusOptions : MesssageBusOptions {
+    public class RabbitMQMessageBusOptions : MessageBusOptionsBase {
         /// <summary>
         /// The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.
         /// </summary>

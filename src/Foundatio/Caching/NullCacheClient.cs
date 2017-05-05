@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace Foundatio.Caching {
     public class NullCacheClient : ICacheClient {
         public static readonly NullCacheClient Instance = new NullCacheClient();
-        
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             return Task.FromResult(0);
         }
@@ -19,7 +19,7 @@ namespace Foundatio.Caching {
             return Task.FromResult(CacheValue<T>.NoValue);
         }
 
-        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) { 
+        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             return Task.FromResult<IDictionary<string, CacheValue<T>>>(keys.ToDictionary(k => k, k => CacheValue<T>.NoValue));
         }
 

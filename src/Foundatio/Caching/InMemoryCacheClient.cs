@@ -16,7 +16,10 @@ namespace Foundatio.Caching {
         private long _hits;
         private long _misses;
 
-        public InMemoryCacheClient(ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+        [Obsolete("Use the options overload")]
+        public InMemoryCacheClient(ILoggerFactory loggerFactory = null) : this (new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }) {}
+
+        public InMemoryCacheClient(InMemoryCacheClientOptions options) : base(options.LoggerFactory) {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             InitializeMaintenance();

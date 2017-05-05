@@ -2,7 +2,7 @@
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
-    public class RedisMessageBusOptions : MesssageBusOptions {
+    public class RedisMessageBusOptions : MessageBusOptionsBase {
         public ISubscriber Subscriber { get; set; }
     }
 }

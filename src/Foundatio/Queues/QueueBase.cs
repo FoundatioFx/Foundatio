@@ -9,7 +9,7 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : QueueOptions<T> {
+    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : QueueOptionsBase<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();

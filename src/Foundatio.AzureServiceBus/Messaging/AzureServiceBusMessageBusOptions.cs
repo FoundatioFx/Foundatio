@@ -3,7 +3,7 @@ using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Messaging {
-    public class AzureServiceBusMessageBusOptions : MesssageBusOptions {
+    public class AzureServiceBusMessageBusOptions : MessageBusOptionsBase {
         public string ConnectionString { get; set; }
 
         /// <summary>
