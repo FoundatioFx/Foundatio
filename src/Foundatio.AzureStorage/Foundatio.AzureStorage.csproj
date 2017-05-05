@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\common.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net46</TargetFrameworks>
+    <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure;NETSTANDARD;Core</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Foundatio" Version="5.1.1438-pre" />
+    <PackageReference Include="WindowsAzure.Storage" Version="8.1.1" />
+  </ItemGroup>
+</Project>
