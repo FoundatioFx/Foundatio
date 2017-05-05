@@ -1,6 +1,6 @@
 # Foundatio
-[![Build status](https://ci.appveyor.com/api/projects/status/pcapwourmae3c0qg?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-aws)
-[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AWS.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AWS/)
+[![Build status](https://ci.appveyor.com/api/projects/status/a6p22hi7oi9i5b8c?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-rabbitmq)
+[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.RabbitMQ.svg?style=flat)](https://www.nuget.org/packages/Foundatio.RabbitMQ/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
