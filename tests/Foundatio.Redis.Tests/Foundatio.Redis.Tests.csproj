@@ -7,7 +7,7 @@
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="5.1.1438-pre" />
+    <PackageReference Include="Foundatio.TestHarness" Version="5.1.*" />
 
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0" />
     <PackageReference Include="xunit" Version="2.2.0" />
