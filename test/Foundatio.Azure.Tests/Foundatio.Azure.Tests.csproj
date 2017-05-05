@@ -6,7 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AzureServiceBus\Foundatio.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
-    <ProjectReference Include="..\Foundatio.Tests\Foundatio.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="RimDev.Automation.StorageEmulator" Version="0.1.0" />

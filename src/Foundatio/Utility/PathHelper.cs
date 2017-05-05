@@ -3,7 +3,7 @@ using System.IO;
 using System.Reflection;
 
 namespace Foundatio.Utility {
-    internal static class PathHelper {
+    public static class PathHelper {
         private const string DATA_DIRECTORY = "|DataDirectory|";
 
         public static string ExpandPath(string path) {

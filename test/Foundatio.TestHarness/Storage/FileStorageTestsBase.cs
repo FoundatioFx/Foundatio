@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Extensions;
+using Exceptionless.DateTimeExtensions;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;

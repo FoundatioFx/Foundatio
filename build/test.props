@@ -10,8 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
-    <ProjectReference Include="..\..\src\Foundatio.Logging.Xunit\Foundatio.Logging.Xunit.csproj" />
+    <ProjectReference Include="..\..\test\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
 
   <ItemGroup>
