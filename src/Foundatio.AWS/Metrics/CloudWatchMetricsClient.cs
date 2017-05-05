@@ -13,23 +13,29 @@ using Foundatio.Utility;
 namespace Foundatio.Metrics {
     public class CloudWatchMetricsClient : BufferedMetricsClientBase, IMetricsClientStats {
         private readonly Lazy<AmazonCloudWatchClient> _client;
-        private readonly string _namespace;
-        private readonly List<Dimension> _dimensions = new List<Dimension>();
-        private readonly string _metricPrefix;
+        private readonly CloudWatchMetricsClientOptions _options;
 
-        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, IEnumerable<Dimension> dimensions = null, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
+        [Obsolete("Use the options overload")]
+        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, IEnumerable<Dimension> dimensions = null, ILoggerFactory loggerFactory = null)
+            : this(new CloudWatchMetricsClientOptions {
+                Credentials = credentials,
+                RegionEndpoint = region,
+                Namespace = @namespace,
+                Dimensions = dimensions?.ToList() ?? new List<Dimension>(),
+                Buffered = buffered,
+                Prefix = metricPrefix,
+                LoggerFactory = loggerFactory
+            }) {}
+
+        public CloudWatchMetricsClient(CloudWatchMetricsClientOptions options) : base(options) {
+            _options = options;
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
-                credentials ?? FallbackCredentialsFactory.GetCredentials(),
+                options.Credentials ?? FallbackCredentialsFactory.GetCredentials(),
                 new AmazonCloudWatchConfig {
                     LogResponse = false,
                     DisableLogging = true,
-                    RegionEndpoint = region ?? RegionEndpoint.USEast1
+                    RegionEndpoint = options.RegionEndpoint
                 }));
-
-            _metricPrefix = metricPrefix ?? String.Empty;
-            _namespace = @namespace ?? "app/metrics";
-            if (dimensions != null)
-                _dimensions.AddRange(dimensions);
         }
 
         protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
@@ -49,7 +55,7 @@ namespace Foundatio.Metrics {
                 _logger.Trace(() => $"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
                 // do retries
                 var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
-                    Namespace = _namespace,
+                    Namespace = _options.Namespace,
                     MetricData = metricsPage
                 }).AnyContext();
 
@@ -69,7 +75,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = _dimensions,
+                    Dimensions = _options.Dimensions,
                     Timestamp = counter.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
                     Value = counter.Value
@@ -91,7 +97,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = _dimensions,
+                    Dimensions = _options.Dimensions,
                     Timestamp = gauge.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
                     StatisticValues = new StatisticSet {
@@ -119,7 +125,7 @@ namespace Foundatio.Metrics {
                 };
 
                 yield return new MetricDatum {
-                    Dimensions = _dimensions,
+                    Dimensions = _options.Dimensions,
                     Timestamp = timing.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
                     StatisticValues = new StatisticSet {
@@ -134,7 +140,7 @@ namespace Foundatio.Metrics {
         }
 
         private string GetMetricName(MetricType metricType, string name) {
-            return String.Concat(_metricPrefix, name);
+            return String.Concat(_options.Prefix, name);
         }
 
         private int GetStatsPeriod(DateTime start, DateTime end) {
@@ -156,7 +162,7 @@ namespace Foundatio.Metrics {
                 end = SystemClock.UtcNow;
 
             var request = new GetMetricStatisticsRequest {
-                Namespace = _namespace,
+                Namespace = _options.Namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
@@ -186,7 +192,7 @@ namespace Foundatio.Metrics {
                 end = SystemClock.UtcNow;
 
             var request = new GetMetricStatisticsRequest {
-                Namespace = _namespace,
+                Namespace = _options.Namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,
@@ -220,7 +226,7 @@ namespace Foundatio.Metrics {
                 end = SystemClock.UtcNow;
 
             var request = new GetMetricStatisticsRequest {
-                Namespace = _namespace,
+                Namespace = _options.Namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
                 StartTime = start.Value,

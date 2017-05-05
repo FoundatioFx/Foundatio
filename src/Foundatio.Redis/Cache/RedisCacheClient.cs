@@ -11,8 +11,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.Caching {
     public sealed class RedisCacheClient : ICacheClient, IHaveSerializer {
-        private readonly ConnectionMultiplexer _connectionMultiplexer;
-        private readonly ISerializer _serializer;
+        private readonly RedisCacheClientOptions _options;
         private readonly ILogger _logger;
 
         private readonly AsyncLock _lock = new AsyncLock();
@@ -22,21 +21,30 @@ namespace Foundatio.Caching {
         private LoadedLuaScript _incrByAndExpireScript;
         private LoadedLuaScript _delByWildcardScript;
 
-        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<RedisCacheClient>();
-            _connectionMultiplexer = connectionMultiplexer;
-            _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
-            _serializer = serializer ?? new JsonNetSerializer();
+        [Obsolete("Use the options overload")]
+        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null)
+            : this(new RedisCacheClientOptions {
+                ConnectionMultiplexer = connectionMultiplexer,
+                Serializer = serializer,
+                LoggerFactory = loggerFactory
+            }) {
+        }
+
+        public RedisCacheClient(RedisCacheClientOptions options) {
+            options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+            options.Serializer = options.Serializer ?? new JsonNetSerializer();
+            _options = options;
+            _logger = options.LoggerFactory.CreateLogger<RedisCacheClient>();
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null) {
-                var endpoints = _connectionMultiplexer.GetEndPoints(true);
+                var endpoints = _options.ConnectionMultiplexer.GetEndPoints(true);
                 if (endpoints.Length == 0)
                     return 0;
 
                 foreach (var endpoint in endpoints) {
-                    var server = _connectionMultiplexer.GetServer(endpoint);
+                    var server = _options.ConnectionMultiplexer.GetServer(endpoint);
 
                     try {
                         await server.FlushDatabaseAsync(Database.Database).AnyContext();
@@ -88,7 +96,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 try {
-                    var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
+                    var value = await redisValue.ToValueOfTypeAsync<T>(_options.Serializer).AnyContext();
 
                     result.Add(value);
                 } catch (Exception ex) {
@@ -104,7 +112,7 @@ namespace Foundatio.Caching {
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
             try {
-                var value = await redisValue.ToValueOfTypeAsync<T>(_serializer).AnyContext();
+                var value = await redisValue.ToValueOfTypeAsync<T>(_options.Serializer).AnyContext();
 
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
@@ -162,7 +170,7 @@ namespace Foundatio.Caching {
 
             var redisValues = new List<RedisValue>();
             foreach (var value in values.Distinct())
-                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+                redisValues.Add(await value.ToRedisValueAsync(_options.Serializer).AnyContext());
 
             long result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
@@ -187,7 +195,7 @@ namespace Foundatio.Caching {
 
             var redisValues = new List<RedisValue>();
             foreach (var value in values.Distinct())
-                redisValues.Add(await value.ToRedisValueAsync(_serializer).AnyContext());
+                redisValues.Add(await value.ToRedisValueAsync(_options.Serializer).AnyContext());
 
             long result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
@@ -224,7 +232,7 @@ namespace Foundatio.Caching {
         }
 
         private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
-            var redisValue = await value.ToRedisValueAsync(_serializer).AnyContext();
+            var redisValue = await value.ToRedisValueAsync(_options.Serializer).AnyContext();
             return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
         }
 
@@ -234,7 +242,7 @@ namespace Foundatio.Caching {
 
             var tasks = new List<Task>();
             foreach (var pair in values)
-                tasks.Add(Database.StringSetAsync(pair.Key, await pair.Value.ToRedisValueAsync(_serializer).AnyContext(), expiresIn));
+                tasks.Add(Database.StringSetAsync(pair.Key, await pair.Value.ToRedisValueAsync(_options.Serializer).AnyContext(), expiresIn));
 
             await Task.WhenAll(tasks).AnyContext();
             return values.Count;
@@ -289,7 +297,7 @@ namespace Foundatio.Caching {
             return Database.KeyExpireAsync(key, expiresIn);
         }
 
-        private IDatabase Database => _connectionMultiplexer.GetDatabase();
+        private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
         private async Task LoadScriptsAsync() {
             if (_scriptsLoaded)
@@ -304,8 +312,8 @@ namespace Foundatio.Caching {
                 var incrByAndExpire = LuaScript.Prepare(INCRBY_AND_EXPIRE);
                 var delByWildcard = LuaScript.Prepare(DEL_BY_WILDCARD);
 
-                foreach (var endpoint in _connectionMultiplexer.GetEndPoints()) {
-                    var server = _connectionMultiplexer.GetServer(endpoint);
+                foreach (var endpoint in _options.ConnectionMultiplexer.GetEndPoints()) {
+                    var server = _options.ConnectionMultiplexer.GetServer(endpoint);
                     _setIfHigherScript = await setIfHigher.LoadAsync(server).AnyContext();
                     _setIfLowerScript = await setIfLower.LoadAsync(server).AnyContext();
                     _incrByAndExpireScript = await incrByAndExpire.LoadAsync(server).AnyContext();
@@ -322,10 +330,10 @@ namespace Foundatio.Caching {
         }
 
         public void Dispose() {
-            _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+            _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         }
 
-        ISerializer IHaveSerializer.Serializer => _serializer;
+        ISerializer IHaveSerializer.Serializer => _options.Serializer;
 
         private const string SET_IF_HIGHER = @"local c = tonumber(redis.call('get', @key))
 if c then

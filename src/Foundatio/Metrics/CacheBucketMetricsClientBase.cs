@@ -9,12 +9,12 @@ using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public abstract class CacheBucketMetricsClientBase : BufferedMetricsClientBase, IMetricsClientStats {
-        private readonly string _prefix;
         protected readonly ICacheClient _cache;
+        private readonly string _prefix;
 
-        public CacheBucketMetricsClientBase(ICacheClient cache, bool buffered = true, string prefix = null, ILoggerFactory loggerFactory = null) : base(buffered, loggerFactory) {
+        public CacheBucketMetricsClientBase(ICacheClient cache, MetricsClientOptionsBase options) : base(options) {
             _cache = cache;
-            _prefix = !String.IsNullOrEmpty(prefix) ? (!prefix.EndsWith(":") ? prefix + ":" : prefix) : String.Empty;
+            _prefix = !String.IsNullOrEmpty(options.Prefix) ? (!options.Prefix.EndsWith(":") ? options.Prefix + ":" : options.Prefix) : String.Empty;
 
             _timeBuckets.Clear();
             _timeBuckets.Add(new TimeBucket { Size = TimeSpan.FromMinutes(5), Ttl = TimeSpan.FromHours(1) });
@@ -118,7 +118,7 @@ namespace Foundatio.Metrics {
                 end = SystemClock.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 180 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
-            
+
             var countBuckets = GetMetricBuckets(CacheMetricNames.Gauge, name, start.Value, end.Value, interval, CacheMetricNames.Count);
             var totalBuckets = GetMetricBuckets(CacheMetricNames.Gauge, name, start.Value, end.Value, interval, CacheMetricNames.Total);
             var lastBuckets = GetMetricBuckets(CacheMetricNames.Gauge, name, start.Value, end.Value, interval, CacheMetricNames.Last);

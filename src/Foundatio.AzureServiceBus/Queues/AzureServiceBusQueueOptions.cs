@@ -3,7 +3,7 @@ using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Queues {
-    public class AzureServiceBusQueueOptions<T> : QueueOptions<T> where T : class {
+    public class AzureServiceBusQueueOptions<T> : QueueOptionsBase<T> where T : class {
         public string ConnectionString { get; set; }
 
         /// <summary>

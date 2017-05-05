@@ -33,7 +33,7 @@ namespace Foundatio.Queues {
 
         [Obsolete("Use the options overload")]
         public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
-            : this(new RedisQueueOptions<T>() {
+            : this(new RedisQueueOptions<T> {
                 ConnectionMultiplexer = connection,
                 Name = queueName,
                 Retries = retries,

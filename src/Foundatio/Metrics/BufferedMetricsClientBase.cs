@@ -17,16 +17,14 @@ namespace Foundatio.Metrics {
         };
 
         private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>();
-        private readonly TimeSpan _groupSize = TimeSpan.FromMinutes(1);
         private readonly Timer _flushTimer;
-        private readonly bool _buffered;
+        private readonly MetricsClientOptionsBase _options;
         protected readonly ILogger _logger;
 
-        public BufferedMetricsClientBase(bool buffered = true, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger(GetType());
-            _buffered = buffered;
-
-            if (buffered)
+        public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
+            _options = options;
+            _logger = options.LoggerFactory.CreateLogger(GetType());
+            if (options.Buffered)
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
 
@@ -43,7 +41,7 @@ namespace Foundatio.Metrics {
 
         public Task CounterAsync(string name, int value = 1) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
-            if (!_buffered)
+            if (!_options.Buffered)
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
@@ -52,7 +50,7 @@ namespace Foundatio.Metrics {
 
         public Task GaugeAsync(string name, double value) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
-            if (!_buffered)
+            if (!_options.Buffered)
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);
@@ -61,7 +59,7 @@ namespace Foundatio.Metrics {
 
         public Task TimerAsync(string name, int milliseconds) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
-            if (!_buffered)
+            if (!_options.Buffered)
                 return SubmitMetricAsync(entry);
 
             _queue.Enqueue(entry);

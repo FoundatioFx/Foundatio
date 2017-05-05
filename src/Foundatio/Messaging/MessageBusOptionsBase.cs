@@ -3,8 +3,7 @@ using Foundatio.Logging;
 using Foundatio.Serializer;
 
 namespace Foundatio.Messaging {
-    public interface IMessageBusOptions { }
-    public class MesssageBusOptions : IMessageBusOptions {
+    public abstract class MessageBusOptionsBase {
         /// <summary>
         /// The topic name
         /// </summary>

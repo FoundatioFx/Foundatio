@@ -3,7 +3,7 @@ using Amazon;
 using Amazon.Runtime;
 
 namespace Foundatio.Queues {
-    public class SQSQueueOptions<T> : QueueOptions<T> where T : class {
+    public class SQSQueueOptions<T> : QueueOptionsBase<T> where T : class {
         public AWSCredentials Credentials { get; set; }
         public RegionEndpoint RegionEndpoint { get; set; } = RegionEndpoint.USEast1;
         public bool CanCreateQueue { get; set; } = true;
