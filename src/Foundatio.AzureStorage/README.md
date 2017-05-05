@@ -1,5 +1,5 @@
 # Foundatio
-[![Build status](https://ci.appveyor.com/api/projects/status/pcapwourmae3c0qg?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-aws)
+[![Build status](https://ci.appveyor.com/api/projects/status/reopjqj16p8or710?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-azurestorage)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureStorage.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureStorage/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
