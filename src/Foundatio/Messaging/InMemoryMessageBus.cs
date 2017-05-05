@@ -26,6 +26,11 @@ namespace Foundatio.Messaging {
             return _messageCounts.TryGetValue(typeof(T), out long count) ? count : 0;
         }
 
+        public void ResetMessagesSent() {
+            Interlocked.Exchange(ref _messagesSent, 0);
+            _messageCounts.Clear();
+        }
+
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
