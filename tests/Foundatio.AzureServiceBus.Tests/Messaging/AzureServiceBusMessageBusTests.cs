@@ -7,7 +7,7 @@ using Foundatio.Tests.Messaging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Azure.Tests.Messaging {
+namespace Foundatio.AzureServiceBus.Tests.Messaging {
     public class AzureServiceBusMessageBusTests : MessageBusTestBase {
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 

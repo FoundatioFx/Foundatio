@@ -8,7 +8,7 @@ using Foundatio.Logging;
 using Microsoft.ServiceBus;
 using Xunit.Abstractions;
 
-namespace Foundatio.Azure.Tests.Queue {
+namespace Foundatio.AzureServiceBus.Tests.Queue {
     public class AzureServiceBusQueueTests : QueueTestBase {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
