@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.CloudWatch.Model;
@@ -27,8 +28,15 @@ namespace Foundatio.AWS.Tests.Metrics {
                 return null;
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
-            return new CloudWatchMetricsClient(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio/tests/metrics", null, buffered, new[] { new Dimension { Name = "Test Id", Value = id } }, Log);
-        }
+            return new CloudWatchMetricsClient(new CloudWatchMetricsClientOptions {
+                Credentials = new BasicAWSCredentials(accessKey, secretKey),
+                RegionEndpoint = RegionEndpoint.USEast1,
+                Prefix = "foundatio/tests/metrics",
+                Buffered = buffered,
+                Dimensions = new List<Dimension> { new Dimension { Name = "Test Id", Value = id } },
+                LoggerFactory = Log
+            });
+         }
 
         [Fact]
         public override Task CanSetGaugesAsync() {
