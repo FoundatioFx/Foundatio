@@ -25,6 +25,13 @@ When building several big cloud applications we found a lack of great solutions 
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
 
+## Implementations
+- [Redis](https://github.com/exceptionless/Foundatio.Redis) - Caching, Queues, Messaging, Locks, Metrics
+- [Azure Storage](https://github.com/exceptionless/Foundatio.AzureStorage) - Storage, Queues
+- [Azure ServiceBus](https://github.com/exceptionless/Foundatio.AzureServiceBus) - Queues, Messaging
+- [AWS](https://github.com/exceptionless/Foundatio.AWS) - Storage, Queues, Metrics
+- [RabbitMQ](https://github.com/exceptionless/Foundatio.RabbitMQ) - Queues
+
 ## Getting Started (Development)
 
 [Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/exceptionless/Foundatio/issues/new) or join our [Slack](https://slack.exceptionless.com) chat room. We’re always here to help if you have any questions!
