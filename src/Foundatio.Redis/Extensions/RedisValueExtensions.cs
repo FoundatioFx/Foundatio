@@ -18,7 +18,7 @@ namespace Foundatio.Redis {
             else if (type == TypeHelper.NullableBoolType || type.IsNullableNumeric())
                 value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type));
             else
-                return serializer.DeserializeAsync<T>(redisValue.ToString());
+                return serializer.DeserializeAsync<T>((byte[])redisValue);
 
             return Task.FromResult(value);
         }
