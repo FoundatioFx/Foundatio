@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26403.7
+VisualStudioVersion = 15.0.26430.6
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{70515E66-DAF8-4D18-8F8F-8A2934171AA9}"
 EndProject
@@ -34,6 +34,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "test\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Tests", "test\Foundatio.Tests\Foundatio.Tests.csproj", "{99CBF75F-9204-4D7E-A792-4377C0291900}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Logging.Serilog", "src\Foundatio.Logging.Serilog\Foundatio.Logging.Serilog.csproj", "{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -153,6 +155,18 @@ Global
 		{99CBF75F-9204-4D7E-A792-4377C0291900}.Release|x64.Build.0 = Release|Any CPU
 		{99CBF75F-9204-4D7E-A792-4377C0291900}.Release|x86.ActiveCfg = Release|Any CPU
 		{99CBF75F-9204-4D7E-A792-4377C0291900}.Release|x86.Build.0 = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|x64.Build.0 = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Debug|x86.Build.0 = Debug|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|x64.ActiveCfg = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|x64.Build.0 = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|x86.ActiveCfg = Release|Any CPU
+		{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
