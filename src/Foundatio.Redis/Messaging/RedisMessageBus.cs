@@ -40,7 +40,7 @@ namespace Foundatio.Messaging {
             _logger.Trace("OnMessage({channel})", channel);
             MessageBusData message;
             try {
-                message = await _serializer.DeserializeAsync<MessageBusData>((string)value).AnyContext();
+                message = await _serializer.DeserializeAsync<MessageBusData>((byte[])value).AnyContext();
             } catch (Exception ex) {
                 _logger.Warn(ex, "OnMessage({0}) Error deserializing messsage: {1}", channel, ex.Message);
                 return;
