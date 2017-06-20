@@ -1,4 +1,4 @@
-![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-white.png "Foundatio")
+![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
 
 [![Build status](https://ci.appveyor.com/api/projects/status/mpak90b87dl9crl8/branch/master?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
