@@ -1,4 +1,5 @@
-# Foundatio
+![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
+
 [![Build status](https://ci.appveyor.com/api/projects/status/nnrv2k4mavr7b7ik?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-azureservicebus)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureServiceBus.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureServiceBus/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
