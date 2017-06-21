@@ -1,4 +1,5 @@
-# Foundatio
+![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
+
 [![Build status](https://ci.appveyor.com/api/projects/status/tlr3j6x3awvyhrq6?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-redis)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.Redis.svg?style=flat)](https://www.nuget.org/packages/Foundatio.Redis/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
