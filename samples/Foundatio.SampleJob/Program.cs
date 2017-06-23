@@ -1,8 +1,8 @@
 ﻿using System;
 using Foundatio.Logging;
-using Foundatio.Extensions;
 using Foundatio.Logging.NLog;
 using Foundatio.ServiceProviders;
+using Foundatio.Utility;
 
 namespace Foundatio.SampleJob {
     public class Program {
