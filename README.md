@@ -149,7 +149,7 @@ Allows you to run a long running process (in process or out of process) with out
   public class HelloWorldJob : JobBase {
     public int RunCount { get; set; }
 
-    protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
+    protected override Task<JobResult> RunInternalAsync(JobContext context) {
        RunCount++;
        return Task.FromResult(JobResult.Success);
     }
