@@ -4,9 +4,9 @@
     <TargetFrameworks>netstandard1.5;net46</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.RandomData" Version="1.1.27" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="1.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="1.1.1" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.35" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="1.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="1.1.2" />
     <PackageReference Include="System.Threading.Tasks.Parallel" Version="4.3.0" />
     <PackageReference Include="xunit" Version="2.2.0" />
   </ItemGroup>

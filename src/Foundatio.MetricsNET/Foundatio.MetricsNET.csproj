@@ -8,6 +8,6 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Metrics.NET" Version="0.4.8" />
+    <PackageReference Include="Metrics.NET" Version="0.5.3" />
   </ItemGroup>
 </Project>
