@@ -137,7 +137,7 @@ await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
 
 ### [Jobs](https://github.com/exceptionless/Foundatio/tree/master/src/Foundatio/Jobs)
 
-Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide three different ways of defining a job, based on your use case:
+Allows you to run a long running process (in process or out of process) without worrying about it being terminated prematurely. We provide three different ways of defining a job, based on your use case:
 
 1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs) and calling one of the Run methods. The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
