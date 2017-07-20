@@ -57,5 +57,20 @@ namespace Foundatio.Tests.Storage {
             base.CanUseDataDirectory();
         }
 #endif
+
+        [Fact]
+        public override Task CanDeleteEntireFolderAsync() {
+            return base.CanDeleteEntireFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteEntireFolderWithWildcardAsync() {
+            return base.CanDeleteEntireFolderWithWildcardAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteSpecificFilesAsync() {
+            return base.CanDeleteSpecificFilesAsync();
+        }
     }
 }

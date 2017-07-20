@@ -177,6 +177,71 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanDeleteEntireFolderAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"delete\delete.txt", "delete");
+                await storage.SaveFileAsync(@"delete\again\again.txt", "again");
+                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"delete\*")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"delete\again\*")).Count());
+
+                await storage.DeleteFilesAsync("delete");
+
+                Assert.False(await storage.ExistsAsync(@"delete"));
+            }
+        }
+
+        public virtual async Task CanDeleteEntireFolderWithWildcardAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"delete\delete.txt", "delete");
+                await storage.SaveFileAsync(@"delete\again\again.txt", "again");
+                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"delete\*")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"delete\again\*")).Count());
+
+                await storage.DeleteFilesAsync("delete*");
+
+                Assert.False(await storage.ExistsAsync(@"delete"));
+            }
+        }
+
+        public virtual async Task CanDeleteSpecificFilesAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"delete\delete.txt", "delete");
+                await storage.SaveFileAsync(@"delete\again\again.txt", "again");
+                await storage.SaveFileAsync(@"delete\again\delete.txt", "delete again");
+                Assert.Equal(3, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(3, (await storage.GetFileListAsync(@"delete\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"delete\again\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"*delete.txt")).Count());
+
+                await storage.DeleteFilesAsync("*delete.txt");
+
+                Assert.Equal(1, (await storage.GetFileListAsync(@"delete\*")).Count());
+            }
+        }
+
         protected async Task ResetAsync() {
             var storage = GetStorage();
             if (storage == null)

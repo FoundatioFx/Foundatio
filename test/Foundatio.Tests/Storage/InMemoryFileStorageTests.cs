@@ -50,5 +50,20 @@ namespace Foundatio.Tests.Storage {
         public override Task CanConcurrentlyManageFilesAsync() {
             return base.CanConcurrentlyManageFilesAsync();
         }
+
+        [Fact]
+        public override Task CanDeleteEntireFolderAsync() {
+            return base.CanDeleteEntireFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteEntireFolderWithWildcardAsync() {
+            return base.CanDeleteEntireFolderWithWildcardAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteSpecificFilesAsync() {
+            return base.CanDeleteSpecificFilesAsync();
+        }
     }
 }
