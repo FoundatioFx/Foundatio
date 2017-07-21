@@ -130,8 +130,15 @@ namespace Foundatio.Storage {
         }
 
         public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken)) {
-            if (searchPattern == null)
-                searchPattern = "*";
+            if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
+                lock(_lock)
+                    _storage.Clear();
+
+                return Task.CompletedTask;
+            }
+
+            if (searchPattern.IsFolderSearch() && !searchPattern.EndsWith("\\*")) 
+                searchPattern = searchPattern.EndsWith("\\") ? $"{searchPattern}*" : $"{searchPattern}\\*";
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock) {

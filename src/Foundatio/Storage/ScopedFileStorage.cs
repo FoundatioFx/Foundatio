@@ -78,10 +78,7 @@ namespace Foundatio.Storage {
         }
 
         public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken)) {
-            if (String.IsNullOrEmpty(searchPattern))
-                searchPattern = "*";
-
-            return UnscopedStorage.DeleteFilesAsync(searchPattern, cancellation);
+            return UnscopedStorage.DeleteFilesAsync(String.Concat(_pathPrefix, searchPattern), cancellation);
         }
 
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = new CancellationToken()) {

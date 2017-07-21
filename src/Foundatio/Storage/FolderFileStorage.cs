@@ -147,27 +147,26 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        private readonly ICollection<string> _folderCases = new List<string> { String.Empty, "\\", "\\*" }; 
         public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken)) {
-            if (String.IsNullOrEmpty(searchPattern)) {
+            if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 Directory.Delete(Folder, true);
                 return Task.CompletedTask;
             }
-
-            var path = Path.Combine(Folder, searchPattern);
-            var directory = Path.GetDirectoryName(path);
-            if (!Directory.Exists(directory))
-                return Task.CompletedTask;
             
-            if (_folderCases.Contains(path.Replace(directory, String.Empty))) {
-                Directory.Delete(directory, true);
+            if (searchPattern.IsFolderSearch()) {
+                var path = Path.Combine(Folder, searchPattern);
+                var directory = Path.GetDirectoryName(path.EndsWith("\\") ? path : $"{path}\\");
+                if (path.IsSamePath(directory) && Directory.Exists(directory))
+                    Directory.Delete(directory, true);
+
                 return Task.CompletedTask;
             }
-            
+
             foreach (var file in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories))
                 File.Delete(file);
 
             return Task.CompletedTask;
+            
         }
 
         public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
