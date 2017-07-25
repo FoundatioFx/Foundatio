@@ -34,4 +34,20 @@ artifacts:
 
 deploy:
   - provider: Environment
-    name: Test
+    name: MyGet
+  - provider: Environment
+    name: NuGet
+    on:
+      appveyor_repo_tag: true
+  - provider: GitHub
+    auth_token:
+      secure: 0s81q7bweVLTFSOKxnIhan7el6bIFiN8HJ1kYJzOkeFXX7wgGSq9bs/rV53X9qpf
+    draft: true
+    on:
+      appveyor_repo_tag: true
+
+notifications:
+  - provider: Slack
+    auth_token:
+      secure: GniMpFE62HprSyQNQoej/VSBnxn2GNnTrca3BnF8+ikMdqduO4Ts4t297teZF6wDAmGwnOtXusctUla8+WxLFkIztvVCS2Z1RG/DvEDYoc0=
+    channel: '#notifications'
