@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\common.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net46</TargetFrameworks>
+    <PackageTags>Logging;Log;Serilog;</PackageTags>
+  </PropertyGroup>
+  <ItemGroup Label="Build">
+    <Compile Remove="..\Foundatio.Logging.Serilog\obj\**\*" />
+    <Compile Remove="artifacts\**" />
+    <Compile Include="..\Foundatio.Logging.Serilog\**\*.cs;" Exclude="..\Foundatio.Logging.Serilog\**\AssemblyInfo.cs;..\Foundatio.Logging.Serilog\obj\**\*;bin\**;obj\**;packages\**" />
+  </ItemGroup>
+  <PropertyGroup Label="Signing">
+    <SignAssembly>true</SignAssembly>
+    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
+    <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio.Signed\Foundatio.Signed.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="2.5.0" />
+  </ItemGroup>
+</Project>

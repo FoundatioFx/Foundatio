@@ -15,15 +15,18 @@ init:
 before_build:
   - ps: .\build\Set-BuildVersion -Version $env:APPVEYOR_BUILD_VERSION -Suffix $env:VERSION_SUFFIX
   - appveyor-retry dotnet restore -v Minimal
+  - ps: ls src\**\*.Signed.csproj | % { appveyor-retry dotnet restore $_.FullName -v Minimal} 
 
 build_script:
   - ps: dotnet build -c Release
+  - ps: ls src\**\*.Signed.csproj | % {dotnet build $_.FullName -c Release} 
 
 #on_failure:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
 after_test:
   - ps: dotnet pack -c Release
+  - ps: ls src\**\*.Signed.csproj | % {dotnet pack $_.FullName -o ../../artifacts -c Release}
 
 artifacts:
   - path: artifacts\*.nupkg
