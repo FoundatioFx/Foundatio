@@ -15,7 +15,7 @@ init:
 before_build:
   - ps: .\build\Set-BuildVersion -Version $env:APPVEYOR_BUILD_VERSION -Suffix $env:VERSION_SUFFIX
   - appveyor-retry dotnet restore -v Minimal
-  - cmd: appveyor-retry powershell ls src\**\*.Signed.csproj | % {dotnet restore $_.FullName -v Minimal} 
+  - cmd: powershell ls src\**\*.Signed.csproj | % { appveyor-retry dotnet restore $_.FullName -v Minimal} 
 
 build_script:
   - ps: dotnet build -c Release
