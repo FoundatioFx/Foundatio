@@ -301,7 +301,11 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                await storage.DeleteFilesAsync();
+                var files = (await storage.GetFileListAsync()).ToList();
+                if (files.Count > 0) {
+                    _logger.Trace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
+                    await storage.DeleteFilesAsync(files);
+                }
 
                 Assert.Equal(0, (await storage.GetFileListAsync()).Count());
             }
