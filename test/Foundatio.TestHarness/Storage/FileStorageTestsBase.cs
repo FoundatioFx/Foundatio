@@ -177,6 +177,124 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanDeleteEntireFolderAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"x\hello.txt", "hello");
+                await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\*")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+
+                await storage.DeleteFilesAsync(@"x");
+
+                Assert.False(await storage.ExistsAsync(@"x\"));
+                Assert.Equal(0, (await storage.GetFileListAsync()).Count());
+            }
+        }
+
+        public virtual async Task CanDeleteEntireFolderWithWildcardAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"x\hello.txt", "hello");
+                await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\*")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+
+                await storage.DeleteFilesAsync(@"x\*");
+
+                Assert.False(await storage.ExistsAsync(@"x\"));
+            }
+        }
+
+        public virtual async Task CanDeleteSpecificFilesAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"x\hello.txt", "hello");
+                await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+                await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
+                Assert.Equal(3, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(3, (await storage.GetFileListAsync(@"x\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count());
+
+                await storage.DeleteFilesAsync(@"x\*.txt");
+
+                Assert.Equal(1, (await storage.GetFileListAsync(@"x\*")).Count());
+            }
+        }
+
+        public virtual async Task CanDeleteNestedFolderAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"x\hello.txt", "hello");
+                await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+                await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
+                Assert.Equal(3, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(3, (await storage.GetFileListAsync(@"x\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+                Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count());
+
+                await storage.DeleteFilesAsync(@"x\nested");
+
+                Assert.True(await storage.ExistsAsync(@"x"));
+                Assert.False(await storage.ExistsAsync(@"x\nested"));
+                Assert.Equal(1, (await storage.GetFileListAsync()).Count());
+            }
+        }
+
+        public virtual async Task CanDeleteSpecificFilesInNestedFolderAsync() {
+            await ResetAsync();
+
+            IFileStorage storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"x\hello.txt", "hello");
+                await storage.SaveFileAsync(@"x\world.csv", "world");
+                await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+                await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
+                await storage.SaveFileAsync(@"x\nested\again.txt", "nested again");
+                Assert.Equal(5, (await storage.GetFileListAsync()).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(limit: 1)).Count());
+                Assert.Equal(5, (await storage.GetFileListAsync(@"x\*")).Count());
+                Assert.Equal(3, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+                Assert.Equal(3, (await storage.GetFileListAsync(@"x\*.txt")).Count());
+
+                await storage.DeleteFilesAsync(@"x\nested\*.txt");
+
+                Assert.Equal(3, (await storage.GetFileListAsync(@"x")).Count());
+                Assert.Equal(1, (await storage.GetFileListAsync(@"x\nested\*")).Count());
+                Assert.True(await storage.ExistsAsync(@"x\nested\world.csv"));
+            }
+        }
+
         protected async Task ResetAsync() {
             var storage = GetStorage();
             if (storage == null)
