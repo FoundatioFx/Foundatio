@@ -19,6 +19,9 @@ before_build:
 build_script:
   - ps: dotnet build -c Release 
 
+test_script:
+  - ps: dotnet test .\test\Foundatio.TestHarness\Foundatio.TestHarness.csproj -f netcoreapp1.1
+  - ps: dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj -f netcoreapp1.1
 #on_failure:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
