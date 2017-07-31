@@ -162,9 +162,7 @@ namespace Foundatio.Storage {
                     Directory.Delete(directory, true);
                     return Task.CompletedTask;
                 }
-            }
-
-            if (Directory.Exists(path)) {
+            } else if (Directory.Exists(path)) {
                 Directory.Delete(path, true);
                 return Task.CompletedTask;
             }
