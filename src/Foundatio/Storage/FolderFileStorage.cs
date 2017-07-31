@@ -156,17 +156,17 @@ namespace Foundatio.Storage {
             searchPattern = searchPattern.Replace("/", "\\");
 
             var path = Path.Combine(Folder, searchPattern);
-            if (Directory.Exists(path)) {
-                Directory.Delete(path, true);
-                return Task.CompletedTask;
-            }
-
             if (path.EndsWith("\\") || path.EndsWith("\\*")) {
                 var directory = Path.GetDirectoryName(path);
                 if (Directory.Exists(directory)) {
                     Directory.Delete(directory, true);
                     return Task.CompletedTask;
                 }
+            }
+
+            if (Directory.Exists(path)) {
+                Directory.Delete(path, true);
+                return Task.CompletedTask;
             }
 
             foreach (var file in Directory.GetFiles(Folder, searchPattern, SearchOption.AllDirectories))
