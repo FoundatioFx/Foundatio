@@ -16,6 +16,7 @@ namespace Foundatio.Storage {
         Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken));
         Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken));
         Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
+        Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken));
         Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken));
     }
 
@@ -83,6 +84,44 @@ namespace Foundatio.Storage {
 
         public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
+        }
+
+        internal static bool ContainsWildcard(this string searchPattern) {
+            if (String.IsNullOrEmpty(searchPattern))
+                return false;
+
+            return Array.TrueForAll(searchPattern.ToCharArray(), c => c == '*' || c == '?');
+        }
+
+        internal static bool IsFileSearch(this string searchPattern) {
+            if (String.IsNullOrEmpty(searchPattern))
+                return false;
+
+            return Path.HasExtension(searchPattern);
+        }
+
+        internal static bool IsFolderSearch(this string searchPattern) {
+            if (String.IsNullOrEmpty(searchPattern))
+                return false;
+
+            return !searchPattern.ContainsWildcard() && !searchPattern.IsFileSearch();
+        }
+        
+        internal static bool IsSamePath(this string firstPath, string secondPath) {
+            if (String.IsNullOrEmpty(firstPath) || String.IsNullOrEmpty(secondPath))
+                return false;
+
+            if (firstPath.Equals(secondPath, StringComparison.OrdinalIgnoreCase))
+                return true;
+            
+            return firstPath.RemoveSlashes().Equals(secondPath.RemoveSlashes());
+        }
+
+        private static string RemoveSlashes(this string s) {
+            if (String.IsNullOrEmpty(s))
+                return s;
+
+            return new string(Array.FindAll(s.ToCharArray(), c => c != '/' && c != '\\'));
         }
     }
 }
