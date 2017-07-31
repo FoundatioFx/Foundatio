@@ -137,8 +137,12 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
 
-            if (!searchPattern.IsFileSearch() && !searchPattern.EndsWith("\\*")) 
-                searchPattern = searchPattern.EndsWith("\\") ? $"{searchPattern}*" : $"{searchPattern}\\*";
+            searchPattern = searchPattern.Replace("/", "\\");
+
+            if (searchPattern.EndsWith("\\")) 
+                searchPattern = $"{searchPattern}*";
+            else if (!searchPattern.EndsWith("\\*") && !Path.HasExtension(searchPattern))
+                searchPattern = $"{searchPattern}\\*";
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock) {
@@ -157,6 +161,7 @@ namespace Foundatio.Storage {
             if (searchPattern == null)
                 searchPattern = "*";
 
+            searchPattern = searchPattern.Replace("/", "\\");
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock)
                 return Task.FromResult<IEnumerable<FileSpec>>(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList());

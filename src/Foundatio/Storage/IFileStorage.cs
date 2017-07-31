@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -85,40 +84,6 @@ namespace Foundatio.Storage {
 
         public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
-        }
-
-        internal static bool ContainsWildcard(this string searchPattern) {
-            if (String.IsNullOrEmpty(searchPattern))
-                return false;
-
-            return Array.TrueForAll(searchPattern.ToCharArray(), c => c == '*' || c == '?');
-        }
-
-        internal static bool IsFileSearch(this string searchPattern) {
-            if (String.IsNullOrEmpty(searchPattern))
-                return false;
-
-            return Path.HasExtension(searchPattern);
-        }
-        
-        internal static bool IsSamePath(this string firstPath, string secondPath) {
-            if (String.IsNullOrEmpty(firstPath) || String.IsNullOrEmpty(secondPath))
-                return false;
-
-            if (firstPath.Equals(secondPath, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (firstPath.EndsWith("*"))
-                firstPath = firstPath.Remove(firstPath.LastIndexOf("*", StringComparison.Ordinal));
-            
-            return firstPath.RemoveSlashes().Equals(secondPath.RemoveSlashes());
-        }
-
-        private static string RemoveSlashes(this string s) {
-            if (String.IsNullOrEmpty(s))
-                return s;
-
-            return new string(Array.FindAll(s.ToCharArray(), c => c != '/' && c != '\\'));
         }
     }
 }
