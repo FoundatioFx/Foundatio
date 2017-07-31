@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -99,13 +100,6 @@ namespace Foundatio.Storage {
 
             return Path.HasExtension(searchPattern);
         }
-
-        internal static bool IsFolderSearch(this string searchPattern) {
-            if (String.IsNullOrEmpty(searchPattern))
-                return false;
-
-            return !searchPattern.ContainsWildcard() && !searchPattern.IsFileSearch();
-        }
         
         internal static bool IsSamePath(this string firstPath, string secondPath) {
             if (String.IsNullOrEmpty(firstPath) || String.IsNullOrEmpty(secondPath))
@@ -113,6 +107,9 @@ namespace Foundatio.Storage {
 
             if (firstPath.Equals(secondPath, StringComparison.OrdinalIgnoreCase))
                 return true;
+
+            if (firstPath.EndsWith("*"))
+                firstPath = firstPath.Remove(firstPath.LastIndexOf("*", StringComparison.Ordinal));
             
             return firstPath.RemoveSlashes().Equals(secondPath.RemoveSlashes());
         }

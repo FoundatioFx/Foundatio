@@ -137,7 +137,7 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
 
-            if (searchPattern.IsFolderSearch() && !searchPattern.EndsWith("\\*")) 
+            if (!searchPattern.IsFileSearch() && !searchPattern.EndsWith("\\*")) 
                 searchPattern = searchPattern.EndsWith("\\") ? $"{searchPattern}*" : $"{searchPattern}\\*";
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");

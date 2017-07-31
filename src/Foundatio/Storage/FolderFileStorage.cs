@@ -153,7 +153,7 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
             
-            if (searchPattern.IsFolderSearch()) {
+            if (!searchPattern.IsFileSearch()) {
                 var path = Path.Combine(Folder, searchPattern);
                 var directory = Path.GetDirectoryName(path.EndsWith("\\") ? path : $"{path}\\");
                 if (path.IsSamePath(directory) && Directory.Exists(directory))
