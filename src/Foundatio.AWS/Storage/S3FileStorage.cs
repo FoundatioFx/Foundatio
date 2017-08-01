@@ -175,32 +175,37 @@ namespace Foundatio.Storage {
             var criteria = GetRequestCriteria(searchPattern);
 
             using (var client = CreateClient()) {
-                var req = new ListObjectsRequest {
-                    BucketName = _bucket,
-                    Prefix = criteria.Prefix
-                };
+                var listRequest = new ListObjectsRequest { BucketName = _bucket, Prefix = criteria.Prefix };
+                var deleteRequest = new DeleteObjectsRequest { BucketName = _bucket };
 
                 do {
-                    var res = await client.ListObjectsAsync(req, cancellationToken).AnyContext();
-                    if (res.IsTruncated)
-                        req.Marker = res.NextMarker;
+                    var listResponse = await client.ListObjectsAsync(listRequest, cancellationToken).AnyContext();
+                    if (listResponse.IsTruncated)
+                        listRequest.Marker = listResponse.NextMarker;
                     else
-                        req = null;
+                        listRequest = null;
 
-                    var objects = res.S3Objects.MatchesPattern(criteria.Pattern).ToList();
-                    if (objects.Count > 0) {
-                        var deleteRequest = new DeleteObjectsRequest {
-                            BucketName = _bucket,
-                            Objects = objects.Select(o => new KeyVersion { Key = o.Key }).ToList()
-                        };
+                    var keys = listResponse.S3Objects.MatchesPattern(criteria.Pattern).ToList();
+                    foreach (var key in keys.Select(o => new KeyVersion { Key = o.Key }).ToList()) {
+                        deleteRequest.Objects.Add(key);
 
-                        var deleteResponse = await client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
-                        if (!deleteResponse.HttpStatusCode.IsSuccessful())
-                            throw new Exception("unable to delete files from storage");
+                        if (deleteRequest.Objects.Count == 1000) {
+                            var deleteResponse = await client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
+                            if (!deleteResponse.HttpStatusCode.IsSuccessful())
+                                throw new Exception("unable to delete files from storage");
+
+                            deleteRequest.Objects.Clear();
+                        }
+
                     }
 
-                } while (req != null);
+                } while (listRequest != null);
 
+                if (deleteRequest.Objects.Count > 0) {
+                    var deleteResponse = await client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
+                    if (!deleteResponse.HttpStatusCode.IsSuccessful())
+                        throw new Exception("unable to delete files from storage");
+                }
             }
         }
 
