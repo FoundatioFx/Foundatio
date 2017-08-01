@@ -41,18 +41,20 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
-            using (var client = CreateClient()) {
-                var req = new GetObjectRequest {
-                    BucketName = _bucket,
-                    Key = path.Replace('\\', '/')
-                };
+            var client = CreateClient();
+            var req = new GetObjectRequest {
+                BucketName = _bucket,
+                Key = path.Replace('\\', '/')
+            };
 
-                var res = await client.GetObjectAsync(req, cancellationToken).AnyContext();
-                if (!res.HttpStatusCode.IsSuccessful())
-                    return null;
+            var res = await client.GetObjectAsync(req, cancellationToken).AnyContext();
+            if (!res.HttpStatusCode.IsSuccessful())
+                return null;
 
-                return res.ResponseStream;
-            }
+            return new ActionableStream(res.ResponseStream, () => {
+                res?.Dispose();
+                client?.Dispose();
+            });
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
@@ -169,26 +171,50 @@ namespace Foundatio.Storage {
             }
         }
 
+        public async Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
+            var criteria = GetRequestCriteria(searchPattern);
+
+            using (var client = CreateClient()) {
+                var req = new ListObjectsRequest {
+                    BucketName = _bucket,
+                    Prefix = criteria.Prefix
+                };
+
+                do {
+                    var res = await client.ListObjectsAsync(req, cancellationToken).AnyContext();
+                    if (res.IsTruncated)
+                        req.Marker = res.NextMarker;
+                    else
+                        req = null;
+
+                    var objects = res.S3Objects.MatchesPattern(criteria.Pattern).ToList();
+                    if (objects.Count > 0) {
+                        var deleteRequest = new DeleteObjectsRequest {
+                            BucketName = _bucket,
+                            Objects = objects.Select(o => new KeyVersion { Key = o.Key }).ToList()
+                        };
+
+                        var deleteResponse = await client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
+                        if (!deleteResponse.HttpStatusCode.IsSuccessful())
+                            throw new Exception("unable to delete files from storage");
+                    }
+
+                } while (req != null);
+
+            }
+        }
+
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (limit.HasValue && limit.Value <= 0)
                 return new List<FileSpec>();
 
-            searchPattern = searchPattern?.Replace('\\', '/');
-            string prefix = searchPattern;
-            Regex patternRegex = null;
-            int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
-            if (searchPattern != null && wildcardPos >= 0) {
-                patternRegex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
-                int slashPos = searchPattern.LastIndexOf('/');
-                prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
-            }
-            prefix = prefix ?? String.Empty;
+            var criteria = GetRequestCriteria(searchPattern);
 
             var objects = new List<S3Object>();
             using (var client = CreateClient()) {
                 var req = new ListObjectsRequest {
                     BucketName = _bucket,
-                    Prefix = prefix
+                    Prefix = criteria.Prefix
                 };
 
                 do {
@@ -199,7 +225,7 @@ namespace Foundatio.Storage {
                         req = null;
 
                     // TODO: Implement paging
-                    objects.AddRange(res.S3Objects.MatchesPattern(patternRegex));
+                    objects.AddRange(res.S3Objects.MatchesPattern(criteria.Pattern));
                 } while (req != null && objects.Count < limit.GetValueOrDefault(int.MaxValue));
 
                 if (limit.HasValue)
@@ -207,6 +233,29 @@ namespace Foundatio.Storage {
 
                 return objects.Select(blob => blob.ToFileInfo());
             }
+        }
+
+        private class SearchCriteria {
+            public string Prefix { get; set; }
+            public Regex Pattern { get; set; }
+        }
+
+        private SearchCriteria GetRequestCriteria(string searchPattern) {
+            Regex patternRegex = null;
+            searchPattern = searchPattern?.Replace('\\', '/');
+
+            string prefix = searchPattern;
+            int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
+            if (searchPattern != null && wildcardPos >= 0) {
+                patternRegex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
+                int slashPos = searchPattern.LastIndexOf('/');
+                prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
+            }
+
+            return new SearchCriteria {
+                Prefix = prefix ?? String.Empty,
+                Pattern = patternRegex
+            };
         }
 
         public void Dispose() {}
