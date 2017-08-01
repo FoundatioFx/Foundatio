@@ -50,7 +50,7 @@ namespace Foundatio.Tests.Storage {
         public override Task CanConcurrentlyManageFilesAsync() {
             return base.CanConcurrentlyManageFilesAsync();
         }
-        
+
 #if !NETSTANDARD
         [Fact]
         public override void CanUseDataDirectory() {
@@ -75,12 +75,12 @@ namespace Foundatio.Tests.Storage {
 
         [Fact]
         public override Task CanDeleteNestedFolderAsync() {
-            return base.CanDeleteSpecificFilesAsync();
+            return base.CanDeleteNestedFolderAsync();
         }
 
         [Fact]
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
-            return base.CanDeleteSpecificFilesAsync();
+            return base.CanDeleteSpecificFilesInNestedFolderAsync();
         }
     }
 }
