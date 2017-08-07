@@ -10,7 +10,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Xunit;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {

@@ -5,7 +5,7 @@ using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 

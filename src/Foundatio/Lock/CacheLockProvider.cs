@@ -2,7 +2,7 @@
 using Foundatio.Caching;
 using Foundatio.Logging;
 using Foundatio.Messaging;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
