@@ -182,5 +182,10 @@ namespace Foundatio.Tests.Queue {
         public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
             return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
+
+        [Fact]
+        public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry() {
+            return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+        }
     }
 }

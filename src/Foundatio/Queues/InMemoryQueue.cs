@@ -151,6 +151,7 @@ namespace Foundatio.Queues {
             _logger.Trace("Dequeue: Got Item");
 
             var entry = new QueueEntry<T>(info.Id, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
+            await entry.RenewLockAsync();
             await OnDequeuedAsync(entry).AnyContext();
             ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
 
