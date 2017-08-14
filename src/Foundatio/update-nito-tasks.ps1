@@ -15,6 +15,7 @@ if (Test-Path Nito.AsyncEx.Tasks) {
 
 cd 'tasks-temp\AsyncEx.Tasks*'
 Copy-Item 'Src\Nito.AsyncEx.Tasks' -Destination '..\..\' -Recurse
+Copy-Item 'LICENSE' -Destination '..\..\Nito.AsyncEx.Tasks'
 cd '..\..\'
 
 rmdir '.\tasks-temp' -Recurse -Force

@@ -15,6 +15,7 @@ if (Test-Path Nito.AsyncEx.Coordination) {
 
 cd 'asyncex.coordination-temp\AsyncEx.Coordination*'
 Copy-Item 'Src\Nito.AsyncEx.Coordination' -Destination '..\..\' -Recurse
+Copy-Item 'LICENSE' -Destination '..\..\Nito.AsyncEx.Coordination'
 cd '..\..\'
 
 rmdir '.\asyncex.coordination-temp' -Recurse -Force

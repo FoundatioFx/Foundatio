@@ -15,6 +15,7 @@ if (Test-Path Nito.Disposables) {
 
 cd 'disposables-temp\Disposables*'
 Copy-Item 'Src\Nito.Disposables' -Destination '..\..\' -Recurse
+Copy-Item 'LICENSE' -Destination '..\..\Nito.Disposables'
 cd '..\..\'
 
 rmdir '.\disposables-temp' -Recurse -Force

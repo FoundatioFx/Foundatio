@@ -15,6 +15,7 @@ if (Test-Path Nito.Collections.Deque) {
 
 cd 'deque-temp\Deque*'
 Copy-Item 'Src\Nito.Collections.Deque' -Destination '..\..\' -Recurse
+Copy-Item 'LICENSE' -Destination '..\..\Nito.Collections.Deque'
 cd '..\..\'
 
 rmdir '.\deque-temp' -Recurse -Force
