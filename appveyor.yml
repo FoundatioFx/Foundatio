@@ -14,14 +14,11 @@ init:
 
 before_build:
   - ps: .\build\Set-BuildVersion -Version $env:APPVEYOR_BUILD_VERSION -Suffix $env:VERSION_SUFFIX
-  - appveyor-retry dotnet restore -v Minimal  
+  - appveyor-retry dotnet restore -v Minimal
 
 build_script:
-  - ps: dotnet build -c Release 
+  - ps: dotnet build -c Release
 
-test_script:
-  - ps: dotnet test .\test\Foundatio.TestHarness\Foundatio.TestHarness.csproj -f netcoreapp1.1
-  - ps: dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj -f netcoreapp1.1
 #on_failure:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
