@@ -4,6 +4,11 @@
     <TargetFrameworks>net46</TargetFrameworks>
     <PackageTags>MetricsNET;Metrics;Stats;StatsD;Logging;Log;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
+  <PropertyGroup Label="Signing">
+    <SignAssembly>true</SignAssembly>
+    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
+    <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>

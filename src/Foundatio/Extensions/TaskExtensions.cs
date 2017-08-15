@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 
 namespace Foundatio.Utility {
     internal static class TaskExtensions {

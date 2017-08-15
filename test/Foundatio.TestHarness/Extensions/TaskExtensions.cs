@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 
 namespace Foundatio.Tests.Extensions {
     public static class TaskExtensions {

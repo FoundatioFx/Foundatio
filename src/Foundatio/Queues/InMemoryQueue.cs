@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 
 namespace Foundatio.Queues {
     public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : class {

@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Logging;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 
 namespace Foundatio.Utility {
     public class ScheduledTimer : IDisposable {

@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 
 namespace Foundatio.Metrics {
     public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
