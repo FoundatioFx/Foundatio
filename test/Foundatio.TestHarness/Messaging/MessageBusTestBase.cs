@@ -185,7 +185,9 @@ namespace Foundatio.Tests.Messaging {
                 });
                 var subscribe = Run.InParallelAsync(iterations,
                     i => {
+#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
                         SystemClock.Sleep(RandomData.GetInt(0, 10));
+#pragma warning restore AsyncFixer02 // Long running or blocking operations under an async method
                         return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
                     });
 

@@ -1,4 +1,3 @@
-using System;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Utility;
@@ -10,7 +9,7 @@ namespace Foundatio.Tests.Metrics {
         public InMemoryMetricsTests(ITestOutputHelper output) : base(output) { }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
-            return new InMemoryMetricsClient(buffered, loggerFactory: Log);
+            return new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log, Buffered = buffered });
         }
 
         [Fact]

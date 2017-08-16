@@ -55,7 +55,7 @@ namespace FastClone.Internal {
 
         void CloneArray() {
             // Arrays need to be cloned element-by-element
-            Type elementType = _type.GetElementType();
+            var elementType = _type.GetElementType();
 
             _expressions.Add(TypeIsPrimitiveOrString(elementType)
                 ? GenerateFieldBasedPrimitiveArrayTransferExpressions(_type, _original)
@@ -102,7 +102,7 @@ namespace FastClone.Internal {
         /// <returns>The variable holding the cloned array</returns>
         ParameterExpression GenerateFieldBasedComplexArrayTransferExpressions(Type arrayType, Type elementType, Expression originalArray, ICollection<ParameterExpression> arrayVariables, ICollection<Expression> arrayExpressions) {
             // We need a temporary variable in order to transfer the elements of the array
-            ParameterExpression arrayClone = Expression.Variable(arrayType);
+            var arrayClone = Expression.Variable(arrayType);
             arrayVariables.Add(arrayClone);
 
             int dimensionCount = arrayType.GetArrayRank();
@@ -153,8 +153,8 @@ namespace FastClone.Internal {
 
                         // A nested array should be cloned by directly creating a new array (not invoking a cloner) since you cannot derive from an array
                         if (elementType.IsArray) {
-                            Type nestedElementType = elementType.GetElementType();
-                            Expression clonedElement = TypeIsPrimitiveOrString(nestedElementType)
+                            var nestedElementType = elementType.GetElementType();
+                            var clonedElement = TypeIsPrimitiveOrString(nestedElementType)
                                 ? GenerateFieldBasedPrimitiveArrayTransferExpressions(elementType, Expression.ArrayAccess(originalArray, indexes))
                                 : GenerateFieldBasedComplexArrayTransferExpressions(elementType, nestedElementType, Expression.ArrayAccess(originalArray, indexes), nestedVariables, nestedExpressions);
 
@@ -196,10 +196,10 @@ namespace FastClone.Internal {
         /// <param name="expression">Receives the generated transfer expressions</param>
         void GenerateFieldBasedComplexTypeTransferExpressions(Type complexType, Expression source, Expression target, ICollection<Expression> expression) {
             // Enumerate all of the type's fields and generate transfer expressions for each
-            FieldInfo[] fieldInfos = GetFieldInfosIncludingBaseClasses(complexType, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var fieldInfos = GetFieldInfosIncludingBaseClasses(complexType, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-            foreach (FieldInfo fieldInfo in fieldInfos) {
-                Type fieldType = fieldInfo.FieldType;
+            foreach (var fieldInfo in fieldInfos) {
+                var fieldType = fieldInfo.FieldType;
 
                 if (TypeIsPrimitiveOrString(fieldType))
                     expression.Add(CloneExpressionHelper.CreateCopyFieldExpression(source, target, fieldInfo));
@@ -221,10 +221,10 @@ namespace FastClone.Internal {
         /// <param name="fieldInfo">Reflection informations about the field being cloned</param>
         void GenerateFieldBasedReferenceTypeTransferExpressions(Expression original, Expression clone, ICollection<Expression> expressions, FieldInfo fieldInfo) {
             // Reference types and arrays require special care because they can be null, so gather the transfer expressions in a separate block for the null check
-            List<Expression> fieldExpressions = new List<Expression>();
-            List<ParameterExpression> fieldVariables = new List<ParameterExpression>();
+            var fieldExpressions = new List<Expression>();
+            var fieldVariables = new List<ParameterExpression>();
 
-            Type fieldType = fieldInfo.FieldType;
+            var fieldType = fieldInfo.FieldType;
 
             if (fieldType.IsArray) {
                 Expression fieldClone = GenerateFieldBasedComplexArrayTransferExpressions(fieldType, fieldType.GetElementType(), Expression.Field(original, fieldInfo), fieldVariables, fieldExpressions);
@@ -248,7 +248,7 @@ namespace FastClone.Internal {
         /// <param name="bindingFlags">Binding flags to use when querying the fields</param>
         /// <returns>All of the type's fields, including its base types</returns>
         public static FieldInfo[] GetFieldInfosIncludingBaseClasses(Type type, BindingFlags bindingFlags) {
-            FieldInfo[] fieldInfos = type.GetFields(bindingFlags);
+            var fieldInfos = type.GetFields(bindingFlags);
 
             var typeInfo = type.GetTypeInfo();
             // If this class doesn't have a base, don't waste any time
@@ -256,7 +256,7 @@ namespace FastClone.Internal {
                 return fieldInfos;
 
             // Otherwise, collect all types up to the furthest base class
-            List<FieldInfo> fieldInfoList = new List<FieldInfo>(fieldInfos);
+            var fieldInfoList = new List<FieldInfo>(fieldInfos);
             while (type != null && typeInfo.BaseType != TypeHelper.ObjectType) {
                 type = typeInfo.BaseType;
                 if (type == null)
@@ -266,7 +266,7 @@ namespace FastClone.Internal {
                 fieldInfos = type.GetFields(bindingFlags);
 
                 // Look for fields we do not have listed yet and merge them into the main list
-                foreach (FieldInfo fieldInfo in fieldInfos)
+                foreach (var fieldInfo in fieldInfos)
                     if (!fieldInfoList.Any(x => x.DeclaringType == fieldInfo.DeclaringType && x.Name == fieldInfo.Name))
                         fieldInfoList.Add(fieldInfo);
             }

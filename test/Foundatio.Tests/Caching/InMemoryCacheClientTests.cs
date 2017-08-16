@@ -11,7 +11,7 @@ namespace Foundatio.Tests.Caching {
         public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new InMemoryCacheClient(Log);
+            return new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
         }
 
         [Fact]

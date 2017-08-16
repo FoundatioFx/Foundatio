@@ -62,7 +62,7 @@ namespace Foundatio.Metrics {
                 return;
 
             try {
-                byte[] data = Encoding.ASCII.GetBytes(metric);
+                var data = Encoding.ASCII.GetBytes(metric);
 
                 EnsureSocket();
                 _socket?.SendTo(data, _endPoint);

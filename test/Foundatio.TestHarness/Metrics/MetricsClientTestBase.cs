@@ -8,6 +8,7 @@ using Foundatio.Tests.Queue;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
+#pragma warning disable AsyncFixer04 // A disposable object used in a fire & forget async call
 
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {

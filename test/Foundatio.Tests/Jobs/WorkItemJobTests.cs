@@ -57,7 +57,7 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanHandleMultipleWorkItemInstances() {
             const int workItemCount = 1000;
 
-            using (var metrics = new InMemoryMetricsClient(loggerFactory: Log)) {
+            using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log })) {
                 var options = new InMemoryQueueOptions<WorkItemData> { Retries = 0, RetryDelay = TimeSpan.Zero, LoggerFactory = Log };
                 using (var queue = new InMemoryQueue<WorkItemData>(options)) {
                     queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));

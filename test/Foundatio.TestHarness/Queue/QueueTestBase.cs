@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable CS4014
+#pragma warning disable AsyncFixer02
 
 namespace Foundatio.Tests.Queue {
     public abstract class QueueTestBase : TestWithLoggingBase, IDisposable {

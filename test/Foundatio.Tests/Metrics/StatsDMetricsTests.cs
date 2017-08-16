@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Metrics {
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
             _listener = new UdpListener("127.0.0.1", _port);
-            _client = new StatsDMetricsClient("127.0.0.1", _port, "test");
+            _client = new StatsDMetricsClient(new StatsDMetricsClientOptions { ServerName = "127.0.0.1", Port = _port, Prefix = "test" });
         }
 
         [Fact]
@@ -63,7 +63,7 @@ namespace Foundatio.Tests.Metrics {
         public async Task CanSendOffline() {
             await _client.CounterAsync("counter");
             var messages = GetMessages();
-            Assert.Equal(0, messages.Count);
+            Assert.Empty(messages);
         }
 
         [Fact]
@@ -85,7 +85,7 @@ namespace Foundatio.Tests.Metrics {
             const int iterations = 100000;
             await StartListeningAsync(iterations);
 
-            var metrics = new InMemoryMetricsClient();
+            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
 
             var sw = Stopwatch.StartNew();
             for (int index = 0; index < iterations; index++) {

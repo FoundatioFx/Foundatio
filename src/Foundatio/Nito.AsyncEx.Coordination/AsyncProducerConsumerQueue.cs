@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx.Synchronous;
+// ReSharper disable MethodSupportsCancellation
+#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
 
 namespace Foundatio.AsyncEx
 {
@@ -69,7 +71,7 @@ namespace Foundatio.AsyncEx
         /// </summary>
         /// <param name="collection">The initial elements to place in the queue. This may be <c>null</c> to start with an empty collection.</param>
         public AsyncProducerConsumerQueue(IEnumerable<T> collection)
-            : this(collection, int.MaxValue)
+            : this(collection, Int32.MaxValue)
         {
         }
 
@@ -86,19 +88,19 @@ namespace Foundatio.AsyncEx
         /// Creates a new async-compatible producer/consumer queue.
         /// </summary>
         public AsyncProducerConsumerQueue()
-            : this(null, int.MaxValue)
+            : this(null, Int32.MaxValue)
         {
         }
 
         /// <summary>
         /// Whether the queue is empty. This property assumes that the <c>_mutex</c> is already held.
         /// </summary>
-        private bool Empty { get { return _queue.Count == 0; } }
+        private bool Empty => _queue.Count == 0;
 
         /// <summary>
         /// Whether the queue is full. This property assumes that the <c>_mutex</c> is already held.
         /// </summary>
-        private bool Full { get { return _queue.Count == _maxCount; } }
+        private bool Full => _queue.Count == _maxCount;
 
         /// <summary>
         /// Marks the producer/consumer queue as complete for adding.

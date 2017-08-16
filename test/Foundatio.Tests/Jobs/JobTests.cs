@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunThrottledJobs() {
-            using (var client = new InMemoryCacheClient()) {
+            using (var client = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
                 var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
 
                 var sw = Stopwatch.StartNew();
@@ -130,7 +130,7 @@ namespace Foundatio.Tests.Jobs {
         public async Task JobLoopPerf() {
             const int iterations = 10000;
 
-            var metrics = new InMemoryMetricsClient();
+            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log });
             var job = new SampleJob(metrics, Log);
             var sw = Stopwatch.StartNew();
             await job.RunContinuousAsync(null, iterations);

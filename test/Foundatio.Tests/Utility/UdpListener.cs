@@ -34,7 +34,7 @@ namespace Foundatio.Tests.Utility {
                     return;
 
                 try {
-                    byte[] data = _listener.Receive(ref _remoteEndPoint);
+                    var data = _listener.Receive(ref _remoteEndPoint);
                     _receivedMessages.Add(Encoding.ASCII.GetString(data, 0, data.Length));
                 } catch (SocketException ex) {
                     // If we timeout, stop listening.
