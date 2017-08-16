@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26430.6
+VisualStudioVersion = 15.0.26730.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{70515E66-DAF8-4D18-8F8F-8A2934171AA9}"
 EndProject
@@ -12,7 +12,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		build\common.props = build\common.props
 		README.md = README.md
 		build\sourcelink.props = build\sourcelink.props
-		build\test.props = build\test.props
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{A1DFF80C-113F-4FEC-84BB-1E3790FB410F}"
@@ -35,7 +34,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "te
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Tests", "test\Foundatio.Tests\Foundatio.Tests.csproj", "{99CBF75F-9204-4D7E-A792-4377C0291900}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Logging.Serilog", "src\Foundatio.Logging.Serilog\Foundatio.Logging.Serilog.csproj", "{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Logging.Serilog", "src\Foundatio.Logging.Serilog\Foundatio.Logging.Serilog.csproj", "{3AC491FF-4A43-4E4E-B5E0-5E9B7B9083DF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -176,5 +175,8 @@ Global
 		{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93} = {A1DFF80C-113F-4FEC-84BB-1E3790FB410F}
 		{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
 		{99CBF75F-9204-4D7E-A792-4377C0291900} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BD75F5C6-658B-40DF-A8F6-91C3EB76DAAA}
 	EndGlobalSection
 EndGlobal
