@@ -12,6 +12,6 @@
     <ProjectReference Include="..\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.RandomData" Version="1.1.35" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.43" />
   </ItemGroup>
 </Project>

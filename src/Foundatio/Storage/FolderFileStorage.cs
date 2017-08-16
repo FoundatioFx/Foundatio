@@ -155,9 +155,9 @@ namespace Foundatio.Storage {
             
             searchPattern = searchPattern.Replace("/", "\\");
 
-            var path = Path.Combine(Folder, searchPattern);
+            string path = Path.Combine(Folder, searchPattern);
             if (path.EndsWith("\\") || path.EndsWith("\\*")) {
-                var directory = Path.GetDirectoryName(path);
+                string directory = Path.GetDirectoryName(path);
                 if (Directory.Exists(directory)) {
                     Directory.Delete(directory, true);
                     return Task.CompletedTask;
@@ -167,7 +167,7 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
 
-            foreach (var file in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories))
+            foreach (string file in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories))
                 File.Delete(file);
 
             return Task.CompletedTask;
@@ -187,7 +187,7 @@ namespace Foundatio.Storage {
             if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))
                 return Task.FromResult<IEnumerable<FileSpec>>(list);
 
-            foreach (var path in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue)) {
+            foreach (string path in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue)) {
                 var info = new FileInfo(path);
                 if (!info.Exists)
                     continue;

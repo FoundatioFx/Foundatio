@@ -32,7 +32,7 @@ namespace Foundatio.Tests.Jobs {
             var job = new LongRunningJob(Log);
             var runner = new JobRunner(job, Log);
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            var result = await runner.RunAsync(cts.Token);
+            bool result = await runner.RunAsync(cts.Token);
             
             Assert.True(result);
         }
@@ -42,7 +42,7 @@ namespace Foundatio.Tests.Jobs {
             var job = new LongRunningJob(Log);
             var runner = new JobRunner(job, Log);
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            var result = await runner.RunAsync(cts.Token);
+            bool result = await runner.RunAsync(cts.Token);
 
             Assert.True(result);
         }

@@ -13,7 +13,7 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.75" />
+    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.85" />
     <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.1" />
   </ItemGroup>
 </Project>
