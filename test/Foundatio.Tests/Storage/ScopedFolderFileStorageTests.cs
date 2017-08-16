@@ -51,12 +51,10 @@ namespace Foundatio.Tests.Storage {
             return base.CanConcurrentlyManageFilesAsync();
         }
 
-#if !NETSTANDARD
         [Fact]
         public override void CanUseDataDirectory() {
             base.CanUseDataDirectory();
         }
-#endif
 
         [Fact]
         public override Task CanDeleteEntireFolderAsync() {

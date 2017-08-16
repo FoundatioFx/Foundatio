@@ -2,12 +2,12 @@
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
-    <PackageTags>Logging;Log;Xunit;NETSTANDARD;Core</PackageTags>
+    <PackageTags>Logging;Log;Xunit</PackageTags>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
     <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />

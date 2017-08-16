@@ -1,19 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0</TargetFrameworks>
-    <PackageTags>Distributed;Jobs;NETSTANDARD;Core</PackageTags>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageTags>Distributed;Jobs</PackageTags>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
     <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.85" />
+    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.2.86" />
     <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.1" />
   </ItemGroup>
 </Project>

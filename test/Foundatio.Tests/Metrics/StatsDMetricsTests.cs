@@ -130,11 +130,7 @@ namespace Foundatio.Tests.Metrics {
         }
 
         private void StopListening() {
-#if NETSTANDARD
-            throw new NotImplementedException();
-#else
             _listenerThread.Abort();
-#endif
         }
 
         public void Dispose() {

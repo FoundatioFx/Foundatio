@@ -91,11 +91,7 @@ namespace Foundatio.Metrics {
                     return;
 
                 try {
-#if NETSTANDARD
-                    _socket.Dispose();
-#else
                     _socket.Close();
-#endif
                 } catch (Exception ex) {
                     _logger.Error(ex, "An error occurred while calling Close() on the socket.");
                 } finally {

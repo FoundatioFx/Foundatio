@@ -23,11 +23,8 @@ namespace Foundatio.Tests.Utility {
         }
 
         private static string GetBasePath() {
-#if NETSTANDARD
             string basePath = Path.GetDirectoryName(typeof(Configuration).GetTypeInfo().Assembly.Location);
-#else
-            string basePath = Path.GetFullPath("..\\");
-#endif
+
             for (int i = 0; i < 5; i++) {
                 if (File.Exists(Path.Combine(basePath, "appsettings.json")))
                     return Path.GetFullPath(basePath);

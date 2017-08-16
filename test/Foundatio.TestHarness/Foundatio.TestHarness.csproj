@@ -6,13 +6,10 @@
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
     <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\..\src\Exceptionless.snk</AssemblyOriginatorKeyFile>
-  </PropertyGroup>
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('netcoreapp'))">
-    <DefineConstants>$(DefineConstants);NETSTANDARD</DefineConstants>
+    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.RandomData" Version="1.1.45" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.47" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="2.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="2.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.3.0" />    

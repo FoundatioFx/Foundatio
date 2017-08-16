@@ -39,12 +39,10 @@ namespace Foundatio.Tests.Utility {
             _stream.Write(buffer, offset, count);
         }
 
-#if !NETSTANDARD
         public override void Close() {
             _stream.Close();
             base.Close();
         }
-#endif
 
         protected override void Dispose(bool disposing) {
             _stream.Dispose();

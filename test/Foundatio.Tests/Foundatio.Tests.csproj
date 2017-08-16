@@ -6,12 +6,12 @@
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
     <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\..\src\Exceptionless.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.RandomData" Version="1.1.45" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.1.47" />
   </ItemGroup>
 </Project>
