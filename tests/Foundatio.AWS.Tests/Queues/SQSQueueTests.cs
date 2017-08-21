@@ -18,7 +18,9 @@ namespace Foundatio.AWS.Tests.Queues {
             // Don't run this as part of the tests yet
             return null;
 
+#pragma warning disable CS0162 // Unreachable code detected
             var section = Configuration.GetSection("AWS");
+#pragma warning restore CS0162 // Unreachable code detected
             string accessKey = section["ACCESS_KEY_ID"];
             string secretKey = section["SECRET_ACCESS_KEY"];
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
@@ -109,11 +111,6 @@ namespace Foundatio.AWS.Tests.Queues {
         [Fact]
         public override async Task CanCompleteQueueEntryOnceAsync() {
             await base.CanCompleteQueueEntryOnceAsync();
-        }
-
-        // NOTE: Not using this test because you can set specific delay times for storage queue
-        public override async Task CanDelayRetryAsync() {
-            await base.CanDelayRetryAsync();
         }
 
         public override void Dispose() {

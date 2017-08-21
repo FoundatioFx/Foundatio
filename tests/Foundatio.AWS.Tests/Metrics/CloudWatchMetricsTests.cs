@@ -21,7 +21,9 @@ namespace Foundatio.AWS.Tests.Metrics {
             // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.
             return null;
 
+#pragma warning disable CS0162 // Unreachable code detected
             var section = Configuration.GetSection("AWS");
+#pragma warning restore CS0162 // Unreachable code detected
             string accessKey = section["ACCESS_KEY_ID"];
             string secretKey = section["SECRET_ACCESS_KEY"];
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
