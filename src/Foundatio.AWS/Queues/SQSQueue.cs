@@ -10,7 +10,7 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
