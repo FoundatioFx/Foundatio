@@ -8,7 +8,7 @@ using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Queue;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -103,7 +103,7 @@ namespace Foundatio.Redis.Tests.Messaging {
             var muxer = SharedConnection.GetMuxer();
             var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
 
-            var cache = new RedisCacheClient(muxer);
+            var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
             Assert.NotNull(cache);
 
             var queue = new RedisQueue<SimpleWorkItem>(new RedisQueueOptions<SimpleWorkItem> {

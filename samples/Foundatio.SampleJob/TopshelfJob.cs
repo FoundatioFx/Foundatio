@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Utility;
-using Nito.AsyncEx.Synchronous;
+using Foundatio.AsyncEx.Synchronous;
 using Topshelf;
 
 namespace Foundatio.SampleJob {

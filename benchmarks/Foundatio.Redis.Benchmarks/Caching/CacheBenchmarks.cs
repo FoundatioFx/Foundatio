@@ -7,13 +7,13 @@ using StackExchange.Redis;
 namespace Foundatio.Benchmarks.Caching {
     public class CacheBenchmarks {
         private const int ITEM_COUNT = 100;
-        private readonly ICacheClient _inMemoryCache = new InMemoryCacheClient();
+        private readonly ICacheClient _inMemoryCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
         private readonly ICacheClient _redisCache;
         private readonly ICacheClient _hybridCacheClient;
 
         public CacheBenchmarks() {
             var muxer = ConnectionMultiplexer.Connect("localhost");
-            _redisCache = new RedisCacheClient(muxer);
+            _redisCache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
             _redisCache.RemoveAllAsync().GetAwaiter().GetResult();
             _hybridCacheClient = new HybridCacheClient(_redisCache, new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-cache" }));
         }

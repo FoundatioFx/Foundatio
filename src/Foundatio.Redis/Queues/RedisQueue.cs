@@ -9,7 +9,7 @@ using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using Foundatio.Utility;
 using StackExchange.Redis;
 #pragma warning disable 4014
@@ -50,7 +50,7 @@ namespace Foundatio.Queues {
                 throw new ArgumentException("ConnectionMultiplexer is required.");
 
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
-            _cache = new RedisCacheClient(options.ConnectionMultiplexer, _serializer);
+            _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer });
 
             QueueListName = "q:" + _options.Name + ":in";
             WorkListName = "q:" + _options.Name + ":work";

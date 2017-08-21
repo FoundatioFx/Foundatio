@@ -9,8 +9,12 @@
 
   <ItemGroup>
     <None Include="App.config" />
-    <PackageReference Include="Foundatio.Logging.NLog" Version="5.1.*" />
     <None Update="NLog.config" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Foundatio.Logging.NLog" Version="5.1.1490" NoWarn="NU1701" />
+    <PackageReference Include="NLog" Version="4.4.12" NoWarn="NU1701" />
   </ItemGroup>
 
   <ItemGroup>

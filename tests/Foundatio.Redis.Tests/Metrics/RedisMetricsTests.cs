@@ -14,7 +14,7 @@ namespace Foundatio.Redis.Tests.Metrics {
         }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
-            return new RedisMetricsClient(SharedConnection.GetMuxer(), buffered, loggerFactory: Log);
+            return new RedisMetricsClient(new RedisMetricsClientOptions { ConnectionMultiplexer = SharedConnection.GetMuxer(), Buffered = buffered, LoggerFactory = Log });
         }
 
         [Fact]

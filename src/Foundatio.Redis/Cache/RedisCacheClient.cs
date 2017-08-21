@@ -6,7 +6,7 @@ using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Redis;
 using Foundatio.Serializer;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {

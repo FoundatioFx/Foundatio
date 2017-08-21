@@ -13,7 +13,7 @@ using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Queue;
 using Foundatio.Utility;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable 4014
@@ -139,7 +139,7 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override async Task CanDequeueWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
-            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+            using (var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log })) {
                 using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanDequeueWithLockingImpAsync(distributedLock);
@@ -150,7 +150,7 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
-            using (var cache = new RedisCacheClient(muxer, loggerFactory: Log)) {
+            using (var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log })) {
                 using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
                     var distributedLock = new CacheLockProvider(cache, messageBus, Log);
                     await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
@@ -385,7 +385,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
 
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
@@ -427,7 +427,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 }
                 Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
 
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
@@ -466,7 +466,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
 
                 var countdown = new AsyncCountdownEvent(workItemCount);
-                var metrics = new InMemoryMetricsClient();
+                var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 await queue.StartWorkingAsync(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
