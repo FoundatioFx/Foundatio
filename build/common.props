@@ -19,7 +19,6 @@
     <Authors>bniemyjski;ejsmith</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
-    <DebugType>portable</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
 
