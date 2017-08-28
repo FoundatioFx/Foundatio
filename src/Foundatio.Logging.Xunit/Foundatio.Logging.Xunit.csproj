@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>Logging;Log;Xunit</PackageTags>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
