@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>Logging;Log;Xunit</PackageTags>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
@@ -14,6 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Collections.Immutable" Version="1.4.0" />
-    <PackageReference Include="xunit.core" Version="2.2.0" />
+    <PackageReference Include="xunit.abstractions" Version="2.0.1" />
   </ItemGroup>
 </Project>

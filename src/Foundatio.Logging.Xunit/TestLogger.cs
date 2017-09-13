@@ -31,23 +31,22 @@ namespace Foundatio.Logging.Xunit {
                 Scopes = scopes
             };
 
-            var logData = state as LogData;
-            if (logData != null) {
-                logEntry.Properties["CallerMemberName"] = logData.MemberName;
-                logEntry.Properties["CallerFilePath"] = logData.FilePath;
-                logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
+            switch (state) {
+                case LogData logData:
+                    logEntry.Properties["CallerMemberName"] = logData.MemberName;
+                    logEntry.Properties["CallerFilePath"] = logData.FilePath;
+                    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
 
-                foreach (var property in logData.Properties)
-                    logEntry.Properties[property.Key] = property.Value;
-            } else {
-                var logDictionary = state as IDictionary<string, object>;
-                if (logDictionary != null) {
+                    foreach (var property in logData.Properties)
+                        logEntry.Properties[property.Key] = property.Value;
+                    break;
+                case IDictionary<string, object> logDictionary:
                     foreach (var property in logDictionary)
                         logEntry.Properties[property.Key] = property.Value;
-                }
+                    break;
             }
 
-            foreach (var scope in scopes) {
+            foreach (object scope in scopes) {
                 var scopeData = scope as IDictionary<string, object>;
                 if (scopeData == null)
                     continue;

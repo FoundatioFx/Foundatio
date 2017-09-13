@@ -14,6 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Collections.Immutable" Version="1.4.0" />
-    <PackageReference Include="NLog" Version="4.4.12" />
+    <PackageReference Include="NLog" Version="4.4.12" NoWarn="NU1701" />
   </ItemGroup>
 </Project>
