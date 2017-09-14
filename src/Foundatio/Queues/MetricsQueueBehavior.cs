@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {

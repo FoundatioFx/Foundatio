@@ -4,6 +4,7 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.ServiceProviders;
+using Microsoft.Extensions.Logging;
 using SimpleInjector;
 
 namespace Foundatio.SampleJob {

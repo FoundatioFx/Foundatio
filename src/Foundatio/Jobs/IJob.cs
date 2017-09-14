@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public interface IJob {
@@ -23,7 +24,7 @@ namespace Foundatio.Jobs {
             string jobName = job.GetType().Name;
             var logger = job.GetLogger();
 
-            using (logger.BeginScope(s => s.Property("job", jobName))) {
+            using (logger.BeginScope($"job: {jobName}")) {
                 logger.Info("Starting continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
 
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {

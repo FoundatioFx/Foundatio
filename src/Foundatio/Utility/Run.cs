@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class Run {

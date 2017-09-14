@@ -8,6 +8,7 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using NCrontab;
 using Topshelf;
 

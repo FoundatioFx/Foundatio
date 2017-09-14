@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Logging.Xunit {
@@ -53,6 +54,9 @@ namespace Foundatio.Logging.Xunit {
 
         public void SetLogLevel<T>(LogLevel minLogLevel) {
             SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
+        }
+
+        public void Dispose() {
         }
     }
 }

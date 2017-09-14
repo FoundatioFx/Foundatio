@@ -5,6 +5,7 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : class {
@@ -83,11 +84,11 @@ namespace Foundatio.Jobs {
         }
 
         protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.Info().Message(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
+            _logger.Info(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).");
         }
 
         protected virtual void LogAutoCompletedQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.Info().Message(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).").Write();
+            _logger.Info(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).");
         }
 
         protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);

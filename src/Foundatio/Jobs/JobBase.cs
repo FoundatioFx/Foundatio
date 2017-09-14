@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class JobBase : IJob, IHaveLogger {

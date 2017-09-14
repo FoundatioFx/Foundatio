@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.ServiceProviders {
     public static class ServiceProvider {

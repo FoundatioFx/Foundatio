@@ -6,6 +6,7 @@ using Foundatio.Utility;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.ServiceProviders;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.CronJob {
     public class Program {

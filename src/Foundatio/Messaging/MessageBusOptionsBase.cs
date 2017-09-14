@@ -1,6 +1,7 @@
 using System;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusOptionsBase {

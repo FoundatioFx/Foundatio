@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class TypeHelper {

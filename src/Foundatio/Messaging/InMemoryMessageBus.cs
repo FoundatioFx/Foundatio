@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {

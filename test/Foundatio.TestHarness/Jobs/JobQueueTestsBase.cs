@@ -12,6 +12,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

@@ -6,6 +6,8 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public class WorkItemHandlers {

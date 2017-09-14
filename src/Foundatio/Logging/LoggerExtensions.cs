@@ -1,5 +1,8 @@
 using System;
-using Foundatio.Logging.Internal;
+using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Internal;
 
 namespace Foundatio.Logging {
     public static class LoggerExtensions {

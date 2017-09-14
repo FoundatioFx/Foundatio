@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Logging;
 using Foundatio.Queues;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public interface IQueueJob<T> : IJob where T : class {

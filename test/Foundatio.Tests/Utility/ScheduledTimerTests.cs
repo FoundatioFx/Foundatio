@@ -6,6 +6,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

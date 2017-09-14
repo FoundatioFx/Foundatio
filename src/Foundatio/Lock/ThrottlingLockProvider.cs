@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {

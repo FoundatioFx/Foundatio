@@ -6,6 +6,7 @@ using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     [Job(Description = "Processes adhoc work item queues entries")]

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : MaintenanceBase, ICacheClient {

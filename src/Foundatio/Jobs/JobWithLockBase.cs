@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Lock;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public abstract class JobWithLockBase : IJob, IHaveLogger {

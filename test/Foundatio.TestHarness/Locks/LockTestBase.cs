@@ -7,6 +7,7 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

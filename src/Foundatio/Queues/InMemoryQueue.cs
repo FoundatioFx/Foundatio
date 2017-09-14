@@ -9,6 +9,7 @@ using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : class {

@@ -15,6 +15,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable CS4014

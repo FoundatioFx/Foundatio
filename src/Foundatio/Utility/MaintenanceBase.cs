@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public class MaintenanceBase : IDisposable {

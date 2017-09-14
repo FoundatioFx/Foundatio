@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Foundatio.Logging;
 using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public abstract class QueueOptionsBase<T>  where T : class {

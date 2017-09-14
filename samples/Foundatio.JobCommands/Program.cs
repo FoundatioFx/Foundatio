@@ -4,15 +4,14 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Commands;
 using Foundatio.Logging;
-using Foundatio.Logging.NLog;
 using Microsoft.Extensions.CommandLineUtils;
+using Microsoft.Extensions.Logging;
 using SimpleInjector;
 
 namespace Foundatio.CronJob {
     public class Program {
         public static int Main(string[] args) {
             var loggerFactory = new LoggerFactory();
-            loggerFactory.AddNLog();
 
             var getServiceProvider = new Func<IServiceProvider>(() => {
                 var container = new Container();

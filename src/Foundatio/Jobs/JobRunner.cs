@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public class JobRunner {
@@ -97,7 +98,7 @@ namespace Foundatio.Jobs {
             }
 
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
-            using (_logger.BeginScope(s => s.Property("job", _jobName))) {
+            using (_logger.BeginScope($"job: {_jobName}")) {
                 _logger.Info("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
 
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)

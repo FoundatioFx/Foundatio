@@ -7,6 +7,7 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs {

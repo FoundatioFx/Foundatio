@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Foundatio.Logging;
+using Foundatio.Utility;
 using Foundatio.Messaging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching {
     public interface IHybridCacheClient : ICacheClient { }

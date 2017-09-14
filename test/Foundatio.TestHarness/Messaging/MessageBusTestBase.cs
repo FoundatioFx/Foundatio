@@ -11,6 +11,7 @@ using Foundatio.Messaging;
 using Foundatio.Utility;
 using Xunit;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging {

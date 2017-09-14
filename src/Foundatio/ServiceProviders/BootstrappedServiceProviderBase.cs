@@ -1,5 +1,6 @@
 using System;
 using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.ServiceProviders {
     public abstract class BootstrappedServiceProviderBase : IBootstrappedServiceProvider {

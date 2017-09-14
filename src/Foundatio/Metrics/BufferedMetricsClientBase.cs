@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
