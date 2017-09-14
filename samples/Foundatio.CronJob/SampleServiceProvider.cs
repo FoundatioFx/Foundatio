@@ -1,18 +1,13 @@
 ﻿using System;
 using Foundatio.Caching;
 using Foundatio.Lock;
-using Foundatio.Logging;
 using Foundatio.Messaging;
-using Foundatio.ServiceProviders;
 using Microsoft.Extensions.Logging;
 using SimpleInjector;
 
 namespace Foundatio.SampleJob {
-    public class SampleServiceProvider : BootstrappedServiceProviderBase {
-        public SampleServiceProvider() { }
-        public SampleServiceProvider(ILoggerFactory loggerFactory) : base(loggerFactory) {}
-
-        protected override IServiceProvider BootstrapInternal(ILoggerFactory loggerFactory) {
+    public class SampleServiceProvider {
+        public static IServiceProvider Create(ILoggerFactory loggerFactory) {
             var container = new Container();
 
             if (loggerFactory != null) {
