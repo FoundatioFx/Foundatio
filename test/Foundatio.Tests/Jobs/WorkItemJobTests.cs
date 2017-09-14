@@ -201,6 +201,32 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
+        public async Task CanRunWorkItemJobUntilEmpty() {
+            using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log })) {
+                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
+                    var handlerRegistry = new WorkItemHandlers();
+                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+
+                    handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
+
+                    await queue.EnqueueAsync(new MyWorkItem {
+                        SomeData = "Test"
+                    }, true);
+
+                    await queue.EnqueueAsync(new MyWorkItem {
+                        SomeData = "Test"
+                    }, true);
+
+                    await job.RunUntilEmptyAsync();
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(2, stats.Enqueued);
+                    Assert.Equal(2, stats.Dequeued);
+                    Assert.Equal(2, stats.Completed);
+                }
+            }
+        }
+
+        [Fact]
         public async Task CanRunBadWorkItem() {
             using (var queue = new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData> { RetryDelay = TimeSpan.FromMilliseconds(500), LoggerFactory = Log })) {
                 using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
