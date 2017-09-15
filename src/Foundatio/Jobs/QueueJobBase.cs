@@ -6,6 +6,7 @@ using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : class {
@@ -15,7 +16,7 @@ namespace Foundatio.Jobs {
 
         public QueueJobBase(Lazy<IQueue<T>> queue, ILoggerFactory loggerFactory = null) {
             _queue = queue;
-            _logger = loggerFactory.CreateLogger(GetType());
+            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
             AutoComplete = true;
         }
 

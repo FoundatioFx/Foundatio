@@ -5,13 +5,14 @@ using Foundatio.Utility;
 using Foundatio.Lock;
 using Foundatio.Logging;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public abstract class JobWithLockBase : IJob, IHaveLogger {
         protected readonly ILogger _logger;
 
         public JobWithLockBase(ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger(GetType());
+            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
         }
 
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);

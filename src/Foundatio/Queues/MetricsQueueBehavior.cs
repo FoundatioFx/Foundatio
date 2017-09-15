@@ -4,6 +4,7 @@ using Foundatio.Logging;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Queues {
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
@@ -14,7 +15,7 @@ namespace Foundatio.Queues {
         private readonly TimeSpan _reportInterval;
 
         public MetricsQueueBehavior(IMetricsClient metrics, string metricsPrefix = null, TimeSpan? reportCountsInterval = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<MetricsQueueBehavior<T>>();
+            _logger = loggerFactory?.CreateLogger<MetricsQueueBehavior<T>>() ?? NullLogger<MetricsQueueBehavior<T>>.Instance;
             _metricsClient = metrics ?? NullMetricsClient.Instance;
 
             if (!reportCountsInterval.HasValue)

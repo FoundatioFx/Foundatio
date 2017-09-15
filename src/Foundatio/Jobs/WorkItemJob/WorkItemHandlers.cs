@@ -49,7 +49,7 @@ namespace Foundatio.Jobs {
 
     public abstract class WorkItemHandlerBase : IWorkItemHandler {
         public WorkItemHandlerBase(ILoggerFactory loggerFactory = null) {
-            Log = loggerFactory.CreateLogger(GetType());
+            Log = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
         }
         public WorkItemHandlerBase(ILogger logger) {
             Log = logger ?? NullLogger.Instance;

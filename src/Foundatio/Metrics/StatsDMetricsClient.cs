@@ -4,8 +4,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
     public class StatsDMetricsClientOptions : MetricsClientOptionsBase {
@@ -32,7 +32,7 @@ namespace Foundatio.Metrics {
 
         public StatsDMetricsClient(StatsDMetricsClientOptions options) {
             _options = options;
-            _logger = options.LoggerFactory.CreateLogger<StatsDMetricsClient>();
+            _logger = options.LoggerFactory?.CreateLogger<StatsDMetricsClient>() ?? NullLogger<StatsDMetricsClient>.Instance;
             _endPoint = new IPEndPoint(IPAddress.Parse(options.ServerName), options.Port);
 
             if (!String.IsNullOrEmpty(options.Prefix))

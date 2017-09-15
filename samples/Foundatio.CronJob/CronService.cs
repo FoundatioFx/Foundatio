@@ -9,6 +9,7 @@ using Foundatio.Lock;
 using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NCrontab;
 using Topshelf;
 
@@ -77,7 +78,7 @@ namespace Foundatio.CronJob {
         public ScheduledJobRunner(Func<IJob> jobFactory, string schedule, ICacheClient cacheClient, ILoggerFactory loggerFactory = null) {
             _jobFactory = jobFactory;
             Schedule = schedule;
-            _logger = loggerFactory.CreateLogger<ScheduledJobRunner>();
+            _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
 
             _runner = new JobRunner(jobFactory, loggerFactory, runContinuous: false);
 

@@ -9,6 +9,7 @@ using Foundatio.Logging;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
     public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
@@ -23,7 +24,7 @@ namespace Foundatio.Metrics {
 
         public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
             _options = options;
-            _logger = options.LoggerFactory.CreateLogger(GetType());
+            _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
             if (options.Buffered)
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }

@@ -7,6 +7,7 @@ using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     [Job(Description = "Processes adhoc work item queues entries")]
@@ -20,7 +21,7 @@ namespace Foundatio.Jobs {
             _publisher = publisher;
             _handlers = handlers;
             _queue = queue;
-            _logger = loggerFactory.CreateLogger(GetType());
+            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
         }
 
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);

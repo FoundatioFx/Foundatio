@@ -5,6 +5,7 @@ using Foundatio.Caching;
 using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -14,7 +15,7 @@ namespace Foundatio.Lock {
         private readonly ILogger _logger;
 
         public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
+            _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger<ThrottlingLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
             _maxHitsPerPeriod = maxHitsPerPeriod;
 

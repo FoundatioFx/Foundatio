@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public class JobRunner {
@@ -15,7 +16,7 @@ namespace Foundatio.Jobs {
         private readonly JobOptions _options;
 
         public JobRunner(JobOptions options, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<JobRunner>();
+            _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance;
             _options = options;
         }
 

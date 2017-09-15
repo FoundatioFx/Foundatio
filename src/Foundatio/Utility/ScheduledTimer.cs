@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
-using Foundatio.Logging;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     public class ScheduledTimer : IDisposable {
@@ -19,7 +18,7 @@ namespace Foundatio.Utility {
         private bool _shouldRunAgainImmediately = false;
 
         public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<ScheduledTimer>();
+            _logger = loggerFactory?.CreateLogger<ScheduledTimer>() ?? NullLogger<ScheduledTimer>.Instance;
             _timerCallback = timerCallback ?? throw new ArgumentNullException(nameof(timerCallback));
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 

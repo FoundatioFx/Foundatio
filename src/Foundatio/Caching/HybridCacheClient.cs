@@ -7,6 +7,7 @@ using Foundatio.Logging;
 using Foundatio.Utility;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching {
     public interface IHybridCacheClient : ICacheClient { }
@@ -21,7 +22,7 @@ namespace Foundatio.Caching {
         private long _invalidateCacheCalls;
 
         public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<HybridCacheClient>();
+            _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger<HybridCacheClient>.Instance;
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
             _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).GetAwaiter().GetResult();
