@@ -2,10 +2,10 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Utility;
 using Foundatio.Jobs;
 using Foundatio.Logging;
-using Foundatio.ServiceProviders;
+using Foundatio.SampleJob;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.CronJob {
@@ -14,7 +14,7 @@ namespace Foundatio.CronJob {
             var loggerFactory = new LoggerFactory();
             var logger = loggerFactory.CreateLogger<Program>();
 
-            var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(EveryMinuteJob), loggerFactory);
+            var serviceProvider = SampleServiceProvider.Create(loggerFactory);
 
             for (int i = 0; i < 5; i++) {
                 Task.Run(() => {
