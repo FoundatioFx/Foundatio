@@ -44,7 +44,7 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             if (cancellationToken.IsCancellationRequested) {
-                _logger.Info(() => $"Job was cancelled. Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
+                _logger.LogInformation($"Job was cancelled. Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
             }
@@ -52,7 +52,7 @@ namespace Foundatio.Jobs {
             var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
             if (lockValue == null) {
                 await queueEntry.AbandonAsync().AnyContext();
-                _logger.Trace("Unable to acquire queue entry lock.");
+                _logger.LogTrace("Unable to acquire queue entry lock.");
                 return JobResult.Success;
             }
 
@@ -68,12 +68,12 @@ namespace Foundatio.Jobs {
                     LogAutoCompletedQueueEntry(queueEntry);
                 } else {
                     await queueEntry.AbandonAsync().AnyContext();
-                    _logger.Warn(() => $"Auto abandoned {_queueEntryName} queue entry ({queueEntry.Id}).");
+                    _logger.LogWarning($"Auto abandoned {_queueEntryName} queue entry ({queueEntry.Id}).");
                 }
 
                 return result;
             } catch (Exception ex) {
-                _logger.Error(ex, () => $"Error processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+                _logger.LogError(ex, $"Error processing {_queueEntryName} queue entry ({queueEntry.Id}).");
                 if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
                     await queueEntry.AbandonAsync().AnyContext();
 
@@ -84,11 +84,11 @@ namespace Foundatio.Jobs {
         }
 
         protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.Info(() => $"Processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+            _logger.LogInformation($"Processing {_queueEntryName} queue entry ({queueEntry.Id}).");
         }
 
         protected virtual void LogAutoCompletedQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.Info(() => $"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).");
+            _logger.LogInformation($"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).");
         }
 
         protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);

@@ -6,6 +6,7 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable AsyncFixer04 // A disposable object used in a fire & forget async call
@@ -52,7 +53,7 @@ namespace Foundatio.Tests.Metrics {
                 var timer = await stats.GetTimerStatsAsync("t1");
                 Assert.Equal(1, timer.Count);
 
-                _logger.Info((await stats.GetCounterStatsAsync("c1")).ToString());
+                _logger.LogInformation((await stats.GetCounterStatsAsync("c1")).ToString());
             }
         }
 
@@ -174,7 +175,7 @@ namespace Foundatio.Tests.Metrics {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
                 Assert.True(await task, "Expected at least 5 count within 500 ms");
 
-                _logger.Info((await metrics.GetCounterStatsAsync(CounterName)).ToString());
+                _logger.LogInformation((await metrics.GetCounterStatsAsync(CounterName)).ToString());
             }
         }
 #pragma warning restore 4014

@@ -65,7 +65,7 @@ namespace Foundatio.Caching {
                 if (String.IsNullOrEmpty(key))
                     continue;
 
-                _logger.Trace("RemoveAllAsync: Removing key {0}", key);
+                _logger.LogTrace("RemoveAllAsync: Removing key {0}", key);
                 CacheEntry item;
                 if (_memory.TryRemove(key, out item))
                     removed++;
@@ -82,14 +82,14 @@ namespace Foundatio.Caching {
                     if (regex.IsMatch(key))
                         keysToRemove.Add(key);
             } catch (Exception ex) {
-                _logger.Error(ex, "Error trying to remove items from cache with this {0} prefix", prefix);
+                _logger.LogError(ex, "Error trying to remove items from cache with this {0} prefix", prefix);
             }
 
             return RemoveAllAsync(keysToRemove);
         }
 
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
-            _logger.Trace("Removing expired key {0}", key);
+            _logger.LogTrace("Removing expired key {0}", key);
 
             CacheEntry cacheEntry;
             if (_memory.TryRemove(key, out cacheEntry))
@@ -120,7 +120,7 @@ namespace Foundatio.Caching {
                 T value = cacheEntry.GetValue<T>();
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                _logger.Error(ex, "Unable to deserialize value \"{0}\" to type {1}", cacheEntry.Value, typeof(T).FullName);
+                _logger.LogError(ex, "Unable to deserialize value \"{0}\" to type {1}", cacheEntry.Value, typeof(T).FullName);
                 return CacheValue<T>.NoValue;
             }
         }
@@ -166,7 +166,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -205,7 +205,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -271,7 +271,7 @@ namespace Foundatio.Caching {
                                    .First()
                                    .Key;
 
-            _logger.Trace("Removing key {oldest}", oldest);
+            _logger.LogTrace("Removing key {oldest}", oldest);
 
             CacheEntry cacheEntry;
             _memory.TryRemove(oldest, out cacheEntry);
@@ -306,7 +306,7 @@ namespace Foundatio.Caching {
                 }
 
                 cacheEntry.ExpiresAt = expiresAt;
-                _logger.Trace("Removed value from set with cache key: {key}", key);
+                _logger.LogTrace("Removed value from set with cache key: {key}", key);
                 return cacheEntry;
             });
 
@@ -338,10 +338,10 @@ namespace Foundatio.Caching {
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
                 }
 
-                _logger.Trace("Added cache key: {key}", key);
+                _logger.LogTrace("Added cache key: {key}", key);
             } else {
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
-                _logger.Trace("Set cache key: {0}", key);
+                _logger.LogTrace("Set cache key: {0}", key);
             }
 
             ScheduleNextMaintenance(entry.ExpiresAt);
@@ -387,7 +387,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue)
@@ -453,7 +453,7 @@ namespace Foundatio.Caching {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            _logger.Trace("DoMaintenanceAsync");
+            _logger.LogTrace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
             DateTime utcNow = SystemClock.UtcNow.AddMilliseconds(50);
@@ -468,7 +468,7 @@ namespace Foundatio.Caching {
                         minExpiration = expiresAt;
                 }
             } catch (Exception ex) {
-                _logger.Error(ex, "Error trying to find expired cache items.");
+                _logger.LogError(ex, "Error trying to find expired cache items.");
             }
 
             foreach (var key in expiredKeys)

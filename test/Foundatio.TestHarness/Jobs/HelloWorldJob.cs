@@ -20,7 +20,7 @@ namespace Foundatio.Tests.Jobs {
             RunCount++;
             Interlocked.Increment(ref GlobalRunCount);
 
-            _logger.Trace("HelloWorld Running: instance={0} runs={1} global={2}", _id, RunCount, GlobalRunCount);
+            _logger.LogTrace("HelloWorld Running: instance={0} runs={1} global={2}", _id, RunCount, GlobalRunCount);
 
             return Task.FromResult(JobResult.Success);
         }
@@ -43,7 +43,7 @@ namespace Foundatio.Tests.Jobs {
                     break;
                 
                 if (_iterationCount % 10000 == 0)
-                    _logger.Trace("LongRunningJob Running: instance={0} iterations={1}", _id, IterationCount);
+                    _logger.LogTrace("LongRunningJob Running: instance={0} iterations={1}", _id, IterationCount);
             } while (true);
 
             return Task.FromResult(JobResult.Success);

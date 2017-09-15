@@ -16,7 +16,7 @@ namespace Foundatio.Tests.Logging {
             var logger = Log.CreateLogger<LoggingTests>();
             //using (logger.BeginScope<>(b => b.Property("prop1", "val1").Property("prop2", "val2")))
             //using (logger.BeginScope<>(b => b.Property("prop1", "innerval1"))) {
-            //    logger.Info("Hey {Stuff}!", "Eric");
+            //    logger.LogInformation("Hey {Stuff}!", "Eric");
             //    await BlahAsync(logger);
             //}
 
@@ -32,7 +32,7 @@ namespace Foundatio.Tests.Logging {
         [Fact]
         public void LogBuilder() {
             var logger = Log.CreateLogger<LoggingTests>();
-            //logger.Info().Message(() => "hello").Write();
+            //logger.LogInformation().Message(() => "hello").Write();
 
             //Assert.Equal(1, Log.LogEntries.Count);
             //Assert.Equal("hello", Log.LogEntries[0].Message);
@@ -41,7 +41,7 @@ namespace Foundatio.Tests.Logging {
         [Fact]
         public void LogNullString() {
             var logger = Log.CreateLogger<LoggingTests>();
-            //logger.Info().Message((string)null).Property("Id", (string)null).Write();
+            //logger.LogInformation().Message((string)null).Property("Id", (string)null).Write();
         }
 
         [Fact]
@@ -49,17 +49,17 @@ namespace Foundatio.Tests.Logging {
             var logger = Log.CreateLogger<LoggingTests>();
             var name = "Tester";
 
-            logger.Info(() => $"{name} at {SystemClock.UtcNow}.");
+            logger.LogInformation($"{name} at {SystemClock.UtcNow}.");
         }
 
         [Fact]
         public void LogException() {
             var logger = Log.CreateLogger<LoggingTests>();
-            //logger.Error().Exception(new Exception("test")).Write();
+            //logger.LogError().Exception(new Exception("test")).Write();
         }
 
         private Task BlahAsync(ILogger logger) {
-            logger.Info("Task hello");
+            logger.LogInformation("Task hello");
 
             return Task.CompletedTask;
         }

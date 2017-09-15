@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : MessageBusOptionsBase {
@@ -50,13 +51,13 @@ namespace Foundatio.Messaging {
             };
 
             if (!_subscribers.TryAdd(subscriber.Id, subscriber))
-                _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
+                _logger.LogError("Unable to add subscriber {subscriberId}", subscriber.Id);
 
             return Task.CompletedTask;
         }
 
         public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
+            _logger.LogTrace("Adding subscriber for {0}.", typeof(T).FullName);
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
@@ -68,7 +69,7 @@ namespace Foundatio.Messaging {
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
-                _logger.Trace(() => $"Done sending message to 0 subscribers for message type {messageType.Name}.");
+                _logger.LogTrace($"Done sending message to 0 subscribers for message type {messageType.Name}.");
                 return;
             }
 
@@ -76,12 +77,12 @@ namespace Foundatio.Messaging {
             try {
                 body = await serializer.DeserializeAsync(message.Data, messageType).AnyContext();
             } catch (Exception ex) {
-                _logger.Warn(ex, "Error deserializing messsage body: {0}", ex.Message);
+                _logger.LogWarning(ex, "Error deserializing messsage body: {0}", ex.Message);
                 return;
             }
 
             if (body == null) {
-                _logger.Warn("Unable to send null message for type {0}", messageType.Name);
+                _logger.LogWarning("Unable to send null message for type {0}", messageType.Name);
                 return;
             }
 
@@ -89,13 +90,13 @@ namespace Foundatio.Messaging {
         }
 
         protected async Task SendMessageToSubscribersAsync(List<Subscriber> subscribers, Type messageType, object message) {
-            _logger.Trace(() => $"Found {subscribers.Count} subscribers for message type {messageType.Name}.");
+            _logger.LogTrace($"Found {subscribers.Count} subscribers for message type {messageType.Name}.");
             foreach (var subscriber in subscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
                     if (_subscribers.TryRemove(subscriber.Id, out Subscriber sub))
-                        _logger.Trace("Removed cancelled subscriber: {subscriberId}", subscriber.Id);
+                        _logger.LogTrace("Removed cancelled subscriber: {subscriberId}", subscriber.Id);
                     else
-                        _logger.Trace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
+                        _logger.LogTrace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
 
                     continue;
                 }
@@ -103,10 +104,10 @@ namespace Foundatio.Messaging {
                 try {
                     await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                 } catch (Exception ex) {
-                    _logger.Warn(ex, "Error sending message to subscriber: {0}", ex.Message);
+                    _logger.LogWarning(ex, "Error sending message to subscriber: {0}", ex.Message);
                 }
             }
-            _logger.Trace(() => $"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
+            _logger.LogTrace($"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
         }
 
         protected Type GetMessageBodyType(MessageBusData message) {
@@ -117,7 +118,7 @@ namespace Foundatio.Messaging {
                 try {
                     return Type.GetType(type);
                 } catch (Exception ex) {
-                    _logger.Warn(ex, "Error getting message body type: {0}", type);
+                    _logger.LogWarning(ex, "Error getting message body type: {0}", type);
                     return null;
                 }
             });
@@ -159,18 +160,18 @@ namespace Foundatio.Messaging {
                 if (!_delayedMessages.TryRemove(messageId, out DelayedMessage message))
                     continue;
 
-                _logger.Trace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
+                _logger.LogTrace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
 
-            _logger.Trace("DoMaintenance next message send time: {0}", nextMessageSendTime.ToString("o"));
+            _logger.LogTrace("DoMaintenance next message send time: {0}", nextMessageSendTime.ToString("o"));
             return nextMessageSendTime;
         }
 
         public string MessageBusId { get; protected set; }
 
         public override void Dispose() {
-            _logger.Trace("Disposing");
+            _logger.LogTrace("Disposing");
             base.Dispose();
             _delayedMessages?.Clear();
             _subscribers?.Clear();

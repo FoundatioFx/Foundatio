@@ -38,7 +38,7 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"Sample1Job Run {Thread.CurrentThread.ManagedThreadId}");
+            _logger.LogInformation($"Sample1Job Run {Thread.CurrentThread.ManagedThreadId}");
             return Task.FromResult(JobResult.Success);
         }
     }
@@ -54,7 +54,7 @@ namespace Foundatio.CronJob {
         public string CustomArg { get; set; }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"Sample2Job Run CustomArg={CustomArg} {Thread.CurrentThread.ManagedThreadId}");
+            _logger.LogInformation($"Sample2Job Run CustomArg={CustomArg} {Thread.CurrentThread.ManagedThreadId}");
             return Task.FromResult(JobResult.Success);
         }
 
@@ -79,7 +79,7 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"ExcludeMeJob Run {Thread.CurrentThread.ManagedThreadId}");
+            _logger.LogInformation($"ExcludeMeJob Run {Thread.CurrentThread.ManagedThreadId}");
             return Task.FromResult(JobResult.Success);
         }
     }

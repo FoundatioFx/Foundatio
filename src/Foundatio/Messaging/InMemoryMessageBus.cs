@@ -40,17 +40,17 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
             }
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
-                _logger.Trace(() => $"Done sending message to 0 subscribers for message type {messageType.Name}.");
+                _logger.LogTrace($"Done sending message to 0 subscribers for message type {messageType.Name}.");
                 return Task.CompletedTask;
             }
 
-            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
+            _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
 
             return SendMessageToSubscribersAsync(subscribers, messageType, message.DeepClone());
         }

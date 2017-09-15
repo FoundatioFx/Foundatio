@@ -310,7 +310,7 @@ namespace Foundatio.Tests.Storage {
             using (storage) {
                 var files = (await storage.GetFileListAsync()).ToList();
                 if (files.Count > 0) {
-                    _logger.Trace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
+                    _logger.LogTrace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
                     await storage.DeleteFilesAsync(files);
                 }
 
@@ -396,7 +396,7 @@ namespace Foundatio.Tests.Storage {
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                logger?.Error(ex, () => $"Error retrieving event post data \"{path}\": {ex.Message}");
+                logger?.LogError(ex, $"Error retrieving event post data \"{path}\": {ex.Message}");
                 return null;
             }
 
@@ -407,7 +407,7 @@ namespace Foundatio.Tests.Storage {
             try {
                 return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
-                logger?.Error(ex, () => $"Error deleting work marker \"{path}.x\": {ex.Message}");
+                logger?.LogError(ex, $"Error deleting work marker \"{path}.x\": {ex.Message}");
             }
 
             return false;
@@ -429,7 +429,7 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                logger?.Error(ex, () => $"Error archiving event post data \"{path}\": {ex.Message}");
+                logger?.LogError(ex, $"Error archiving event post data \"{path}\": {ex.Message}");
                 return false;
             }
 

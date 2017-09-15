@@ -42,7 +42,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
             }
             catch (Exception ex) {
-                _logger.Error(ex, "Error cleaning up queue");
+                _logger.LogError(ex, "Error cleaning up queue");
             }
             finally {
                 queue.Dispose();
@@ -132,25 +132,25 @@ namespace Foundatio.Tests.Queue {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
                     Task.Run(async () => {
-                        _logger.Trace("Starting enqueue loop.");
+                        _logger.LogTrace("Starting enqueue loop.");
                         for (int index = 0; index < iterations; index++) {
                             await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
                             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                         }
-                        _logger.Trace("Finished enqueuing.");
+                        _logger.LogTrace("Finished enqueuing.");
                     });
 
-                    _logger.Trace("Starting dequeue loop.");
+                    _logger.LogTrace("Starting dequeue loop.");
                     for (int index = 0; index < iterations; index++) {
                         var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
                         Assert.NotNull(item);
                         await item.CompleteAsync();
                     }
-                    _logger.Trace("Finished dequeuing.");
+                    _logger.LogTrace("Finished dequeuing.");
 
                     await metrics.FlushAsync();
                     var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                    _logger.Trace(() => $"AverageDuration: {timing.AverageDuration}");
+                    _logger.LogTrace($"AverageDuration: {timing.AverageDuration}");
                     Assert.InRange(timing.AverageDuration, 0, 75);
                 }
             }
@@ -177,9 +177,9 @@ namespace Foundatio.Tests.Queue {
                     using (var secondQueue = GetQueue(runQueueMaintenance: false)) {
                         secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
-                        _logger.Trace("Starting dequeue loop.");
+                        _logger.LogTrace("Starting dequeue loop.");
                         for (int index = 0; index < iterations; index++) {
-                            _logger.Trace(() => $"[{index}] Calling Dequeue");
+                            _logger.LogTrace($"[{index}] Calling Dequeue");
                             var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));
                             Assert.NotNull(item);
                             await item.CompleteAsync();
@@ -187,7 +187,7 @@ namespace Foundatio.Tests.Queue {
 
                         await metrics.FlushAsync(); // This won't flush metrics queue behaviors
                         var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                        _logger.Trace(() => $"TotalDuration: {timing.TotalDuration} AverageDuration: {timing.AverageDuration}");
+                        _logger.LogTrace($"TotalDuration: {timing.TotalDuration} AverageDuration: {timing.AverageDuration}");
                         Assert.InRange(timing.AverageDuration, 0, 75);
                     }
                 }
@@ -222,7 +222,7 @@ namespace Foundatio.Tests.Queue {
                     await workItem.CompleteAsync();
                 }
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.InRange(sw.Elapsed.TotalSeconds, 0, 5);
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -247,7 +247,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 100);
             }
@@ -268,7 +268,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.Null(workItem);
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
 
@@ -282,7 +282,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Restart();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(1));
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(400));
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
@@ -312,7 +312,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 Assert.InRange(sw.Elapsed.TotalSeconds, 0, 2);
             }
@@ -364,7 +364,7 @@ namespace Foundatio.Tests.Queue {
                 using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
                     await queue.StartWorkingAsync(w => {
-                        _logger.Debug("WorkAction");
+                        _logger.LogDebug("WorkAction");
                         Assert.Equal("Hello", w.Value.Data);
                         throw new Exception();
                     });
@@ -376,7 +376,7 @@ namespace Foundatio.Tests.Queue {
 
                         await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
                         var stats = await queue.GetQueueStatsAsync();
-                        _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                        _logger.LogInformation("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                         Assert.Equal(0, stats.Completed);
                         Assert.Equal(1, stats.Errors);
                         Assert.Equal(1, stats.Deadletter);
@@ -410,7 +410,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
-                _logger.Trace("Time {0}", sw.Elapsed);
+                _logger.LogTrace("Time {0}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 Assert.Equal(0, (await queue.GetQueueStatsAsync()).Queued);
@@ -507,7 +507,7 @@ namespace Foundatio.Tests.Queue {
                 try {
                     for (int i = 0; i < workerCount; i++) {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                        _logger.Trace("Queue Id: {0}, I: {1}", q.QueueId, i);
+                        _logger.LogTrace("Queue Id: {0}, I: {1}", q.QueueId, i);
                         await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info));
                         workers.Add(q);
                     }
@@ -517,18 +517,18 @@ namespace Foundatio.Tests.Queue {
                             Data = "Hello",
                             Id = i
                         });
-                        _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
+                        _logger.LogTrace("Enqueued Index: {0} Id: {1}", i, id);
                     });
 
                     await countdown.WaitAsync();
                     await SystemClock.SleepAsync(50);
-                    _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}",
+                    _logger.LogTrace("Completed: {0} Abandoned: {1} Error: {2}",
                         info.CompletedCount,
                         info.AbandonCount,
                         info.ErrorCount);
 
 
-                    _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                    _logger.LogInformation("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                     Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
                     // In memory queue doesn't share state.
@@ -547,7 +547,7 @@ namespace Foundatio.Tests.Queue {
                         var workerStats = new List<QueueStats>();
                         for (int i = 0; i < workers.Count; i++) {
                             var stats = await workers[i].GetQueueStatsAsync();
-                            _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                            _logger.LogInformation("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                             workerStats.Add(stats);
                         }
 
@@ -590,7 +590,7 @@ namespace Foundatio.Tests.Queue {
 
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 var elapsed = SystemClock.UtcNow.Subtract(startTime);
-                _logger.Trace("Time {0}", elapsed);
+                _logger.LogTrace("Time {0}", elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(elapsed > TimeSpan.FromSeconds(.95));
                 await workItem.CompleteAsync();
@@ -614,14 +614,14 @@ namespace Foundatio.Tests.Queue {
                     };
 
                     using (queue.Completed.AddHandler(handler)) {
-                        _logger.Trace("Before enqueue");
+                        _logger.LogTrace("Before enqueue");
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
                         await SystemClock.SleepAsync(100);
 
-                        _logger.Trace("Before dequeue");
+                        _logger.LogTrace("Before dequeue");
                         var item = await queue.DequeueAsync();
                         await item.CompleteAsync();
 
@@ -631,7 +631,7 @@ namespace Foundatio.Tests.Queue {
                         item = await queue.DequeueAsync();
                         await item.AbandonAsync();
 
-                        _logger.Trace("Before asserts");
+                        _logger.LogTrace("Before asserts");
                         Assert.Equal(2, completedCount);
 
                         await SystemClock.SleepAsync(100); // flush metrics queue behaviors
@@ -702,15 +702,15 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(entry);
                 Assert.Equal("Hello", entry.Value.Data);
 
-                _logger.Trace(() => $"Waiting for {renewWait} before renewing lock");
+                _logger.LogTrace($"Waiting for {renewWait} before renewing lock");
                 await SystemClock.SleepAsync(renewWait);
-                _logger.Trace(() => $"Renewing lock");
+                _logger.LogTrace($"Renewing lock");
                 await entry.RenewLockAsync();
-                _logger.Trace(() => $"Waiting for {renewWait} to see if lock was renewed");
+                _logger.LogTrace($"Waiting for {renewWait} to see if lock was renewed");
                 await SystemClock.SleepAsync(renewWait);
 
                 // We shouldn't get another item here if RenewLock works.
-                _logger.Trace(() => $"Attempting to dequeue item that shouldn't exist");
+                _logger.LogTrace($"Attempting to dequeue item that shouldn't exist");
                 var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.Null(nullWorkItem);
                 await entry.CompleteAsync();
@@ -837,13 +837,13 @@ namespace Foundatio.Tests.Queue {
 
                     var resetEvent = new AsyncAutoResetEvent();
                     await queue.StartWorkingAsync(async w => {
-                        _logger.Info("Acquiring distributed lock in work item");
+                        _logger.LogInformation("Acquiring distributed lock in work item");
                         var l = await distributedLock.AcquireAsync("test");
                         Assert.NotNull(l);
-                        _logger.Info("Acquired distributed lock");
+                        _logger.LogInformation("Acquired distributed lock");
                         SystemClock.Sleep(TimeSpan.FromMilliseconds(250));
                         await l.ReleaseAsync();
-                        _logger.Info("Released distributed lock");
+                        _logger.LogInformation("Released distributed lock");
 
                         await w.CompleteAsync();
                         resetEvent.Set();
@@ -854,7 +854,7 @@ namespace Foundatio.Tests.Queue {
 
                     await SystemClock.SleepAsync(1);
                     var stats = await queue.GetQueueStatsAsync();
-                    _logger.Info("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    _logger.LogInformation("Completed: {completed} Errors: {errors} Deadletter: {deadletter} Working: {working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(1, stats.Completed);
                 }
             }
@@ -892,18 +892,18 @@ namespace Foundatio.Tests.Queue {
                         var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                         int instanceCount = i;
                         await q.StartWorkingAsync(async w => {
-                            _logger.Info("[{0}] Acquiring distributed lock in work item: {1}", instanceCount, w.Id);
+                            _logger.LogInformation("[{0}] Acquiring distributed lock in work item: {1}", instanceCount, w.Id);
                             var l = await distributedLock.AcquireAsync("test");
                             Assert.NotNull(l);
-                            _logger.Info("[{0}] Acquired distributed lock: {1}", instanceCount, w.Id);
+                            _logger.LogInformation("[{0}] Acquired distributed lock: {1}", instanceCount, w.Id);
                             SystemClock.Sleep(TimeSpan.FromMilliseconds(50));
                             await l.ReleaseAsync();
-                            _logger.Info("[{0}] Released distributed lock: {1}", instanceCount, w.Id);
+                            _logger.LogInformation("[{0}] Released distributed lock: {1}", instanceCount, w.Id);
 
                             await w.CompleteAsync();
                             info.IncrementCompletedCount();
                             countdown.Signal();
-                            _logger.Info("[{0}] Signaled countdown: {1}", instanceCount, w.Id);
+                            _logger.LogInformation("[{0}] Signaled countdown: {1}", instanceCount, w.Id);
                         });
                         workers.Add(q);
                     }
@@ -913,14 +913,14 @@ namespace Foundatio.Tests.Queue {
                             Data = "Hello",
                             Id = i
                         });
-                        _logger.Trace("Enqueued Index: {0} Id: {1}", i, id);
+                        _logger.LogTrace("Enqueued Index: {0} Id: {1}", i, id);
                     });
 
                     await countdown.WaitAsync(TimeSpan.FromSeconds(5).ToCancellationToken());
                     await SystemClock.SleepAsync(50);
-                    _logger.Trace("Completed: {0} Abandoned: {1} Error: {2}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                    _logger.LogTrace("Completed: {0} Abandoned: {1} Error: {2}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
-                    _logger.Info("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                    _logger.LogInformation("Work Info Stats: Completed: {completed} Abandoned: {abandoned} Error: {errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                     Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
                     // In memory queue doesn't share state.
@@ -932,7 +932,7 @@ namespace Foundatio.Tests.Queue {
                         var workerStats = new List<QueueStats>();
                         for (int i = 0; i < workers.Count; i++) {
                             var stats = await workers[i].GetQueueStatsAsync();
-                            _logger.Info("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                            _logger.LogInformation("Worker#{i} Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                             workerStats.Add(stats);
                         }
 
@@ -950,29 +950,29 @@ namespace Foundatio.Tests.Queue {
         }
 
         protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info) {
-            _logger.Trace($"Starting: {w.Value.Id}");
+            _logger.LogTrace($"Starting: {w.Value.Id}");
             Assert.Equal("Hello", w.Value.Data);
 
             try {
                 // randomly complete, abandon or blowup.
                 if (RandomData.GetBool()) {
-                    _logger.Trace($"Completing: {w.Value.Id}");
+                    _logger.LogTrace($"Completing: {w.Value.Id}");
                     await w.CompleteAsync();
                     info.IncrementCompletedCount();
                 }
                 else if (RandomData.GetBool()) {
-                    _logger.Trace($"Abandoning: {w.Value.Id}");
+                    _logger.LogTrace($"Abandoning: {w.Value.Id}");
                     await w.AbandonAsync();
                     info.IncrementAbandonCount();
                 }
                 else {
-                    _logger.Trace($"Erroring: {w.Value.Id}");
+                    _logger.LogTrace($"Erroring: {w.Value.Id}");
                     info.IncrementErrorCount();
                     throw new Exception();
                 }
             }
             finally {
-                _logger.Trace($"Signal {countdown.CurrentCount}");
+                _logger.LogTrace($"Signal {countdown.CurrentCount}");
                 countdown.Signal();
             }
         }

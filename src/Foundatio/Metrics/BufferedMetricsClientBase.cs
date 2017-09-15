@@ -70,7 +70,7 @@ namespace Foundatio.Metrics {
             try {
                 FlushAsync().AnyContext().GetAwaiter().GetResult();
             } catch (Exception ex) {
-                _logger.Error(ex, () => $"Error flushing metrics: {ex.Message}");
+                _logger.LogError(ex, $"Error flushing metrics: {ex.Message}");
             }
         }
 
@@ -79,7 +79,7 @@ namespace Foundatio.Metrics {
             if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
-            _logger.Trace("Flushing metrics: count={count}", _queue.Count);
+            _logger.LogTrace("Flushing metrics: count={count}", _queue.Count);
 
             try {
                 _sendingMetrics = true;
@@ -95,7 +95,7 @@ namespace Foundatio.Metrics {
                 if (entries.Count == 0)
                     return;
 
-                _logger.Trace("Dequeued {count} metrics", entries.Count);
+                _logger.LogTrace("Dequeued {count} metrics", entries.Count);
                 await SubmitMetricsAsync(entries).AnyContext();
             } finally {
                 _sendingMetrics = false;
@@ -120,7 +120,7 @@ namespace Foundatio.Metrics {
                         }).ToList();
 
                     if (metrics.Count > 1 && counters.Count > 0)
-                        _logger.Trace(() => $"Aggregated {counters.Count} counter(s) into {groupedCounters.Count} counter group(s)");
+                        _logger.LogTrace($"Aggregated {counters.Count} counter(s) into {groupedCounters.Count} counter group(s)");
 
                     // gauges
                     var gauges = metrics.Where(e => e.Type == MetricType.Gauge).ToList();
@@ -137,7 +137,7 @@ namespace Foundatio.Metrics {
                         }).ToList();
 
                     if (metrics.Count > 1 && gauges.Count > 0)
-                        _logger.Trace(() => $"Aggregated {gauges.Count} gauge(s) into {groupedGauges.Count} gauge group(s)");
+                        _logger.LogTrace($"Aggregated {gauges.Count} gauge(s) into {groupedGauges.Count} gauge group(s)");
 
                     // timings
                     var timings = metrics.Where(e => e.Type == MetricType.Timing).ToList();
@@ -153,31 +153,31 @@ namespace Foundatio.Metrics {
                         }).ToList();
 
                     if (metrics.Count > 1 && timings.Count > 0)
-                        _logger.Trace(() => $"Aggregated {timings.Count} timing(s) into {groupedTimings.Count} timing group(s)");
+                        _logger.LogTrace($"Aggregated {timings.Count} timing(s) into {groupedTimings.Count} timing group(s)");
 
                     // store aggregated metrics
 
                     if (counters.Count > 0 || gauges.Count > 0 || timings.Count > 0)
                         await StoreAggregatedMetricsInternalAsync(timeBucket, groupedCounters, groupedGauges, groupedTimings).AnyContext();
                 } catch (Exception ex) {
-                    _logger.Error(ex, $"Error aggregating metrics: {ex.Message}");
+                    _logger.LogError(ex, $"Error aggregating metrics: {ex.Message}");
                     throw;
                 }
             }
         }
 
         private async Task StoreAggregatedMetricsInternalAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
-            _logger.Trace(() => $"Storing {counters.Count} counters, {gauges.Count} gauges, {timings.Count} timings.");
+            _logger.LogTrace($"Storing {counters.Count} counters, {gauges.Count} gauges, {timings.Count} timings.");
 
             try {
                 await Run.WithRetriesAsync(() => StoreAggregatedMetricsAsync(timeBucket, counters, gauges, timings)).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, $"Error storing aggregated metrics: {ex.Message}");
+                _logger.LogError(ex, $"Error storing aggregated metrics: {ex.Message}");
                 throw;
             }
 
             await OnCountedAsync(counters.Sum(c => c.Value)).AnyContext();
-            _logger.Trace("Done storing aggregated metrics");
+            _logger.LogTrace("Done storing aggregated metrics");
         }
 
         protected abstract Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
@@ -199,7 +199,7 @@ namespace Foundatio.Metrics {
                 resetEvent.Set();
                 return Task.CompletedTask;
             })) {
-                _logger.Trace("Wait: count={count}", currentCount);
+                _logger.LogTrace("Wait: count={count}", currentCount);
 
                 if (work != null)
                     await work().AnyContext();
@@ -212,11 +212,11 @@ namespace Foundatio.Metrics {
                         await resetEvent.WaitAsync(cancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
 
-                    _logger.Trace("Got signal: count={currentCount} expected={count}", currentCount, count);
+                    _logger.LogTrace("Got signal: count={currentCount} expected={count}", currentCount, count);
                 } while (cancellationToken.IsCancellationRequested == false && currentCount > 0);
             }
 
-            _logger.Trace("Done waiting: count={currentCount} expected={count} success={success} time={time}", currentCount, count, currentCount <= 0, SystemClock.UtcNow.Subtract(start));
+            _logger.LogTrace("Done waiting: count={currentCount} expected={count} success={success} time={time}", currentCount, count, currentCount <= 0, SystemClock.UtcNow.Subtract(start));
 
             return currentCount <= 0;
         }

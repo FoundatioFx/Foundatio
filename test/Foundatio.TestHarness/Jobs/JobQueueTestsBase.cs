@@ -85,7 +85,7 @@ namespace Foundatio.Tests.Jobs {
                         q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", loggerFactory: Log));
                         queues.Add(q);
                     }
-                    _logger.Info("Done setting up queues");
+                    _logger.LogInformation("Done setting up queues");
 
                     var enqueueTask = Run.InParallelAsync(workItemCount, index => {
                         var queue = queues[RandomData.GetInt(0, jobCount - 1)];
@@ -94,7 +94,7 @@ namespace Foundatio.Tests.Jobs {
                             Path = RandomData.GetString()
                         });
                     });
-                    _logger.Info("Done enqueueing");
+                    _logger.LogInformation("Done enqueueing");
 
                     var cancellationTokenSource = new CancellationTokenSource();
                     await Run.InParallelAsync(jobCount, async index => {
@@ -103,20 +103,20 @@ namespace Foundatio.Tests.Jobs {
                         await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                         cancellationTokenSource.Cancel();
                     });
-                    _logger.Info("Done running jobs until empty");
+                    _logger.LogInformation("Done running jobs until empty");
 
                     await enqueueTask;
 
                     var queueStats = new List<QueueStats>();
                     for (int i = 0; i < queues.Count; i++) {
                         var stats = await queues[i].GetQueueStatsAsync();
-                        _logger.Info("Queue#{i}: Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                        _logger.LogInformation("Queue#{i}: Working: {working} Completed: {completed} Abandoned: {abandoned} Error: {errors} Deadletter: {deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                         queueStats.Add(stats);
                     }
-                    _logger.Info("Done getting queue stats");
+                    _logger.LogInformation("Done getting queue stats");
 
                     await metrics.FlushAsync();
-                    _logger.Info("Done flushing metrics");
+                    _logger.LogInformation("Done flushing metrics");
 
                     var queueSummary = await metrics.GetQueueStatsAsync("test.samplequeueworkitem");
                     Assert.Equal(queueStats.Sum(s => s.Completed), queueSummary.Completed.Count);

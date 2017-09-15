@@ -44,10 +44,10 @@ namespace Foundatio.Tests.Utility {
             var countdown = new AsyncCountdownEvent(2);
 
             Func<Task<DateTime?>> callback = async () => {
-                _logger.Info("Starting work.");
+                _logger.LogInformation("Starting work.");
                 countdown.Signal();
                 await SystemClock.SleepAsync(500);
-                _logger.Info("Finished work.");
+                _logger.LogInformation("Finished work.");
                 return null;
             };
 
@@ -60,14 +60,14 @@ namespace Foundatio.Tests.Utility {
                     }
                 });
 
-                _logger.Info("Waiting for 300ms");
+                _logger.LogInformation("Waiting for 300ms");
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
-                _logger.Info("Finished waiting for 300ms");
+                _logger.LogInformation("Finished waiting for 300ms");
                 Assert.Equal(1, countdown.CurrentCount);
 
-                _logger.Info("Waiting for 1.5 seconds");
+                _logger.LogInformation("Waiting for 1.5 seconds");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
-                _logger.Info("Finished waiting for 1.5 seconds");
+                _logger.LogInformation("Finished waiting for 1.5 seconds");
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }
@@ -79,7 +79,7 @@ namespace Foundatio.Tests.Utility {
             int hits = 0;
             Func<Task<DateTime?>> callback = () => {
                 Interlocked.Increment(ref hits);
-                _logger.Info("Callback called for the #{time} time", hits);
+                _logger.LogInformation("Callback called for the #{time} time", hits);
                 if (hits == 1)
                     throw new Exception("Error in callback");
 

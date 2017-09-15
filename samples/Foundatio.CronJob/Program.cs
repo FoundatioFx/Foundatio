@@ -26,7 +26,7 @@ namespace Foundatio.CronJob {
                     // every even minute
                     cronService.Add(() => serviceProvider.GetService<EvenMinuteJob>(), "*/2 * * * *");
 
-                    logger.Info($"Cron Service ({i}) Running on {Thread.CurrentThread.ManagedThreadId}");
+                    logger.LogInformation($"Cron Service ({i}) Running on {Thread.CurrentThread.ManagedThreadId}");
                     cronService.Run();
                 });
             }
@@ -43,7 +43,7 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"EveryMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
+            _logger.LogInformation($"EveryMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
             return Task.FromResult(JobResult.Success);
         }
     }
@@ -56,7 +56,7 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"EvenMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
+            _logger.LogInformation($"EvenMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
             return Task.FromResult(JobResult.Success);
         }
     }

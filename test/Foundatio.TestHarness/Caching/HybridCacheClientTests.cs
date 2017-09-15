@@ -6,6 +6,7 @@ using Foundatio.Utility;
 using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -108,7 +109,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(firstCache);
                 var firstResetEvent = new AsyncAutoResetEvent(false);
                 Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
-                    _logger.Trace("First local cache expired: {0}", args.Key);
+                    _logger.LogTrace("First local cache expired: {0}", args.Key);
                     firstResetEvent.Set();
                 };
 
@@ -117,28 +118,28 @@ namespace Foundatio.Tests.Caching {
                         Assert.NotNull(secondCache);
                         var secondResetEvent = new AsyncAutoResetEvent(false);
                         Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
-                            _logger.Trace("Second local cache expired: {0}", args.Key);
+                            _logger.LogTrace("Second local cache expired: {0}", args.Key);
                             secondResetEvent.Set();
                         };
 
                         using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
                             string cacheKey = "will-expire-remote";
-                            _logger.Trace("First Set");
+                            _logger.LogTrace("First Set");
                             Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));
-                            _logger.Trace("Done First Set");
+                            _logger.LogTrace("Done First Set");
                             Assert.Equal(1, firstCache.LocalCache.Count);
 
-                            _logger.Trace("Second Get");
+                            _logger.LogTrace("Second Get");
                             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-                            _logger.Trace("Done Second Get");
+                            _logger.LogTrace("Done Second Get");
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
-                            _logger.Trace("Waiting for item expired handlers...");
+                            _logger.LogTrace("Waiting for item expired handlers...");
                             var sw = Stopwatch.StartNew();
                             await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             sw.Stop();
-                            _logger.Trace("Time {0}", sw.Elapsed);
+                            _logger.LogTrace("Time {0}", sw.Elapsed);
                         }
                     }
                 }

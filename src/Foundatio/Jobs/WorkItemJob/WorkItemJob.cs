@@ -81,7 +81,7 @@ namespace Foundatio.Jobs {
 
             var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
             if (lockValue == null) {
-                handler.Log.Info($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Unable to acquire work item lock.");
+                handler.Log.LogInformation($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Unable to acquire work item lock.");
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.Success;
             }
@@ -92,12 +92,12 @@ namespace Foundatio.Jobs {
                         await queueEntry.RenewLockAsync().AnyContext();
                         await lockValue.RenewAsync().AnyContext();
                     } catch (Exception ex) {
-                        handler.Log.Error(ex, "Error renewing work item locks: {0}", ex.Message);
+                        handler.Log.LogError(ex, "Error renewing work item locks: {0}", ex.Message);
                     }
                 }
 
                 await ReportProgress(handler, queueEntry, progress, message).AnyContext();
-                handler.Log.Info(() => $"{workItemDataType.Name} Progress {progress}%: {message}");
+                handler.Log.LogInformation($"{workItemDataType.Name} Progress {progress}%: {message}");
             });
 
             try {
@@ -134,7 +134,7 @@ namespace Foundatio.Jobs {
                     Message = message
                 }).AnyContext();
             } catch (Exception ex) {
-                handler.Log.Error(ex, "Error sending progress report: {0}", ex.Message);
+                handler.Log.LogError(ex, "Error sending progress report: {0}", ex.Message);
             }
         }
     }

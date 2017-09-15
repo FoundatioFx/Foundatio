@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : QueueOptionsBase<T> {
@@ -169,7 +170,7 @@ namespace Foundatio.Queues {
         }
 
         public override void Dispose() {
-            _logger.Trace("Queue {0} dispose", _options.Name);
+            _logger.LogTrace("Queue {0} dispose", _options.Name);
             _queueDisposedCancellationTokenSource?.Cancel();
             base.Dispose();
 

@@ -40,7 +40,7 @@ namespace Foundatio.Utility {
 
             do {
                 if (attempts > 1)
-                    logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
+                    logger?.LogInformation($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
 
                 try {
                     return await action().AnyContext();
@@ -48,7 +48,7 @@ namespace Foundatio.Utility {
                     if (attempts >= maxAttempts)
                         throw;
 
-                    logger?.Error(ex, $"Retry error: {ex.Message}");
+                    logger?.LogError(ex, $"Retry error: {ex.Message}");
                     await SystemClock.SleepAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 

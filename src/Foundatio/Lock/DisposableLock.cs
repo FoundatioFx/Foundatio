@@ -17,23 +17,23 @@ namespace Foundatio.Lock {
         }
 
         public async Task DisposeAsync() {
-            _logger.Trace("Disposing lock: {0}", _name);
+            _logger.LogTrace("Disposing lock: {0}", _name);
             try {
                 await _lockProvider.ReleaseAsync(_name).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, $"Unable to release lock {_name}");
+                _logger.LogError(ex, $"Unable to release lock {_name}");
             }
-            _logger.Trace("Disposed lock: {0}", _name);
+            _logger.LogTrace("Disposed lock: {0}", _name);
         }
 
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
-            _logger.Trace("Renewing lock: {0}", _name);
+            _logger.LogTrace("Renewing lock: {0}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
-            _logger.Trace("Renewed lock: {0}", _name);
+            _logger.LogTrace("Renewed lock: {0}", _name);
         }
 
         public Task ReleaseAsync() {
-            _logger.Trace("Releasing lock: {0}", _name);
+            _logger.LogTrace("Releasing lock: {0}", _name);
             return _lockProvider.ReleaseAsync(_name);
         }
     }

@@ -32,34 +32,34 @@ namespace Foundatio.Utility {
             if (!utcDate.HasValue || utcDate.Value < utcNow)
                 utcDate = utcNow;
 
-            _logger.Trace(() => $"ScheduleNext called: value={utcDate.Value:O}");
+            _logger.LogTrace($"ScheduleNext called: value={utcDate.Value:O}");
             if (utcDate == DateTime.MaxValue) {
-                _logger.Trace("Ignoring MaxValue");
+                _logger.LogTrace("Ignoring MaxValue");
                 return;
             }
 
             // already have an earlier scheduled time
             if (_next > utcNow && utcDate > _next) {
-                _logger.Trace(() => $"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
+                _logger.LogTrace($"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
                 return;
             }
 
             // ignore duplicate times
             if (_next == utcDate) {
-                _logger.Trace("Ignoring because already scheduled for same time");
+                _logger.LogTrace("Ignoring because already scheduled for same time");
                 return;
             }
 
             using (_lock.Lock()) {
                 // already have an earlier scheduled time
                 if (_next > utcNow && utcDate > _next) {
-                    _logger.Trace(() => $"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
+                    _logger.LogTrace($"Ignoring because already scheduled for earlier time: {utcDate.Value.Ticks} Next: {_next.Ticks}");
                     return;
                 }
 
                 // ignore duplicate times
                 if (_next == utcDate) {
-                    _logger.Trace("Ignoring because already scheduled for same time");
+                    _logger.LogTrace("Ignoring because already scheduled for same time");
                     return;
                 }
 
@@ -68,22 +68,22 @@ namespace Foundatio.Utility {
                 if (_last == DateTime.MinValue)
                     _last = _next;
 
-                _logger.Trace(() => $"Scheduling next: delay={delay}");
+                _logger.LogTrace($"Scheduling next: delay={delay}");
                 _timer.Change(delay, Timeout.Infinite);
             }
         }
 
         private async Task RunCallbackAsync() {
             if (_isRunning) {
-                _logger.Trace("Exiting run callback because its already running, will run again immediately.");
+                _logger.LogTrace("Exiting run callback because its already running, will run again immediately.");
                 _shouldRunAgainImmediately = true;
                 return;
             }
 
-            _logger.Trace("Starting RunCallbackAsync");
+            _logger.LogTrace("Starting RunCallbackAsync");
             using (await _lock.LockAsync().AnyContext()) {
                 if (_isRunning) {
-                    _logger.Trace("Exiting run callback because its already running, will run again immediately.");
+                    _logger.LogTrace("Exiting run callback because its already running, will run again immediately.");
                     _shouldRunAgainImmediately = true;
                     return;
                 }
@@ -98,14 +98,14 @@ namespace Foundatio.Utility {
                 try {
                     next = await _timerCallback().AnyContext();
                 } catch (Exception ex) {
-                    _logger.Error(ex, () => $"Error running scheduled timer callback: {ex.Message}");
+                    _logger.LogError(ex, $"Error running scheduled timer callback: {ex.Message}");
                     _shouldRunAgainImmediately = true;
                 }
 
                 if (_minimumInterval > TimeSpan.Zero) {
-                    _logger.Trace("Sleeping for minimum interval: {interval}", _minimumInterval);
+                    _logger.LogTrace("Sleeping for minimum interval: {interval}", _minimumInterval);
                     await SystemClock.SleepAsync(_minimumInterval).AnyContext();
-                    _logger.Trace("Finished sleeping");
+                    _logger.LogTrace("Finished sleeping");
                 }
 
                 var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
@@ -114,13 +114,13 @@ namespace Foundatio.Utility {
                 else if (next.HasValue)
                     ScheduleNext(next.Value);
             } catch (Exception ex) {
-                _logger.Error(ex, () => $"Error running schedule next callback: {ex.Message}");
+                _logger.LogError(ex, $"Error running schedule next callback: {ex.Message}");
             } finally {
                 _isRunning = false;
                 _shouldRunAgainImmediately = false;
             }
 
-            _logger.Trace("Finished RunCallbackAsync");
+            _logger.LogTrace("Finished RunCallbackAsync");
         }
 
         public void Dispose() {

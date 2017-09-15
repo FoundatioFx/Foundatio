@@ -83,7 +83,7 @@ namespace Foundatio.CronJob {
 
             _cronSchedule = CrontabSchedule.TryParse(schedule, s => s, e => {
                 var ex = e();
-                _logger.Error(ex, $"Error parsing schedule {schedule}: {ex.Message}");
+                _logger.LogError(ex, $"Error parsing schedule {schedule}: {ex.Message}");
                 return null;
             });
 

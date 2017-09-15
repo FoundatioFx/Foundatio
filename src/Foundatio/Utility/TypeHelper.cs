@@ -33,12 +33,12 @@ namespace Foundatio.Utility {
 
             var type = Type.GetType(fullTypeName);
             if (type == null) {
-                logger?.Error("Unable to resolve type: \"{0}\".", fullTypeName);
+                logger?.LogError("Unable to resolve type: \"{0}\".", fullTypeName);
                 return null;
             }
 
             if (expectedBase != null && !expectedBase.IsAssignableFrom(type)) {
-                logger?.Error("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName);
+                logger?.LogError("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName);
                 return null;
             }
 

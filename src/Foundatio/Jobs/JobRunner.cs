@@ -52,14 +52,14 @@ namespace Foundatio.Jobs {
                 if (Debugger.IsAttached)
                     Console.ReadKey();
             } catch (FileNotFoundException e) {
-                _logger.Error(() => $"{e.GetMessage()} ({ e.FileName})");
+                _logger.LogError($"{e.GetMessage()} ({ e.FileName})");
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
 
                 return 1;
             } catch (Exception e) {
-                _logger.Error(e, "Job \"{jobName}\" error: {Message}", _jobName, e.GetMessage());
+                _logger.LogError(e, "Job \"{jobName}\" error: {Message}", _jobName, e.GetMessage());
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -76,7 +76,7 @@ namespace Foundatio.Jobs {
                     try {
                         await RunAsync(cancellationToken).AnyContext();
                     } catch (Exception ex) {
-                        _logger.Error(ex, () => $"Error running job in background: {ex.Message}");
+                        _logger.LogError(ex, $"Error running job in background: {ex.Message}");
                         throw;
                     }
                 }, cancellationToken, TaskCreationOptions.LongRunning).TryStart();
@@ -87,19 +87,19 @@ namespace Foundatio.Jobs {
 
         public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_options.JobFactory == null) {
-                _logger.Error("JobFactory must be specified.");
+                _logger.LogError("JobFactory must be specified.");
                 return false;
             }
 
             var job = _options.JobFactory();
             if (job == null) {
-                _logger.Error("JobFactory returned null job instance.");
+                _logger.LogError("JobFactory returned null job instance.");
                 return false;
             }
 
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
             using (_logger.BeginScope($"job: {_jobName}")) {
-                _logger.Info("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
+                _logger.LogInformation("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
 
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
                     await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
@@ -112,7 +112,7 @@ namespace Foundatio.Jobs {
                                 var jobInstance = _options.JobFactory();
                                 await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
                             } catch (Exception ex) {
-                                _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
+                                _logger.LogError(ex, $"Error running job instance: {ex.Message}");
                                 throw;
                             }
                         }, cancellationToken, TaskCreationOptions.LongRunning);
@@ -147,7 +147,7 @@ namespace Foundatio.Jobs {
                 _jobShutdownCancellationTokenSource = new CancellationTokenSource();
                 ShutdownEventCatcher.Shutdown += args => {
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.Info("Job shutdown event signaled: {0}", args.Reason);
+                    logger?.LogInformation("Job shutdown event signaled: {0}", args.Reason);
                 };
 
                 string webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
@@ -159,7 +159,7 @@ namespace Foundatio.Jobs {
                         return;
 
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.Info("Job shutdown signaled.");
+                    logger?.LogInformation("Job shutdown signaled.");
                 });
 
                 var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));

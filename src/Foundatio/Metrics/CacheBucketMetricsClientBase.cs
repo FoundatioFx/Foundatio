@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public abstract class CacheBucketMetricsClientBase : BufferedMetricsClientBase, IMetricsClientStats {
@@ -32,16 +33,16 @@ namespace Foundatio.Metrics {
         }
 
         private async Task StoreCounterAsync(TimeBucket timeBucket, AggregatedCounterMetric counter) {
-            _logger.Trace(() => $"Storing counter name={counter.Key.Name} value={counter.Value} time={counter.Key.Duration}");
+            _logger.LogTrace($"Storing counter name={counter.Key.Name} value={counter.Value} time={counter.Key.Duration}");
 
             string bucketKey = GetBucketKey(CacheMetricNames.Counter, counter.Key.Name, counter.Key.StartTimeUtc, timeBucket.Size);
             await _cache.IncrementAsync(bucketKey, counter.Value, timeBucket.Ttl).AnyContext();
 
-            _logger.Trace(() => $"Done storing counter name={counter.Key.Name}");
+            _logger.LogTrace($"Done storing counter name={counter.Key.Name}");
         }
 
         private async Task StoreGaugeAsync(TimeBucket timeBucket, AggregatedGaugeMetric gauge) {
-            _logger.Trace(() => $"Storing gauge name={gauge.Key.Name} count={gauge.Count} total={gauge.Total} last={gauge.Last} min={gauge.Min} max={gauge.Max} time={gauge.Key.StartTimeUtc}");
+            _logger.LogTrace($"Storing gauge name={gauge.Key.Name} count={gauge.Count} total={gauge.Total} last={gauge.Last} min={gauge.Min} max={gauge.Max} time={gauge.Key.StartTimeUtc}");
 
             string countKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Count);
             await _cache.IncrementAsync(countKey, gauge.Count, timeBucket.Ttl).AnyContext();
@@ -58,11 +59,11 @@ namespace Foundatio.Metrics {
             string maxKey = GetBucketKey(CacheMetricNames.Gauge, gauge.Key.Name, gauge.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Max);
             await _cache.SetIfHigherAsync(maxKey, gauge.Max, timeBucket.Ttl).AnyContext();
 
-            _logger.Trace(() => $"Done storing gauge name={gauge.Key.Name}");
+            _logger.LogTrace($"Done storing gauge name={gauge.Key.Name}");
         }
 
         private async Task StoreTimingAsync(TimeBucket timeBucket, AggregatedTimingMetric timing) {
-            _logger.Trace(() => $"Storing timing name={timing.Key.Name} count={timing.Count} total={timing.TotalDuration} min={timing.MinDuration} max={timing.MaxDuration} time={timing.Key.StartTimeUtc}");
+            _logger.LogTrace($"Storing timing name={timing.Key.Name} count={timing.Count} total={timing.TotalDuration} min={timing.MinDuration} max={timing.MaxDuration} time={timing.Key.StartTimeUtc}");
 
             string countKey = GetBucketKey(CacheMetricNames.Timing, timing.Key.Name, timing.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Count);
             await _cache.IncrementAsync(countKey, timing.Count, timeBucket.Ttl).AnyContext();
@@ -76,7 +77,7 @@ namespace Foundatio.Metrics {
             string minKey = GetBucketKey(CacheMetricNames.Timing, timing.Key.Name, timing.Key.StartTimeUtc, timeBucket.Size, CacheMetricNames.Min);
             await _cache.SetIfLowerAsync(minKey, timing.MinDuration, timeBucket.Ttl).AnyContext();
 
-            _logger.Trace(() => $"Done storing timing name={timing.Key.Name}");
+            _logger.LogTrace($"Done storing timing name={timing.Key.Name}");
         }
 
         public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
