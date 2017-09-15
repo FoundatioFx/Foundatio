@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -24,7 +25,7 @@ namespace Foundatio.Jobs {
             string jobName = job.GetType().Name;
             var logger = job.GetLogger();
 
-            using (logger.BeginScope($"job: {jobName}")) {
+            using (logger.BeginScope(new Dictionary<string, object> {{ "job", jobName }})) {
                 logger.LogInformation("Starting continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
 
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
@@ -39,7 +40,8 @@ namespace Foundatio.Jobs {
                             await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
                         else if (iterations % 1000 == 0) // allow for cancellation token to get set
                             await SystemClock.SleepAsync(1, cancellationToken).AnyContext();
-                    } catch (OperationCanceledException) { }
+                    }
+                    catch (OperationCanceledException) { }
 
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;
