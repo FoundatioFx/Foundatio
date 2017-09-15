@@ -1,4 +1,4 @@
-version: 5.1.{build}
+version: 6.0.{build}
 os: Visual Studio 2017
 clone_depth: 2
 configuration: Release
