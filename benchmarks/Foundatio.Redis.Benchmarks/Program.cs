@@ -8,10 +8,13 @@ using Foundatio.Benchmarks.Queues;
 namespace Foundatio.Benchmarks {
     class Program {
         static void Main(string[] args) {
-            var summary = BenchmarkRunner.Run<CacheBenchmarks>();
+            var summary = BenchmarkRunner.Run<QueueBenchmarks>();
             Console.WriteLine(summary.ToString());
 
-            summary = BenchmarkRunner.Run<QueueBenchmarks>();
+            summary = BenchmarkRunner.Run<JobQueueBenchmarks>();
+            Console.WriteLine(summary.ToString());
+
+            summary = BenchmarkRunner.Run<CacheBenchmarks>();
             Console.WriteLine(summary.ToString());
             Console.ReadKey();
         }
