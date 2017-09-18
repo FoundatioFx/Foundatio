@@ -9,6 +9,7 @@ using Amazon.Runtime;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public class CloudWatchMetricsClient : BufferedMetricsClientBase, IMetricsClientStats {
@@ -52,7 +53,7 @@ namespace Foundatio.Metrics {
                 if (metricsPage.Count == 0)
                     break;
 
-                _logger.Trace(() => $"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
+                _logger.LogTrace($"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
                 // do retries
                 var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
                     Namespace = _options.Namespace,

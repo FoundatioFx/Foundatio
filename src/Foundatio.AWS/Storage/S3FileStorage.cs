@@ -12,7 +12,8 @@ using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
 using Foundatio.Extensions;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     [Obsolete("S3Storage has been renamed to S3FileStorage")]
@@ -30,7 +31,7 @@ namespace Foundatio.Storage {
             _credentials = credentials;
             _region = region;
             _bucket = bucket;
-            _logger = loggerFactory.CreateLogger<S3FileStorage>();
+            _logger = loggerFactory?.CreateLogger<S3FileStorage>() ?? NullLogger<S3FileStorage>.Instance;
         }
 
         private AmazonS3Client CreateClient() {
