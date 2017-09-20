@@ -18,23 +18,23 @@ namespace Foundatio.Benchmarks.Queues {
             _redisQueue.DeleteQueueAsync().GetAwaiter().GetResult();
         }
 
-        [IterationSetup(Target = nameof(RunInMemoryJobUntilEmptyRedis))]
+        [IterationSetup(Target = nameof(RunInMemoryJobUntilEmpty))]
         public void EnqueueInMemoryQueue() {
             EnqueueQueue(_inMemoryQueue);
         }
 
         [Benchmark]
-        public void RunInMemoryJobUntilEmptyRedis() {
+        public void RunInMemoryJobUntilEmpty() {
             RunJobUntilEmpty(_inMemoryQueue);
         }
 
-        [IterationSetup(Target = nameof(RunRedisQueueJobUntilEmptyRedis))]
+        [IterationSetup(Target = nameof(RunRedisQueueJobUntilEmpty))]
         public void EnqueueRedisQueue() {
             EnqueueQueue(_redisQueue);
         }
 
         [Benchmark]
-        public void RunRedisQueueJobUntilEmptyRedis() {
+        public void RunRedisQueueJobUntilEmpty() {
             RunJobUntilEmpty(_redisQueue);
         }
 

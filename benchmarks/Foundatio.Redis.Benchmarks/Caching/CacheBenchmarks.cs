@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.Benchmarks.Caching {
     public class CacheBenchmarks {
-        private const int ITEM_COUNT = 100;
+        private const int ITEM_COUNT = 1000;
         private readonly ICacheClient _inMemoryCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
         private readonly ICacheClient _redisCache;
         private readonly ICacheClient _hybridCacheClient;
