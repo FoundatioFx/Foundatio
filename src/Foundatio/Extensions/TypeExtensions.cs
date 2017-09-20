@@ -1,7 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Reflection;
-using Foundatio.Utility;
 
 namespace Foundatio.Utility {
     internal static class TypeExtensions {

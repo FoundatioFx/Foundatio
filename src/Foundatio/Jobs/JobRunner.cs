@@ -99,7 +99,7 @@ namespace Foundatio.Jobs {
             }
 
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
-            using (_logger.BeginScope($"job: {_jobName}")) {
+            using (_logger.BeginScope(new Dictionary<string, object> {{ "job", _jobName }})) {
                 _logger.LogInformation("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
 
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
