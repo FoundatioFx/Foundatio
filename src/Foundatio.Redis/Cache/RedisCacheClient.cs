@@ -7,6 +7,7 @@ using Foundatio.Redis;
 using Foundatio.Serializer;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {
@@ -34,7 +35,7 @@ namespace Foundatio.Caching {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             options.Serializer = options.Serializer ?? new JsonNetSerializer();
             _options = options;
-            _logger = options.LoggerFactory.CreateLogger<RedisCacheClient>();
+            _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
