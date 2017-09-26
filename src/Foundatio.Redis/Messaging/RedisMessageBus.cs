@@ -2,10 +2,10 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
@@ -26,10 +26,10 @@ namespace Foundatio.Messaging {
                 if (_isSubscribed)
                     return;
 
-                _logger.Trace("Subscribing to topic: {0}", _options.Topic);
+                _logger.LogTrace("Subscribing to topic: {0}", _options.Topic);
                 await _options.Subscriber.SubscribeAsync(_options.Topic, OnMessage).AnyContext();
                 _isSubscribed = true;
-                _logger.Trace("Subscribed to topic: {0}", _options.Topic);
+                _logger.LogTrace("Subscribed to topic: {0}", _options.Topic);
             }
         }
 
@@ -37,12 +37,12 @@ namespace Foundatio.Messaging {
             if (_subscribers.IsEmpty)
                 return;
 
-            _logger.Trace("OnMessage({channel})", channel);
+            _logger.LogTrace("OnMessage({channel})", channel);
             MessageBusData message;
             try {
                 message = await _serializer.DeserializeAsync<MessageBusData>((byte[])value).AnyContext();
             } catch (Exception ex) {
-                _logger.Warn(ex, "OnMessage({0}) Error deserializing messsage: {1}", channel, ex.Message);
+                _logger.LogWarning(ex, "OnMessage({0}) Error deserializing messsage: {1}", channel, ex.Message);
                 return;
             }
 
@@ -51,12 +51,12 @@ namespace Foundatio.Messaging {
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
             }
 
-            _logger.Trace("Message Publish: {messageType}", messageType.FullName);
+            _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
             var data = await _serializer.SerializeAsync(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = await _serializer.SerializeToStringAsync(message).AnyContext()
@@ -73,10 +73,10 @@ namespace Foundatio.Messaging {
                     if (!_isSubscribed)
                         return;
 
-                    _logger.Trace("Unsubscribing from topic {0}", _options.Topic);
+                    _logger.LogTrace("Unsubscribing from topic {0}", _options.Topic);
                     _options.Subscriber.Unsubscribe(_options.Topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
-                    _logger.Trace("Unsubscribed from topic {0}", _options.Topic);
+                    _logger.LogTrace("Unsubscribed from topic {0}", _options.Topic);
                 }
             }
         }

@@ -4,6 +4,7 @@ using BenchmarkDotNet.Attributes;
 using Foundatio.Jobs;
 using Foundatio.Logging;
 using Foundatio.Queues;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Benchmarks.Queues {

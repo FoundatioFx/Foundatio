@@ -1,7 +1,7 @@
 ﻿using System;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching {

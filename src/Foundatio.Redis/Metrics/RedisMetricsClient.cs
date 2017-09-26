@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Caching;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Metrics {
