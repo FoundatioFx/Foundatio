@@ -14,7 +14,7 @@ namespace Foundatio.CronJob {
 
             var getServiceProvider = new Func<IServiceProvider>(() => {
                 var container = new Container();
-                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterSingleton(loggerFactory);
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
 
                 return container;
