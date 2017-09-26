@@ -1,6 +1,5 @@
 ﻿using System;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.AsyncEx;
 using System.Threading;

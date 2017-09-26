@@ -1,6 +1,5 @@
 ﻿using System;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
