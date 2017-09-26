@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.SampleJob;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

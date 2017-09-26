@@ -6,7 +6,6 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {

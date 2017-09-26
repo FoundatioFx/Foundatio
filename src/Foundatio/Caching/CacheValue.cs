@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Foundatio.Caching {
+﻿namespace Foundatio.Caching {
     public class CacheValue<T> {
         public CacheValue(T value, bool hasValue) {
             Value = value;

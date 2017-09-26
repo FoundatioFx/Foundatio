@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Logging;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 

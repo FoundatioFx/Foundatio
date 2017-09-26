@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using Exceptionless.DateTimeExtensions;
 using Foundatio.Jobs.Commands.Extensions;
-using Foundatio.Logging;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;

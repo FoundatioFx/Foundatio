@@ -1,5 +1,4 @@
-﻿using System;
-using Foundatio.Metrics;
+﻿using Foundatio.Metrics;
 
 namespace Foundatio.Tests.Queue {
     public class SimpleWorkItem : IHaveSubMetricName {

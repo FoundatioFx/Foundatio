@@ -1,7 +1,6 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;

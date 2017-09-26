@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using Foundatio.Logging;
+﻿using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;

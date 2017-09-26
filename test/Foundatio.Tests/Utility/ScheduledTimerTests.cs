@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;

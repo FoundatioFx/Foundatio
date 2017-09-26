@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -66,8 +65,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 _logger.LogTrace("RemoveAllAsync: Removing key {0}", key);
-                CacheEntry item;
-                if (_memory.TryRemove(key, out item))
+                if (_memory.TryRemove(key, out _))
                     removed++;
             }
 
@@ -91,8 +89,7 @@ namespace Foundatio.Caching {
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
             _logger.LogTrace("Removing expired key {0}", key);
 
-            CacheEntry cacheEntry;
-            if (_memory.TryRemove(key, out cacheEntry))
+            if (_memory.TryRemove(key, out _))
                 return OnItemExpiredAsync(key, sendNotification);
 
             return Task.CompletedTask;
@@ -102,8 +99,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            CacheEntry cacheEntry;
-            if (!_memory.TryGetValue(key, out cacheEntry)) {
+            if (!_memory.TryGetValue(key, out var cacheEntry)) {
                 Interlocked.Increment(ref _misses);
                 return CacheValue<T>.NoValue;
             }
@@ -245,8 +241,7 @@ namespace Foundatio.Caching {
             var items = new HashSet<T>(values);
             var entry = new CacheEntry(items, expiresAt, ShouldCloneValues);
             _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
-                var collection = cacheEntry.Value as ICollection<T>;
-                if (collection == null)
+                if (!(cacheEntry.Value is ICollection<T> collection))
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
 
                 collection.AddRange(items);
@@ -273,8 +268,7 @@ namespace Foundatio.Caching {
 
             _logger.LogTrace("Removing key {oldest}", oldest);
 
-            CacheEntry cacheEntry;
-            _memory.TryRemove(oldest, out cacheEntry);
+            _memory.TryRemove(oldest, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 await OnItemExpiredAsync(oldest).AnyContext();
         }
@@ -294,8 +288,7 @@ namespace Foundatio.Caching {
 
             var items = new HashSet<T>(values);
             _memory.TryUpdate(key, (k, cacheEntry) => {
-                var collection = cacheEntry.Value as ICollection<T>;
-                if (collection != null && collection.Count > 0) {
+                if (cacheEntry.Value is ICollection<T> collection && collection.Count > 0) {
                     foreach (var value in items) {
                         if (collection.Contains(value)) {
                             collection.Remove(value);
@@ -331,8 +324,7 @@ namespace Foundatio.Caching {
 
             if (addOnly) {
                 if (!_memory.TryAdd(key, entry)) {
-                    CacheEntry existingEntry;
-                    if (!_memory.TryGetValue(key, out existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
+                    if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
                         return false;
 
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
@@ -418,8 +410,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            CacheEntry value;
-            if (!_memory.TryGetValue(key, out value) || value.ExpiresAt == DateTime.MaxValue)
+            if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue)
                 return null;
 
             if (value.ExpiresAt >= SystemClock.UtcNow)
@@ -439,8 +430,7 @@ namespace Foundatio.Caching {
                 return;
             }
 
-            CacheEntry value;
-            if (_memory.TryGetValue(key, out value)) {
+            if (_memory.TryGetValue(key, out var value)) {
                 value.ExpiresAt = expiresAt;
                 ScheduleNextMaintenance(expiresAt);
             }
