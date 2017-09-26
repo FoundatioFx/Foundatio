@@ -10,7 +10,7 @@ using SimpleInjector;
 namespace Foundatio.CronJob {
     public class Program {
         public static int Main(string[] args) {
-            var loggerFactory = new LoggerFactory();
+            var loggerFactory = new LoggerFactory().AddConsole();
 
             var getServiceProvider = new Func<IServiceProvider>(() => {
                 var container = new Container();

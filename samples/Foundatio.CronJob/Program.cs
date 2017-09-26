@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.CronJob {
     public class Program {
         public static void Main() {
-            var loggerFactory = new LoggerFactory();
+            var loggerFactory = new LoggerFactory().AddConsole();
             var logger = loggerFactory.CreateLogger<Program>();
 
             var serviceProvider = SampleServiceProvider.Create(loggerFactory);
