@@ -146,7 +146,8 @@ namespace Foundatio.Jobs {
                 _jobShutdownCancellationTokenSource = new CancellationTokenSource();
                 Console.CancelKeyPress += (sender, args) => {
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.Info("Job shutdown event signaled: {0}", args.SpecialKey);
+                    logger?.LogInformation("Job shutdown event signaled: {0}", args.SpecialKey);
+                    args.Cancel = true;
                 };
 
                 string webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
