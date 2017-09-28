@@ -50,6 +50,8 @@ namespace Foundatio.Jobs {
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
+            } catch (TaskCanceledException) {
+                return 0;
             } catch (FileNotFoundException e) {
                 _logger.Error(() => $"{e.GetMessage()} ({ e.FileName})");
 
@@ -74,6 +76,7 @@ namespace Foundatio.Jobs {
                 new Task(async () => {
                     try {
                         await RunAsync(cancellationToken).AnyContext();
+                    } catch (TaskCanceledException) {
                     } catch (Exception ex) {
                         _logger.Error(ex, () => $"Error running job in background: {ex.Message}");
                         throw;
@@ -110,6 +113,7 @@ namespace Foundatio.Jobs {
                             try {
                                 var jobInstance = _options.JobFactory();
                                 await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                            } catch (TaskCanceledException) {
                             } catch (Exception ex) {
                                 _logger.Error(ex, () => $"Error running job instance: {ex.Message}");
                                 throw;
