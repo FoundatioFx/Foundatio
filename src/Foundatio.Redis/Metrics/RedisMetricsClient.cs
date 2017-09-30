@@ -1,6 +1,5 @@
 ﻿using System;
 using Foundatio.Caching;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public class RedisMetricsClient : CacheBucketMetricsClientBase {

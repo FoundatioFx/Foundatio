@@ -1,16 +1,14 @@
 ﻿using System;
-using Foundatio.Logging;
-using Foundatio.Logging.NLog;
-using Foundatio.ServiceProviders;
-using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.SampleJob {
     public class Program {
         public static int Main() {
-            var loggerFactory = new LoggerFactory();
-            loggerFactory.AddNLog();
+            var loggerFactory = new LoggerFactory().AddConsole();
+            var logger = loggerFactory.CreateLogger<Program>();
 
-            var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(PingQueueJob), loggerFactory);
+            var serviceProvider = SampleServiceProvider.Create(loggerFactory);
             return TopshelfJob.Run<PingQueueJob>(() => serviceProvider.GetService<PingQueueJob>(), loggerFactory: loggerFactory);
         }
     }

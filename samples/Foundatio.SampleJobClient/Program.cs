@@ -1,47 +1,45 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
-using Foundatio.Logging.InMemory;
-using Foundatio.Logging.NLog;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.SampleJobClient {
     public class Program {
         private static readonly object _writeLock = new object();
-        private static readonly InMemoryLoggerFactory _loggerFactory = new InMemoryLoggerFactory();
-        private static readonly ILogger _log = _loggerFactory.CreateLogger("Program");
         private static IQueue<PingRequest> _queue;
 
         public static void Main(string[] args) {
-            _loggerFactory.AddNLog();
+            var loggerFactory = new LoggerFactory().AddConsole();
+            var logger = loggerFactory.CreateLogger<Program>();
+
             Console.CursorVisible = false;
-            StartDisplayingLogMessages();
+            //StartDisplayingLogMessages(loggerFactory);
 
             _queue = new RedisQueue<PingRequest>(new RedisQueueOptions<PingRequest> { ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost") });
 
             var tokenSource = new CancellationTokenSource();
-            CancellationToken token = tokenSource.Token;
+            var token = tokenSource.Token;
 
             WriteOptionsMenu();
 
             while (true) {
                 Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 1);
-                ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+                var keyInfo = Console.ReadKey(true);
 
                 if (keyInfo.Key == ConsoleKey.D1) {
-                    EnqueuePing();
+                    EnqueuePing(1, logger);
                 } else if (keyInfo.Key == ConsoleKey.D2) {
-                    EnqueuePing(100);
+                    EnqueuePing(100, logger);
                 } else if (keyInfo.Key == ConsoleKey.D3) {
                     if (tokenSource.IsCancellationRequested) {
                         tokenSource = new CancellationTokenSource();
                         token = tokenSource.Token;
                     }
 
-                    Task.Run(() => EnqueueContinuousPings(25, token), token);
+                    Task.Run(() => EnqueueContinuousPings(25, logger, token), token);
                 } else if (keyInfo.Key == ConsoleKey.Q) {
                     break;
                 } else if (keyInfo.Key == ConsoleKey.S) {
@@ -51,19 +49,19 @@ namespace Foundatio.SampleJobClient {
             }
         }
 
-        private static void EnqueuePing(int count = 1) {
+        private static void EnqueuePing(int count, ILogger log) {
             for (int i = 0; i < count; i++)
                 _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-            _log.Info(() => $"Enqueued {count} ping requests");
+            log.LogInformation("Enqueued {count} ping requests", count);
         }
 
-        private static void EnqueueContinuousPings(int count, CancellationToken token) {
+        private static void EnqueueContinuousPings(int count, ILogger log, CancellationToken token) {
             do {
                 for (int i = 0; i < count; i++)
                     _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-                _log.Info(() => $"Enqueued {count} ping requests");
+                log.LogInformation("Enqueued {count} ping requests", count);
             } while (!token.IsCancellationRequested);
         }
 
@@ -88,44 +86,44 @@ namespace Foundatio.SampleJobClient {
             });
         }
 
-        private const int LOG_LINE_COUNT = 10;
-        private static void StartDisplayingLogMessages() {
-            Task.Factory.StartNew(() => {
-                while (true) {
-                    var logEntries = _loggerFactory.GetLogEntries(LOG_LINE_COUNT);
-                    lock (_writeLock) {
-                        ClearConsoleLines(OPTIONS_MENU_LINE_COUNT + 5, OPTIONS_MENU_LINE_COUNT + 6 + LOG_LINE_COUNT);
-                        Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 6);
-                        foreach (var logEntry in logEntries) {
-                            var originalColor = Console.ForegroundColor;
-                            Console.ForegroundColor = GetColor(logEntry);
-                            Console.WriteLine(logEntry);
-                            Console.ForegroundColor = originalColor;
-                        }
-                    }
-                    SystemClock.Sleep(250);
-                }
-            });
-        }
+        //private const int LOG_LINE_COUNT = 10;
+        //private static void StartDisplayingLogMessages(ILoggerFactory loggerFactory) {
+        //    Task.Factory.StartNew(() => {
+        //        while (true) {
+        //            var logEntries = loggerFactory.GetLogEntries(LOG_LINE_COUNT);
+        //            lock (_writeLock) {
+        //                ClearConsoleLines(OPTIONS_MENU_LINE_COUNT + 5, OPTIONS_MENU_LINE_COUNT + 6 + LOG_LINE_COUNT);
+        //                Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 6);
+        //                foreach (var logEntry in logEntries) {
+        //                    var originalColor = Console.ForegroundColor;
+        //                    Console.ForegroundColor = GetColor(logEntry);
+        //                    Console.WriteLine(logEntry);
+        //                    Console.ForegroundColor = originalColor;
+        //                }
+        //            }
+        //            SystemClock.Sleep(250);
+        //        }
+        //    });
+        //}
 
-        private static ConsoleColor GetColor(LogEntry logEntry) {
-            switch (logEntry.LogLevel) {
-                case LogLevel.Debug:
-                    return ConsoleColor.Gray;
-                case LogLevel.Error:
-                    return ConsoleColor.Yellow;
-                case LogLevel.Information:
-                    return ConsoleColor.White;
-                case LogLevel.Trace:
-                    return ConsoleColor.DarkGray;
-                case LogLevel.Warning:
-                    return ConsoleColor.Magenta;
-                case LogLevel.Critical:
-                    return ConsoleColor.Red;
-            }
+        //private static ConsoleColor GetColor(LogEntry logEntry) {
+        //    switch (logEntry.LogLevel) {
+        //        case LogLevel.Debug:
+        //            return ConsoleColor.Gray;
+        //        case LogLevel.Error:
+        //            return ConsoleColor.Yellow;
+        //        case LogLevel.Information:
+        //            return ConsoleColor.White;
+        //        case LogLevel.Trace:
+        //            return ConsoleColor.DarkGray;
+        //        case LogLevel.Warning:
+        //            return ConsoleColor.Magenta;
+        //        case LogLevel.Critical:
+        //            return ConsoleColor.Red;
+        //    }
 
-            return ConsoleColor.White;
-        }
+        //    return ConsoleColor.White;
+        //}
 
         private static void ClearConsoleLines(int startLine = 0, int endLine = -1) {
             if (endLine < 0)
@@ -139,6 +137,7 @@ namespace Foundatio.SampleJobClient {
                     Console.SetCursorPosition(0, i);
                     Console.Write(new string(' ', Console.WindowWidth));
                 }
+
                 Console.SetCursorPosition(currentPosition, currentLine);
             }
         }

@@ -30,7 +30,7 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private async void OnMessage(RedisChannel channel, RedisValue value) {
+        private void OnMessage(RedisChannel channel, RedisValue value) {
             if (_subscribers.IsEmpty)
                 return;
 
@@ -43,7 +43,7 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
+            SendMessageToSubscribersAsync(message, _serializer).GetAwaiter().GetResult();
         }
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
