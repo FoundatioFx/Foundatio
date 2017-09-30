@@ -34,7 +34,7 @@ namespace Foundatio.Utility {
             try {
                 string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
                 if (String.IsNullOrEmpty(dataDirectory))
-                    dataDirectory = Path.GetDirectoryName(typeof(PathHelper).GetTypeInfo().Assembly.Location);
+                    dataDirectory = Path.GetDirectoryName(typeof(PathHelper).GetTypeInfo().Assembly.CodeBase);
 
                 if (!String.IsNullOrEmpty(dataDirectory))
                     return Path.GetFullPath(dataDirectory);
