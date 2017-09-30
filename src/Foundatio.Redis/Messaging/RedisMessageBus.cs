@@ -13,9 +13,6 @@ namespace Foundatio.Messaging {
         private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
 
-        [Obsolete("Use the options overload")]
-        public RedisMessageBus(ISubscriber subscriber, string topic = null, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : this(new RedisMessageBusOptions { Subscriber = subscriber, Topic = topic, Serializer = serializer, LoggerFactory = loggerFactory }) { }
-
         public RedisMessageBus(RedisMessageBusOptions options) : base(options) { }
 
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
@@ -40,7 +37,7 @@ namespace Foundatio.Messaging {
             _logger.LogTrace("OnMessage({channel})", channel);
             MessageBusData message;
             try {
-                message = await _serializer.DeserializeAsync<MessageBusData>((byte[])value).AnyContext();
+                message = _serializer.Deserialize<MessageBusData>((byte[])value);
             } catch (Exception ex) {
                 _logger.LogWarning(ex, "OnMessage({0}) Error deserializing messsage: {1}", channel, ex.Message);
                 return;
@@ -57,10 +54,10 @@ namespace Foundatio.Messaging {
             }
 
             _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
-            var data = await _serializer.SerializeAsync(new MessageBusData {
+            var data = _serializer.Serialize(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = await _serializer.SerializeToStringAsync(message).AnyContext()
-            }).AnyContext();
+                Data = _serializer.SerializeToString(message)
+            });
 
             await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }

@@ -22,15 +22,6 @@ namespace Foundatio.Caching {
         private LoadedLuaScript _incrByAndExpireScript;
         private LoadedLuaScript _delByWildcardScript;
 
-        [Obsolete("Use the options overload")]
-        public RedisCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null)
-            : this(new RedisCacheClientOptions {
-                ConnectionMultiplexer = connectionMultiplexer,
-                Serializer = serializer,
-                LoggerFactory = loggerFactory
-            }) {
-        }
-
         public RedisCacheClient(RedisCacheClientOptions options) {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             options.Serializer = options.Serializer ?? new JsonNetSerializer();
@@ -85,10 +76,10 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             var redisValue = await Database.StringGetAsync(key).AnyContext();
-            return await RedisValueToCacheValueAsync<T>(redisValue).AnyContext();
+            return RedisValueToCacheValue<T>(redisValue);
         }
 
-        private async Task<CacheValue<ICollection<T>>> RedisValuesToCacheValueAsync<T>(RedisValue[] redisValues) {
+        private  CacheValue<ICollection<T>> RedisValuesToCacheValue<T>(RedisValue[] redisValues) {
             var result = new List<T>();
             foreach (var redisValue in redisValues) {
                 if (!redisValue.HasValue)
@@ -97,8 +88,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 try {
-                    var value = await redisValue.ToValueOfTypeAsync<T>(_options.Serializer).AnyContext();
-
+                    var value = redisValue.ToValueOfType<T>(_options.Serializer);
                     result.Add(value);
                 } catch (Exception ex) {
                     _logger.LogError(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
@@ -108,13 +98,12 @@ namespace Foundatio.Caching {
             return new CacheValue<ICollection<T>>(result, true);
         }
 
-        private async Task<CacheValue<T>> RedisValueToCacheValueAsync<T>(RedisValue redisValue) {
+        private CacheValue<T> RedisValueToCacheValue<T>(RedisValue redisValue) {
             if (!redisValue.HasValue) return CacheValue<T>.NoValue;
             if (redisValue == _nullValue) return CacheValue<T>.Null;
 
             try {
-                var value = await redisValue.ToValueOfTypeAsync<T>(_options.Serializer).AnyContext();
-
+                var value = redisValue.ToValueOfType<T>(_options.Serializer);
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
                 _logger.LogError(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
@@ -128,7 +117,7 @@ namespace Foundatio.Caching {
 
             var result = new Dictionary<string, CacheValue<T>>();
             for (int i = 0; i < keyArray.Length; i++)
-                result.Add(keyArray[i], await RedisValueToCacheValueAsync<T>(values[i]).AnyContext());
+                result.Add(keyArray[i], RedisValueToCacheValue<T>(values[i]));
 
             return result;
         }
@@ -138,7 +127,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             var set = await Database.SetMembersAsync(key).AnyContext();
-            return await RedisValuesToCacheValueAsync<T>(set).AnyContext();
+            return RedisValuesToCacheValue<T>(set);
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -171,7 +160,7 @@ namespace Foundatio.Caching {
 
             var redisValues = new List<RedisValue>();
             foreach (var value in values.Distinct())
-                redisValues.Add(await value.ToRedisValueAsync(_options.Serializer).AnyContext());
+                redisValues.Add(value.ToRedisValue(_options.Serializer));
 
             long result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
@@ -196,7 +185,7 @@ namespace Foundatio.Caching {
 
             var redisValues = new List<RedisValue>();
             foreach (var value in values.Distinct())
-                redisValues.Add(await value.ToRedisValueAsync(_options.Serializer).AnyContext());
+                redisValues.Add(value.ToRedisValue(_options.Serializer));
 
             long result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
@@ -232,21 +221,21 @@ namespace Foundatio.Caching {
             return (double)result;
         }
 
-        private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
-            var redisValue = await value.ToRedisValueAsync(_options.Serializer).AnyContext();
-            return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
+        private Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
+            var redisValue = value.ToRedisValue(_options.Serializer);
+            return Database.StringSetAsync(key, redisValue, expiresIn, when, flags);
         }
 
         public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
             if (values == null || values.Count == 0)
                 return 0;
 
-            var tasks = new List<Task>();
+            var tasks = new List<Task<bool>>();
             foreach (var pair in values)
-                tasks.Add(Database.StringSetAsync(pair.Key, await pair.Value.ToRedisValueAsync(_options.Serializer).AnyContext(), expiresIn));
+                tasks.Add(Database.StringSetAsync(pair.Key, pair.Value.ToRedisValue(_options.Serializer), expiresIn));
 
-            await Task.WhenAll(tasks).AnyContext();
-            return values.Count;
+            var results = await Task.WhenAll(tasks).AnyContext();
+            return results.Count(r => r);
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
