@@ -151,14 +151,14 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanSaveFilesAsync() {
+        public virtual async Task CanSaveFilesAsync(string readmePath = @"|DataDirectory|\..\..\..\..\..\README.md") {
             await ResetAsync();
 
             var storage = GetStorage();
             if (storage == null)
                 return;
 
-            string readmeFile = Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
+            string readmeFile = Path.GetFullPath(PathHelper.ExpandPath(readmePath));
             using (storage) {
                 Assert.False(await storage.ExistsAsync("README.md"));
 
