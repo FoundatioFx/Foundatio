@@ -20,7 +20,7 @@ namespace Foundatio.Caching {
         }
 
         public static async Task<long> IncrementAsync(this ICacheClient client, string key, int amount = 1, TimeSpan? expiresIn = null) {
-            var result = await client.IncrementAsync(key, amount, expiresIn).AnyContext();
+            double result = await client.IncrementAsync(key, amount, expiresIn).AnyContext();
             return (long)result;
         }
 
@@ -43,7 +43,7 @@ namespace Foundatio.Caching {
         public static Task<bool> SetAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc = null) {
             return client.SetAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
-    
+
         public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc = null) {
             return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }

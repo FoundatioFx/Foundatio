@@ -58,6 +58,6 @@ namespace Foundatio.Utility {
             throw new TaskCanceledException("Should not get here.");
         }
 
-        private static int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
+        private static readonly int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
     }
 }
