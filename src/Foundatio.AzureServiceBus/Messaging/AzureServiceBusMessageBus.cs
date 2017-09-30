@@ -3,13 +3,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
-using Nito.AsyncEx;
 
 namespace Foundatio.Messaging {
     public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBusOptions> {
@@ -18,9 +18,6 @@ namespace Foundatio.Messaging {
         private TopicClient _topicClient;
         private SubscriptionClient _subscriptionClient;
         private readonly string _subscriptionName;
-
-        [Obsolete("Use the options overload")]
-        public AzureServiceBusMessageBus(string connectionString, string topicName, ISerializer serializer = null, ILoggerFactory loggerFactory = null) : this(new AzureServiceBusMessageBusOptions { ConnectionString = connectionString, Topic = topicName, SubscriptionName = "MessageBus", Serializer = serializer, LoggerFactory = loggerFactory }) { }
 
         public AzureServiceBusMessageBus(AzureServiceBusMessageBusOptions options) : base(options) {
             if (String.IsNullOrEmpty(options.ConnectionString))
@@ -34,7 +31,8 @@ namespace Foundatio.Messaging {
             if (_subscriptionClient != null)
                 return;
 
-            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
+            if (!TopicIsCreated)
+                await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
 
             using (await _lock.LockAsync().AnyContext()) {
                 if (_subscriptionClient != null)
@@ -54,33 +52,33 @@ namespace Foundatio.Messaging {
                     _subscriptionClient.PrefetchCount = _options.PrefetchCount.Value;
 
                 sw.Stop();
-                _logger.Trace("Ensure topic subscription exists took {0}ms.", sw.ElapsedMilliseconds);
+                _logger.LogTrace("Ensure topic subscription exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
-        private async Task OnMessageAsync(BrokeredMessage brokeredMessage) {
+        private Task OnMessageAsync(BrokeredMessage brokeredMessage) {
             if (_subscribers.IsEmpty)
-                return;
+                return Task.CompletedTask;
 
-            _logger.Trace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
+            _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             MessageBusData message;
             try {
-                message = await _serializer.DeserializeAsync<MessageBusData>(brokeredMessage.GetBody<Stream>()).AnyContext();
+                message = _serializer.Deserialize<MessageBusData>(brokeredMessage.GetBody<Stream>());
             } catch (Exception ex) {
-                _logger.Warn(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
-                await brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message).AnyContext();
-                return;
+                _logger.LogWarning(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
+                return brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message);
             }
 
-            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
+            return SendMessageToSubscribersAsync(message, _serializer);
         }
 
+        private bool TopicIsCreated => _topicClient != null;
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
-            if (_topicClient != null)
+            if (TopicIsCreated)
                 return;
 
             using (await _lock.LockAsync().AnyContext()) {
-                if (_topicClient != null)
+                if (TopicIsCreated)
                     return;
 
                 var sw = Stopwatch.StartNew();
@@ -90,26 +88,26 @@ namespace Foundatio.Messaging {
 
                 _topicClient = TopicClient.CreateFromConnectionString(_options.ConnectionString, _options.Topic);
                 sw.Stop();
-                _logger.Trace("Ensure topic exists took {0}ms.", sw.ElapsedMilliseconds);
+                _logger.LogTrace("Ensure topic exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
-        protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var data = await _serializer.SerializeToStreamAsync(new MessageBusData {
+        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+            var data = _serializer.SerializeToStream(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = await _serializer.SerializeToStringAsync(message).AnyContext()
-            }).AnyContext();
+                Data = _serializer.SerializeToString(message)
+            });
 
             var brokeredMessage = new BrokeredMessage(data, true);
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.Trace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(delay.Value);
             } else {
-                _logger.Trace("Message Publish: {messageType}", messageType.FullName);
+                _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
             }
 
-            await _topicClient.SendAsync(brokeredMessage).AnyContext();
+            return _topicClient.SendAsync(brokeredMessage);
         }
 
         private TopicDescription CreateTopicDescription() {
