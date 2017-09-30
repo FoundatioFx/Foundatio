@@ -53,10 +53,8 @@ namespace Foundatio.Lock {
                         _logger.LogTrace("Max hits exceeded for {0}.", name);
                     }
 
-                    if (cancellationToken.IsCancellationRequested) {
-                        _logger.LogTrace("Cancellation Requested.");
+                    if (cancellationToken.IsCancellationRequested)
                         break;
-                    }
 
                     var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                     if (sleepUntil > SystemClock.UtcNow) {
@@ -78,9 +76,8 @@ namespace Foundatio.Lock {
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
-            if (cancellationToken.IsCancellationRequested) {
+            if (cancellationToken.IsCancellationRequested)
                 _logger.LogTrace("Cancellation requested.");
-            }
 
             if (!allowLock)
                 return null;
