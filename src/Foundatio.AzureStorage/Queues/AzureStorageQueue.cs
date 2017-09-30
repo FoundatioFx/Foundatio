@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
-using Microsoft.WindowsAzure.Storage.RetryPolicies;
-using Nito.AsyncEx;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> where T : class {
@@ -23,20 +22,6 @@ namespace Foundatio.Queues {
         private long _abandonedCount;
         private long _workerErrorCount;
         private bool _queueCreated;
-
-        [Obsolete("Use the options overload")]
-        public AzureStorageQueue(string connectionString, string queueName = null, int retries = 2, TimeSpan? workItemTimeout = null, TimeSpan? dequeueInterval = null, IRetryPolicy retryPolicy = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
-            : this(new AzureStorageQueueOptions<T> {
-                ConnectionString = connectionString,
-                Name = queueName,
-                Retries = retries,
-                RetryPolicy = retryPolicy,
-                DequeueInterval = dequeueInterval.GetValueOrDefault(TimeSpan.FromSeconds(1)),
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                Behaviors = behaviors,
-                Serializer = serializer,
-                LoggerFactory = loggerFactory
-            }) { }
 
         public AzureStorageQueue(AzureStorageQueueOptions<T> options) : base(options) {
             if (String.IsNullOrEmpty(options.ConnectionString))
@@ -67,7 +52,7 @@ namespace Foundatio.Queues {
                 _queueCreated = true;
 
                 sw.Stop();
-                _logger.Trace("Ensure queue exists took {0}ms.", sw.ElapsedMilliseconds);
+                _logger.LogTrace("Ensure queue exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
@@ -76,7 +61,7 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            var message = new CloudQueueMessage(await _serializer.SerializeAsync(data).AnyContext());
+            var message = new CloudQueueMessage(_serializer.SerializeToString(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
 
             var entry = new QueueEntry<T>(message.Id, data, this, SystemClock.UtcNow, 0);
@@ -87,10 +72,10 @@ namespace Foundatio.Queues {
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
             var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null).AnyContext();
-            _logger.Trace("Initial message id: {0}", message?.Id ?? "<null>");
+            _logger.LogTrace("Initial message id: {0}", message?.Id ?? "<null>");
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
-                _logger.Trace("Waiting to dequeue item...");
+                _logger.LogTrace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
@@ -99,32 +84,32 @@ namespace Foundatio.Queues {
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
-                _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
+                _logger.LogTrace("Waited for dequeue: {0}", sw.Elapsed.ToString());
 
                 message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout,  null, null).AnyContext();
-                _logger.Trace("Message id: {0}", message?.Id ?? "<null>");
+                _logger.LogTrace("Message id: {0}", message?.Id ?? "<null>");
             }
 
             if (message == null)
                 return null;
 
             Interlocked.Increment(ref _dequeuedCount);
-            var data = await _serializer.DeserializeAsync<T>(message.AsBytes).AnyContext();
+            var data = _serializer.Deserialize<T>(message.AsBytes);
             var entry = new AzureStorageQueueEntry<T>(message, data, this);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
+            _logger.LogDebug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
             var azureQueueEntry = ToAzureEntryWithCheck(entry);
             await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _options.WorkItemTimeout, MessageUpdateFields.Visibility).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
-            _logger.Trace("Renew lock done: {0}", entry.Id);
+            _logger.LogTrace("Renew lock done: {0}", entry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} complete item: {1}", _options.Name, entry.Id);
+            _logger.LogDebug("Queue {0} complete item: {1}", _options.Name, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -134,11 +119,11 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _completedCount);
             entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
-            _logger.Trace("Complete done: {0}", entry.Id);
+            _logger.LogTrace("Complete done: {0}", entry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            _logger.LogDebug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -156,7 +141,7 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.Trace("Abandon complete: {entryId}", entry.Id);
+            _logger.LogTrace("Abandon complete: {entryId}", entry.Id);
         }
 
         protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
@@ -170,7 +155,7 @@ namespace Foundatio.Queues {
                 _deadletterQueueReference.FetchAttributesAsync()
             ).AnyContext();
             sw.Stop();
-            _logger.Trace("Fetching stats took {0}ms.", sw.ElapsedMilliseconds);
+            _logger.LogTrace("Fetching stats took {0}ms.", sw.ElapsedMilliseconds);
 
             return new QueueStats {
                 Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
@@ -200,7 +185,7 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
 
             sw.Stop();
-            _logger.Trace("Deleting queue took {0}ms.", sw.ElapsedMilliseconds);
+            _logger.LogTrace("Deleting queue took {0}ms.", sw.ElapsedMilliseconds);
         }
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
@@ -210,10 +195,10 @@ namespace Foundatio.Queues {
             var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {_options.Name}", _options.Name);
+                _logger.LogTrace("WorkerLoop Start {_options.Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {_options.Name}", _options.Name);
+                    _logger.LogTrace("WorkerLoop Signaled {_options.Name}", _options.Name);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
@@ -230,14 +215,14 @@ namespace Foundatio.Queues {
                     }
                     catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
-                        _logger.Error(ex, "Worker error: {0}", ex.Message);
+                        _logger.LogError(ex, "Worker error: {0}", ex.Message);
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
+                _logger.LogTrace("Worker exiting: {0} Cancel Requested: {1}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 

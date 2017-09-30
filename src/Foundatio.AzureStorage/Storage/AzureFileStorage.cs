@@ -19,13 +19,13 @@ namespace Foundatio.Storage {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudBlobClient();
             _container = client.GetContainerReference(containerName);
-            _container.CreateIfNotExists();
+            _container.CreateIfNotExistsAsync().GetAwaiter().GetResult();
         }
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
             try {
-                return await blockBlob.OpenReadAsync(cancellationToken).AnyContext();
+                return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
             } catch (StorageException ex) {
                 if (ex.RequestInformation.HttpStatusCode == 404)
                     return null;
@@ -51,7 +51,7 @@ namespace Foundatio.Storage {
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            await blockBlob.UploadFromStreamAsync(stream, cancellationToken).AnyContext();
+            await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
 
             return true;
         }
@@ -61,14 +61,14 @@ namespace Foundatio.Storage {
             if (!(await CopyFileAsync(oldpath, newpath, cancellationToken).AnyContext()))
                 return false;
 
-            return await oldBlob.DeleteIfExistsAsync(cancellationToken).AnyContext();
+            return await oldBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken).AnyContext();
         }
 
         public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
             var oldBlob = _container.GetBlockBlobReference(path);
             var newBlob = _container.GetBlockBlobReference(targetpath);
 
-            await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
+            await newBlob.StartCopyAsync(oldBlob, null, null, null, null, cancellationToken).AnyContext();
             while (newBlob.CopyState.Status == CopyStatus.Pending)
                 await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
 
@@ -77,7 +77,14 @@ namespace Foundatio.Storage {
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
-            return blockBlob.DeleteIfExistsAsync(cancellationToken);
+            return blockBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken);
+        }
+
+        public async Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
+            // TODO: We could batch this, but we should ensure the batch isn't thousands of files.
+            foreach (var file in files)
+                await DeleteFileAsync(file.Path).AnyContext();
         }
 
         public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
