@@ -110,7 +110,7 @@ namespace Foundatio.Storage {
 
                 // TODO: Implement paging
                 blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
-            } while (continuationToken != null && blobs.Count < limit.GetValueOrDefault(int.MaxValue));
+            } while (continuationToken != null && blobs.Count < limit.GetValueOrDefault(Int32.MaxValue));
 
             if (limit.HasValue)
                 blobs = blobs.Take(limit.Value).ToList();
