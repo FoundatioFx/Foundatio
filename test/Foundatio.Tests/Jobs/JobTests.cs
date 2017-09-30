@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;

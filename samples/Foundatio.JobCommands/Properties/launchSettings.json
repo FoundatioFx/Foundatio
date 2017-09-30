@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Foundatio.JobCommands": {
+      "commandName": "Project",
+      "commandLineArgs": "sample1"
+    }
+  }
+}

@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Commands;
-using Foundatio.Logging;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
 using SimpleInjector;
@@ -11,11 +10,11 @@ using SimpleInjector;
 namespace Foundatio.CronJob {
     public class Program {
         public static int Main(string[] args) {
-            var loggerFactory = new LoggerFactory();
+            var loggerFactory = new LoggerFactory().AddConsole();
 
             var getServiceProvider = new Func<IServiceProvider>(() => {
                 var container = new Container();
-                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterSingleton(loggerFactory);
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
 
                 return container;

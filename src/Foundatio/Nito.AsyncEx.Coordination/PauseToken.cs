@@ -1,9 +1,7 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.AsyncEx
-{
+namespace Foundatio.AsyncEx {
     /// <summary>
     /// The source (controller) of a "pause token", which can be used to cooperatively pause and unpause operations.
     /// </summary>

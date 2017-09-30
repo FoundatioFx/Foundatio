@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;

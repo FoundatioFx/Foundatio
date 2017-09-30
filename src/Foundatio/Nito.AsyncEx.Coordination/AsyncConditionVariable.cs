@@ -1,11 +1,9 @@
-using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx.Synchronous;
 
-namespace Foundatio.AsyncEx
-{
+namespace Foundatio.AsyncEx {
     /// <summary>
     /// An async-compatible condition variable. This type uses Mesa-style semantics (the notifying tasks do not yield).
     /// </summary>

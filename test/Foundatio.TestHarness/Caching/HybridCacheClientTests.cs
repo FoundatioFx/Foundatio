@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Utility;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;

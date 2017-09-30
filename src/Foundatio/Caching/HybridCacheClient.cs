@@ -34,8 +34,8 @@ namespace Foundatio.Caching {
         public long InvalidateCacheCalls => _invalidateCacheCalls;
 
         public int LocalCacheSize {
-            get { return _localCache.MaxItems ?? -1; }
-            set { _localCache.MaxItems = value; }
+            get => _localCache.MaxItems ?? -1;
+            set => _localCache.MaxItems = value;
         }
 
         private async Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args) {

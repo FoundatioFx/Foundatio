@@ -2,8 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.AsyncEx.Synchronous
-{
+namespace Foundatio.AsyncEx.Synchronous {
     /// <summary>
     /// Provides synchronous extension methods for tasks.
     /// </summary>

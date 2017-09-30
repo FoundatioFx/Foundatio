@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;

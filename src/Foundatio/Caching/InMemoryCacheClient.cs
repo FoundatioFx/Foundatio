@@ -63,7 +63,7 @@ namespace Foundatio.Caching {
                     continue;
 
                 _logger.LogTrace("RemoveAllAsync: Removing key {0}", key);
-                if (_memory.TryRemove(key, out var _))
+                if (_memory.TryRemove(key, out _))
                     removed++;
             }
 
@@ -87,7 +87,7 @@ namespace Foundatio.Caching {
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
             _logger.LogTrace("Removing expired key {0}", key);
 
-            if (_memory.TryRemove(key, out var _))
+            if (_memory.TryRemove(key, out _))
                 return OnItemExpiredAsync(key, sendNotification);
 
             return Task.CompletedTask;

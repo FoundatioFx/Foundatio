@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Foundatio.Tests.Messaging {
+﻿namespace Foundatio.Tests.Messaging {
     public class SimpleMessageA : ISimpleMessage {
         public string Data { get; set; }
         public int Count { get; set; }

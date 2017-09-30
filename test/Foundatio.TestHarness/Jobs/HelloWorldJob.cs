@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {

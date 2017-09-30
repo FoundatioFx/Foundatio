@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 
 namespace Foundatio.Utility {
     internal static class ConcurrentQueueExtensions {
