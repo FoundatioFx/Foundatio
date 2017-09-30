@@ -55,11 +55,11 @@ namespace Foundatio.Tests.Jobs {
             await job.RunAsync();
             Assert.Equal(1, job.RunCount);
 
-            await job.RunContinuousAsync(iterationLimit: 2);
+            job.RunContinuous(iterationLimit: 2);
             Assert.Equal(3, job.RunCount);
 
             var sw = Stopwatch.StartNew();
-            await job.RunContinuousAsync(cancellationToken: TimeSpan.FromMilliseconds(100).ToCancellationToken());
+            job.RunContinuous(cancellationToken: TimeSpan.FromMilliseconds(100).ToCancellationToken());
             sw.Stop();
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(800));
 
@@ -88,9 +88,7 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanCancelContinuousJobs() {
             using (TestSystemClock.Install()) {
                 var job = new HelloWorldJob();
-                var jobTask = job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
-                await jobTask;
+                job.RunContinuous(TimeSpan.FromSeconds(1), 5, TimeSpan.FromMilliseconds(100).ToCancellationToken());
                 Assert.Equal(1, job.RunCount);
 
                 var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(TimeSpan.FromMilliseconds(500).ToCancellationToken());
@@ -106,7 +104,7 @@ namespace Foundatio.Tests.Jobs {
             await job.RunAsync();
             Assert.Equal(1, job.RunCount);
 
-            await job.RunContinuousAsync(iterationLimit: 2);
+            job.RunContinuous(iterationLimit: 2);
             Assert.Equal(3, job.RunCount);
 
             await Run.InParallelAsync(2, i => job.RunAsync());
@@ -119,7 +117,7 @@ namespace Foundatio.Tests.Jobs {
                 var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
 
                 var sw = Stopwatch.StartNew();
-                await Task.WhenAll(jobs.Select(async job => await job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken())));
+                await Task.WhenAll(jobs.Select(job => Task.Run(() => job.RunContinuous(TimeSpan.FromMilliseconds(1), cancellationToken: TimeSpan.FromSeconds(1).ToCancellationToken()))));
                 sw.Stop();
                 Assert.InRange(jobs.Sum(j => j.RunCount), 4, 14);
                 _logger.LogInformation(jobs.Sum(j => j.RunCount).ToString());
@@ -134,7 +132,7 @@ namespace Foundatio.Tests.Jobs {
             var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log });
             var job = new SampleJob(metrics, Log);
             var sw = Stopwatch.StartNew();
-            await job.RunContinuousAsync(null, iterations);
+            job.RunContinuous(null, iterations);
             sw.Stop();
             await metrics.FlushAsync();
             _logger.LogTrace((await metrics.GetCounterStatsAsync("runs")).ToString());

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging;
@@ -12,15 +13,15 @@ namespace Foundatio.Jobs {
     }
 
     public static class JobExtensions {
-        public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static JobResult TryRun(this IJob job, CancellationToken cancellationToken = default(CancellationToken)) {
             try {
-                return await job.RunAsync(cancellationToken).AnyContext();
+                return job.RunAsync(cancellationToken).GetAwaiter().GetResult();
             } catch (Exception ex) {
                 return JobResult.FromException(ex);
             }
         }
 
-        public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
+        public static void RunContinuous(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
             string jobName = job.GetType().Name;
             var logger = job.GetLogger();
@@ -28,26 +29,28 @@ namespace Foundatio.Jobs {
             using (logger.BeginScope(new Dictionary<string, object> {{ "job", jobName }})) {
                 logger.LogInformation("Starting continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
 
+                var sw = Stopwatch.StartNew();
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
-                    try {
-                        var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                        LogResult(result, logger, jobName);
-                        iterations++;
+                    var result = job.TryRun(cancellationToken);
+                    LogResult(result, logger, jobName);
+                    iterations++;
 
-                        if (result.Error != null)
-                            await SystemClock.SleepAsync(Math.Max(interval?.Milliseconds ?? 0, 100), cancellationToken).AnyContext();
-                        else if (interval.HasValue)
-                            await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
-                        else if (iterations % 1000 == 0) // allow for cancellation token to get set
-                            await SystemClock.SleepAsync(1, cancellationToken).AnyContext();
+                    // Maybe look into yeilding threads. task scheduler queue is starving.
+                    if (result.Error != null) {
+                        SystemClock.Sleep(Math.Max(interval?.Milliseconds ?? 0, 100));
+                    } else if (interval.HasValue) {
+                        SystemClock.Sleep(interval.Value);
+                    } else if (sw.ElapsedMilliseconds > 5000) {
+                        // allow for cancellation token to get set
+                        Thread.Yield();
+                        sw.Restart();
                     }
-                    catch (OperationCanceledException) { }
 
                     if (continuationCallback == null || cancellationToken.IsCancellationRequested)
                         continue;
 
                     try {
-                        if (!await continuationCallback().AnyContext())
+                        if (!continuationCallback().GetAwaiter().GetResult())
                             break;
                     } catch (Exception ex) {
                         logger.LogError(ex, "Error in continuation callback: {0}", ex.Message);

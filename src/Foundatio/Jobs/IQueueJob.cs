@@ -17,14 +17,13 @@ namespace Foundatio.Jobs {
     }
 
     public static class QueueJobExtensions {
-        public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public static void RunUntilEmpty<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             var logger = job.GetLogger();
-            await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
+            job.RunContinuous(cancellationToken: cancellationToken, continuationCallback: async () => {
                 var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
                 logger.LogTrace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
-
                 return stats.Queued + stats.Working > 0;
-            }).AnyContext();
+            });
         }
     }
 }

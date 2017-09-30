@@ -107,10 +107,10 @@ namespace Foundatio.Jobs {
                 if (_options.RunContinuous && _options.InstanceCount > 1) {
                     var tasks = new List<Task>();
                     for (int i = 0; i < _options.InstanceCount; i++) {
-                        var task = new Task(async () => {
+                        var task = new Task(() => {
                             try {
                                 var jobInstance = _options.JobFactory();
-                                await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                                jobInstance.RunContinuous(_options.Interval, _options.IterationLimit, cancellationToken);
                             } catch (Exception ex) {
                                 _logger.LogError(ex, $"Error running job instance: {ex.Message}");
                                 throw;
@@ -122,9 +122,9 @@ namespace Foundatio.Jobs {
 
                     await Task.WhenAll(tasks).AnyContext();
                 } else if (_options.RunContinuous && _options.InstanceCount == 1) {
-                    await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                    job.RunContinuous(_options.Interval, _options.IterationLimit, cancellationToken);
                 } else {
-                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
+                    var result = job.TryRun(cancellationToken);
                     JobExtensions.LogResult(result, _logger, _jobName);
 
                     return result.IsSuccess;

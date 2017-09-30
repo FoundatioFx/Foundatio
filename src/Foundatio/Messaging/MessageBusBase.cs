@@ -61,31 +61,31 @@ namespace Foundatio.Messaging {
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
-        protected async Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
+        protected Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
             Type messageType = GetMessageBodyType(message);
             if (messageType == null)
-                return;
+                return Task.CompletedTask;
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
                 _logger.LogTrace($"Done sending message to 0 subscribers for message type {messageType.Name}.");
-                return;
+                return Task.CompletedTask;
             }
 
             object body;
             try {
-                body = await serializer.DeserializeAsync(message.Data, messageType).AnyContext();
+                body = serializer.Deserialize(message.Data, messageType);
             } catch (Exception ex) {
                 _logger.LogWarning(ex, "Error deserializing messsage body: {0}", ex.Message);
-                return;
+                return Task.CompletedTask;
             }
 
             if (body == null) {
                 _logger.LogWarning("Unable to send null message for type {0}", messageType.Name);
-                return;
+                return Task.CompletedTask;
             }
 
-            await SendMessageToSubscribersAsync(subscribers, messageType, body).AnyContext();
+            return SendMessageToSubscribersAsync(subscribers, messageType, body);
         }
 
         protected async Task SendMessageToSubscribersAsync(List<Subscriber> subscribers, Type messageType, object message) {

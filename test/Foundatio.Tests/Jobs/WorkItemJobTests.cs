@@ -48,7 +48,7 @@ namespace Foundatio.Tests.Jobs {
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     Assert.Equal(12, statusCount);
                 }
             }
@@ -109,16 +109,16 @@ namespace Foundatio.Tests.Jobs {
 
                         var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                         var tasks = new List<Task> {
-                            Task.Run(async () => {
-                                await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j1.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token),
-                            Task.Run(async () => {
-                                await j2.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j2.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token),
-                            Task.Run(async () => {
-                                await j3.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j3.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token)
                         };
@@ -159,8 +159,7 @@ namespace Foundatio.Tests.Jobs {
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
-
+                    job.RunUntilEmpty();
                     Assert.Equal(11, statusCount);
                 }
             }
@@ -194,7 +193,7 @@ namespace Foundatio.Tests.Jobs {
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
 
                     Assert.Equal(11, statusCount);
                 }
@@ -218,7 +217,7 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(2, stats.Enqueued);
                     Assert.Equal(2, stats.Dequeued);
@@ -251,7 +250,7 @@ namespace Foundatio.Tests.Jobs {
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     Assert.Equal(1, statusCount);
                 }
             }
