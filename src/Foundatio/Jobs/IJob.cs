@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public interface IJob {
@@ -23,7 +23,7 @@ namespace Foundatio.Jobs {
         public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
             string jobName = job.GetType().Name;
-            var logger = job.GetLogger();
+            var logger = job.GetLogger() ?? NullLogger.Instance;
 
             using (logger.BeginScope(new Dictionary<string, object> {{ "job", jobName }})) {
                 logger.LogInformation("Starting continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);

@@ -2,9 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
-using Foundatio.Logging;
 using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public interface IQueueJob<T> : IJob where T : class {
@@ -18,7 +18,7 @@ namespace Foundatio.Jobs {
 
     public static class QueueJobExtensions {
         public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            var logger = job.GetLogger();
+            var logger = job.GetLogger() ?? NullLogger.Instance;
             await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
                 var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
                 logger.LogTrace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
