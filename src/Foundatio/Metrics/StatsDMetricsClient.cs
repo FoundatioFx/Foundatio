@@ -20,16 +20,6 @@ namespace Foundatio.Metrics {
         private readonly StatsDMetricsClientOptions _options;
         private readonly ILogger _logger;
 
-        [Obsolete("Use the options overload")]
-        public StatsDMetricsClient(string serverName = "127.0.0.1", int port = 8125, string prefix = null, ILoggerFactory loggerFactory = null)
-            : this(new StatsDMetricsClientOptions {
-                ServerName = serverName,
-                Port = port,
-                Buffered = false,
-                Prefix = prefix,
-                LoggerFactory = loggerFactory
-            }) { }
-
         public StatsDMetricsClient(StatsDMetricsClientOptions options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger<StatsDMetricsClient>() ?? NullLogger<StatsDMetricsClient>.Instance;

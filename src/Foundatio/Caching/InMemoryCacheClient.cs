@@ -15,10 +15,8 @@ namespace Foundatio.Caching {
         private long _hits;
         private long _misses;
 
-        [Obsolete("Use the options overload")]
-        public InMemoryCacheClient(ILoggerFactory loggerFactory = null) : this (new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }) {}
 
-        public InMemoryCacheClient(InMemoryCacheClientOptions options) : base(options.LoggerFactory) {
+        public InMemoryCacheClient(InMemoryCacheClientOptions options = null) : base(options?.LoggerFactory) {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             InitializeMaintenance();
@@ -54,13 +52,13 @@ namespace Foundatio.Caching {
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null) {
-                var count = _memory.Count;
+                int count = _memory.Count;
                 _memory.Clear();
                 return Task.FromResult(count);
             }
 
             int removed = 0;
-            foreach (var key in keys) {
+            foreach (string key in keys) {
                 if (String.IsNullOrEmpty(key))
                     continue;
 
@@ -76,7 +74,7 @@ namespace Foundatio.Caching {
             var keysToRemove = new List<string>();
             var regex = new Regex(String.Concat(prefix, "*").Replace("*", ".*").Replace("?", ".+"));
             try {
-                foreach (var key in _memory.Keys.ToList())
+                foreach (string key in _memory.Keys.ToList())
                     if (regex.IsMatch(key))
                         keysToRemove.Add(key);
             } catch (Exception ex) {
@@ -122,11 +120,12 @@ namespace Foundatio.Caching {
         }
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var valueMap = new Dictionary<string, CacheValue<T>>();
-            foreach (var key in keys)
-                valueMap[key] = await GetAsync<T>(key).AnyContext();
+            var map = new Dictionary<string, Task<CacheValue<T>>>();
+            foreach (string key in keys)
+                map[key] = GetAsync<T>(key);
 
-            return valueMap;
+            await Task.WhenAll(map.Values).AnyContext();
+            return map.ToDictionary(k => k.Key, v => v.Value.Result);
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -256,9 +255,9 @@ namespace Foundatio.Caching {
             return items.Count;
         }
 
-        private async Task CleanupAsync() {
+        private Task CleanupAsync() {
             if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
-                return;
+                return Task.CompletedTask;
 
             string oldest = _memory.ToArray()
                                    .OrderBy(kvp => kvp.Value.LastAccessTicks)
@@ -267,10 +266,11 @@ namespace Foundatio.Caching {
                                    .Key;
 
             _logger.LogTrace("Removing key {oldest}", oldest);
-
             _memory.TryRemove(oldest, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
-                await OnItemExpiredAsync(oldest).AnyContext();
+                return OnItemExpiredAsync(oldest);
+
+            return Task.CompletedTask;
         }
 
         public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
@@ -289,11 +289,8 @@ namespace Foundatio.Caching {
             var items = new HashSet<T>(values);
             _memory.TryUpdate(key, (k, cacheEntry) => {
                 if (cacheEntry.Value is ICollection<T> collection && collection.Count > 0) {
-                    foreach (var value in items) {
-                        if (collection.Contains(value)) {
-                            collection.Remove(value);
-                        }
-                    }
+                    foreach (var value in items)
+                        collection.Remove(value);
 
                     cacheEntry.Value = collection;
                 }
@@ -346,12 +343,12 @@ namespace Foundatio.Caching {
             if (values == null || values.Count == 0)
                 return 0;
 
-            var result = 0;
+            var tasks = new List<Task<bool>>();
             foreach (var entry in values)
-                if (await SetAsync(entry.Key, entry.Value).AnyContext())
-                    result++;
+                tasks.Add(SetAsync(entry.Key, entry.Value));
 
-            return result;
+            var results = await Task.WhenAll(tasks).AnyContext();
+            return results.Count(r => r);
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -461,9 +458,11 @@ namespace Foundatio.Caching {
                 _logger.LogError(ex, "Error trying to find expired cache items.");
             }
 
-            foreach (var key in expiredKeys)
-                await RemoveExpiredKeyAsync(key).AnyContext();
+            var tasks = new List<Task>();
+            foreach (string key in expiredKeys)
+                tasks.Add(RemoveExpiredKeyAsync(key));
 
+            await Task.WhenAll(tasks).AnyContext();
             return minExpiration;
         }
 

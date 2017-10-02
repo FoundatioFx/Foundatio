@@ -1,3 +1,4 @@
+using System;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 

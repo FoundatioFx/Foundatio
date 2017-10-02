@@ -24,18 +24,6 @@ namespace Foundatio.Queues {
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
 
-        [Obsolete("Use the options overload")]
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
-            : this(new InMemoryQueueOptions<T> {
-                Retries = retries,
-                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
-                RetryMultipliers = retryMultipliers ?? new[] { 1, 3, 5, 10 },
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                Behaviors = behaviors,
-                Serializer = serializer,
-                LoggerFactory = loggerFactory
-            }) { }
-
         public InMemoryQueue(InMemoryQueueOptions<T> options) : base(options) {
             InitializeMaintenance();
         }
@@ -119,8 +107,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            _logger.LogTrace("Queue {type} dequeuing item...", _options.Name);
-            _logger.LogTrace("Queue count: {0}", _queue.Count);
+            _logger.LogTrace("Queue {type} dequeuing item... Queue count: {count}", _options.Name, _queue.Count);
 
             while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested) {
                 _logger.LogTrace("Waiting to dequeue item...");

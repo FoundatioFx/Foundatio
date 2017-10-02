@@ -151,6 +151,10 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        protected virtual string GetReadmeFilePath() {
+            return Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
+        }
+
         public virtual async Task CanSaveFilesAsync() {
             await ResetAsync();
 
@@ -158,7 +162,7 @@ namespace Foundatio.Tests.Storage {
             if (storage == null)
                 return;
 
-            string readmeFile = Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
+            string readmeFile = GetReadmeFilePath();
             using (storage) {
                 Assert.False(await storage.ExistsAsync("README.md"));
 

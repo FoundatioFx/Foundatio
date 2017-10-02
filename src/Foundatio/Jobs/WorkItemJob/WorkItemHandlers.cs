@@ -29,8 +29,7 @@ namespace Foundatio.Jobs {
         }
 
         public IWorkItemHandler GetHandler(Type jobDataType) {
-            Lazy<IWorkItemHandler> handler;
-            if (!_handlers.TryGetValue(jobDataType, out handler))
+            if (!_handlers.TryGetValue(jobDataType, out var handler))
                 return null;
 
             return handler.Value;

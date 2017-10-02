@@ -11,9 +11,6 @@ namespace Foundatio.Messaging {
         private readonly ConcurrentDictionary<Type, long> _messageCounts = new ConcurrentDictionary<Type, long>();
         private long _messagesSent;
 
-        [Obsolete("Use the options overload")]
-        public InMemoryMessageBus(ILoggerFactory loggerFactory = null) : this(new InMemoryMessageBusOptions { LoggerFactory = loggerFactory }) { }
-
         public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
 
         public long MessagesSent => _messagesSent;

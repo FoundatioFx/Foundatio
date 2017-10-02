@@ -64,7 +64,7 @@ namespace Foundatio.Jobs {
 
             object workItemData;
             try {
-                workItemData = await _queue.Serializer.DeserializeAsync(queueEntry.Value.Data, workItemDataType).AnyContext();
+                workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
             } catch (Exception ex) {
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data.");
@@ -77,7 +77,7 @@ namespace Foundatio.Jobs {
             }
 
             if (queueEntry.Value.SendProgressReports)
-                await ReportProgress(handler, queueEntry).AnyContext();
+                await ReportProgressAsync(handler, queueEntry).AnyContext();
 
             var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
             if (lockValue == null) {
@@ -89,14 +89,16 @@ namespace Foundatio.Jobs {
             var progressCallback = new Func<int, string, Task>(async (progress, message) => {
                 if (handler.AutoRenewLockOnProgress) {
                     try {
-                        await queueEntry.RenewLockAsync().AnyContext();
-                        await lockValue.RenewAsync().AnyContext();
+                        await Task.WhenAll(
+                            queueEntry.RenewLockAsync(),
+                            lockValue.RenewAsync()
+                        ).AnyContext();
                     } catch (Exception ex) {
                         handler.Log.LogError(ex, "Error renewing work item locks: {0}", ex.Message);
                     }
                 }
 
-                await ReportProgress(handler, queueEntry, progress, message).AnyContext();
+                await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
                 handler.Log.LogInformation($"{workItemDataType.Name} Progress {progress}%: {message}");
             });
 
@@ -110,7 +112,7 @@ namespace Foundatio.Jobs {
                 }
 
                 if (queueEntry.Value.SendProgressReports)
-                    await ReportProgress(handler, queueEntry, 100).AnyContext();
+                    await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
 
                 return JobResult.Success;
             } catch (Exception ex) {
@@ -125,7 +127,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        protected async Task ReportProgress(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string message = null) {
+        protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string message = null) {
             try {
                 await _publisher.PublishAsync(new WorkItemStatus {
                     WorkItemId = queueEntry.Value.WorkItemId,

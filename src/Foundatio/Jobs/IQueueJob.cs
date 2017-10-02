@@ -17,14 +17,16 @@ namespace Foundatio.Jobs {
     }
 
     public static class QueueJobExtensions {
-        public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public static void RunUntilEmpty<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
             var logger = job.GetLogger() ?? NullLogger.Instance;
-            await job.RunContinuousAsync(cancellationToken: cancellationToken, interval: TimeSpan.FromMilliseconds(1), continuationCallback: async () => {
-                var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-                logger.LogTrace("RunUntilEmpty continuation: queue: {Queued} working={Working}", stats.Queued, stats.Working);
+            job.RunContinuous(cancellationToken: cancellationToken, continuationCallback: async () => {
+                // Allow abandoned items to be added in a background task.
+                await Task.Yield();
 
+                var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
+                logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
                 return stats.Queued + stats.Working > 0;
-            }).AnyContext();
+            });
         }
     }
 }
