@@ -27,7 +27,7 @@ When building several big cloud applications we found a lack of great solutions 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
 
 ## Implementations
-- [Redis](https://github.com/exceptionless/Foundatio.Redis) - Caching, Queues, Messaging, Locks, Metrics
+- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Queues, Messaging, Locks, Metrics
 - [Azure Storage](https://github.com/exceptionless/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/exceptionless/Foundatio.AzureServiceBus) - Queues, Messaging
 - [AWS](https://github.com/exceptionless/Foundatio.AWS) - Storage, Queues, Metrics
@@ -51,8 +51,8 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 
 1. [InMemoryCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property. We use this in [Exceptionless](https://github.com/exceptionless/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/exceptionless/Exceptionless/blob/master/Source/Core/Geo/MaxMindGeoIpService.cs).
 2. [HybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Caching/HybridCacheClient.cs): This cache implementation uses the `InMemoryCacheClient` and uses the `IMessageBus` to keep the cache in sync across processes.
-3. [RedisCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
-4. [RedisHybridCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
+3. [RedisCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
+4. [RedisHybridCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
 5. [ScopedCacheClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Caching/ScopedCacheClient.cs): This cache implementation takes an instance of `ICacheClient` and a string `scope`. The scope is prefixed onto every cache key. This makes it really easy to scope all cache keys and remove them with ease.
 
 #### Sample
@@ -70,7 +70,7 @@ var value = await cache.GetAsync<int>("test");
 Queues offer First In, First Out (FIFO) message delivery. We provide four different queue implementations that derive from the [`IQueue` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Queues/IQueue.cs):
 
 1. [InMemoryQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Queues/InMemoryQueue.cs): An in memory queue implementation. This queue implementation is only valid for the lifetime of the process.
-2. [RedisQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
+2. [RedisQueue](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
 3. [AzureServiceBusQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
 4. [AzureStorageQueue](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
 
@@ -118,7 +118,7 @@ using (await locker.AcquireAsync("test")) {
 Allows you to publish and subscribe to messages flowing through your application. We provide four different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
 
 1. [InMemoryMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
-2. [RedisMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
+2. [RedisMessageBus](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
 3. [RabbitMQMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
 4. [AzureServiceBusMessageBus](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
@@ -289,7 +289,7 @@ string content = await storage.GetFileContentsAsync("test.txt")
 We provide four implementations that derive from the [`IMetricsClient` interface](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
 
 1. [InMemoryMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-2. [RedisMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
+2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
 3. [StatsDMetricsClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 4. [MetricsNETClient](https://github.com/exceptionless/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 
