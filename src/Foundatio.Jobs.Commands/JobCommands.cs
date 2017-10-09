@@ -12,11 +12,11 @@ using Newtonsoft.Json;
 
 namespace Foundatio.Jobs.Commands {
     public class JobCommands {
-        public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<CommandLineApplication> configure = null, ILoggerFactory loggerFactory = null) {
+        public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<JobCommandsApplication> configure = null, ILoggerFactory loggerFactory = null) {
             var logger = loggerFactory.CreateLogger("JobCommands");
             var lazyServiceProvider = new Lazy<IServiceProvider>(getServiceProvider);
 
-            var app = new CommandLineApplication {
+            var app = new JobCommandsApplication {
                 Name = "job",
                 FullName = "Foundatio Job Runner",
                 ShortVersionGetter = () => {
@@ -36,30 +36,38 @@ namespace Foundatio.Jobs.Commands {
                     }
                 }
             };
+            
+            var jobConfiguration = GetJobConfiguration(logger);
+            app.JobConfiguration = jobConfiguration;
 
             configure?.Invoke(app);
 
-            var jobConfiguration = GetJobConfiguration(logger);
-            List<Assembly> assemblies = null;
-            if (jobConfiguration.Assemblies != null && jobConfiguration.Assemblies.Count > 0) {
-                assemblies = new List<Assembly>();
-                foreach (var assemblyName in jobConfiguration.Assemblies) {
-                    try {
-                        var assembly = Assembly.Load(assemblyName);
-                        if (assembly != null)
-                            assemblies.Add(assembly);
-                    } catch (Exception ex) {
-                        logger.LogError(ex, $"Unable to load job assembly \"{assemblyName}\"");
+            var jobTypes = new List<Type>();
+            if (app.JobConfiguration.Types != null && app.JobConfiguration.Types.Count > 0) {
+                jobTypes.AddRange(app.JobConfiguration.Types);
+            } else {
+                List<Assembly> assemblies = null;
+                if (jobConfiguration.Assemblies != null && jobConfiguration.Assemblies.Count > 0) {
+                    assemblies = new List<Assembly>();
+                    foreach (var assemblyName in jobConfiguration.Assemblies) {
+                        try {
+                            var assembly = Assembly.Load(assemblyName);
+                            if (assembly != null)
+                                assemblies.Add(assembly);
+                        }
+                        catch (Exception ex) {
+                            logger.LogError(ex, $"Unable to load job assembly \"{assemblyName}\"");
+                        }
                     }
                 }
+
+                if (assemblies != null && assemblies.Count == 0)
+                    assemblies = null;
+
+                jobTypes.AddRange(TypeHelper.GetDerivedTypes<IJob>(assemblies));
+                if (jobConfiguration?.Exclusions != null && jobConfiguration.Exclusions.Count > 0)
+                    jobTypes = jobTypes.Where(t => !t.FullName.AnyWildcardMatches(jobConfiguration.Exclusions, true)).ToList();
             }
-
-            if (assemblies != null && assemblies.Count == 0)
-                assemblies = null;
-
-            var jobTypes = TypeHelper.GetDerivedTypes<IJob>(assemblies);
-            if (jobConfiguration?.Exclusions != null && jobConfiguration.Exclusions.Count > 0)
-                jobTypes = jobTypes.Where(t => !t.FullName.AnyWildcardMatches(jobConfiguration.Exclusions, true)).ToList();
 
             foreach (var jobType in jobTypes) {
                 var jobAttribute = jobType.GetCustomAttribute<JobAttribute>() ?? new JobAttribute();
@@ -191,8 +199,24 @@ namespace Foundatio.Jobs.Commands {
         }
     }
 
+    public class JobCommandsApplication : CommandLineApplication {
+        public JobConfiguration JobConfiguration { get; set; }
+    }
+
     public class JobConfiguration {
+        /// <summary>
+        /// A list of job types to use. If this collection is populated, it will override Assemblies and Exclusions.
+        /// </summary>
+        public ICollection<Type> Types { get; set; }
+
+        /// <summary>
+        /// List of assemblies to inspect for types that implement IJob.
+        /// </summary>
         public ICollection<string> Assemblies { get; set; }
+
+        /// <summary>
+        /// List of exlusion patterns that will be applied to the jobs discovered in the specified assemblies.
+        /// </summary>
         public ICollection<string> Exclusions { get; set; }
     }
 }
