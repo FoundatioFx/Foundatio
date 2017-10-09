@@ -111,7 +111,7 @@ namespace Foundatio.Caching {
             Interlocked.Increment(ref _hits);
 
             try {
-                T value = cacheEntry.GetValue<T>();
+                var value = cacheEntry.GetValue<T>();
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
                 _logger.LogError(ex, "Unable to deserialize value \"{0}\" to type {1}", cacheEntry.Value, typeof(T).FullName);
@@ -125,14 +125,16 @@ namespace Foundatio.Caching {
                 map[key] = GetAsync<T>(key);
 
             await Task.WhenAll(map.Values).AnyContext();
+#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
             return map.ToDictionary(k => k.Key, v => v.Value.Result);
+#pragma warning restore AsyncFixer02 // Long running or blocking operations under an async method
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
         }
 
@@ -141,7 +143,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             // TODO: Look up the existing expiration if expiresIn is null.
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
@@ -155,7 +157,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -194,7 +196,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -231,7 +233,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(values));
 
             // TODO: Look up the existing expiration if expiresIn is null.
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return default(long);
@@ -280,7 +282,7 @@ namespace Foundatio.Caching {
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
 
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return default(long);
@@ -370,7 +372,7 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
-            DateTime expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 double? currentValue = null;
                 try {
@@ -421,7 +423,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            DateTime expiresAt = SystemClock.UtcNow.Add(expiresIn);
+            var expiresAt = SystemClock.UtcNow.Add(expiresIn);
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return;
@@ -443,8 +445,8 @@ namespace Foundatio.Caching {
             _logger.LogTrace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
-            DateTime utcNow = SystemClock.UtcNow.AddMilliseconds(50);
-            DateTime minExpiration = DateTime.MaxValue;
+            var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
+            var minExpiration = DateTime.MaxValue;
 
             try {
                 foreach (var kvp in _memory) {
@@ -507,7 +509,7 @@ namespace Foundatio.Caching {
 
             public T GetValue<T>() {
                 object val = Value;
-                Type t = typeof(T);
+                var t = typeof(T);
 
                 if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t == TypeHelper.ObjectType || t.IsNumeric())
                     return (T)Convert.ChangeType(val, t);

@@ -26,7 +26,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Commands", "
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JobCommands", "samples\Foundatio.JobCommands\Foundatio.JobCommands.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "test\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "src\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Tests", "test\Foundatio.Tests\Foundatio.Tests.csproj", "{99CBF75F-9204-4D7E-A792-4377C0291900}"
 EndProject
