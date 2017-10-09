@@ -7,10 +7,9 @@ using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Foundatio.Extensions;
-using Foundatio.Logging;
-using Foundatio.Serializer;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Foundatio.Serializer;
 using ThirdParty.Json.LitJson;
 using Microsoft.Extensions.Logging;
 
@@ -60,7 +59,7 @@ namespace Foundatio.Queues {
 
             var message = new SendMessageRequest {
                 QueueUrl = _queueUrl,
-                MessageBody = await _serializer.SerializeToStringAsync(data).AnyContext(),
+                MessageBody = _serializer.SerializeToString(data),
             };
 
             var response = await _client.Value.SendMessageAsync(message).AnyContext();
@@ -112,7 +111,7 @@ namespace Foundatio.Queues {
 
             var message = response.Messages.First();
             string body = message.Body;
-            var data = await _serializer.DeserializeAsync<T>(body).AnyContext();
+            var data = _serializer.Deserialize<T>(body);
             var entry = new SQSQueueEntry<T>(message, data, this);
 
             await OnDequeuedAsync(entry).AnyContext();

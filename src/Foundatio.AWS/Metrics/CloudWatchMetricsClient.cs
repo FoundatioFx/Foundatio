@@ -7,7 +7,6 @@ using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
 using Amazon.Runtime;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -146,7 +145,7 @@ namespace Foundatio.Metrics {
 
         private int GetStatsPeriod(DateTime start, DateTime end) {
             double totalMinutes = end.Subtract(start).TotalMinutes;
-            TimeSpan interval = TimeSpan.FromMinutes(1);
+            var interval = TimeSpan.FromMinutes(1);
             if (totalMinutes >= 60 * 24 * 7)
                 interval = TimeSpan.FromDays(1);
             else if (totalMinutes >= 60 * 2)
