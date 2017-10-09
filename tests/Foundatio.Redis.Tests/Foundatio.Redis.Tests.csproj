@@ -11,11 +11,10 @@
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="6.0.1529-pre" />
+    <PackageReference Include="Foundatio.TestHarness" Version="6.0.1539-pre" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.5.0-preview-20170923-02" />
-    <PackageReference Include="xunit" Version="2.3.0-beta5-build3769" />
-    <PackageReference Include="xunit.assert" Version="2.3.0-beta5-build3769" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.3.0-beta5-build3769" />
+    <PackageReference Include="xunit" Version="2.3.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.3.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">
