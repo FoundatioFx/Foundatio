@@ -137,10 +137,5 @@ namespace Foundatio.Azure.Tests.Queue {
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
         }
-
-        // NOTE: Not using this test because you can set specific delay times for storage queue
-        public override Task CanDelayRetryAsync() {
-            return base.CanDelayRetryAsync();
-        }
     }
 }
