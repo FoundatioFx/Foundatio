@@ -12,6 +12,10 @@ using Newtonsoft.Json;
 
 namespace Foundatio.Jobs.Commands {
     public class JobCommands {
+        public static int Run(string[] args, IServiceProvider serviceProvider, Action<JobCommandsApplication> configure = null, ILoggerFactory loggerFactory = null) {
+            return Run(args, () => serviceProvider, configure, loggerFactory);
+        }
+
         public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<JobCommandsApplication> configure = null, ILoggerFactory loggerFactory = null) {
             var logger = loggerFactory.CreateLogger("JobCommands");
             var lazyServiceProvider = new Lazy<IServiceProvider>(getServiceProvider);
