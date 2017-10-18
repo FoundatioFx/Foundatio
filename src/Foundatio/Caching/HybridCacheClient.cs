@@ -12,10 +12,10 @@ namespace Foundatio.Caching {
     public interface IHybridCacheClient : ICacheClient { }
 
     public class HybridCacheClient : IHybridCacheClient {
-        private readonly string _cacheId = Guid.NewGuid().ToString("N");
         protected readonly ICacheClient _distributedCache;
-        private readonly InMemoryCacheClient _localCache;
         protected readonly IMessageBus _messageBus;
+        private readonly string _cacheId = Guid.NewGuid().ToString("N");
+        private readonly InMemoryCacheClient _localCache;
         private readonly ILogger _logger;
         private long _localCacheHits;
         private long _invalidateCacheCalls;
@@ -89,16 +89,16 @@ namespace Foundatio.Caching {
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
-                _logger.LogTrace("Local cache hit: {0}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
                 Interlocked.Increment(ref _localCacheHits);
                 return cacheValue;
             }
 
-            _logger.LogTrace("Local cache miss: {0}", key);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
             cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-                _logger.LogTrace("Setting Local cache key: {0} with expiration: {1}", key, expiration);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
                 await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
@@ -112,7 +112,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            _logger.LogTrace("Adding key \"{0}\" to local cache with expiration: {1}", key, expiresIn);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
             bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
             if (added)
                 await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -121,7 +121,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            _logger.LogTrace("Setting key \"{0}\" to local cache with expiration: {1}", key, expiresIn);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
 
@@ -132,7 +132,7 @@ namespace Foundatio.Caching {
             if (values == null || values.Count == 0)
                 return 0;
 
-            _logger.LogTrace("Adding keys \"{0}\" to local cache with expiration: {1}", values.Keys, expiresIn);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Adding keys {Keys} to local cache with expiration: {Expiration}", values.Keys, expiresIn);
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
             await _localCache.SetAllAsync(values, expiresIn).AnyContext();
             return await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
@@ -191,16 +191,16 @@ namespace Foundatio.Caching {
         public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
             var cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
-                _logger.LogTrace("Local cache hit: {0}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
                 Interlocked.Increment(ref _localCacheHits);
                 return cacheValue;
             }
 
-            _logger.LogTrace("Local cache miss: {0}", key);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
             cacheValue = await _distributedCache.GetSetAsync<T>(key).AnyContext();
             if (cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-                _logger.LogTrace("Setting Local cache key: {0} with expiration: {1}", key, expiration);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
                 await _localCache.SetAddAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;

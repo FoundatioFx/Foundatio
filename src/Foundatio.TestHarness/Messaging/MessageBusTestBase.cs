@@ -36,17 +36,17 @@ namespace Foundatio.Tests.Messaging {
             try {
                 var resetEvent = new AsyncManualResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-                    _logger.LogTrace("Got message");
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    _logger.LogTrace("Set event");
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set event");
                 });
 
                 await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
-                _logger.LogTrace("Published one...");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Published one...");
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             } finally {
@@ -68,7 +68,7 @@ namespace Foundatio.Tests.Messaging {
 
                 await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync<object>(null);
-                _logger.LogTrace("Published one...");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Published one...");
 
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resetEvent.WaitAsync(TimeSpan.FromSeconds(1)));
             } finally {
@@ -84,17 +84,17 @@ namespace Foundatio.Tests.Messaging {
             try {
                 var resetEvent = new AsyncManualResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-                    _logger.LogTrace("Got message");
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     resetEvent.Set();
-                    _logger.LogTrace("Set event");
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set event");
                 });
 
                 await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
                     Data = "Hello"
                 });
-                _logger.LogTrace("Published one...");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Published one...");
 
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
             } finally {
@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Messaging {
                 int messages = 0;
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     if (++messages % 50 == 0)
-                        _logger.LogTrace($"Totoal Processed {messages} messages");
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Totoal Processed {Messages} messages", messages);
 
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
@@ -127,13 +127,13 @@ namespace Foundatio.Tests.Messaging {
                         Count = i
                     }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)));
                     if (i % 500 == 0)
-                        _logger.LogTrace("Published 500 messages...");
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Published 500 messages...");
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
 
-                _logger.LogTrace($"Processed {numConcurrentMessages - countdown.CurrentCount} in {sw.ElapsedMilliseconds}ms");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Elapsed}ms", numConcurrentMessages - countdown.CurrentCount, sw.ElapsedMilliseconds);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
             } finally {
@@ -407,7 +407,7 @@ namespace Foundatio.Tests.Messaging {
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-                    _logger.LogTrace("SimpleAMessage received");
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("SimpleAMessage received");
                     Interlocked.Increment(ref messageCount);
                     cancellationTokenSource.Cancel();
                     countdown.Signal();

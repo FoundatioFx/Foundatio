@@ -15,7 +15,6 @@ namespace Foundatio.Caching {
         private long _hits;
         private long _misses;
 
-
         public InMemoryCacheClient(InMemoryCacheClientOptions options = null) : base(options?.LoggerFactory) {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -62,7 +61,7 @@ namespace Foundatio.Caching {
                 if (String.IsNullOrEmpty(key))
                     continue;
 
-                _logger.LogTrace("RemoveAllAsync: Removing key {0}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
                 if (_memory.TryRemove(key, out _))
                     removed++;
             }
@@ -78,14 +77,15 @@ namespace Foundatio.Caching {
                     if (regex.IsMatch(key))
                         keysToRemove.Add(key);
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to remove items from cache with this {0} prefix", prefix);
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
             }
 
             return RemoveAllAsync(keysToRemove);
         }
 
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
-            _logger.LogTrace("Removing expired key {0}", key);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
             if (_memory.TryRemove(key, out _))
                 return OnItemExpiredAsync(key, sendNotification);
@@ -114,7 +114,8 @@ namespace Foundatio.Caching {
                 var value = cacheEntry.GetValue<T>();
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                _logger.LogError(ex, "Unable to deserialize value \"{0}\" to type {1}", cacheEntry.Value, typeof(T).FullName);
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", cacheEntry.Value, typeof(T).FullName);
                 return CacheValue<T>.NoValue;
             }
         }
@@ -158,12 +159,13 @@ namespace Foundatio.Caching {
 
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -197,12 +199,13 @@ namespace Foundatio.Caching {
 
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
-            var result = _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -267,7 +270,7 @@ namespace Foundatio.Caching {
                                    .First()
                                    .Key;
 
-            _logger.LogTrace("Removing key {oldest}", oldest);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
             _memory.TryRemove(oldest, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 return OnItemExpiredAsync(oldest);
@@ -298,7 +301,7 @@ namespace Foundatio.Caching {
                 }
 
                 cacheEntry.ExpiresAt = expiresAt;
-                _logger.LogTrace("Removed value from set with cache key: {key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
                 return cacheEntry;
             });
 
@@ -329,10 +332,10 @@ namespace Foundatio.Caching {
                     _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
                 }
 
-                _logger.LogTrace("Added cache key: {key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Added cache key: {Key}", key);
             } else {
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
-                _logger.LogTrace("Set cache key: {0}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set cache key: {Key}", key);
             }
 
             ScheduleNextMaintenance(entry.ExpiresAt);
@@ -442,7 +445,7 @@ namespace Foundatio.Caching {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            _logger.LogTrace("DoMaintenanceAsync");
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
             var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
@@ -457,7 +460,8 @@ namespace Foundatio.Caching {
                         minExpiration = expiresAt;
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to find expired cache items.");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error trying to find expired cache items.");
             }
 
             var tasks = new List<Task>();

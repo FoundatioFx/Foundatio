@@ -24,7 +24,8 @@ namespace Foundatio.Jobs {
                 await Task.Yield();
 
                 var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-                logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
+                if (logger.IsEnabled(LogLevel.Trace))
+                    logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
                 return stats.Queued + stats.Working > 0;
             });
         }

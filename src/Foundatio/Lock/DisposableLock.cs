@@ -16,23 +16,26 @@ namespace Foundatio.Lock {
         }
 
         public async Task DisposeAsync() {
-            _logger.LogTrace("Disposing lock: {0}", _name);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Disposing lock: {Name}", _name);
             try {
                 await _lockProvider.ReleaseAsync(_name).AnyContext();
             } catch (Exception ex) {
-                _logger.LogError(ex, $"Unable to release lock {_name}");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Unable to release lock {Name}", _name);
             }
-            _logger.LogTrace("Disposed lock: {0}", _name);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Disposed lock: {Name}", _name);
         }
 
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
-            _logger.LogTrace("Renewing lock: {0}", _name);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Renewing lock: {Name}", _name);
             await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
-            _logger.LogTrace("Renewed lock: {0}", _name);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Renewed lock: {Name}", _name);
         }
 
         public Task ReleaseAsync() {
-            _logger.LogTrace("Releasing lock: {0}", _name);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Releasing lock: {Name}", _name);
             return _lockProvider.ReleaseAsync(_name);
         }
     }

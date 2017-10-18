@@ -18,8 +18,7 @@ namespace Foundatio.Utility {
             if (exception == null)
                 return String.Empty;
 
-            var aggregateException = exception as AggregateException;
-            if (aggregateException != null)
+            if (exception is AggregateException aggregateException)
                 return String.Join(Environment.NewLine, aggregateException.Flatten().InnerExceptions.Where(ex => !String.IsNullOrEmpty(ex.GetInnermostException().Message)).Select(ex => ex.GetInnermostException().Message));
 
             return exception.GetInnermostException().Message;

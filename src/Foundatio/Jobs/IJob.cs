@@ -27,7 +27,8 @@ namespace Foundatio.Jobs {
             var logger = job.GetLogger() ?? NullLogger.Instance;
 
             using (logger.BeginScope(new Dictionary<string, object> {{ "job", jobName }})) {
-                logger.LogInformation("Starting continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
 
                 var sw = Stopwatch.StartNew();
                 while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
@@ -53,29 +54,34 @@ namespace Foundatio.Jobs {
                         if (!continuationCallback().GetAwaiter().GetResult())
                             break;
                     } catch (Exception ex) {
-                        logger.LogError(ex, "Error in continuation callback: {0}", ex.Message);
+                        if (logger.IsEnabled(LogLevel.Error))
+                            logger.LogError(ex, "Error in continuation callback: {Message}", ex.Message);
                     }
                 }
 
-                if (cancellationToken.IsCancellationRequested)
+                if (cancellationToken.IsCancellationRequested && logger.IsEnabled(LogLevel.Trace))
                     logger.LogTrace("Job cancellation requested.");
 
-                logger.LogInformation("Stopping continuous job type \"{0}\" on machine \"{1}\"...", jobName, Environment.MachineName);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Stopping continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
             }
         }
 
         internal static void LogResult(JobResult result, ILogger logger, string jobName) {
             if (result != null) {
                 if (result.IsCancelled)
-                    logger.LogWarning(result.Error, "Job run \"{0}\" cancelled: {1}", jobName, result.Message);
+                    if (logger.IsEnabled(LogLevel.Warning))
+                        logger.LogWarning(result.Error, "Job run {JobName} cancelled: {Message}", jobName, result.Message);
                 else if (!result.IsSuccess)
-                    logger.LogError(result.Error, "Job run \"{0}\" failed: {1}", jobName, result.Message);
+                    if (logger.IsEnabled(LogLevel.Error))
+                        logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
                 else if (!String.IsNullOrEmpty(result.Message))
-                    logger.LogInformation("Job run \"{0}\" succeeded: {1}", jobName, result.Message);
-                else
-                    logger.LogTrace("Job run \"{0}\" succeeded.", jobName);
-            } else {
-                logger.LogError("Null job run result for \"{0}\".", jobName);
+                    if (logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
+                else if (logger.IsEnabled(LogLevel.Trace))
+                    logger.LogTrace("Job run {JobName} succeeded.", jobName);
+            } else if (logger.IsEnabled(LogLevel.Error)) {
+                    logger.LogError("Null job run result for {JobName}.", jobName);
             }
         }
     }

@@ -313,7 +313,8 @@ namespace Foundatio.Tests.Storage {
             using (storage) {
                 var files = (await storage.GetFileListAsync()).ToList();
                 if (files.Count > 0) {
-                    _logger.LogTrace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
                     await storage.DeleteFilesAsync(files);
                 }
 
@@ -399,7 +400,8 @@ namespace Foundatio.Tests.Storage {
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
             } catch (Exception ex) {
-                logger?.LogError(ex, $"Error retrieving event post data \"{path}\": {ex.Message}");
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                    logger.LogError(ex, "Error retrieving event post data {Path}: {Message}", path, ex.Message);
                 return null;
             }
 
@@ -410,7 +412,8 @@ namespace Foundatio.Tests.Storage {
             try {
                 return await storage.DeleteFileAsync(path + ".x");
             } catch (Exception ex) {
-                logger?.LogError(ex, $"Error deleting work marker \"{path}.x\": {ex.Message}");
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                    logger.LogError(ex, "Error deleting work marker {Path}: {Message}", path, ex.Message);
             }
 
             return false;
@@ -432,7 +435,8 @@ namespace Foundatio.Tests.Storage {
                         return false;
                 }
             } catch (Exception ex) {
-                logger?.LogError(ex, $"Error archiving event post data \"{path}\": {ex.Message}");
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                    logger?.LogError(ex, "Error archiving event post data {Path}: {Message}", path, ex.Message);
                 return false;
             }
 

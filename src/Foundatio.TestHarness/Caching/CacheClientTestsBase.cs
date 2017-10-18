@@ -43,7 +43,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
                 await cache.SetAsync("obj3", (SimpleModel)null);
 
-                var json = JsonConvert.SerializeObject(new SimpleModel {Data1 = "test 1", Data2 = 4});
+                string json = JsonConvert.SerializeObject(new SimpleModel {Data1 = "test 1", Data2 = 4});
                 await cache.SetAsync("obj4", json);
 
                 //await cache.SetAsync("obj4", "{ \"Data1\":\"data 3\", \"Data2\":3 }");
@@ -192,7 +192,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+                string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                 long adds = 0;
                 await Run.InParallelAsync(5, async i => {
                     if (await cache.AddAsync(cacheKey, i, TimeSpan.FromMinutes(1)))
@@ -261,7 +261,7 @@ namespace Foundatio.Tests.Caching {
 
                 await scopedCache2.SetAsync("test", 1);
 
-                var result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
+                int result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
                 Assert.Equal(2, result);
 
                 // delete without any matching keys
@@ -353,7 +353,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync();
 
                 var expiresAt = SystemClock.UtcNow.AddMilliseconds(300);
-                var success = await cache.SetAsync("test", 1, expiresAt);
+                bool success = await cache.SetAsync("test", 1, expiresAt);
                 Assert.True(success);
                 success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
                 Assert.True(success);
@@ -397,11 +397,11 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var success = await cache.SetAsync("test", 0);
+                bool success = await cache.SetAsync("test", 0);
                 Assert.True(success);
 
                 var expiresIn = TimeSpan.FromSeconds(1);
-                var newVal = await cache.IncrementAsync("test", 1, expiresIn);
+                double newVal = await cache.IncrementAsync("test", 1, expiresIn);
 
                 Assert.Equal(1, newVal);
 

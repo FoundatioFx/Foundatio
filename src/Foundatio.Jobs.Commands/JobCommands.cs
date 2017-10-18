@@ -60,7 +60,8 @@ namespace Foundatio.Jobs.Commands {
                                 assemblies.Add(assembly);
                         }
                         catch (Exception ex) {
-                            logger.LogError(ex, $"Unable to load job assembly \"{assemblyName}\"");
+                            if (logger.IsEnabled(LogLevel.Error))
+                                logger.LogError(ex, "Unable to load job assembly {AssemblyName}", assemblyName);
                         }
                     }
                 }
@@ -155,7 +156,8 @@ namespace Foundatio.Jobs.Commands {
                     try {
                         jobType = Type.GetType(jobArgument.Value);
                     } catch (Exception ex) {
-                        logger.LogError(ex, $"Error getting job type: {ex.Message}");
+                        if (logger.IsEnabled(LogLevel.Error))
+                            logger.LogError(ex, "Error getting job type: {Message}", ex.Message);
                     }
 
                     if (jobType == null)
@@ -197,7 +199,8 @@ namespace Foundatio.Jobs.Commands {
             try {
                 return JsonConvert.DeserializeObject<JobConfiguration>(jobConfig);
             } catch (Exception ex) {
-                logger.LogError(ex, $"Error parsing job config file: {ex.Message}");
+                if (logger.IsEnabled(LogLevel.Error))
+                    logger.LogError(ex, "Error parsing job config file: {Message}", ex.Message);
                 return new JobConfiguration();
             }
         }

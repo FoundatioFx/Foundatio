@@ -44,15 +44,17 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             if (cancellationToken.IsCancellationRequested) {
-                _logger.LogInformation($"Job was cancelled. Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation("Job was cancelled. Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue item: {queueEntry.Id}");
+                return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
             }
 
             var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
             if (lockValue == null) {
                 await queueEntry.AbandonAsync().AnyContext();
-                _logger.LogTrace("Unable to acquire queue entry lock.");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Unable to acquire queue entry lock.");
                 return JobResult.Success;
             }
 
@@ -68,12 +70,15 @@ namespace Foundatio.Jobs {
                     LogAutoCompletedQueueEntry(queueEntry);
                 } else {
                     await queueEntry.AbandonAsync().AnyContext();
-                    _logger.LogWarning($"Auto abandoned {_queueEntryName} queue entry ({queueEntry.Id}).");
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning("Auto abandoned {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
                 }
 
                 return result;
             } catch (Exception ex) {
-                _logger.LogError(ex, $"Error processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+
                 if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
                     await queueEntry.AbandonAsync().AnyContext();
 
@@ -84,11 +89,13 @@ namespace Foundatio.Jobs {
         }
 
         protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.LogInformation($"Processing {_queueEntryName} queue entry ({queueEntry.Id}).");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
         }
 
         protected virtual void LogAutoCompletedQueueEntry(IQueueEntry<T> queueEntry) {
-            _logger.LogInformation($"Auto completed {_queueEntryName} queue entry ({queueEntry.Id}).");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Auto completed {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
         }
 
         protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);

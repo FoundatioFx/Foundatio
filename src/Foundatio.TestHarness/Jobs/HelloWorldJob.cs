@@ -19,7 +19,8 @@ namespace Foundatio.Tests.Jobs {
             RunCount++;
             Interlocked.Increment(ref GlobalRunCount);
 
-            _logger.LogTrace("HelloWorld Running: instance={0} runs={1} global={2}", _id, RunCount, GlobalRunCount);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("HelloWorld Running: instance={Id} runs={RunCount} global={GlobalRunCount}", _id, RunCount, GlobalRunCount);
 
             return Task.FromResult(JobResult.Success);
         }
@@ -41,8 +42,8 @@ namespace Foundatio.Tests.Jobs {
                 if (context.CancellationToken.IsCancellationRequested)
                     break;
                 
-                if (_iterationCount % 10000 == 0)
-                    _logger.LogTrace("LongRunningJob Running: instance={0} iterations={1}", _id, IterationCount);
+                if (_iterationCount % 10000 == 0 && _logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("LongRunningJob Running: instance={Id} iterations={IterationCount}", _id, IterationCount);
             } while (true);
 
             return Task.FromResult(JobResult.Success);

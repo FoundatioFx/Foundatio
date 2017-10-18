@@ -52,7 +52,8 @@ namespace Foundatio.Tests.Metrics {
                 var timer = await stats.GetTimerStatsAsync("t1");
                 Assert.Equal(1, timer.Count);
 
-                _logger.LogInformation((await stats.GetCounterStatsAsync("c1")).ToString());
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation((await stats.GetCounterStatsAsync("c1")).ToString());
             }
         }
 
@@ -174,7 +175,8 @@ namespace Foundatio.Tests.Metrics {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
                 Assert.True(await task, "Expected at least 5 count within 500 ms");
 
-                _logger.LogInformation((await metrics.GetCounterStatsAsync(CounterName)).ToString());
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation((await metrics.GetCounterStatsAsync(CounterName)).ToString());
             }
         }
 #pragma warning restore 4014

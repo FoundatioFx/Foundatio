@@ -11,14 +11,11 @@ namespace Foundatio.Collections
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
 
-            var result = source as IReadOnlyCollection<T>;
-            if (result != null)
+            if (source is IReadOnlyCollection<T> result)
                 return result;
-            var collection = source as ICollection<T>;
-            if (collection != null)
+            if (source is ICollection<T> collection)
                 return new CollectionWrapper<T>(collection);
-            var nongenericCollection = source as ICollection;
-            if (nongenericCollection != null)
+            if (source is ICollection nongenericCollection)
                 return new NongenericCollectionWrapper<T>(nongenericCollection);
 
             return new List<T>(source);

@@ -35,18 +35,22 @@ namespace Foundatio.Messaging {
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
             }
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
-                _logger.LogTrace($"Done sending message to 0 subscribers for message type {messageType.Name}.");
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
                 return Task.CompletedTask;
             }
 
-            _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
 
             return SendMessageToSubscribersAsync(subscribers, messageType, message.DeepClone());
         }

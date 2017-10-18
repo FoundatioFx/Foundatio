@@ -84,8 +84,8 @@ namespace Foundatio.Logging.Xunit {
         }
 
         private static ImmutableStack<object> CurrentScopeStack {
-            get { return _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>(); }
-            set { _currentScopeStack.Value = new Wrapper { Value = value }; }
+            get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
+            set => _currentScopeStack.Value = new Wrapper { Value = value };
         }
 
         private static IDisposable Push(object state) {

@@ -61,11 +61,13 @@ namespace Foundatio.Jobs {
         public ILogger Log { get; set; }
 
         public virtual void LogProcessingQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem) {
-            Log.LogInformation($"Processing {workItemDataType.Name} work item queue entry ({queueEntry.Id}).");
+            if (Log.IsEnabled(LogLevel.Information))
+                Log.LogInformation("Processing {TypeName} work item queue entry: {Id}.", workItemDataType.Name, queueEntry.Id);
         }
 
         public virtual void LogAutoCompletedQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem) {
-            Log.LogInformation($"Auto completed {workItemDataType.Name} work item queue entry ({queueEntry.Id}).");
+            if (Log.IsEnabled(LogLevel.Information))
+                Log.LogInformation("Auto completed {TypeName} work item queue entry: {Id}.", workItemDataType.Name, queueEntry.Id);
         }
 
         public abstract Task HandleItemAsync(WorkItemContext context);
@@ -97,14 +99,14 @@ namespace Foundatio.Jobs {
             if (_logProcessingWorkItem != null)
                 _logProcessingWorkItem(queueEntry, workItemDataType, workItem);
             else
-                Log.LogInformation($"Processing {workItemDataType.Name} work item queue entry ({queueEntry.Id}).");
+                base.LogProcessingQueueEntry(queueEntry, workItemDataType, workItem);
         }
 
         public override void LogAutoCompletedQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem) {
             if (_logAutoCompletedWorkItem != null)
                 _logAutoCompletedWorkItem(queueEntry, workItemDataType, workItem);
             else
-                Log.LogInformation($"Auto completed {workItemDataType.Name} work item queue entry ({queueEntry.Id}).");
+                base.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItem);
         }
     }
 }

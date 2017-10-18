@@ -37,8 +37,8 @@ namespace Foundatio.Utility {
                 currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
 
             do {
-                if (attempts > 1)
-                    logger?.LogInformation($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
+                if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Retrying {Attempts} attempt after {Delay}ms...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds);
 
                 try {
                     return await action().AnyContext();
@@ -46,7 +46,9 @@ namespace Foundatio.Utility {
                     if (attempts >= maxAttempts)
                         throw;
 
-                    logger?.LogError(ex, $"Retry error: {ex.Message}");
+                    if (logger != null && logger.IsEnabled(LogLevel.Error))
+                        logger.LogError(ex, "Retry error: {Message}", ex.Message);
+
                     await SystemClock.SleepAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 

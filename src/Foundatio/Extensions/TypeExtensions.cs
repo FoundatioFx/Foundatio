@@ -48,7 +48,7 @@ namespace Foundatio.Utility {
         }
 
         public static T ToType<T>(this object value) {
-            Type targetType = typeof(T);
+            var targetType = typeof(T);
             if (value == null) {
                 try {
                     return (T)Convert.ChangeType(value, targetType);
@@ -57,13 +57,13 @@ namespace Foundatio.Utility {
                 }
             }
 
-            TypeConverter converter = TypeDescriptor.GetConverter(targetType);
-            Type valueType = value.GetType();
+            var converter = TypeDescriptor.GetConverter(targetType);
+            var valueType = value.GetType();
 
             if (targetType.IsAssignableFrom(valueType))
                 return (T)value;
 
-            TypeInfo targetTypeInfo = targetType.GetTypeInfo();
+            var targetTypeInfo = targetType.GetTypeInfo();
             if (targetTypeInfo.IsEnum && (value is string || valueType.GetTypeInfo().IsEnum)) {
                 // attempt to match enum by name.
                 if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString())) {

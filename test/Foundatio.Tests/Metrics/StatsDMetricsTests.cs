@@ -98,12 +98,13 @@ namespace Foundatio.Tests.Metrics {
                 if (index % (iterations / 10) == 0)
                     await StartListeningAsync(iterations - index);
 
-                if (index % (iterations / 20) == 0)
+                if (index % (iterations / 20) == 0 && _logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            _logger.LogInformation((await metrics.GetCounterStatsAsync("counter")).ToString());
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation((await metrics.GetCounterStatsAsync("counter")).ToString());
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);

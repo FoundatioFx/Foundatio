@@ -81,7 +81,9 @@ namespace Foundatio.Jobs {
 
             var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
             if (lockValue == null) {
-                handler.Log.LogInformation($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Unable to acquire work item lock.");
+                if (handler.Log.IsEnabled(LogLevel.Information))
+                    handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock.", queueEntry.Value.Type, queueEntry.Id);
+
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.Success;
             }
@@ -94,12 +96,14 @@ namespace Foundatio.Jobs {
                             lockValue.RenewAsync()
                         ).AnyContext();
                     } catch (Exception ex) {
-                        handler.Log.LogError(ex, "Error renewing work item locks: {0}", ex.Message);
+                        if (handler.Log.IsEnabled(LogLevel.Error))
+                            handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
                     }
                 }
 
                 await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-                handler.Log.LogInformation($"{workItemDataType.Name} Progress {progress}%: {message}");
+                if (handler.Log.IsEnabled(LogLevel.Information))
+                    handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
             });
 
             try {
@@ -136,7 +140,8 @@ namespace Foundatio.Jobs {
                     Message = message
                 }).AnyContext();
             } catch (Exception ex) {
-                handler.Log.LogError(ex, "Error sending progress report: {0}", ex.Message);
+                if (handler.Log.IsEnabled(LogLevel.Error))
+                    handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
             }
         }
     }

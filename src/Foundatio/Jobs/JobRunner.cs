@@ -52,14 +52,16 @@ namespace Foundatio.Jobs {
                 if (Debugger.IsAttached)
                     Console.ReadKey();
             } catch (FileNotFoundException e) {
-                _logger.LogError($"{e.GetMessage()} ({ e.FileName})");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError("{Message} ({FileName})", e.GetMessage(), e.FileName);
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
 
                 return 1;
             } catch (Exception e) {
-                _logger.LogError(e, "Job \"{jobName}\" error: {Message}", _jobName, e.GetMessage());
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(e, "Job {jobName} error: {Message}", _jobName, e.GetMessage());
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
@@ -76,7 +78,8 @@ namespace Foundatio.Jobs {
                     try {
                         await RunAsync(cancellationToken).AnyContext();
                     } catch (Exception ex) {
-                        _logger.LogError(ex, $"Error running job in background: {ex.Message}");
+                        if (_logger.IsEnabled(LogLevel.Error))
+                            _logger.LogError(ex, "Error running job in background: {Message}", ex.Message);
                         throw;
                     }
                 }, cancellationToken, TaskCreationOptions.LongRunning).TryStart();
@@ -87,19 +90,22 @@ namespace Foundatio.Jobs {
 
         public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_options.JobFactory == null) {
-                _logger.LogError("JobFactory must be specified.");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError("JobFactory must be specified.");
                 return false;
             }
 
             var job = _options.JobFactory();
             if (job == null) {
-                _logger.LogError("JobFactory returned null job instance.");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError("JobFactory returned null job instance.");
                 return false;
             }
 
             _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
             using (_logger.BeginScope(new Dictionary<string, object> {{ "job", _jobName }})) {
-                _logger.LogInformation("Starting job type \"{0}\" on machine \"{1}\"...", _jobName, Environment.MachineName);
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
 
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
                     await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
@@ -112,7 +118,8 @@ namespace Foundatio.Jobs {
                                 var jobInstance = _options.JobFactory();
                                 jobInstance.RunContinuous(_options.Interval, _options.IterationLimit, cancellationToken);
                             } catch (Exception ex) {
-                                _logger.LogError(ex, $"Error running job instance: {ex.Message}");
+                                if (_logger.IsEnabled(LogLevel.Error))
+                                    _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
                                 throw;
                             }
                         }, cancellationToken, TaskCreationOptions.LongRunning);
@@ -147,7 +154,8 @@ namespace Foundatio.Jobs {
                 _jobShutdownCancellationTokenSource = new CancellationTokenSource();
                 Console.CancelKeyPress += (sender, args) => {
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.LogInformation("Job shutdown event signaled: {0}", args.SpecialKey);
+                    if (logger != null & logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Job shutdown event signaled: {SpecialKey}", args.SpecialKey);
                     args.Cancel = true;
                 };
 
@@ -160,7 +168,8 @@ namespace Foundatio.Jobs {
                         return;
 
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.LogInformation("Job shutdown signaled.");
+                    if (logger != null & logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Job shutdown signaled.");
                 });
 
                 var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));
