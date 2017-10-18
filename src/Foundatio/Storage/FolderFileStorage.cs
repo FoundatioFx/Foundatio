@@ -15,6 +15,8 @@ namespace Foundatio.Storage {
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
+
+            // TODO Should this be using Path.DirectorySeparatorChar 
             if (!folder.EndsWith("\\"))
                 folder += "\\";
 
@@ -152,7 +154,8 @@ namespace Foundatio.Storage {
                 Directory.Delete(Folder, true);
                 return Task.CompletedTask;
             }
-            
+
+            // TODO Should this be using Path.DirectorySeparatorChar
             searchPattern = searchPattern.Replace("/", "\\");
 
             string path = Path.Combine(Folder, searchPattern);
@@ -181,6 +184,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
 
+            // TODO Should this be using Path.DirectorySeparatorChar
             searchPattern = searchPattern.Replace("/", "\\");
 
             var list = new List<FileSpec>();
