@@ -9,7 +9,7 @@ namespace Foundatio.Utility {
         public static string ExpandPath(string path) {
             if (String.IsNullOrEmpty(path))
                 return path;
-            
+
             if (!path.StartsWith(DATA_DIRECTORY, StringComparison.OrdinalIgnoreCase))
                 return Path.GetFullPath(path);
 

@@ -137,7 +137,6 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
 
-            // TODO Should this be using Path.DirectorySeparatorChar
             searchPattern = searchPattern.Replace("/", "\\");
 
             if (searchPattern.EndsWith("\\")) 
@@ -162,7 +161,6 @@ namespace Foundatio.Storage {
             if (searchPattern == null)
                 searchPattern = "*";
 
-            // TODO Should this be using Path.DirectorySeparatorChar
             searchPattern = searchPattern.Replace("/", "\\");
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock)
