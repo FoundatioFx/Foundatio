@@ -15,13 +15,13 @@ namespace Foundatio.Metrics {
             _stopWatch = Stopwatch.StartNew();
         }
 
-        public async Task DisposeAsync() {
+        public Task DisposeAsync() {
             if (_disposed)
-                return;
+                return Task.CompletedTask;
 
             _disposed = true;
             _stopWatch.Stop();
-            await _client.TimerAsync(_name, (int)_stopWatch.ElapsedMilliseconds).AnyContext();
+            return _client.TimerAsync(_name, (int)_stopWatch.ElapsedMilliseconds);
         }
     }
 }
