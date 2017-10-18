@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Utility;
@@ -32,84 +33,93 @@ namespace Foundatio.Queues {
         private async Task<DateTime?> ReportQueueCountAsync() {
             try {
                 var stats = await _queue.GetQueueStatsAsync().AnyContext();
-                _logger.LogTrace("Reporting queue count");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Reporting queue count");
 
-                await _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued).AnyContext();
-                await _metricsClient.GaugeAsync(GetFullMetricName("working"), stats.Working).AnyContext();
-                await _metricsClient.GaugeAsync(GetFullMetricName("deadletter"), stats.Deadletter).AnyContext();
+                await Task.WhenAll(
+                    _metricsClient.GaugeAsync(GetFullMetricName("count"), stats.Queued),
+                    _metricsClient.GaugeAsync(GetFullMetricName("working"), stats.Working),
+                    _metricsClient.GaugeAsync(GetFullMetricName("deadletter"), stats.Deadletter)
+                ).AnyContext();
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error reporting queue metrics.");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error reporting queue metrics.");
             }
 
             return null;
         }
 
-        protected override async Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
+        protected override Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
+            var tasks = new List<Task>(2);
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             string subMetricName = GetSubMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "enqueued")).AnyContext();
+                tasks.Add(_metricsClient.CounterAsync(GetFullMetricName(subMetricName, "enqueued")));
 
-            await _metricsClient.CounterAsync(GetFullMetricName("enqueued")).AnyContext();
+            tasks.Add(_metricsClient.CounterAsync(GetFullMetricName("enqueued")));
+            return Task.WhenAll(tasks);
         }
 
-        protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+        protected override Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
+            var tasks = new List<Task>(4);
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string subMetricName = GetSubMetricName(dequeuedEventArgs.Entry.Value);
 
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "dequeued")).AnyContext();
-            await _metricsClient.CounterAsync(GetFullMetricName("dequeued")).AnyContext();
+                tasks.Add(_metricsClient.CounterAsync(GetFullMetricName(subMetricName, "dequeued")));
+            tasks.Add(_metricsClient.CounterAsync(GetFullMetricName("dequeued")));
 
             if (metadata == null || metadata.EnqueuedTimeUtc == DateTime.MinValue || metadata.DequeuedTimeUtc == DateTime.MinValue)
-                return;
+                return Task.WhenAll(tasks);
 
             var start = metadata.EnqueuedTimeUtc;
             var end = metadata.DequeuedTimeUtc;
             var time = (int)(end - start).TotalMilliseconds;
 
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "queuetime"), time).AnyContext();
-            await _metricsClient.TimerAsync(GetFullMetricName("queuetime"), time).AnyContext();
+                tasks.Add(_metricsClient.TimerAsync(GetFullMetricName(subMetricName, "queuetime"), time));
+            tasks.Add(_metricsClient.TimerAsync(GetFullMetricName("queuetime"), time));
+            return Task.WhenAll(tasks);
         }
 
-        protected override async Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
+        protected override Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
-            var metadata = completedEventArgs.Entry as IQueueEntryMetadata;
-            if (metadata == null)
-                return;
+            if (!(completedEventArgs.Entry is IQueueEntryMetadata metadata))
+                return Task.CompletedTask;
 
+            var tasks = new List<Task>(4);
             string subMetricName = GetSubMetricName(completedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "completed")).AnyContext();
-            await _metricsClient.CounterAsync(GetFullMetricName("completed")).AnyContext();
+                tasks.Add(_metricsClient.CounterAsync(GetFullMetricName(subMetricName, "completed")));
+            tasks.Add(_metricsClient.CounterAsync(GetFullMetricName("completed")));
 
             var time = (int)metadata.ProcessingTime.TotalMilliseconds;
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time).AnyContext();
-            await _metricsClient.TimerAsync(GetFullMetricName("processtime"), time).AnyContext();
+                tasks.Add(_metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time));
+            tasks.Add(_metricsClient.TimerAsync(GetFullMetricName("processtime"), time));
+            return Task.WhenAll(tasks);
         }
 
-        protected override async Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
+        protected override Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
             _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
 
-            var metadata = abandonedEventArgs.Entry as IQueueEntryMetadata;
-            if (metadata == null)
-                return;
+            if (!(abandonedEventArgs.Entry is IQueueEntryMetadata metadata))
+                return Task.CompletedTask;
 
+            var tasks = new List<Task>(4);
             string subMetricName = GetSubMetricName(abandonedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.CounterAsync(GetFullMetricName(subMetricName, "abandoned")).AnyContext();
-            await _metricsClient.CounterAsync(GetFullMetricName("abandoned")).AnyContext();
+                tasks.Add(_metricsClient.CounterAsync(GetFullMetricName(subMetricName, "abandoned")));
+            tasks.Add(_metricsClient.CounterAsync(GetFullMetricName("abandoned")));
 
             var time = (int)metadata.ProcessingTime.TotalMilliseconds;
             if (!String.IsNullOrEmpty(subMetricName))
-                await _metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time).AnyContext();
-            await _metricsClient.TimerAsync(GetFullMetricName("processtime"), time).AnyContext();
+                tasks.Add(_metricsClient.TimerAsync(GetFullMetricName(subMetricName, "processtime"), time));
+            tasks.Add(_metricsClient.TimerAsync(GetFullMetricName("processtime"), time));
+            return Task.WhenAll(tasks);
         }
 
         protected string GetSubMetricName(T data) {

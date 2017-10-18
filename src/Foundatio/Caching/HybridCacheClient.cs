@@ -38,46 +38,55 @@ namespace Foundatio.Caching {
             set => _localCache.MaxItems = value;
         }
 
-        private async Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args) {
+        private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args) {
             if (!args.SendNotification)
-                return;
+                return Task.CompletedTask;
 
-            _logger.LogTrace("Local cache expired event: key={0}", args.Key);
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key }, Expired = true }).AnyContext();
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache expired event: key={Key}", args.Key);
+            return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { args.Key }, Expired = true });
         }
 
-        private async Task OnRemoteCacheItemExpiredAsync(InvalidateCache message) {
+        private Task OnRemoteCacheItemExpiredAsync(InvalidateCache message) {
             if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
-                return;
+                return Task.CompletedTask;
 
-            _logger.LogTrace(String.Format("Invalidating local cache from remote: id={0} expired={1} keys={2}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? new string[] { })));
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace(String.Format("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? new string[] { })));
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll) {
-                await _localCache.RemoveAllAsync().AnyContext();
-                _logger.LogTrace("Fushed local cache");
-            } else if (message.Keys != null && message.Keys.Length > 0) {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fushed local cache");
+                 return _localCache.RemoveAllAsync();
+            }
+
+            if (message.Keys != null && message.Keys.Length > 0) {
+                var tasks = new List<Task>(message.Keys.Length);
                 var keysToRemove = new List<string>(message.Keys.Length);
                 foreach (string key in message.Keys) {
                     if (message.Expired)
-                        await _localCache.RemoveExpiredKeyAsync(key, false).AnyContext();
+                        tasks.Add(_localCache.RemoveExpiredKeyAsync(key, false));
                     else if (key.EndsWith("*"))
-                        await _localCache.RemoveByPrefixAsync(key.Substring(0, key.Length - 1)).AnyContext();
+                        tasks.Add(_localCache.RemoveByPrefixAsync(key.Substring(0, key.Length - 1)));
                     else
                         keysToRemove.Add(key);
                 }
 
-                int results = await _localCache.RemoveAllAsync(keysToRemove).AnyContext();
-                _logger.LogTrace("Removed {0} keys from local cache", results);
-            } else {
-                _logger.LogWarning("Unknown invalidate cache message");
+                if (keysToRemove.Count > 0)
+                    tasks.Add(_localCache.RemoveAllAsync(keysToRemove));
+
+                return Task.WhenAll(tasks);
             }
+
+            if (_logger.IsEnabled(LogLevel.Warning))
+                _logger.LogWarning("Unknown invalidate cache message");
+
+            return Task.CompletedTask;
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
-            bool flushAll = keys == null || !keys.Any();
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = keys?.ToArray() }).AnyContext();
-            await _localCache.RemoveAllAsync(keys).AnyContext();
-            return await _distributedCache.RemoveAllAsync(keys).AnyContext();
+            var items = keys?.ToArray();
+            bool flushAll = items == null || items.Length == 0;
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+            await _localCache.RemoveAllAsync(items).AnyContext();
+            return await _distributedCache.RemoveAllAsync(items).AnyContext();
         }
 
         public async Task<int> RemoveByPrefixAsync(string prefix) {
