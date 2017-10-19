@@ -61,7 +61,7 @@ namespace Foundatio.Jobs {
                 return 1;
             } catch (Exception e) {
                 if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(e, "Job {jobName} error: {Message}", _jobName, e.GetMessage());
+                    _logger.LogError(e, "Job {JobName} error: {Message}", _jobName, e.GetMessage());
 
                 if (Debugger.IsAttached)
                     Console.ReadKey();
