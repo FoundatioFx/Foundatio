@@ -374,7 +374,7 @@ namespace Foundatio.Tests.Storage {
             var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
             Assert.NotNull(storage.Folder);
             Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
-            Assert.True(storage.Folder.EndsWith("Queue\\"), storage.Folder);
+            Assert.True(storage.Folder.EndsWith("Queue" + Path.DirectorySeparatorChar), storage.Folder);
         }
     }
 
