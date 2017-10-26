@@ -186,15 +186,17 @@ namespace Foundatio.Caching {
         }
 
         public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            var items = values?.ToArray();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.SetAddAsync(key, values, expiresIn).AnyContext();
-            return await _distributedCache.SetAddAsync(key, values, expiresIn).AnyContext();
+            await _localCache.SetAddAsync(key, items, expiresIn).AnyContext();
+            return await _distributedCache.SetAddAsync(key, items, expiresIn).AnyContext();
         }
 
         public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            var items = values?.ToArray();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            await _localCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
-            return await _distributedCache.SetRemoveAsync(key, values, expiresIn).AnyContext();
+            await _localCache.SetRemoveAsync(key, items, expiresIn).AnyContext();
+            return await _distributedCache.SetRemoveAsync(key, items, expiresIn).AnyContext();
         }
 
         public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {

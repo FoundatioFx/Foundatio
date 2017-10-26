@@ -653,8 +653,8 @@ namespace Foundatio.Tests.Caching {
         public bool IsReadOnly => _dictionary.IsReadOnly;
 
         public TValue this[TKey key] {
-            get { return _dictionary[key]; }
-            set { _dictionary[key] = value; }
+            get => _dictionary[key];
+            set => _dictionary[key] = value;
         }
 
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() {

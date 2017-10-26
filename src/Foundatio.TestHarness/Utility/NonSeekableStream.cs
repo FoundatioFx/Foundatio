@@ -19,9 +19,12 @@ namespace Foundatio.Tests.Utility {
             _stream.Flush();
         }
 
-        public override long Length { get { throw new NotSupportedException(); } }
+        public override long Length => throw new NotSupportedException();
 
-        public override long Position { get { return _stream.Position; } set { throw new NotSupportedException(); } }
+        public override long Position {
+            get => _stream.Position;
+            set => throw new NotSupportedException();
+        }
 
         public override int Read(byte[] buffer, int offset, int count) {
             return _stream.Read(buffer, offset, count);
