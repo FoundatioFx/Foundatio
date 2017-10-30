@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Logging;
 using Foundatio.Serializer;
-using Nito.AsyncEx;
+using Foundatio.AsyncEx;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -32,6 +32,31 @@ namespace Foundatio.Messaging {
         /// Arguments passed to QueueDeclare. Some brokers use it to implement additional features like message TTL.
         /// </summary>
         public IDictionary<string, object> Arguments { get; set; }
+
+        /// <summary>
+        /// Durable (the queue will survive a broker restart)
+        /// </summary>
+        public bool IsQueueDurable { get; set; } = true;
+
+        /// <summary>
+        /// Exclusive (used by only one connection and the queue will be deleted when that connection closes)
+        /// </summary>
+        public bool IsQueueExclusive { get; set; }
+
+        /// <summary>
+        /// Auto-delete (queue is deleted when last consumer unsubscribes)
+        /// </summary>
+        public bool IsQueueAutoDeleteEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Durable (the exchange will survive a broker restart)
+        /// </summary>
+        public bool IsExchangeDurable { get; set; } = true;
+
+        /// <summary>
+        /// Exclusive (used by only one connection and the exchange will be deleted when that connection closes)
+        /// </summary>
+        public bool IsExchangeExclusive { get; set; }
     }
 
     public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions> {
@@ -48,7 +73,7 @@ namespace Foundatio.Messaging {
         /// </summary>
         /// <param name="connectionString">The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.</param>
         /// <param name="queueName">Name of the queue established by the subscriber when they call QueueDeclare. Its not used by publisher.</param>
-        /// <param name="exhangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
+        /// <param name="exchangeName">Name of the direct exchange that delivers messages to queues based on a message routing key</param>
         /// <param name="queueArguments">queue arguments</param>
         /// <param name="defaultMessageTimeToLive">The value of the expiration field describes the TTL period in milliseconds</param>
         /// <param name="serializer">For data serialization</param>
@@ -217,7 +242,7 @@ namespace Foundatio.Messaging {
                 // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
                 // Impact* of the delayed exchange type.
                 var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
-                model.ExchangeDeclare(_options.ExchangeName, "x-delayed-message", true, false, args);
+                model.ExchangeDeclare(_options.ExchangeName, "x-delayed-message", _options.IsExchangeDurable, _options.IsExchangeExclusive, args);
             } catch (OperationInterruptedException o) {
                 if (o.ShutdownReason.ReplyCode == 503) {
                     _delayedExchangePluginEnabled = false;
@@ -230,7 +255,7 @@ namespace Foundatio.Messaging {
         }
 
         private void CreateRegularExchange(IModel model) {
-            model.ExchangeDeclare(_options.ExchangeName, ExchangeType.Fanout, true, false, null);
+            model.ExchangeDeclare(_options.ExchangeName, ExchangeType.Fanout, _options.IsExchangeDurable, _options.IsExchangeExclusive, null);
         }
 
         /// <summary>
@@ -246,7 +271,7 @@ namespace Foundatio.Messaging {
             // Exclusive (used by only one connection and the queue will be deleted when that connection closes)
             // Auto-delete (queue is deleted when last consumer unsubscribes)
             // Arguments (some brokers use it to implement additional features like message TTL)
-            model.QueueDeclare(_options.Topic, /*durable*/ true, /*exclusive*/ false, /*autodelete*/ true, _options.Arguments);
+            model.QueueDeclare(_options.Topic, _options.IsQueueDurable, _options.IsQueueExclusive, _options.IsQueueAutoDeleteEnabled, _options.Arguments);
 
             // bind the queue with the exchange.
             model.QueueBind(_options.Topic, _options.ExchangeName, "");
