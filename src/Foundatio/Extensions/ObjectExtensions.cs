@@ -1,41 +1,10 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Reflection;
-using FastClone.Internal;
+using Foundatio.Force.DeepCloner.Helpers;
 
 namespace Foundatio.Utility {
     public static class ObjectExtensions {
-        public static bool IsPrimitive(this Type type) {
-            if (type == TypeHelper.StringType)
-                return true;
-
-            var typeInfo = type.GetTypeInfo();
-            return typeInfo.IsValueType && typeInfo.IsPrimitive;
-        }
-
-        public static object DeepClone(this object original) {
-            if (original == null)
-                return null;
-
-            var typeToReflect = original.GetType();
-            if (IsPrimitive(typeToReflect))
-                return original;
-
-            Func<object, Dictionary<object, object>, object> creator = GetTypeCloner(typeToReflect);
-            var dict = new Dictionary<object, object>();
-            var result = creator(original, dict);
-            return result;
-        }
-
-        private static Func<object, Dictionary<object, object>, object> GetTypeCloner(Type type) {
-            return _typeCloners.GetOrAdd(type, t => new CloneExpressionBuilder(t).CreateTypeCloner());
-        }
-
-        private static readonly ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>> _typeCloners = new ConcurrentDictionary<Type, Func<object, Dictionary<object, object>, object>>();
-
         public static T DeepClone<T>(this T original) {
-            return (T)DeepClone((object)original);
+            return DeepClonerGenerator.CloneObject(original);
         }
     }
 }

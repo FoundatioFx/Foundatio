@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ncrontab" Version="3.3.0" />
-    <PackageReference Include="SimpleInjector" Version="4.0.8" />
+    <PackageReference Include="SimpleInjector" Version="4.0.12" />
     <PackageReference Include="Topshelf" Version="4.0.3" />
   </ItemGroup>
   <ItemGroup>
