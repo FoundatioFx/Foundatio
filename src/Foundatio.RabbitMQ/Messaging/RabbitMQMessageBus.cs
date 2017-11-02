@@ -12,53 +12,6 @@ using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
 
 namespace Foundatio.Messaging {
-    public class RabbitMQMessageBusOptions : MessageBusOptionsBase {
-        /// <summary>
-        /// The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.
-        /// </summary>
-        public string ConnectionString { get; set; }
-
-        /// <summary>
-        /// Name of the direct exchange that delivers messages to queues based on a message routing key.
-        /// </summary>
-        public string ExchangeName { get; set; } = "default";
-
-        /// <summary>
-        /// The default message time to live. The value of the expiration field describes the TTL period in milliseconds.
-        /// </summary>
-        public TimeSpan? DefaultMessageTimeToLive { get; set; }
-
-        /// <summary>
-        /// Arguments passed to QueueDeclare. Some brokers use it to implement additional features like message TTL.
-        /// </summary>
-        public IDictionary<string, object> Arguments { get; set; }
-
-        /// <summary>
-        /// Durable (the queue will survive a broker restart)
-        /// </summary>
-        public bool IsQueueDurable { get; set; } = true;
-
-        /// <summary>
-        /// Exclusive (used by only one connection and the queue will be deleted when that connection closes)
-        /// </summary>
-        public bool IsQueueExclusive { get; set; }
-
-        /// <summary>
-        /// Auto-delete (queue is deleted when last consumer unsubscribes)
-        /// </summary>
-        public bool IsQueueAutoDeleteEnabled { get; set; } = true;
-
-        /// <summary>
-        /// Durable (the exchange will survive a broker restart)
-        /// </summary>
-        public bool IsExchangeDurable { get; set; } = true;
-
-        /// <summary>
-        /// Exclusive (used by only one connection and the exchange will be deleted when that connection closes)
-        /// </summary>
-        public bool IsExchangeExclusive { get; set; }
-    }
-
     public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions> {
         private readonly AsyncLock _lock = new AsyncLock();
         private readonly ConnectionFactory _factory;
@@ -77,7 +30,7 @@ namespace Foundatio.Messaging {
             // Topology ( queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
             // by default so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
             // it can always be fine tuned if needed.
-            _factory = new ConnectionFactory { Uri = options.ConnectionString, AutomaticRecoveryEnabled = true };
+            _factory = new ConnectionFactory { Uri = new Uri(options.ConnectionString), AutomaticRecoveryEnabled = true };
         }
 
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
@@ -106,24 +59,27 @@ namespace Foundatio.Messaging {
                 consumer.Shutdown += OnConsumerShutdown;
 
                 _subscriberChannel.BasicConsume(_options.Topic, true, consumer);
-                _logger.LogTrace("The unique channel number for the subscriber is : {channelNumber}", _subscriberChannel.ChannelNumber);
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
             }
         }
 
         private void OnConsumerShutdown(object sender, ShutdownEventArgs e) {
-            _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
         }
 
         private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
             if (_subscribers.IsEmpty)
                 return;
 
-            _logger.LogTrace("OnMessageAsync({messageId})", e.BasicProperties?.MessageId);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
             MessageBusData message;
             try {
                 message = _serializer.Deserialize<MessageBusData>(e.Body);
             } catch (Exception ex) {
-                _logger.LogWarning(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", e.BasicProperties?.MessageId, ex.Message);
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing messsage: {Message}", e.BasicProperties?.MessageId, ex.Message);
                 return;
             }
 
@@ -157,7 +113,8 @@ namespace Foundatio.Messaging {
                     CreateRegularExchange(_publisherChannel);
                 }
 
-                _logger.LogTrace("The unique channel number for the publisher is : {channelNumber}", _publisherChannel.ChannelNumber);
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
             }
         }
 
@@ -172,7 +129,7 @@ namespace Foundatio.Messaging {
         /// The rule of thumb is: avoid sharing channels across threads.
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
-        protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             var data = _serializer.Serialize(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = _serializer.SerializeToString(message)
@@ -180,9 +137,8 @@ namespace Foundatio.Messaging {
 
             // if the rabbitmq plugin is not availaible then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
-                await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
-                return;
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                return AddDelayedMessageAsync(messageType, message, delay.Value);
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
@@ -196,13 +152,14 @@ namespace Foundatio.Messaging {
                 // and the data will be delievered immediately.
                 basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(delay.Value.TotalMilliseconds) } };
 
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
             } else {
-                _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
             }
 
             // The publication occurs with mandatory=false
             _publisherChannel.BasicPublish(_options.ExchangeName, String.Empty, basicProperties, data);
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -229,11 +186,11 @@ namespace Foundatio.Messaging {
                 // Impact* of the delayed exchange type.
                 var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
                 model.ExchangeDeclare(_options.ExchangeName, "x-delayed-message", _options.IsExchangeDurable, _options.IsExchangeExclusive, args);
-            } catch (OperationInterruptedException o) {
-                if (o.ShutdownReason.ReplyCode == 503) {
+            } catch (OperationInterruptedException ex) {
+                if (ex.ShutdownReason.ReplyCode == 503) {
+                    if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(ex, "Not able to create x-delayed-type exchange");
                     _delayedExchangePluginEnabled = false;
                     success = false;
-                    _logger.LogInformation(o, "Not able to create x-delayed-type exchange");
                 }
             }
 
