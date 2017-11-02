@@ -119,7 +119,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
-            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, queueEntry.Id));
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, queueEntry.Id);
 
             var entry = ToQueueEntry(queueEntry);
             var request = new ChangeMessageVisibilityRequest {
