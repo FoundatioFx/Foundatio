@@ -4,6 +4,9 @@
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>Queue;Messaging;Message;Bus;MessageBus;Distributed;broker</PackageTags>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|AnyCPU'">
+    <DefineConstants>TRACE;DEBUG;NETSTANDARD2_0</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Foundatio" Version="6.0.1541-pre" />
     <PackageReference Include="RabbitMQ.Client" Version="4.1.3" />
