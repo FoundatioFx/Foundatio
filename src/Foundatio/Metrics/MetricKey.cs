@@ -22,7 +22,7 @@ namespace Foundatio.Metrics {
             if (ReferenceEquals(null, obj))
                 return false;
 
-            return obj is MetricKey && Equals((MetricKey)obj);
+            return obj is MetricKey key && Equals(key);
         }
 
         public override int GetHashCode() {
