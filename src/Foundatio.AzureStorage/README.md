@@ -12,7 +12,6 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
-- [Logging](#logging)
 
 Includes implementations in Redis, Azure, AWS and in memory (for development).
 
@@ -25,6 +24,13 @@ When building several big cloud applications we found a lack of great solutions 
  * Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
+
+## Implementations
+- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Queues, Messaging, Locks, Metrics
+- [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
+- [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
+- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
+- [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
 
 ## Getting Started (Development)
 
@@ -44,8 +50,8 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 
 1. [InMemoryCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property. We use this in [Exceptionless](https://github.com/FoundatioFx/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/FoundatioFx/Exceptionless/blob/master/Source/Core/Geo/MaxMindGeoIpService.cs).
 2. [HybridCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/HybridCacheClient.cs): This cache implementation uses the `InMemoryCacheClient` and uses the `IMessageBus` to keep the cache in sync across processes.
-3. [RedisCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
-4. [RedisHybridCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
+3. [RedisCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
+4. [RedisHybridCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs): This cache implementation uses both the `RedisCacheClient` and `InMemoryCacheClient` implementations and uses the `RedisMessageBus` to keep the in memory cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and call to Redis if the item exists in the local cache.
 5. [ScopedCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/ScopedCacheClient.cs): This cache implementation takes an instance of `ICacheClient` and a string `scope`. The scope is prefixed onto every cache key. This makes it really easy to scope all cache keys and remove them with ease.
 
 #### Sample
@@ -63,9 +69,9 @@ var value = await cache.GetAsync<int>("test");
 Queues offer First In, First Out (FIFO) message delivery. We provide four different queue implementations that derive from the [`IQueue` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Queues/IQueue.cs):
 
 1. [InMemoryQueue](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Queues/InMemoryQueue.cs): An in memory queue implementation. This queue implementation is only valid for the lifetime of the process.
-2. [RedisQueue](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
-3. [AzureServiceBusQueue](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
-4. [AzureStorageQueue](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
+2. [RedisQueue](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
+3. [AzureServiceBusQueue](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
+4. [AzureStorageQueue](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
 
 #### Sample
 
@@ -87,6 +93,7 @@ Locks ensure a resource is only accessed by one consumer at any given time. We p
 
 1. [CacheLockProvider](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Lock/CacheLockProvider.cs): A lock implementation that uses cache to communicate between processes.
 2. [ThrottlingLockProvider](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Lock/ThrottlingLockProvider.cs): A lock implementation that only allows a certain amount of locks through. You could use this to throttle api calls to some external service and it will throttle them across all processes asking for that lock.
+3. [ScopedLockProvider](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Lock/ScopedLockProvider.cs): This lock implementation takes an instance of `ILockProvider` and a string `scope`. The scope is prefixed onto every lock key. This makes it really easy to scope all locks and release them with ease.
 
 It's worth noting that all lock providers take a `ICacheClient`. This allows you to ensure your code locks properly across machines.
 
@@ -111,9 +118,9 @@ using (await locker.AcquireAsync("test")) {
 Allows you to publish and subscribe to messages flowing through your application. We provide four different message bus implementations that derive from the [`IMessageBus` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Messaging/IMessageBus.cs):
 
 1. [InMemoryMessageBus](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
-2. [RedisMessageBus](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
-3. [RabbitMQMessageBus](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
-4. [AzureServiceBusMessageBus](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
+2. [RedisMessageBus](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
+3. [RabbitMQMessageBus](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
+4. [AzureServiceBusMessageBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample
 
@@ -130,7 +137,7 @@ await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
 
 ### [Jobs](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Jobs)
 
-Allows you to run a long running process (in process or out of process) with out worrying about it being terminated prematurely. We provide three different ways of defining a job, based on your use case:
+Allows you to run a long running process (in process or out of process) without worrying about it being terminated prematurely. We provide three different ways of defining a job, based on your use case:
 
 1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs) and calling one of the Run methods. The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
@@ -142,7 +149,7 @@ Allows you to run a long running process (in process or out of process) with out
   public class HelloWorldJob : JobBase {
     public int RunCount { get; set; }
 
-    protected override Task<JobResult> RunInternalAsync(JobRunContext context) {
+    protected override Task<JobResult> RunInternalAsync(JobContext context) {
        RunCount++;
        return Task.FromResult(JobResult.Success);
     }
@@ -262,8 +269,8 @@ We provide four different file storage implementations that derive from the [`IF
 
 1. [InMemoryFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
-3. [AzureFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
-4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
+3. [AzureFileStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
+4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 
@@ -282,7 +289,7 @@ string content = await storage.GetFileContentsAsync("test.txt")
 We provide four implementations that derive from the [`IMetricsClient` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
 
 1. [InMemoryMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
+2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
 3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 
@@ -294,24 +301,6 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 await metrics.CounterAsync("c1");
 await metrics.GaugeAsync("g1", 2.534);
 await metrics.TimerAsync("t1", 50788);
-```
-
-### [Logging](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Logging)
-
-We provide a [fluent logging api](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Logging/ILogger.cs) that can be used to log messages throughout your application. This is really great because it allows you to log to different sources like NLog and change it at a later date without updating your whole application to use the latest and greatest logging framework on the market.
-
-By default the logger will not write to anything, but you can configure what to write to adding registering a logging provider. We provide a few logging providers out of the box (in memory, xUnit and NLog).
-
-#### Sample
-
-```csharp
-ILoggerFactory loggerFactory = new LoggerFactory();
-ILogger log = loggerFactory.CreateLogger("Program");
-log.Info("Application starting up"); // OR
-log.Info().Message("Application starting up").Write();
-
-log.Error(ex, "Writing a captured exception out to the log."); // Or
-log.Error().Exception(ex).Message("Writing a captured exception out to the log.").Write();
 ```
 
 ## Sample Application
