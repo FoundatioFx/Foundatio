@@ -91,7 +91,8 @@ namespace Foundatio.Caching {
                     var value = redisValue.ToValueOfType<T>(_options.Serializer);
                     result.Add(value);
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
                 }
             }
 
@@ -106,7 +107,8 @@ namespace Foundatio.Caching {
                 var value = redisValue.ToValueOfType<T>(_options.Serializer);
                 return new CacheValue<T>(value, true);
             } catch (Exception ex) {
-                _logger.LogError(ex, "Unable to deserialize value \"{redisValue}\" to type {type}", redisValue, typeof(T).FullName);
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
                 return CacheValue<T>.NoValue;
             }
         }
@@ -135,7 +137,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
             if (expiresIn?.Ticks < 0) {
-                _logger.LogTrace("Removing expired key: {key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
                 return false;
@@ -152,7 +154,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(values));
 
             if (expiresIn?.Ticks < 0) {
-                _logger.LogTrace("Removing expired key: {key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
                 return default(long);
@@ -177,7 +179,7 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(values));
 
             if (expiresIn?.Ticks < 0) {
-                _logger.LogTrace("Removing expired key: {key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
                 return default(long);
@@ -315,7 +317,7 @@ namespace Foundatio.Caching {
         }
 
         private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
-            _logger.LogInformation("Redis connection restored.");
+            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored.");
             _scriptsLoaded = false;
         }
 

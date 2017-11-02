@@ -53,7 +53,8 @@ namespace Foundatio.SampleJobClient {
             for (int i = 0; i < count; i++)
                 _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-            log.LogInformation("Enqueued {count} ping requests", count);
+            if (log.IsEnabled(LogLevel.Information))
+                log.LogInformation("Enqueued {Count} ping requests", count);
         }
 
         private static void EnqueueContinuousPings(int count, ILogger log, CancellationToken token) {
@@ -61,7 +62,8 @@ namespace Foundatio.SampleJobClient {
                 for (int i = 0; i < count; i++)
                     _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-                log.LogInformation("Enqueued {count} ping requests", count);
+                if (log.IsEnabled(LogLevel.Information))
+                    log.LogInformation("Enqueued {Count} ping requests", count);
             } while (!token.IsCancellationRequested);
         }
 

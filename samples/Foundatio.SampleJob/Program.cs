@@ -6,7 +6,6 @@ namespace Foundatio.SampleJob {
     public class Program {
         public static int Main() {
             var loggerFactory = new LoggerFactory().AddConsole();
-            var logger = loggerFactory.CreateLogger<Program>();
 
             var serviceProvider = SampleServiceProvider.Create(loggerFactory);
             return TopshelfJob.Run<PingQueueJob>(() => serviceProvider.GetService<PingQueueJob>(), loggerFactory: loggerFactory);

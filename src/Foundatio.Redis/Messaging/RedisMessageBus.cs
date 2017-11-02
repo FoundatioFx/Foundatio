@@ -23,10 +23,11 @@ namespace Foundatio.Messaging {
                 if (_isSubscribed)
                     return;
 
-                _logger.LogTrace("Subscribing to topic: {0}", _options.Topic);
+                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
                 await _options.Subscriber.SubscribeAsync(_options.Topic, OnMessage).AnyContext();
                 _isSubscribed = true;
-                _logger.LogTrace("Subscribed to topic: {0}", _options.Topic);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
             }
         }
 
@@ -34,12 +35,13 @@ namespace Foundatio.Messaging {
             if (_subscribers.IsEmpty)
                 return;
 
-            _logger.LogTrace("OnMessage({channel})", channel);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("OnMessage({Channel})", channel);
             MessageBusData message;
             try {
                 message = _serializer.Deserialize<MessageBusData>((byte[])value);
             } catch (Exception ex) {
-                _logger.LogWarning(ex, "OnMessage({0}) Error deserializing messsage: {1}", channel, ex.Message);
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing messsage: {Message}", channel, ex.Message);
                 return;
             }
 
@@ -48,12 +50,12 @@ namespace Foundatio.Messaging {
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
                 return;
             }
 
-            _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
             var data = _serializer.Serialize(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = _serializer.SerializeToString(message)
@@ -70,10 +72,11 @@ namespace Foundatio.Messaging {
                     if (!_isSubscribed)
                         return;
 
-                    _logger.LogTrace("Unsubscribing from topic {0}", _options.Topic);
+                    bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
                     _options.Subscriber.Unsubscribe(_options.Topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
-                    _logger.LogTrace("Unsubscribed from topic {0}", _options.Topic);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
                 }
             }
         }

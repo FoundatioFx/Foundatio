@@ -32,7 +32,8 @@ namespace Foundatio.SampleJob {
         protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<PingRequest> context) {
             Interlocked.Increment(ref _runCount);
 
-            _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(1)).AnyContext();
 
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
