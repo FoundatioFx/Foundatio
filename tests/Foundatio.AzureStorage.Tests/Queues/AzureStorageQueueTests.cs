@@ -20,7 +20,7 @@ namespace Foundatio.Azure.Tests.Queue {
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue Id: {Name}", _queueName));
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue Id: {Name}", _queueName);
             return new AzureStorageQueue<SimpleWorkItem>(new AzureStorageQueueOptions<SimpleWorkItem> {
                 ConnectionString = connectionString,
                 Name = _queueName,
