@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
 using Amazon.Runtime;
@@ -14,18 +13,6 @@ namespace Foundatio.Metrics {
     public class CloudWatchMetricsClient : BufferedMetricsClientBase, IMetricsClientStats {
         private readonly Lazy<AmazonCloudWatchClient> _client;
         private readonly CloudWatchMetricsClientOptions _options;
-
-        [Obsolete("Use the options overload")]
-        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, IEnumerable<Dimension> dimensions = null, ILoggerFactory loggerFactory = null)
-            : this(new CloudWatchMetricsClientOptions {
-                Credentials = credentials,
-                RegionEndpoint = region,
-                Namespace = @namespace,
-                Dimensions = dimensions?.ToList() ?? new List<Dimension>(),
-                Buffered = buffered,
-                Prefix = metricPrefix,
-                LoggerFactory = loggerFactory
-            }) {}
 
         public CloudWatchMetricsClient(CloudWatchMetricsClientOptions options) : base(options) {
             _options = options;
@@ -52,7 +39,7 @@ namespace Foundatio.Metrics {
                 if (metricsPage.Count == 0)
                     break;
 
-                _logger.LogTrace($"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Sending PutMetricData to AWS for {Count} metric(s)", metricsPage.Count);
                 // do retries
                 var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
                     Namespace = _options.Namespace,

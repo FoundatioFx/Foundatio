@@ -85,8 +85,7 @@ namespace Foundatio.Queues {
             };
 
             // receive message local function
-            async Task<ReceiveMessageResponse> receiveMessageAsync()
-            {
+            async Task<ReceiveMessageResponse> receiveMessageAsync() {
                 try {
                     return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
                 } catch (OperationCanceledException) {
@@ -120,7 +119,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
-            _logger.LogDebug("Queue {0} renew lock item: {1}", _options.Name, queueEntry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, queueEntry.Id));
 
             var entry = ToQueueEntry(queueEntry);
             var request = new ChangeMessageVisibilityRequest {
@@ -130,11 +129,11 @@ namespace Foundatio.Queues {
             };
 
             await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
-            _logger.LogTrace("Renew lock done: {0}", queueEntry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", queueEntry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
-            _logger.LogDebug("Queue {0} complete item: {1}", _options.Name, queueEntry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} complete item: {EntryId}", _options.Name, queueEntry.Id);
             if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -149,11 +148,11 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _completedCount);
             queueEntry.MarkCompleted();
             await OnCompletedAsync(queueEntry).AnyContext();
-            _logger.LogTrace("Complete done: {0}", queueEntry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {EntryId}", queueEntry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.LogDebug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -172,7 +171,7 @@ namespace Foundatio.Queues {
             entry.MarkAbandoned();
 
             await OnAbandonedAsync(sqsQueueEntry).AnyContext();
-            _logger.LogTrace("Abandon complete: {entryId}", entry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
         }
 
         protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
@@ -254,10 +253,11 @@ namespace Foundatio.Queues {
             var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.LogTrace("WorkerLoop Start {_options.Name}", _options.Name);
+                bool isTraceLevelLogging = _logger.IsEnabled(LogLevel.Trace);
+                if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.LogTrace("WorkerLoop Signaled {_options.Name}", _options.Name);
+                    if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
 
                     IQueueEntry<T> entry = null;
                     try {
@@ -273,14 +273,14 @@ namespace Foundatio.Queues {
                             await entry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
-                        _logger.LogError(ex, "Worker error: {0}", ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                         if (entry != null && !entry.IsAbandoned && !entry.IsCompleted)
                             await entry.AbandonAsync().AnyContext();
                     }
                 }
 
-                _logger.LogTrace("Worker exiting: {0} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+                if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 

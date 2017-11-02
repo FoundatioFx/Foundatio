@@ -10,14 +10,11 @@ namespace Foundatio.Queues {
             return message.Attributes.ApproximateReceiveCount();
         }
 
-
         public static DateTime SentTimestamp(this Message message) {
             if (message == null || message.Attributes == null)
                 return DateTime.MinValue;
 
             return message.Attributes.SentTimestamp();
         }
-
     }
-
 }
