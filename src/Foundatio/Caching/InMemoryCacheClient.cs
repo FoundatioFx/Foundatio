@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
-using Foundatio.Utility.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching {

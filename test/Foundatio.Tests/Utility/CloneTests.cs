@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
-using Foundatio.Utility.Extensions;
+using Foundatio.Utility;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;
