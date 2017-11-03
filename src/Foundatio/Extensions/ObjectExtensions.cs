@@ -1,7 +1,7 @@
 ﻿using System;
 using Foundatio.Force.DeepCloner.Helpers;
 
-namespace Foundatio.Utility {
+namespace Foundatio.Utility.Extensions {
     public static class ObjectExtensions {
         public static T DeepClone<T>(this T original) {
             return DeepClonerGenerator.CloneObject(original);
