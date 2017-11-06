@@ -43,9 +43,11 @@ namespace Foundatio.Tests.Storage {
             using (storage) {
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
                 await storage.SaveFileAsync(@"q\new.txt", "new");
-                Assert.Equal(2, (await storage.GetFileListAsync()).Count());
+                await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
+                Assert.Equal(3, (await storage.GetFileListAsync()).Count());
                 Assert.Single(await storage.GetFileListAsync(limit: 1));
                 Assert.Single(await storage.GetFileListAsync(@"archived\*"));
+                Assert.Single(await storage.GetFileListAsync(@"long\path\in\here\*stuff*.json"));
                 Assert.Single(await storage.GetFileListAsync(@"q\*"));
 
                 var file = (await storage.GetFileListAsync(@"archived\*")).FirstOrDefault();

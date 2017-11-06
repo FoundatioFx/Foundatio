@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
+using Foundatio.Extensions;
 
 namespace Foundatio.Storage {
     public class InMemoryFileStorage : IFileStorage {
@@ -26,6 +27,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult<Stream>(null);
@@ -38,6 +40,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
             return await ExistsAsync(path).AnyContext() ? _storage[path].Item1 : null;
         }
 
@@ -45,6 +48,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
             return Task.FromResult(_storage.ContainsKey(path));
         }
 
@@ -59,6 +63,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
             byte[] contents = ReadBytes(stream);
             if (contents.Length > MaxFileSize)
                 throw new ArgumentException(String.Format("File size {0} exceeds the maximum size of {1}.", contents.Length.ToFileSizeDisplay(), MaxFileSize.ToFileSizeDisplay()));
@@ -84,6 +89,8 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(newpath))
                 throw new ArgumentNullException(nameof(newpath));
 
+            path = path.NormalizePath();
+            newpath = newpath.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult(false);
@@ -103,6 +110,8 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(targetpath))
                 throw new ArgumentNullException(nameof(targetpath));
 
+            path = path.NormalizePath();
+            targetpath = targetpath.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult(false);
@@ -119,6 +128,7 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult(false);
@@ -137,12 +147,12 @@ namespace Foundatio.Storage {
                 return Task.CompletedTask;
             }
 
-            searchPattern = searchPattern.Replace("/", "\\");
+            searchPattern = searchPattern.NormalizePath();
 
-            if (searchPattern.EndsWith("\\")) 
+            if (searchPattern[searchPattern.Length - 1] == Path.DirectorySeparatorChar) 
                 searchPattern = $"{searchPattern}*";
-            else if (!searchPattern.EndsWith("\\*") && !Path.HasExtension(searchPattern))
-                searchPattern = $"{searchPattern}\\*";
+            else if (!searchPattern.EndsWith(Path.DirectorySeparatorChar + "*") && !Path.HasExtension(searchPattern))
+                searchPattern = Path.Combine(searchPattern, "*");
 
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock) {
@@ -161,7 +171,7 @@ namespace Foundatio.Storage {
             if (searchPattern == null)
                 searchPattern = "*";
 
-            searchPattern = searchPattern.Replace("/", "\\");
+            searchPattern = searchPattern.NormalizePath();
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock)
                 return Task.FromResult<IEnumerable<FileSpec>>(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue).ToList());
