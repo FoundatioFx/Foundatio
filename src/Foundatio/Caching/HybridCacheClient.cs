@@ -50,11 +50,11 @@ namespace Foundatio.Caching {
             if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
                 return Task.CompletedTask;
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace(String.Format("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? new string[] { })));
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? new string[] { }));
             Interlocked.Increment(ref _invalidateCacheCalls);
             if (message.FlushAll) {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fushed local cache");
-                 return _localCache.RemoveAllAsync();
+                _logger.LogTrace("Flushed local cache");
+                return _localCache.RemoveAllAsync();
             }
 
             if (message.Keys != null && message.Keys.Length > 0) {
@@ -75,9 +75,7 @@ namespace Foundatio.Caching {
                 return Task.WhenAll(tasks);
             }
 
-            if (_logger.IsEnabled(LogLevel.Warning))
-                _logger.LogWarning("Unknown invalidate cache message");
-
+            _logger.LogWarning("Unknown invalidate cache message");
             return Task.CompletedTask;
         }
 

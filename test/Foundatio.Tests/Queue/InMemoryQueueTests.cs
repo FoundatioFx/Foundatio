@@ -34,8 +34,7 @@ namespace Foundatio.Tests.Queue {
             try {
                 await queue.DeleteQueueAsync();
             } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Error cleaning up queue");
+                _logger.LogError(ex, "Error cleaning up queue");
             }
         }
 
@@ -46,30 +45,30 @@ namespace Foundatio.Tests.Queue {
                 try {
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("First Enqueuing.");
+                        _logger.LogInformation("First Enqueuing.");
                     }));
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Second Enqueuing.");
+                        _logger.LogInformation("Second Enqueuing.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("First.");
+                        _logger.LogInformation("First.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Second.");
+                        _logger.LogInformation("Second.");
                     }));
 
                     var sw = Stopwatch.StartNew();
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", sw.Elapsed);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
 
                     sw.Restart();
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", sw.Elapsed);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 } finally {
                     foreach (var disposable in disposables)
                         disposable.Dispose();

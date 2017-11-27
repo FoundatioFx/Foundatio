@@ -43,10 +43,10 @@ namespace Foundatio.Tests.Utility {
             var countdown = new AsyncCountdownEvent(2);
 
             Func<Task<DateTime?>> callback = async () => {
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Starting work.");
+                _logger.LogInformation("Starting work.");
                 countdown.Signal();
                 await SystemClock.SleepAsync(500);
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Finished work.");
+                _logger.LogInformation("Finished work.");
                 return null;
             };
 
@@ -59,14 +59,14 @@ namespace Foundatio.Tests.Utility {
                     }
                 });
 
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Waiting for 300ms");
+                _logger.LogInformation("Waiting for 300ms");
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Finished waiting for 300ms");
+                _logger.LogInformation("Finished waiting for 300ms");
                 Assert.Equal(1, countdown.CurrentCount);
 
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Waiting for 1.5 seconds");
+                _logger.LogInformation("Waiting for 1.5 seconds");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Finished waiting for 1.5 seconds");
+                _logger.LogInformation("Finished waiting for 1.5 seconds");
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }

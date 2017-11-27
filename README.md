@@ -222,11 +222,11 @@ Allows you to run a long running process (in process or out of process) without 
       // and Subscribe to messages of type WorkItemStatus
       await ctx.ReportProgressAsync(0, "Starting Hello World Job");
       await Task.Delay(TimeSpan.FromSeconds(2.5));
-      await ctx.ReportProgressAsync(50, String.Format("Reading value"));
+      await ctx.ReportProgressAsync(50, "Reading value");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(70, String.Format("Reading value."));
+      await ctx.ReportProgressAsync(70, "Reading value.");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(90, String.Format("Reading value.."));
+      await ctx.ReportProgressAsync(90, "Reading value..");
       await Task.Delay(TimeSpan.FromSeconds(.5));
 
       await ctx.ReportProgressAsync(100, workItem.Message);

@@ -123,22 +123,22 @@ namespace Foundatio.Tests.Caching {
 
                         using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
                             string cacheKey = "will-expire-remote";
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("First Set");
+                            _logger.LogTrace("First Set");
                             Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Done First Set");
+                            _logger.LogTrace("Done First Set");
                             Assert.Equal(1, firstCache.LocalCache.Count);
 
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Second Get");
+                            _logger.LogTrace("Second Get");
                             Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Done Second Get");
+                            _logger.LogTrace("Done Second Get");
                             Assert.Equal(1, secondCache.LocalCache.Count);
 
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for item expired handlers...");
+                            _logger.LogTrace("Waiting for item expired handlers...");
                             var sw = Stopwatch.StartNew();
                             await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                             sw.Stop();
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", sw.Elapsed);
+                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                         }
                     }
                 }

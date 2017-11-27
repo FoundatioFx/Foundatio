@@ -76,22 +76,22 @@ namespace Foundatio.Tests.Locks {
             if (locker == null)
                 return;
 
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Releasing lock");
+            _logger.LogInformation("Releasing lock");
             await locker.ReleaseAsync("test");
-                
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Acquiring lock #1");
+
+            _logger.LogInformation("Acquiring lock #1");
             var testLock = await locker.AcquireAsync("test", lockTimeout: TimeSpan.FromMilliseconds(250));
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+            _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
             Assert.NotNull(testLock);
 
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Acquiring lock #2");
+            _logger.LogInformation("Acquiring lock #2");
             testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(50));
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
+            _logger.LogInformation(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
             Assert.Null(testLock);
 
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Acquiring lock #3");
+            _logger.LogInformation("Acquiring lock #3");
             testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(300));
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
+            _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
             Assert.NotNull(testLock);
         }
 
@@ -107,25 +107,25 @@ namespace Foundatio.Tests.Locks {
             var lockTask1 = Task.Run(async () => {
                 if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
-                    if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("LockTask1 Success");
+                    _logger.LogInformation("LockTask1 Success");
                 }
             });
             var lockTask2 = Task.Run(async () => {
                 if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
-                    if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("LockTask2 Success");
+                    _logger.LogInformation("LockTask2 Success");
                 }
             });
             var lockTask3 = Task.Run(async () => {
                 if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
-                    if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("LockTask3 Success");
+                    _logger.LogInformation("LockTask3 Success");
                 }
             });
             var lockTask4 = Task.Run(async () => {
                 if (await DoLockedWorkAsync(locker)) {
                     Interlocked.Increment(ref successCount);
-                    if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("LockTask4 Success");
+                    _logger.LogInformation("LockTask4 Success");
                 }
             });
 
@@ -164,19 +164,19 @@ namespace Foundatio.Tests.Locks {
             }
             sw.Stop();
 
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed}", allowedLocks, sw.Elapsed);
+            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed:g}", allowedLocks, sw.Elapsed);
             Assert.True(sw.Elapsed.TotalSeconds < 1);
 
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(350));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed}", sw.Elapsed);
+            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
             Assert.Null(result);
 
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.0));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire lock: {Elapsed}", sw.Elapsed);
+            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
             Assert.NotNull(result);
         }
     }

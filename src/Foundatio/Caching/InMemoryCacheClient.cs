@@ -164,8 +164,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -204,8 +203,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -445,7 +443,7 @@ namespace Foundatio.Caching {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("DoMaintenanceAsync");
+            _logger.LogTrace("DoMaintenanceAsync");
             var expiredKeys = new List<string>();
 
             var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
@@ -460,8 +458,7 @@ namespace Foundatio.Caching {
                         minExpiration = expiresAt;
                 }
             } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Error trying to find expired cache items.");
+                _logger.LogError(ex, "Error trying to find expired cache items.");
             }
 
             var tasks = new List<Task>();

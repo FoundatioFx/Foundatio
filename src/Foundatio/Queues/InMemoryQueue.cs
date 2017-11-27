@@ -125,7 +125,7 @@ namespace Foundatio.Queues {
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited for dequeue: {Elapsed}", sw.Elapsed.ToString());
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited for dequeue: {Elapsed:g}", sw.Elapsed);
             }
 
             if (_queue.Count == 0)

@@ -38,7 +38,7 @@ namespace Foundatio.Utility {
 
             do {
                 if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
-                    logger.LogInformation("Retrying {Attempts} attempt after {Delay}ms...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds);
+                    logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
 
                 try {
                     return await action().AnyContext();
