@@ -37,7 +37,7 @@ namespace Foundatio.Tests.Utility {
             };
 
             var serializer = new JsonNetSerializer();
-            var json = serializer.SerializeToString(model);
+            string json = serializer.SerializeToString(model);
             var deserialized = serializer.Deserialize<CloneModel>(json);
             Assert.Equal(model.IntProperty, deserialized.IntProperty);
             Assert.Equal(model.StringProperty, deserialized.StringProperty);

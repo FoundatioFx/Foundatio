@@ -85,7 +85,7 @@ namespace Foundatio.Metrics {
 
                 var startTime = SystemClock.UtcNow;
                 var entries = new List<MetricEntry>();
-                while (_queue.TryDequeue(out MetricEntry entry)) {
+                while (_queue.TryDequeue(out var entry)) {
                     entries.Add(entry);
                     if (entry.EnqueuedDate > startTime)
                         break;
@@ -195,7 +195,7 @@ namespace Foundatio.Metrics {
 
             long currentCount = count;
             var resetEvent = new AsyncAutoResetEvent(false);
-            DateTime start = SystemClock.UtcNow;
+            var start = SystemClock.UtcNow;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             using (Counted.AddHandler((s, e) => {

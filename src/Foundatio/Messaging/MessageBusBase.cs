@@ -63,7 +63,7 @@ namespace Foundatio.Messaging {
         }
 
         protected Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
-            Type messageType = GetMessageBodyType(message);
+            var messageType = GetMessageBodyType(message);
             if (messageType == null)
                 return Task.CompletedTask;
 
@@ -99,7 +99,7 @@ namespace Foundatio.Messaging {
 
             foreach (var subscriber in subscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out Subscriber _)) {
+                    if (_subscribers.TryRemove(subscriber.Id, out var _)) {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
                     } else if (isTraceLogLevelEnabled) {
@@ -156,7 +156,7 @@ namespace Foundatio.Messaging {
             if (_delayedMessages == null || _delayedMessages.Count == 0)
                 return DateTime.MaxValue;
 
-            DateTime nextMessageSendTime = DateTime.MaxValue;
+            var nextMessageSendTime = DateTime.MaxValue;
             var messagesToSend = new List<Guid>();
 
             // Add 50ms to the current time so we can batch up any other messages that will
@@ -171,7 +171,7 @@ namespace Foundatio.Messaging {
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             foreach (var messageId in messagesToSend) {
-                if (!_delayedMessages.TryRemove(messageId, out DelayedMessage message))
+                if (!_delayedMessages.TryRemove(messageId, out var message))
                     continue;
 
                 if (isTraceLogLevelEnabled)

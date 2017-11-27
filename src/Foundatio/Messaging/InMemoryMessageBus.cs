@@ -16,11 +16,11 @@ namespace Foundatio.Messaging {
         public long MessagesSent => _messagesSent;
 
         public long GetMessagesSent(Type messageType) {
-            return _messageCounts.TryGetValue(messageType, out long count) ? count : 0;
+            return _messageCounts.TryGetValue(messageType, out var count) ? count : 0;
         }
 
         public long GetMessagesSent<T>() {
-            return _messageCounts.TryGetValue(typeof(T), out long count) ? count : 0;
+            return _messageCounts.TryGetValue(typeof(T), out var count) ? count : 0;
         }
 
         public void ResetMessagesSent() {

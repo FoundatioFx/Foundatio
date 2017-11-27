@@ -11,7 +11,7 @@ namespace Foundatio.Utility {
         public static async Task<TReturn> Using<TResource, TReturn>(TResource resource, Func<TResource, Task<TReturn>> body)
             where TResource : IAsyncDisposable {
             Exception exception = null;
-            TReturn result = default(TReturn);
+            var result = default(TReturn);
             try {
                 result = await body(resource).AnyContext();
             } catch (Exception ex) {

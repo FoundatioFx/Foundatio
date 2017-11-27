@@ -97,11 +97,11 @@ namespace Foundatio.Metrics {
             var countResults = await _cache.GetAllAsync<int>(countBuckets.Select(k => k.Key)).AnyContext();
 
             ICollection<CounterStat> stats = new List<CounterStat>();
-            for (int i = 0; i < countBuckets.Count; i++) {
-                string countKey = countBuckets[i].Key;
+            foreach (var bucket in countBuckets) {
+                string countKey = bucket.Key;
 
                 stats.Add(new CounterStat {
-                    Time = countBuckets[i].Time,
+                    Time = bucket.Time,
                     Count = countResults[countKey].Value
                 });
             }

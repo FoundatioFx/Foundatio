@@ -71,7 +71,7 @@ namespace Foundatio.Queues {
 
             var start = metadata.EnqueuedTimeUtc;
             var end = metadata.DequeuedTimeUtc;
-            var time = (int)(end - start).TotalMilliseconds;
+            int time = (int)(end - start).TotalMilliseconds;
 
             if (!String.IsNullOrEmpty(subMetricName))
                 _metricsClient.Timer(GetFullMetricName(subMetricName, "queuetime"), time);
@@ -91,7 +91,7 @@ namespace Foundatio.Queues {
                 _metricsClient.Counter(GetFullMetricName(subMetricName, "completed"));
             _metricsClient.Counter(GetFullMetricName("completed"));
 
-            var time = (int)metadata.ProcessingTime.TotalMilliseconds;
+            int time = (int)metadata.ProcessingTime.TotalMilliseconds;
             if (!String.IsNullOrEmpty(subMetricName))
                 _metricsClient.Timer(GetFullMetricName(subMetricName, "processtime"), time);
             _metricsClient.Timer(GetFullMetricName("processtime"), time);
@@ -109,7 +109,7 @@ namespace Foundatio.Queues {
                 _metricsClient.Counter(GetFullMetricName(subMetricName, "abandoned"));
             _metricsClient.Counter(GetFullMetricName("abandoned"));
 
-            var time = (int)metadata.ProcessingTime.TotalMilliseconds;
+            int time = (int)metadata.ProcessingTime.TotalMilliseconds;
             if (!String.IsNullOrEmpty(subMetricName))
                 _metricsClient.Timer(GetFullMetricName(subMetricName, "processtime"), time);
             _metricsClient.Timer(GetFullMetricName("processtime"), time);

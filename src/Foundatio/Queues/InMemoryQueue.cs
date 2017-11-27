@@ -132,7 +132,7 @@ namespace Foundatio.Queues {
                 return null;
 
             if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeue: Attempt");
-            if (!_queue.TryDequeue(out QueueEntry<T> info) || info == null)
+            if (!_queue.TryDequeue(out var info) || info == null)
                 return null;
 
             info.Attempts++;
@@ -172,7 +172,7 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
@@ -188,7 +188,7 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
@@ -247,8 +247,8 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            DateTime utcNow = SystemClock.UtcNow;
-            DateTime minAbandonAt = DateTime.MaxValue;
+            var utcNow = SystemClock.UtcNow;
+            var minAbandonAt = DateTime.MaxValue;
 
             try {
                 foreach (var entry in _dequeued.Values.ToList()) {

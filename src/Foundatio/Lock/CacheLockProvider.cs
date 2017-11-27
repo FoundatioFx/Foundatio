@@ -43,7 +43,7 @@ namespace Foundatio.Lock {
 
         private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Got lock released message: {Name}", msg.Name);
-            if (_autoResetEvents.TryGetValue(msg.Name, out AsyncAutoResetEvent autoResetEvent))
+            if (_autoResetEvents.TryGetValue(msg.Name, out var autoResetEvent))
                 autoResetEvent.Set();
 
             return Task.CompletedTask;

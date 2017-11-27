@@ -53,7 +53,7 @@ namespace Foundatio.Jobs.Commands {
                 List<Assembly> assemblies = null;
                 if (jobConfiguration.Assemblies != null && jobConfiguration.Assemblies.Count > 0) {
                     assemblies = new List<Assembly>();
-                    foreach (var assemblyName in jobConfiguration.Assemblies) {
+                    foreach (string assemblyName in jobConfiguration.Assemblies) {
                         try {
                             var assembly = Assembly.Load(assemblyName);
                             if (assembly != null)
@@ -90,7 +90,7 @@ namespace Foundatio.Jobs.Commands {
                     if (!String.IsNullOrEmpty(jobAttribute.Description))
                         c.Description = jobAttribute.Description;
 
-                    MethodInfo configureMethod = jobType.GetMethod("Configure", BindingFlags.Static | BindingFlags.Public);
+                    var configureMethod = jobType.GetMethod("Configure", BindingFlags.Static | BindingFlags.Public);
                     if (configureMethod != null) {
                         configureMethod.Invoke(null, new[] { new JobCommandContext(c, jobType, lazyServiceProvider, loggerFactory) });
                     } else {
@@ -195,7 +195,7 @@ namespace Foundatio.Jobs.Commands {
             if (!File.Exists("jobs.json"))
                 return new JobConfiguration();
 
-            var jobConfig = File.ReadAllText("jobs.json");
+            string jobConfig = File.ReadAllText("jobs.json");
             try {
                 return JsonConvert.DeserializeObject<JobConfiguration>(jobConfig);
             } catch (Exception ex) {

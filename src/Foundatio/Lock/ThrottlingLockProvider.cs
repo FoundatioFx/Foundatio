@@ -99,7 +99,7 @@ namespace Foundatio.Lock {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("ReleaseAsync: {Name}", name);
             return Task.CompletedTask;
         }
-        public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
+        public Task RenewAsync(string name, TimeSpan? lockExtension = null) {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RenewAsync: {Name}", name);
             return Task.CompletedTask;
         }

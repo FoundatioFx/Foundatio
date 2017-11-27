@@ -20,9 +20,9 @@ namespace Foundatio.Logging.Xunit
         }
 
         public string ToString(bool useFullCategory) {
-            var category = CategoryName;
+            string category = CategoryName;
             if (!useFullCategory) {
-                var lastDot = category.LastIndexOf('.');
+                int lastDot = category.LastIndexOf('.');
                 if (lastDot >= 0)
                     category = category.Substring(lastDot + 1);
             }

@@ -76,10 +76,10 @@ namespace Foundatio.Utility {
                 // Examples:
                 // ConsoleApp.Program+Foo`1+Bar
                 // ConsoleApp.Program+Foo`1+Bar`1
-                for (var i = 0; i < parts.Length; i++) {
-                    var partName = parts[i];
+                for (int i = 0; i < parts.Length; i++) {
+                    string partName = parts[i];
 
-                    var backTickIndex = partName.IndexOf('`');
+                    int backTickIndex = partName.IndexOf('`');
                     if (backTickIndex >= 0) {
                         // Since '.' is typically used to filter log messages in a hierarchy kind of scenario,
                         // do not include any generic type information as part of the name.

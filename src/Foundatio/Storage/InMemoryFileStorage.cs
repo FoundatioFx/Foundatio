@@ -64,7 +64,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
-            byte[] contents = ReadBytes(stream);
+            var contents = ReadBytes(stream);
             if (contents.Length > MaxFileSize)
                 throw new ArgumentException(String.Format("File size {0} exceeds the maximum size of {1}.", contents.Length.ToFileSizeDisplay(), MaxFileSize.ToFileSizeDisplay()));
 
