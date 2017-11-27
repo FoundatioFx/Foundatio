@@ -16,21 +16,21 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics ?? NullMetricsClient.Instance;
         }
 
-        protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
-            await _metrics.CounterAsync("dequeued");
+        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
+            _metrics.Counter("dequeued");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                _metrics.Counter("errors");
                 throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("abandoned");
-                return JobResult.FailedWithMessage("Abandoned");
+                _metrics.Counter("abandoned");
+                return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
             }
             
-            await _metrics.CounterAsync("completed");
-            return JobResult.Success;
+            _metrics.Counter("completed");
+            return Task.FromResult(JobResult.Success);
         }
     }
 
@@ -50,9 +50,9 @@ namespace Foundatio.Tests.Jobs {
             return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
         }
 
-        protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
-            await _metrics.CounterAsync("completed");
-            return JobResult.Success;
+        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
+            _metrics.Counter("completed");
+            return Task.FromResult(JobResult.Success);
         }
     }
 
@@ -68,21 +68,21 @@ namespace Foundatio.Tests.Jobs {
             _metrics = metrics;
         }
 
-        protected override async Task<JobResult> RunInternalAsync(JobContext context) {
-            await _metrics.CounterAsync("runs");
+        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+            _metrics.Counter("runs");
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("errors");
+                _metrics.Counter("errors");
                 throw new Exception("Boom!");
             }
 
             if (RandomData.GetBool(10)) {
-                await _metrics.CounterAsync("failed");
-                return JobResult.FailedWithMessage("Failed");
+                _metrics.Counter("failed");
+                return Task.FromResult(JobResult.FailedWithMessage("Failed"));
             }
 
-            await _metrics.CounterAsync("completed");
-            return JobResult.Success;
+            _metrics.Counter("completed");
+            return Task.FromResult(JobResult.Success);
         }
     }
 }

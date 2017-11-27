@@ -481,7 +481,7 @@ namespace Foundatio.Tests.Caching {
                     Assert.Equal(13422, (await cache.GetAsync<int>("test")).Value);
                     Assert.Null(await cache.GetAsync<int>("test2"));
                     Assert.True((await cache.GetAsync<bool>("flag")).Value);
-                    await metrics.CounterAsync("work");
+                    metrics.Counter("work");
                 }
 
                 var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
@@ -508,7 +508,7 @@ namespace Foundatio.Tests.Caching {
                     Assert.True(model.HasValue);
                     Assert.Equal("Hello", model.Value.Data1);
                     Assert.Equal(12, model.Value.Data2);
-                    await metrics.CounterAsync("work");
+                    metrics.Counter("work");
                 }
 
                 var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
@@ -558,7 +558,7 @@ namespace Foundatio.Tests.Caching {
                     Assert.True(model.HasValue);
                     Assert.Equal("Hello", model.Value.Data1);
                     Assert.Equal(12, model.Value.Data2);
-                    await metrics.CounterAsync("work");
+                    metrics.Counter("work");
                 }
 
                 var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);

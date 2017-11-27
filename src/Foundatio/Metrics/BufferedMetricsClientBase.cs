@@ -39,31 +39,28 @@ namespace Foundatio.Metrics {
             return counted.InvokeAsync(this, args);
         }
 
-        public Task CounterAsync(string name, int value = 1) {
+        public void Counter(string name, int value = 1) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
+                SubmitMetric(entry);
 
             _queue.Enqueue(entry);
-            return Task.CompletedTask;
         }
 
-        public Task GaugeAsync(string name, double value) {
+        public void Gauge(string name, double value) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
+                SubmitMetric(entry);
 
             _queue.Enqueue(entry);
-            return Task.CompletedTask;
         }
 
-        public Task TimerAsync(string name, int milliseconds) {
+        public void Timer(string name, int milliseconds) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
+                SubmitMetric(entry);
 
             _queue.Enqueue(entry);
-            return Task.CompletedTask;
         }
 
         private void OnMetricsTimer(object state) {
@@ -104,8 +101,8 @@ namespace Foundatio.Metrics {
             }
         }
 
-        private Task SubmitMetricAsync(MetricEntry metric) {
-            return SubmitMetricsAsync(new List<MetricEntry> { metric });
+        private void SubmitMetric(MetricEntry metric) {
+            SubmitMetricsAsync(new List<MetricEntry> { metric }).GetAwaiter().GetResult();
         }
 
         protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics) {

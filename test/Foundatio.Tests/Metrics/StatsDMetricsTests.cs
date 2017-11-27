@@ -27,7 +27,7 @@ namespace Foundatio.Tests.Metrics {
         [Fact]
         public async Task CounterAsync() {
             await StartListeningAsync(1);
-            await _client.CounterAsync("counter");
+            _client.Counter("counter");
             var messages = GetMessages();
             Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
         }
@@ -36,7 +36,7 @@ namespace Foundatio.Tests.Metrics {
         public async Task CounterAsyncWithValue() {
             await StartListeningAsync(1);
 
-            await _client.CounterAsync("counter", 5);
+            _client.Counter("counter", 5);
             var messages = GetMessages();
             Assert.Equal("test.counter:5|c", messages.FirstOrDefault());
         }
@@ -45,7 +45,7 @@ namespace Foundatio.Tests.Metrics {
         public async Task GaugeAsync() {
             await StartListeningAsync(1);
 
-            await _client.GaugeAsync("gauge", 1.1);
+            _client.Gauge("gauge", 1.1);
             var messages = GetMessages();
             Assert.Equal("test.gauge:1.1|g", messages.FirstOrDefault());
         }
@@ -54,14 +54,14 @@ namespace Foundatio.Tests.Metrics {
         public async Task TimerAsync() {
             await StartListeningAsync(1);
 
-            await _client.TimerAsync("timer", 1);
+            _client.Timer("timer", 1);
             var messages = GetMessages();
             Assert.Equal("test.timer:1|ms", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task CanSendOffline() {
-            await _client.CounterAsync("counter");
+        public void CanSendOffline() {
+            _client.Counter("counter");
             var messages = GetMessages();
             Assert.Empty(messages);
         }
@@ -73,7 +73,7 @@ namespace Foundatio.Tests.Metrics {
 
             await Run.InParallelAsync(iterations, async i =>{
                 await SystemClock.SleepAsync(50);
-                await _client.CounterAsync("counter");
+                _client.Counter("counter");
             });
             
             var messages = GetMessages();
@@ -92,8 +92,8 @@ namespace Foundatio.Tests.Metrics {
                 if (index % (iterations / 10) == 0)
                     StopListening();
 
-                await _client.CounterAsync("counter");
-                await metrics.CounterAsync("counter");
+                _client.Counter("counter");
+                metrics.Counter("counter");
 
                 if (index % (iterations / 10) == 0)
                     await StartListeningAsync(iterations - index);

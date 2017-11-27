@@ -3,19 +3,9 @@
 namespace Foundatio.Metrics {
     public class NullMetricsClient : IMetricsClient {
         public static readonly IMetricsClient Instance = new NullMetricsClient();
-
-        public Task CounterAsync(string name, int value = 1) {
-            return Task.CompletedTask;
-        }
-
-        public Task GaugeAsync(string name, double value) {
-            return Task.CompletedTask;
-        }
-
-        public Task TimerAsync(string name, int milliseconds) {
-            return Task.CompletedTask;
-        }
-
+        public void Counter(string name, int value = 1) {}
+        public void Gauge(string name, double value) {}
+        public void Timer(string name, int milliseconds) {}
         public void Dispose() {}
     }
 }

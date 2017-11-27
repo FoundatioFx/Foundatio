@@ -1,9 +1,10 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
-    public class MetricTimer : IAsyncDisposable {
+    public class MetricTimer : IDisposable {
         private readonly string _name;
         private readonly Stopwatch _stopWatch;
         private bool _disposed;
@@ -15,13 +16,13 @@ namespace Foundatio.Metrics {
             _stopWatch = Stopwatch.StartNew();
         }
 
-        public Task DisposeAsync() {
+        public void Dispose() {
             if (_disposed)
-                return Task.CompletedTask;
+                return;
 
             _disposed = true;
             _stopWatch.Stop();
-            return _client.TimerAsync(_name, (int)_stopWatch.ElapsedMilliseconds);
+            _client.Timer(_name, (int)_stopWatch.ElapsedMilliseconds);
         }
     }
 }
