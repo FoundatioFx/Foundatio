@@ -43,24 +43,24 @@ namespace Foundatio.Metrics {
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
             if (!_options.Buffered)
                 SubmitMetric(entry);
-
-            _queue.Enqueue(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
         public void Gauge(string name, double value) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
             if (!_options.Buffered)
                 SubmitMetric(entry);
-
-            _queue.Enqueue(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
         public void Timer(string name, int milliseconds) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
             if (!_options.Buffered)
                 SubmitMetric(entry);
-
-            _queue.Enqueue(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
         private void OnMetricsTimer(object state) {
