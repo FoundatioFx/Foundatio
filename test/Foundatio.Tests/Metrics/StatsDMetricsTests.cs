@@ -66,7 +66,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.Empty(messages);
         }
 
-        [Fact(Skip = "Flakey")]
+        [Fact]
         public async Task CanSendMultithreaded() {
             const int iterations = 100;
             await StartListeningAsync(iterations);
@@ -80,7 +80,7 @@ namespace Foundatio.Tests.Metrics {
             Assert.Equal(iterations, messages.Count);
         }
 
-        [Fact(Skip = "Flakey")]
+        [Fact]
         public async Task CanSendMultiple() {
             const int iterations = 100000;
             await StartListeningAsync(iterations);
