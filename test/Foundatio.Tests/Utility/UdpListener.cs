@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace Foundatio.Tests.Utility {
     public class UdpListener : IDisposable {
+        private readonly CancellationToken _stopListeningCancellationToken;
         private readonly object _lock = new object();
         private readonly List<string> _receivedMessages = new List<string>();
         private readonly IPEndPoint _localEndPoint;
         private IPEndPoint _remoteEndPoint;
         private UdpClient _listener;
 
-        public UdpListener(string serverName, int port) {
+        public UdpListener(string serverName, int port, CancellationToken stopListeningCancellationToken) {
+            _stopListeningCancellationToken = stopListeningCancellationToken;
             _localEndPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
             _remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
         }
@@ -29,6 +32,9 @@ namespace Foundatio.Tests.Utility {
                 expectedMessageCount = 1;
 
             for (int index = 0; index < (int)expectedMessageCount; index++) {
+                if (_stopListeningCancellationToken.IsCancellationRequested)
+                    return;
+
                 EnsureListening();
                 if (_listener == null)
                     return;

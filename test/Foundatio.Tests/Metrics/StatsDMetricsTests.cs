@@ -17,24 +17,25 @@ namespace Foundatio.Tests.Metrics {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
+        private readonly CancellationTokenSource _stopListeningCancellationTokenSource = new CancellationTokenSource();
         private Thread _listenerThread;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            _listener = new UdpListener("127.0.0.1", _port);
+            _listener = new UdpListener("127.0.0.1", _port, _stopListeningCancellationTokenSource.Token);
             _client = new StatsDMetricsClient(new StatsDMetricsClientOptions { ServerName = "127.0.0.1", Port = _port, Prefix = "test" });
         }
 
         [Fact]
-        public async Task CounterAsync() {
-            await StartListeningAsync(1);
+        public void Counter() {
+            StartListening(1);
             _client.Counter("counter");
             var messages = GetMessages();
             Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task CounterAsyncWithValue() {
-            await StartListeningAsync(1);
+        public void CounterWithValue() {
+            StartListening(1);
 
             _client.Counter("counter", 5);
             var messages = GetMessages();
@@ -42,8 +43,8 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task GaugeAsync() {
-            await StartListeningAsync(1);
+        public void Gauge() {
+            StartListening(1);
 
             _client.Gauge("gauge", 1.1);
             var messages = GetMessages();
@@ -51,8 +52,8 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task TimerAsync() {
-            await StartListeningAsync(1);
+        public void Timer() {
+            StartListening(1);
 
             _client.Timer("timer", 1);
             var messages = GetMessages();
@@ -67,12 +68,12 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanSendMultithreaded() {
+        public void CanSendMultithreaded() {
             const int iterations = 100;
-            await StartListeningAsync(iterations);
+            StartListening(iterations);
 
-            await Run.InParallelAsync(iterations, async i =>{
-                await SystemClock.SleepAsync(50);
+            Parallel.For(0, iterations, i => {
+                SystemClock.Sleep(50);
                 _client.Counter("counter");
             });
             
@@ -83,7 +84,7 @@ namespace Foundatio.Tests.Metrics {
         [Fact]
         public async Task CanSendMultiple() {
             const int iterations = 100000;
-            await StartListeningAsync(iterations);
+            StartListening(iterations);
 
             var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
 
@@ -96,7 +97,7 @@ namespace Foundatio.Tests.Metrics {
                 metrics.Counter("counter");
 
                 if (index % (iterations / 10) == 0)
-                    await StartListeningAsync(iterations - index);
+                    StartListening(iterations - index);
 
                 if (index % (iterations / 20) == 0 && _logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace((await metrics.GetCounterStatsAsync("counter")).ToString());
@@ -109,7 +110,7 @@ namespace Foundatio.Tests.Metrics {
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
-            await SystemClock.SleepAsync(250);
+            SystemClock.Sleep(250);
             var messages = GetMessages();
             int expected = iterations - (iterations / (iterations / 10));
             Assert.InRange(messages.Count, expected - 10, expected + 10);
@@ -118,20 +119,23 @@ namespace Foundatio.Tests.Metrics {
         }
 
         private List<string> GetMessages() {
-            while (_listenerThread != null && _listenerThread.IsAlive) {}
+            while (_stopListeningCancellationTokenSource.IsCancellationRequested || _listenerThread != null && _listenerThread.IsAlive) {
+                Thread.Yield();
+            }
 
             return _listener.GetMessages();
         }
 
-        private Task StartListeningAsync(int expectedMessageCount) {
+        private void StartListening(int expectedMessageCount) {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
 
-            return SystemClock.SleepAsync(75);
+            SystemClock.Sleep(75);
         }
 
         private void StopListening() {
-            _listenerThread.Abort();
+            _stopListeningCancellationTokenSource.Cancel();
+            _listenerThread = null;
         }
 
         public void Dispose() {
