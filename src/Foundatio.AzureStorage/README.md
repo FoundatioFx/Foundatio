@@ -222,11 +222,11 @@ Allows you to run a long running process (in process or out of process) without 
       // and Subscribe to messages of type WorkItemStatus
       await ctx.ReportProgressAsync(0, "Starting Hello World Job");
       await Task.Delay(TimeSpan.FromSeconds(2.5));
-      await ctx.ReportProgressAsync(50, String.Format("Reading value"));
+      await ctx.ReportProgressAsync(50, "Reading value");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(70, String.Format("Reading value."));
+      await ctx.ReportProgressAsync(70, "Reading value.");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(90, String.Format("Reading value.."));
+      await ctx.ReportProgressAsync(90, "Reading value..");
       await Task.Delay(TimeSpan.FromSeconds(.5));
 
       await ctx.ReportProgressAsync(100, workItem.Message);
@@ -265,12 +265,13 @@ Allows you to run a long running process (in process or out of process) without 
 
 ### [File Storage](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Storage)
 
-We provide four different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/IFileStorage.cs):
+We provide different file storage implementations that derive from the [`IFileStorage` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/IFileStorage.cs):
 
 1. [InMemoryFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/InMemoryFileStorage.cs): An in memory file implementation. This file storage implementation is only valid for the lifetime of the process.
 2. [FolderFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
 4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
+5. [AliyunFileStorage](https://github.com/FoundatioFx/Foundatio.Aliyun/blob/master/src/Foundatio.Aliyun/Storage/AliyunFileStorage.cs): An Aliyun file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons. 
 
