@@ -31,6 +31,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
 - [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
+- [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
 
 ## Getting Started (Development)
 
@@ -59,7 +60,7 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 ```csharp
 using Foundatio.Caching;
 
-ICacheClient cache = new InMemoryCacheClient();
+ICacheClient cache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
 await cache.SetAsync("test", 1);
 var value = await cache.GetAsync<int>("test");
 ```
@@ -78,7 +79,7 @@ Queues offer First In, First Out (FIFO) message delivery. We provide four differ
 ```csharp
 using Foundatio.Queues;
 
-IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
+IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem>());
 
 await queue.EnqueueAsync(new SimpleWorkItem {
     Data = "Hello"
@@ -102,12 +103,12 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 ```csharp
 using Foundatio.Lock;
 
-ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
+ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), new InMemoryMessageBus(new InMemoryMessageBusOptions()));
 using (await locker.AcquireAsync("test")) {
   // ...
 }
 
-ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
+ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), 1, TimeSpan.FromMinutes(1));
 using (await locker.AcquireAsync("test")) {
   // ...
 }
@@ -127,7 +128,7 @@ Allows you to publish and subscribe to messages flowing through your application
 ```csharp
 using Foundatio.Messaging;
 
-IMessageBus messageBus = new InMemoryMessageBus();
+IMessageBus messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
   // Got message
 });
@@ -155,12 +156,12 @@ Allows you to run a long running process (in process or out of process) without 
     }
   }
   ```
-  
+
   ```csharp
   var job = new HelloWorldJob();
   await job.RunAsync(); // job.RunCount = 1;
-  await job.RunContinuousAsync(iterationLimit: 2); // job.RunCount = 3;
-  await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
+  await job.RunContinuous(iterationLimit: 2); // job.RunCount = 3;
+  await job.RunContinuous(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
   ```
 
 2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
@@ -174,35 +175,35 @@ Allows you to run a long running process (in process or out of process) without 
     public int RunCount { get; set; }
 
     public HelloWorldQueueJob(IQueue<HelloWorldQueueItem> queue) : base(queue) {}
-    
+
     protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<HelloWorldQueueItem> context) {
        RunCount++;
 
        return Task.FromResult(JobResult.Success);
     }
   }
-  
+
   public class HelloWorldQueueItem {
     public string Message { get; set; }
   }
   ```
-  
+
   ```csharp
-   // Register the queue for HelloWorldQueueItem. 
-  container.RegisterSingleton<IQueue<HelloWorldQueueItem>>(() => new InMemoryQueue<HelloWorldQueueItem>());
-  
-  // To trigger the job we need to queue the HelloWorldWorkItem message. 
+   // Register the queue for HelloWorldQueueItem.
+  container.AddSingleton<IQueue<HelloWorldQueueItem>>(s => new InMemoryQueue<HelloWorldQueueItem>(new InMemoryQueueOptions<WorkItemData>()));
+
+  // To trigger the job we need to queue the HelloWorldWorkItem message.
   // This assumes that we injected an instance of IQueue<HelloWorldWorkItem> queue
-  
-  var job = new HelloWorldQueueJob();
+
+  IJob job = new HelloWorldQueueJob();
   await job.RunAsync(); // job.RunCount = 0; The RunCount wasn't incremented because we didn't enqueue any data.
-  
+
   await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
   await job.RunAsync(); // job.RunCount = 1;
-  
+
   await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
   await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
-  await job.RunUntilEmptyAsync(); // job.RunCount = 3;
+  await job.RunUntilEmpty(); // job.RunCount = 3;
   ```
 
 3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the [`WorkItemHandlerBase` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/WorkItemJob/WorkItemHandlerBase.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
@@ -218,7 +219,7 @@ Allows you to run a long running process (in process or out of process) without 
       var workItem = ctx.GetData<HelloWorldWorkItem>();
 
       // We can report the progress over the message bus easily.
-      // To recieve these messages just inject IMessageSubscriber
+      // To receive these messages just inject IMessageSubscriber
       // and Subscribe to messages of type WorkItemStatus
       await ctx.ReportProgressAsync(0, "Starting Hello World Job");
       await Task.Delay(TimeSpan.FromSeconds(2.5));
@@ -237,28 +238,28 @@ Allows you to run a long running process (in process or out of process) without 
     public string Message { get; set; }
   }
   ```
- 
+
   ```csharp
   // Register the shared job.
   var handlers = new WorkItemHandlers();
   handlers.Register<HelloWorldWorkItem, HelloWorldWorkItemHandler>();
-  
+
   // Register the handlers with dependency injection.
-  container.RegisterSingleton(handlers);
-  
-  // Register the queue for WorkItemData. 
-  container.RegisterSingleton<IQueue<WorkItemData>>(() => new InMemoryQueue<WorkItemData>());
-  
+  container.AddSingleton(handlers);
+
+  // Register the queue for WorkItemData.
+  container.AddSingleton<IQueue<WorkItemData>>(s => new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData>()));
+
   // The job runner will automatically look for and run all registered WorkItemHandlers.
-  new JobRunner(container.GetInstance<WorkItemJob>(), instanceCount: 2).RunInBackground();
+  new JobRunner(container.GetRequiredService<WorkItemJob>(), instanceCount: 2).RunInBackground();
   ```
-  
+
   ```csharp
-   // To trigger the job we need to queue the HelloWorldWorkItem message. 
+   // To trigger the job we need to queue the HelloWorldWorkItem message.
    // This assumes that we injected an instance of IQueue<WorkItemData> queue
-   
+
    // NOTE: You may have noticed that HelloWorldWorkItem doesn't derive from WorkItemData.
-   // Foundatio has an extension method that takes the model you post and serializes it to the 
+   // Foundatio has an extension method that takes the model you post and serializes it to the
    // WorkItemData.Data property.
    await queue.EnqueueAsync(new HelloWorldWorkItem { Message = "Hello World" });
   ```
@@ -273,7 +274,7 @@ We provide different file storage implementations that derive from the [`IFileSt
 4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
 5. [AliyunFileStorage](https://github.com/FoundatioFx/Foundatio.Aliyun/blob/master/src/Foundatio.Aliyun/Storage/AliyunFileStorage.cs): An Aliyun file storage implementation.
 
-We recommend using all of the `IFileStorage` implementations as singletons. 
+We recommend using all of the `IFileStorage` implementations as singletons.
 
 #### Sample
 
@@ -294,14 +295,15 @@ We provide four implementations that derive from the [`IMetricsClient` interface
 3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 
-We recommend using all of the `IMetricsClient` implementations as singletons. 
+We recommend using all of the `IMetricsClient` implementations as singletons.
 
 #### Sample
 
 ```csharp
-await metrics.CounterAsync("c1");
-await metrics.GaugeAsync("g1", 2.534);
-await metrics.TimerAsync("t1", 50788);
+IMetricsClient metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+metrics.Counter("c1");
+metrics.Gauge("g1", 2.534);
+metrics.Timer("t1", 50788);
 ```
 
 ## Sample Application
