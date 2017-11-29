@@ -17,11 +17,10 @@ namespace Foundatio.Tests.Metrics {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
         private readonly UdpListener _listener;
-        private readonly CancellationTokenSource _stopListeningCancellationTokenSource = new CancellationTokenSource();
         private Thread _listenerThread;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            _listener = new UdpListener("127.0.0.1", _port, _stopListeningCancellationTokenSource.Token);
+            _listener = new UdpListener("127.0.0.1", _port);
             _client = new StatsDMetricsClient(new StatsDMetricsClientOptions { ServerName = "127.0.0.1", Port = _port, Prefix = "test" });
         }
 
@@ -119,9 +118,7 @@ namespace Foundatio.Tests.Metrics {
         }
 
         private List<string> GetMessages() {
-            while (_stopListeningCancellationTokenSource.IsCancellationRequested || _listenerThread != null && _listenerThread.IsAlive) {
-                Thread.Yield();
-            }
+            while (_listenerThread != null && _listenerThread.IsAlive) {}
 
             return _listener.GetMessages();
         }
@@ -134,8 +131,7 @@ namespace Foundatio.Tests.Metrics {
         }
 
         private void StopListening() {
-            _stopListeningCancellationTokenSource.Cancel();
-            _listenerThread = null;
+            _listener.StopListening();
         }
 
         public void Dispose() {

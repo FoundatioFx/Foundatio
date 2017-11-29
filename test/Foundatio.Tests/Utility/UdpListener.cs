@@ -7,15 +7,14 @@ using System.Threading;
 
 namespace Foundatio.Tests.Utility {
     public class UdpListener : IDisposable {
-        private readonly CancellationToken _stopListeningCancellationToken;
+        private CancellationTokenSource _cancellationToken = new CancellationTokenSource();
         private readonly object _lock = new object();
         private readonly List<string> _receivedMessages = new List<string>();
         private readonly IPEndPoint _localEndPoint;
         private IPEndPoint _remoteEndPoint;
         private UdpClient _listener;
 
-        public UdpListener(string serverName, int port, CancellationToken stopListeningCancellationToken) {
-            _stopListeningCancellationToken = stopListeningCancellationToken;
+        public UdpListener(string serverName, int port) {
             _localEndPoint = new IPEndPoint(IPAddress.Parse(serverName), port);
             _remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
         }
@@ -28,26 +27,25 @@ namespace Foundatio.Tests.Utility {
         }
 
         public void StartListening(object expectedMessageCount = null) {
+            if (_cancellationToken.IsCancellationRequested)
+                _cancellationToken = new CancellationTokenSource();
+
             if (expectedMessageCount == null)
                 expectedMessageCount = 1;
 
             for (int index = 0; index < (int)expectedMessageCount; index++) {
-                if (_stopListeningCancellationToken.IsCancellationRequested)
+                if (_cancellationToken.IsCancellationRequested)
                     return;
 
                 EnsureListening();
-                if (_listener == null)
-                    return;
 
                 try {
                     var data = _listener.Receive(ref _remoteEndPoint);
                     _receivedMessages.Add(Encoding.ASCII.GetString(data, 0, data.Length));
-                } catch (SocketException ex) {
+                } catch (SocketException ex) when (ex.ErrorCode == 10060) {
                     // If we timeout, stop listening.
-                    if (ex.ErrorCode == 10060)
-                        continue;
-
-                    throw;
+                } catch (Exception) {
+                    break;
                 }
             }
         }
@@ -66,6 +64,7 @@ namespace Foundatio.Tests.Utility {
             if (_listener == null)
                 return;
 
+            _cancellationToken.Cancel();
             lock (_lock) {
                 _listener.Close();
                 _listener = null;

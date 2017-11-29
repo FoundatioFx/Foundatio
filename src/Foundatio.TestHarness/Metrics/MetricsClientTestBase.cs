@@ -18,8 +18,7 @@ namespace Foundatio.Tests.Metrics {
 
         public virtual async Task CanSetGaugesAsync() {
             using (var metrics = GetMetricsClient()) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 metrics.Gauge("mygauge", 12d);
@@ -35,8 +34,7 @@ namespace Foundatio.Tests.Metrics {
 
         public virtual async Task CanIncrementCounterAsync() {
             using (var metrics = GetMetricsClient()) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 metrics.Counter("c1");
@@ -66,8 +64,7 @@ namespace Foundatio.Tests.Metrics {
 
         public virtual async Task CanGetBufferedQueueMetricsAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 using (var behavior = new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(25), loggerFactory: Log)) {
@@ -95,8 +92,7 @@ namespace Foundatio.Tests.Metrics {
 
         public virtual async Task CanIncrementBufferedCounterAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 metrics.Counter("c1");
@@ -140,8 +136,7 @@ namespace Foundatio.Tests.Metrics {
         public virtual async Task CanWaitForCounterAsync() {
             const string CounterName = "Test";
             using (var metrics = GetMetricsClient() as CacheBucketMetricsClientBase) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 Task.Run(async () => {
@@ -186,8 +181,7 @@ namespace Foundatio.Tests.Metrics {
 
         public virtual async Task CanSendBufferedMetricsAsync() {
             using (var metrics = GetMetricsClient(true) as IBufferedMetricsClient) {
-                var stats = metrics as IMetricsClientStats;
-                if (stats == null)
+                if (!(metrics is IMetricsClientStats stats))
                     return;
 
                 Parallel.For(0, 100, i => metrics.Counter("c1"));
