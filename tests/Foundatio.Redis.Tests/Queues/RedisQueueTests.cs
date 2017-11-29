@@ -394,8 +394,7 @@ namespace Foundatio.Redis.Tests.Queues {
                     else
                         await workItem.CompleteAsync();
 
-                    await metrics.CounterAsync("work");
-
+                    metrics.Counter("work");
                     workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
                 }
                 _logger.LogTrace((await metrics.GetCounterStatsAsync("work")).ToString());
@@ -432,7 +431,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 while (workItem != null) {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
-                    await metrics.CounterAsync("work");
+                    metrics.Counter("work");
 
                     workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 }
@@ -470,7 +469,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 await queue.StartWorkingAsync(async workItem => {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
-                    await metrics.CounterAsync("work");
+                    metrics.Counter("work");
                     countdown.Signal();
                 });
 
