@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
+using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
 using Xunit;
 using Xunit.Abstractions;
@@ -20,7 +20,7 @@ namespace Foundatio.Azure.Tests.Queue {
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            _logger.Debug("Queue Id: {queueId}", _queueName);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue Id: {Name}", _queueName);
             return new AzureStorageQueue<SimpleWorkItem>(new AzureStorageQueueOptions<SimpleWorkItem> {
                 ConnectionString = connectionString,
                 Name = _queueName,
@@ -136,11 +136,6 @@ namespace Foundatio.Azure.Tests.Queue {
         [Fact]
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
-        }
-
-        // NOTE: Not using this test because you can set specific delay times for storage queue
-        public override Task CanDelayRetryAsync() {
-            return base.CanDelayRetryAsync();
         }
     }
 }

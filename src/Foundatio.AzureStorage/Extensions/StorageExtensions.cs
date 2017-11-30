@@ -11,8 +11,8 @@ namespace Foundatio.Azure.Extensions {
             return new FileSpec {
                 Path = blob.Name,
                 Size = blob.Properties.Length,
-                Created = blob.Properties.LastModified.HasValue ? blob.Properties.LastModified.Value.UtcDateTime : DateTime.MinValue,  // TODO: Need to fix this
-                Modified = blob.Properties.LastModified.HasValue ? blob.Properties.LastModified.Value.UtcDateTime : DateTime.MinValue
+                Created = blob.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                Modified = blob.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue
             };
         }
     }
