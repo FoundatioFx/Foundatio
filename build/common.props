@@ -15,19 +15,19 @@
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
-    <Copyright>Copyright (c) 2017 Exceptionless.  All rights reserved.</Copyright>
-    <Authors>bniemyjski;ejsmith</Authors>
+    <Copyright>Copyright (c) 2017 Foundatio.  All rights reserved.</Copyright>
+    <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
 
-    <PackageReleaseNotes>https://github.com/exceptionless/Foundatio/releases</PackageReleaseNotes>
-    <PackageIconUrl>https://be.exceptionless.io/img/exceptionless-32.png</PackageIconUrl>
-    <PackageProjectUrl>https://github.com/exceptionless/Foundatio</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/FoundatioFx/Foundatio/releases</PackageReleaseNotes>
+    <PackageIconUrl>https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-icon.png</PackageIconUrl>
+    <PackageProjectUrl>https://github.com/FoundatioFx/Foundatio</PackageProjectUrl>
     <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/exceptionless/Foundatio</RepositoryUrl>
+    <RepositoryUrl>https://github.com/FoundatioFx/Foundatio</RepositoryUrl>
     <VersionSuffix Condition="'$(VersionSuffix)'!='' AND '$(BuildNumber)' != ''">$(VersionSuffix)-$(BuildNumber)</VersionSuffix>
   </PropertyGroup>
 </Project>
