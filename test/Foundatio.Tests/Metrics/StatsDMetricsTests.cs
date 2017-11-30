@@ -112,7 +112,7 @@ namespace Foundatio.Tests.Metrics {
             SystemClock.Sleep(250);
             var messages = GetMessages();
             int expected = iterations - (iterations / (iterations / 10));
-            Assert.InRange(messages.Count, expected - 10, expected + 10);
+            Assert.InRange(messages.Count, expected - 90, expected + 10);
             foreach (string message in messages)
                 Assert.Equal("test.counter:1|c", message);
         }
