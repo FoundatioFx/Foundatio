@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -9,7 +8,7 @@ namespace Foundatio.Redis {
     internal static class RedisValueExtensions {
         private static readonly RedisValue _nullValue = "@@NULL";
 
-        public static Task<T> ToValueOfTypeAsync<T>(this RedisValue redisValue, ISerializer serializer) {
+        public static T ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer) {
             T value;
             Type type = typeof(T);
 
@@ -18,12 +17,12 @@ namespace Foundatio.Redis {
             else if (type == TypeHelper.NullableBoolType || type.IsNullableNumeric())
                 value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type));
             else
-                return serializer.DeserializeAsync<T>((byte[])redisValue);
+                return serializer.Deserialize<T>((byte[])redisValue);
 
-            return Task.FromResult(value);
+            return value;
         }
 
-        public static async Task<RedisValue> ToRedisValueAsync<T>(this T value, ISerializer serializer) {
+        public static RedisValue ToRedisValue<T>(this T value, ISerializer serializer) {
             RedisValue redisValue = _nullValue;
             if (value == null)
                 return redisValue;
@@ -62,7 +61,7 @@ namespace Foundatio.Redis {
             else if (t == TypeHelper.StringType)
                 redisValue = value.ToString();
             else
-                redisValue = await serializer.SerializeAsync(value).AnyContext();
+                redisValue = serializer.Serialize(value);
 
             return redisValue;
         }

@@ -2,8 +2,8 @@
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Queues;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Foundatio.Benchmarks.Queues {
@@ -49,7 +49,7 @@ namespace Foundatio.Benchmarks.Queues {
 
         private void RunJobUntilEmpty(IQueue<QueueItem> queue) {
             var job = new BenchmarkJobQueue(queue);
-            job.RunUntilEmptyAsync().GetAwaiter().GetResult();
+            job.RunUntilEmpty();
         }
     }
 

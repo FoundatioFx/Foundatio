@@ -7,9 +7,9 @@ using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Queues;
-using Foundatio.Logging;
 using Foundatio.Messaging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.SampleJob {
     public class PingQueueJob : QueueJobBase<PingRequest> {
@@ -32,7 +32,8 @@ namespace Foundatio.SampleJob {
         protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<PingRequest> context) {
             Interlocked.Increment(ref _runCount);
 
-            _logger.Info(() => $"Got {RunCount.ToOrdinal()} ping. Sending pong!");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(1)).AnyContext();
 
             if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))

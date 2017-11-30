@@ -7,10 +7,9 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
-using Foundatio.Logging;
-using Foundatio.Serializer;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 #pragma warning disable 4014
 
@@ -31,20 +30,6 @@ namespace Foundatio.Queues {
         private bool _isSubscribed;
         private readonly TimeSpan _payloadTimeToLive;
 
-        [Obsolete("Use the options overload")]
-        public RedisQueue(ConnectionMultiplexer connection, ISerializer serializer = null, string queueName = null, int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, TimeSpan? deadLetterTimeToLive = null, int deadLetterMaxItems = 100, bool runMaintenanceTasks = true, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
-            : this(new RedisQueueOptions<T> {
-                ConnectionMultiplexer = connection,
-                Name = queueName,
-                Retries = retries,
-                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
-                RetryMultipliers = retryMultipliers ?? new [] { 1, 3, 5, 10 },
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                Behaviors = behaviors,
-                Serializer = serializer,
-                LoggerFactory = loggerFactory
-            }) { }
-
         public RedisQueue(RedisQueueOptions<T> options) : base(options) {
             if (options.ConnectionMultiplexer == null)
                 throw new ArgumentException("ConnectionMultiplexer is required.");
@@ -64,20 +49,22 @@ namespace Foundatio.Queues {
             var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
             _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
 
-            _logger.Trace("Queue {0} created. Retries: {1} Retry Delay: {2}", QueueId, _options.Retries, _options.RetryDelay.ToString());
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Queue {QueueId} created. Retries: {Retries} Retry Delay: {RetryDelay}", QueueId, _options.Retries, _options.RetryDelay.ToString());
         }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) => Task.CompletedTask;
 
+        private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null;
         private async Task EnsureMaintenanceRunningAsync() {
-            if (!_options.RunMaintenanceTasks || _maintenanceTask != null)
+            if (IsMaintenanceRunning)
                 return;
 
             using (await  _lock.LockAsync().AnyContext()) {
                 if (_maintenanceTask != null)
                     return;
 
-                _logger.Trace("Starting maintenance for {_options.Name}.", _options.Name);
+                _logger.LogTrace("Starting maintenance for {_options.Name}.", _options.Name);
                 _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoopAsync(_queueDisposedCancellationTokenSource.Token));
             }
         }
@@ -90,18 +77,25 @@ namespace Foundatio.Queues {
                 if (_isSubscribed)
                     return;
 
-                _logger.Trace("Subscribing to enqueue messages for {_options.Name}.", _options.Name);
+                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to enqueue messages for {Name}.", _options.Name);
                 await _subscriber.SubscribeAsync(GetTopicName(), OnTopicMessage).AnyContext();
                 _isSubscribed = true;
-                _logger.Trace("Subscribed to enqueue messages for {_options.Name}.", _options.Name);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to enqueue messages for {Name}.", _options.Name);
             }
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+            var queued = Database.ListLengthAsync(QueueListName);
+            var wait = Database.ListLengthAsync(WaitListName);
+            var working = Database.ListLengthAsync(WorkListName);
+            var deadLetter = Database.ListLengthAsync(DeadListName);
+
+            await Task.WhenAll(queued, wait, working, deadLetter).AnyContext();
             return new QueueStats {
-                Queued = await Database.ListLengthAsync(QueueListName).AnyContext() + await Database.ListLengthAsync(WaitListName).AnyContext(),
-                Working = await Database.ListLengthAsync(WorkListName).AnyContext(),
-                Deadletter = await Database.ListLengthAsync(DeadListName).AnyContext(),
+                Queued = queued.Result + wait.Result,
+                Working = working.Result,
+                Deadletter = deadLetter.Result,
                 Enqueued = _enqueuedCount,
                 Dequeued = _dequeuedCount,
                 Completed = _completedCount,
@@ -169,10 +163,11 @@ namespace Foundatio.Queues {
 
         protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
-            _logger.Debug("Queue {_options.Name} enqueue item: {id}", _options.Name, id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} enqueue item: {EntryId}", _options.Name, id);
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (!await OnEnqueuingAsync(data).AnyContext()) {
-                _logger.Trace("Aborting enqueue item: {id}", id);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Aborting enqueue item: {EntryId}", id);
                 return null;
             }
 
@@ -181,19 +176,23 @@ namespace Foundatio.Queues {
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
 
-            await Run.WithRetriesAsync(() => _cache.SetAsync(GetEnqueuedTimeKey(id), now.Ticks, _payloadTimeToLive), logger: _logger).AnyContext();
-            await Run.WithRetriesAsync(() => Database.ListLeftPushAsync(QueueListName, id), logger: _logger).AnyContext();
+            await Run.WithRetriesAsync(() => Task.WhenAll(
+                _cache.SetAsync(GetEnqueuedTimeKey(id), now.Ticks, _payloadTimeToLive),
+                Database.ListLeftPushAsync(QueueListName, id)
+            ), logger: _logger).AnyContext();
 
             try {
                 _autoResetEvent.Set();
                 await Run.WithRetriesAsync(() => _subscriber.PublishAsync(GetTopicName(), id), logger: _logger).AnyContext();
-            } catch { }
+            } catch (Exception ex) {
+                if (isTraceLogLevelEnabled) _logger.LogTrace(ex, "Error publishing topic message");
+            }
 
             Interlocked.Increment(ref _enqueuedCount);
             var entry = new QueueEntry<T>(id, data, this, now, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
-            _logger.Trace("Enqueue done");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
             return id;
         }
 
@@ -204,10 +203,11 @@ namespace Foundatio.Queues {
             var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {_options.Name}", _options.Name);
+                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {_options.Name}", _options.Name);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
@@ -223,32 +223,33 @@ namespace Foundatio.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
-                        _logger.Error(ex, "Worker error: {0}", ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            _logger.Trace("Queue {_options.Name} dequeuing item...", _options.Name);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} dequeuing item...", _options.Name);
             long now = SystemClock.UtcNow.Ticks;
 
-            await EnsureMaintenanceRunningAsync().AnyContext();
-            await EnsureTopicSubscriptionAsync().AnyContext();
+            if (!IsMaintenanceRunning)
+                await EnsureMaintenanceRunningAsync().AnyContext();
+            if (!_isSubscribed)
+                await EnsureTopicSubscriptionAsync().AnyContext();
 
             var value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
-            if (linkedCancellationToken.IsCancellationRequested && value.IsNullOrEmpty)
-                return null;
-
-            _logger.Trace("Initial list value: {0}", value.IsNullOrEmpty ? "<null>" : value.ToString());
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Initial list value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
 
             while (value.IsNullOrEmpty && !linkedCancellationToken.IsCancellationRequested) {
-                _logger.Trace("Waiting to dequeue item...");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
@@ -256,17 +257,20 @@ namespace Foundatio.Queues {
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
-                _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited for dequeue: {Elapsed}", sw.Elapsed.ToString());
 
                 value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
-                _logger.Trace("List value: {0}", value.IsNullOrEmpty ? "<null>" : value.ToString());
+                if (isTraceLogLevelEnabled) _logger.LogTrace("List value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
             }
 
             if (value.IsNullOrEmpty)
                 return null;
 
-            await Run.WithRetriesAsync(() => _cache.SetAsync(GetDequeuedTimeKey(value), now, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
-            await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(value), now, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+            var wiTimeoutTtl = GetWorkItemTimeoutTimeTtl();
+            await Run.WithRetriesAsync(() => Task.WhenAll(
+                _cache.SetAsync(GetDequeuedTimeKey(value), now, wiTimeoutTtl),
+                _cache.SetAsync(GetRenewedTimeKey(value), now, wiTimeoutTtl)
+            ), logger: _logger).AnyContext();
 
             try {
                 var entry = await GetQueueEntryAsync(value).AnyContext();
@@ -276,33 +280,34 @@ namespace Foundatio.Queues {
                 Interlocked.Increment(ref _dequeuedCount);
                 await OnDequeuedAsync(entry).AnyContext();
 
-                _logger.Debug("Dequeued item: {0}", value);
+                if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Dequeued item: {Value}", value);
                 return entry;
             } catch (Exception ex) {
-                _logger.Error(ex, "Error getting dequeued item payload: {0}", value);
+                if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Error getting dequeued item payload: {Value}", value);
                 throw;
             }
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, entry.Id);
             await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
-            _logger.Trace("Renew lock done: {0}", entry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", entry.Id);
         }
 
         private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId) {
             var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<T>(GetPayloadKey(workId)), logger: _logger).AnyContext();
             if (payload.IsNull) {
-                _logger.Error("Error getting queue payload: {0}", workId);
+                if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError("Error getting queue payload: {WorkId}", workId);
                 await Database.ListRemoveAsync(WorkListName, workId).AnyContext();
                 return null;
             }
 
-            long enqueuedTimeTicks = await Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger).AnyContext();
-            int attemptsValue = await Run.WithRetriesAsync(() => _cache.GetAsync<int>(GetAttemptsKey(workId), 1), logger: _logger).AnyContext();
+            var enqueuedTimeTicks = Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger);
+            var attemptsValue = Run.WithRetriesAsync(() => _cache.GetAsync(GetAttemptsKey(workId), 1), logger: _logger);
+            await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
 
-            return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks, DateTimeKind.Utc), attemptsValue);
+            return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result);
         }
 
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
@@ -314,7 +319,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} complete item: {1}", _options.Name, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} complete item: {EntryId}", _options.Name, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -334,11 +339,11 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _completedCount);
             entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
-            _logger.Trace("Complete done: {0}", entry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {EntryId}", entry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -347,11 +352,13 @@ namespace Foundatio.Queues {
             if (attemptsCachedValue.HasValue)
                 attempts = attemptsCachedValue.Value + 1;
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             var retryDelay = GetRetryDelay(attempts);
-            _logger.Trace("Item: {entryId} Retry attempts: {attempts} delay: {retryDelay} allowed: {_options.Retries}", entry.Id, attempts, retryDelay, _options.Retries);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Item: {EntryId} Retry attempts: {Attempts} delay: {RetryDelay} allowed: {Retries}", entry.Id, attempts, retryDelay, _options.Retries);
 
             if (attempts > _options.Retries) {
-                _logger.Trace("Exceeded retry limit moving to deadletter: {entryId}", entry.Id);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Exceeded retry limit moving to deadletter: {EntryId}", entry.Id);
 
                 var tx = Database.CreateTransaction();
                 tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
@@ -361,16 +368,20 @@ namespace Foundatio.Queues {
                 tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
                 if (!success)
-                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
+                    throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-                await Run.WithRetriesAsync(() => _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()), logger: _logger).AnyContext();
-                await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)), logger: _logger).AnyContext();
-                await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id)), logger: _logger).AnyContext();
+                await Run.WithRetriesAsync(() => Task.WhenAll(
+                    _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()),
+                    Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
+                    Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
+                ), logger: _logger).AnyContext();
             } else if (retryDelay > TimeSpan.Zero) {
-                _logger.Trace("Adding item to wait list for future retry: {entryId}", entry.Id);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item to wait list for future retry: {EntryId}", entry.Id);
 
-                await Run.WithRetriesAsync(() => _cache.SetAsync(GetWaitTimeKey(entry.Id), SystemClock.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()), logger: _logger).AnyContext();
-                await Run.WithRetriesAsync(() => _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()), logger: _logger).AnyContext();
+                await Run.WithRetriesAsync(() => Task.WhenAll(
+                    _cache.SetAsync(GetWaitTimeKey(entry.Id), SystemClock.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()),
+                    _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl())
+                ), logger: _logger).AnyContext();
 
                 var tx = Database.CreateTransaction();
                 tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
@@ -379,11 +390,11 @@ namespace Foundatio.Queues {
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync()).AnyContext();
                 if (!success)
-                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
+                    throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
                 await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)), logger: _logger).AnyContext();
             } else {
-                _logger.Trace("Adding item back to queue for retry: {entryId}", entry.Id);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item back to queue for retry: {EntryId}", entry.Id);
 
                 await Run.WithRetriesAsync(() => _cache.IncrementAsync(GetAttemptsKey(entry.Id), 1, GetAttemptsTtl()), logger: _logger).AnyContext();
 
@@ -394,17 +405,19 @@ namespace Foundatio.Queues {
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
                 if (!success)
-                    throw new InvalidOperationException($"Queue entry not in work list, it may have been auto abandoned.");
+                    throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-                // This should pulse the monitor.
-                await _subscriber.PublishAsync(GetTopicName(), entry.Id).AnyContext();
-                await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)), logger: _logger).AnyContext();
+                await Run.WithRetriesAsync(() => Task.WhenAll(
+                    Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
+                    // This should pulse the monitor.
+                    _subscriber.PublishAsync(GetTopicName(), entry.Id)
+                ), logger: _logger).AnyContext();
             }
 
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.Trace("Abandon complete: {entryId}", entry.Id);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
         }
 
         private TimeSpan GetRetryDelay(int attempts) {
@@ -421,11 +434,14 @@ namespace Foundatio.Queues {
         }
 
         public override async Task DeleteQueueAsync() {
-            _logger.Trace("Deleting queue: {0}", _options.Name);
-            await DeleteListAsync(QueueListName).AnyContext();
-            await DeleteListAsync(WorkListName).AnyContext();
-            await DeleteListAsync(WaitListName).AnyContext();
-            await DeleteListAsync(DeadListName).AnyContext();
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Deleting queue: {Name}", _options.Name);
+            await Task.WhenAll(
+                DeleteListAsync(QueueListName),
+                DeleteListAsync(WorkListName),
+                DeleteListAsync(WaitListName),
+                DeleteListAsync(DeadListName)
+            ).AnyContext();
+
             _enqueuedCount = 0;
             _dequeuedCount = 0;
             _completedCount = 0;
@@ -435,24 +451,27 @@ namespace Foundatio.Queues {
 
         private async Task DeleteListAsync(string name) {
             var itemIds = await Database.ListRangeAsync(name).AnyContext();
+            var tasks = new List<Task>();
             foreach (var id in itemIds) {
-                await Task.WhenAll(
+                tasks.AddRange(new Task[] {
                     Database.KeyDeleteAsync(GetPayloadKey(id)),
                     Database.KeyDeleteAsync(GetAttemptsKey(id)),
                     Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
                     Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
                     Database.KeyDeleteAsync(GetRenewedTimeKey(id)),
                     Database.KeyDeleteAsync(GetWaitTimeKey(id))
-                ).AnyContext();
+                });
             }
 
-            await Database.KeyDeleteAsync(name).AnyContext();
+            tasks.Add(Database.KeyDeleteAsync(name));
+            await Task.WhenAll(tasks).AnyContext();
         }
 
         private async Task TrimDeadletterItemsAsync(int maxItems) {
             var itemIds = (await Database.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
+            var tasks = new List<Task>();
             foreach (var id in itemIds) {
-                await Task.WhenAll(
+                tasks.AddRange(new Task[] { 
                     Database.KeyDeleteAsync(GetPayloadKey(id)),
                     Database.KeyDeleteAsync(GetAttemptsKey(id)),
                     Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
@@ -463,22 +482,25 @@ namespace Foundatio.Queues {
                     Database.ListRemoveAsync(WorkListName, id),
                     Database.ListRemoveAsync(WaitListName, id),
                     Database.ListRemoveAsync(DeadListName, id)
-                ).AnyContext();
+                });
             }
+
+            await Task.WhenAll(tasks).AnyContext();
         }
 
         private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue) {
-            _logger.Trace("Queue OnMessage {0}: {1}", _options.Name, redisValue);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue OnMessage {Name}: {Value}", _options.Name, redisValue);
             _autoResetEvent.Set();
         }
 
         private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
-            _logger.Info("Redis connection restored.");
+            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored.");
             _autoResetEvent.Set();
         }
 
         internal async Task DoMaintenanceWorkAsync() {
-            _logger.Trace("DoMaintenance: Name={0} Id={1}", _options.Name, QueueId);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("DoMaintenance: Name: {Name} Id: {Id}", _options.Name, QueueId);
             var utcNow = SystemClock.UtcNow;
 
             try {
@@ -489,13 +511,13 @@ namespace Foundatio.Queues {
                         continue;
 
                     var renewedTime = new DateTime(renewedTimeTicks.Value);
-                    _logger.Trace(() => $"Renewed time {renewedTime:o}");
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Renewed time {RenewedTime}", renewedTime.ToString("o"));
 
                     if (utcNow.Subtract(renewedTime) <= _options.WorkItemTimeout)
                         continue;
 
-                    _logger.Info(() => $"Auto abandon item {workId}: renewed: {renewedTime:o} current: {utcNow:o} timeout: {_options.WorkItemTimeout}");
-
+                    if (_logger.IsEnabled(LogLevel.Information))
+                        _logger.LogInformation("Auto abandon item {WorkId}: renewed: {RenewedTime} current: {UtcNow} timeout: {WorkItemTimeout}", workId, renewedTime.ToString("o"), utcNow.ToString("o"), _options.WorkItemTimeout);
                     var entry = await GetQueueEntryAsync(workId).AnyContext();
                     if (entry == null)
                         continue;
@@ -504,21 +526,20 @@ namespace Foundatio.Queues {
                     Interlocked.Increment(ref _workItemTimeoutCount);
                 }
             } catch (Exception ex) {
-                _logger.Error(ex, "Error checking for work item timeouts: {0}", ex.Message);
+                if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Error checking for work item timeouts: {Message}", ex.Message);
             }
 
             try {
                 var waitIds = await Database.ListRangeAsync(WaitListName).AnyContext();
                 foreach (var waitId in waitIds) {
                     var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId)).AnyContext();
-
-                    _logger.Trace("Wait time: {0}", waitTimeTicks);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Wait time: {0}", waitTimeTicks);
 
                     if (waitTimeTicks.HasValue && waitTimeTicks.Value > utcNow.Ticks)
                         continue;
 
-                    _logger.Trace("Getting retry lock");
-                    _logger.Debug("Adding item back to queue for retry: {0}", waitId);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Getting retry lock");
+                    if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Adding item back to queue for retry: {WaitId}", waitId);
 
                     var tx = Database.CreateTransaction();
                     tx.ListRemoveAsync(WaitListName, waitId);
@@ -527,25 +548,28 @@ namespace Foundatio.Queues {
                     if (!success)
                         throw new Exception("Unable to move item to queue list.");
 
-                    await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetWaitTimeKey(waitId)), logger: _logger).AnyContext();
-                    await _subscriber.PublishAsync(GetTopicName(), waitId).AnyContext();
+                    await Run.WithRetriesAsync(() => Task.WhenAll(
+                        Database.KeyDeleteAsync(GetWaitTimeKey(waitId)),
+                        _subscriber.PublishAsync(GetTopicName(), waitId)
+                    ), logger: _logger).AnyContext();
                 }
             } catch (Exception ex) {
-                _logger.Error(ex, "Error adding items back to the queue after the retry delay: {0}", ex.Message);
+                if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Error adding items back to the queue after the retry delay: {Message}", ex.Message);
             }
 
             try {
                 await TrimDeadletterItemsAsync(_options.DeadLetterMaxItems).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error trimming deadletter items: {0}", ex.Message);
+                _logger.LogError(ex, "Error trimming deadletter items: {0}", ex.Message);
             }
         }
 
         private async Task DoMaintenanceWorkLoopAsync(CancellationToken disposedCancellationToken) {
             while (!disposedCancellationToken.IsCancellationRequested) {
-                _logger.Trace("Requesting Maintenance Lock: Name={0} Id={1}", _options.Name, QueueId);
+                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Requesting Maintenance Lock:  Name: {Name} Id: {Id}", _options.Name, QueueId);
                 bool gotLock = await _maintenanceLockProvider.TryUsingAsync(_options.Name + "-maintenance", DoMaintenanceWorkAsync, acquireTimeout: TimeSpan.FromSeconds(30)).AnyContext();
-                _logger.Trace("{0} Maintenance Lock: Name={1} Id={2}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("{Status} Maintenance Lock: Name: {Name} Id: {Id}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId);
             }
         }
 
@@ -556,10 +580,11 @@ namespace Foundatio.Queues {
             if (_isSubscribed) {
                 lock (_lock.Lock()) {
                     if (_isSubscribed) {
-                        _logger.Trace("Unsubscribing from topic {0}", GetTopicName());
+                        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribing from topic {Topic}", GetTopicName());
                         _subscriber.Unsubscribe(GetTopicName(), OnTopicMessage, CommandFlags.FireAndForget);
                         _isSubscribed = false;
-                        _logger.Trace("Unsubscribed from topic {0}", GetTopicName());
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribed from topic {Topic}", GetTopicName());
                     }
                 }
             }

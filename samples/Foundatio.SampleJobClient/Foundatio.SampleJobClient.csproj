@@ -8,13 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="App.config" />
-    <None Update="NLog.config" CopyToOutputDirectory="Always" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Foundatio.Logging.NLog" Version="5.1.1490" NoWarn="NU1701" />
-    <PackageReference Include="NLog" Version="4.4.12" NoWarn="NU1701" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup>

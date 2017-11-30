@@ -2,9 +2,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
-using Foundatio.Logging;
-using Foundatio.Utility;
 using Foundatio.AsyncEx.Synchronous;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Topshelf;
 
 namespace Foundatio.SampleJob {
