@@ -1,7 +1,7 @@
 <Project ToolsVersion="15.0">
   <Import Project="version.props" />
 
-  <PropertyGroup>
+  <PropertyGroup Label="Source Link">
     <ProjectParentDirectory>$([System.IO.Path]::GetDirectoryName('$(MSBuildProjectDirectory)'))</ProjectParentDirectory>
     <ProjectParentDirectoryName>$([System.IO.Path]::GetFileName('$(ProjectParentDirectory)'))</ProjectParentDirectoryName>
   </PropertyGroup>

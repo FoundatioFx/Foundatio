@@ -5,10 +5,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
-using Foundatio.Serializer;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : class {
@@ -23,18 +22,6 @@ namespace Foundatio.Queues {
         private int _abandonedCount;
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
-
-        [Obsolete("Use the options overload")]
-        public InMemoryQueue(int retries = 2, TimeSpan? retryDelay = null, int[] retryMultipliers = null, TimeSpan? workItemTimeout = null, ISerializer serializer = null, IEnumerable<IQueueBehavior<T>> behaviors = null, ILoggerFactory loggerFactory = null)
-            : this(new InMemoryQueueOptions<T> {
-                Retries = retries,
-                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
-                RetryMultipliers = retryMultipliers ?? new[] { 1, 3, 5, 10 },
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                Behaviors = behaviors,
-                Serializer = serializer,
-                LoggerFactory = loggerFactory
-            }) { }
 
         public InMemoryQueue(InMemoryQueueOptions<T> options) : base(options) {
             InitializeMaintenance();
@@ -60,20 +47,21 @@ namespace Foundatio.Queues {
 
         protected override async Task<string> EnqueueImplAsync(T data) {
             string id = Guid.NewGuid().ToString("N");
-            _logger.Trace("Queue {0} enqueue item: {1}", _options.Name, id);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
 
             if (!await OnEnqueuingAsync(data).AnyContext())
                 return null;
 
             var entry = new QueueEntry<T>(id, data.DeepClone(), this, SystemClock.UtcNow, 0);
             _queue.Enqueue(entry);
-            _logger.Trace("Enqueue: Set Event");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue: Set Event");
 
             _autoResetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(entry).AnyContext();
-            _logger.Trace("Enqueue done");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
 
             return id;
         }
@@ -82,20 +70,22 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            _logger.Trace("Queue {0} start working", _options.Name);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} start working", _options.Name);
             var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
 
             Task.Run(async () => {
-                _logger.Trace("WorkerLoop Start {0}", _options.Name);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    _logger.Trace("WorkerLoop Signaled {0}", _options.Name);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
                     } catch (Exception ex) {
-                        _logger.Error(ex, "Error on Dequeue: " + ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error))
+                            _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                     }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
@@ -106,7 +96,9 @@ namespace Foundatio.Queues {
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
-                        _logger.Error(ex, "Worker error: {0}", ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error))
+                            _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
 
@@ -114,16 +106,18 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                _logger.Trace("Worker exiting: {0} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken);
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            _logger.Trace("Queue {type} dequeuing item...", _options.Name);
-            _logger.Trace("Queue count: {0}", _queue.Count);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Queue {Name} dequeuing item... Queue count: {Count}", _options.Name, _queue.Count);
 
             while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested) {
-                _logger.Trace("Waiting to dequeue item...");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue item...");
                 var sw = Stopwatch.StartNew();
 
                 try {
@@ -131,14 +125,14 @@ namespace Foundatio.Queues {
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
-                _logger.Trace("Waited for dequeue: {0}", sw.Elapsed.ToString());
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited for dequeue: {Elapsed:g}", sw.Elapsed);
             }
 
             if (_queue.Count == 0)
                 return null;
 
-            _logger.Trace("Dequeue: Attempt");
-            if (!_queue.TryDequeue(out QueueEntry<T> info) || info == null)
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeue: Attempt");
+            if (!_queue.TryDequeue(out var info) || info == null)
                 return null;
 
             info.Attempts++;
@@ -148,7 +142,7 @@ namespace Foundatio.Queues {
                 throw new Exception("Unable to add item to the dequeued list.");
 
             Interlocked.Increment(ref _dequeuedCount);
-            _logger.Trace("Dequeue: Got Item");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeue: Got Item");
 
             var entry = new QueueEntry<T>(info.Id, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
             await entry.RenewLockAsync();
@@ -159,7 +153,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {Id}", _options.Name, entry.Id);
 
             var item = entry as QueueEntry<T>;
             _dequeued.AddOrUpdate(entry.Id, item, (key, value) => {
@@ -170,52 +164,57 @@ namespace Foundatio.Queues {
             });
 
             await OnLockRenewedAsync(entry).AnyContext();
-            _logger.Trace("Renew lock done: {0}", entry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {Id}", entry.Id);
         }
 
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {0} complete item: {1}", _options.Name, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} complete item: {Id}", _options.Name, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
             Interlocked.Increment(ref _completedCount);
             entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
-            _logger.Trace("Complete done: {0}", entry.Id);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {Id}", entry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.Debug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {Id}", _options.Name, QueueId, entry.Id);
+
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            if (!_dequeued.TryRemove(entry.Id, out QueueEntry<T> info) || info == null)
+            if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (info.Attempts < _options.Retries + 1) {
                 if (_options.RetryDelay > TimeSpan.Zero) {
-                    _logger.Trace("Adding item to wait list for future retry: {0}", entry.Id);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item to wait list for future retry: {Id}", entry.Id);
                     var unawaited = Run.DelayedAsync(GetRetryDelay(info.Attempts), () => RetryAsync(info));
                 } else {
-                    _logger.Trace("Adding item back to queue for retry: {0}", entry.Id);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
                     var unawaited = Task.Run(() => RetryAsync(info));
                 }
             } else {
-                _logger.Trace("Exceeded retry limit moving to deadletter: {0}", entry.Id);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", entry.Id);
                 _deadletterQueue.Enqueue(info);
             }
 
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.Trace("Abandon complete: {entryId}", entry.Id);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Abandon complete: {Id}", entry.Id);
         }
 
         private Task RetryAsync(QueueEntry<T> entry) {
-            _logger.Trace("Queue {0} retrying item: {1} Attempts: {2}", _options.Name, entry.Id, entry.Attempts);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Queue {Name} retrying item: {Id} Attempts: {Attempts}", _options.Name, entry.Id, entry.Attempts);
+
             _queue.Enqueue(entry);
             _autoResetEvent.Set();
             return Task.CompletedTask;
@@ -232,7 +231,9 @@ namespace Foundatio.Queues {
         }
 
         public override Task DeleteQueueAsync() {
-            _logger.Trace("Deleting queue: {type}", _options.Name);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Deleting queue: {Name}", _options.Name);
+
             _queue.Clear();
             _deadletterQueue.Clear();
             _dequeued.Clear();
@@ -246,14 +247,14 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            DateTime utcNow = SystemClock.UtcNow;
-            DateTime minAbandonAt = DateTime.MaxValue;
+            var utcNow = SystemClock.UtcNow;
+            var minAbandonAt = DateTime.MaxValue;
 
             try {
                 foreach (var entry in _dequeued.Values.ToList()) {
                     var abandonAt = entry.RenewedTimeUtc.Add(_options.WorkItemTimeout);
                     if (abandonAt < utcNow) {
-                        _logger.Info("DoMaintenance Abandon: {entryId}", entry.Id);
+                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("DoMaintenance Abandon: {Id}", entry.Id);
 
                         await AbandonAsync(entry).AnyContext();
                         Interlocked.Increment(ref _workerItemTimeoutCount);
@@ -261,7 +262,8 @@ namespace Foundatio.Queues {
                         minAbandonAt = abandonAt;
                 }
             } catch (Exception ex) {
-                _logger.Error(ex, "DoMaintenance Error: " + ex.Message);
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "DoMaintenance Error: {Message}", ex.Message);
             }
 
             return minAbandonAt;

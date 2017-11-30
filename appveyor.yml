@@ -1,4 +1,4 @@
-version: 5.1.{build}
+version: 6.0.{build}
 os: Visual Studio 2017
 clone_depth: 2
 configuration: Release
@@ -6,6 +6,10 @@ configuration: Release
 pull_requests:
   do_not_increment_build_number: true
 
+environment:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  
 init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)

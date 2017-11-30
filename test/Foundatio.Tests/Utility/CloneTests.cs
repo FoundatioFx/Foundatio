@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -29,7 +28,7 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanCloneSerializedModel() {
+        public void CanCloneSerializedModel() {
             var model = new CloneModel {
                 IntProperty = 1,
                 StringProperty = "test",
@@ -38,8 +37,8 @@ namespace Foundatio.Tests.Utility {
             };
 
             var serializer = new JsonNetSerializer();
-            var json = await serializer.SerializeToStringAsync(model);
-            var deserialized = await serializer.DeserializeAsync<CloneModel>(json);
+            string json = serializer.SerializeToString(model);
+            var deserialized = serializer.Deserialize<CloneModel>(json);
             Assert.Equal(model.IntProperty, deserialized.IntProperty);
             Assert.Equal(model.StringProperty, deserialized.StringProperty);
             Assert.Equal(model.ListProperty, deserialized.ListProperty);

@@ -6,12 +6,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Jobs;
-using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -42,12 +42,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        _logger.Trace("Progress: {progress}", status.Progress);
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     Assert.Equal(12, statusCount);
                 }
             }
@@ -75,8 +75,8 @@ namespace Foundatio.Tests.Jobs {
                             Assert.Equal("Test", jobData.SomeData);
 
                             int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-                            if (jobData.Index % 100 == 0)
-                                _logger.Trace("Job {jobId} processing work item #: {jobWorkTotal}", ctx.JobId, jobWorkTotal);
+                            if (jobData.Index % 100 == 0 && _logger.IsEnabled(LogLevel.Trace))
+                                _logger.LogTrace("Job {JobId} processing work item #: {JobWorkTotal}", ctx.JobId, jobWorkTotal);
 
                             for (int i = 0; i < 10; i++)
                                 await ctx.ReportProgressAsync(10 * i);
@@ -96,8 +96,8 @@ namespace Foundatio.Tests.Jobs {
                         var completedItems = new List<string>();
                         object completedItemsLock = new object();
                         await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                            if (status.Progress == 100)
-                                _logger.Trace("Progress: {progress}", status.Progress);
+                            if (status.Progress == 100 && _logger.IsEnabled(LogLevel.Trace))
+                                _logger.LogTrace("Progress: {Progress}", status.Progress);
 
                             if (status.Progress < 100)
                                 return;
@@ -108,16 +108,16 @@ namespace Foundatio.Tests.Jobs {
 
                         var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                         var tasks = new List<Task> {
-                            Task.Run(async () => {
-                                await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j1.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token),
-                            Task.Run(async () => {
-                                await j2.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j2.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token),
-                            Task.Run(async () => {
-                                await j3.RunUntilEmptyAsync(cancellationTokenSource.Token);
+                            Task.Run(() => {
+                                j3.RunUntilEmpty(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
                             }, cancellationTokenSource.Token)
                         };
@@ -125,11 +125,13 @@ namespace Foundatio.Tests.Jobs {
                         try {
                             await Task.WhenAll(tasks);
                         } catch (OperationCanceledException ex) {
-                            _logger.Error(ex, $"One or more tasks were cancelled: {ex.Message}");
+                            if (_logger.IsEnabled(LogLevel.Error))
+                                _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
                         }
 
                         await SystemClock.SleepAsync(100);
-                        _logger.Info("Completed: {completedItems} Errors: {errors}", completedItems.Count, errors);
+                        if (_logger.IsEnabled(LogLevel.Information))
+                            _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
                         Assert.Equal(workItemCount, completedItems.Count + errors);
                         Assert.Equal(3, jobIds.Count);
                         Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
@@ -153,13 +155,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        _logger.Trace("Progress: {progress}", status.Progress);
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
-
+                    job.RunUntilEmpty();
                     Assert.Equal(11, statusCount);
                 }
             }
@@ -188,12 +189,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        _logger.Trace("Progress: {progress}", status.Progress);
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
 
                     Assert.Equal(11, statusCount);
                 }
@@ -217,7 +218,7 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(2, stats.Enqueued);
                     Assert.Equal(2, stats.Dequeued);
@@ -245,12 +246,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        _logger.Trace("Progress: {progress}", status.Progress);
+                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         statusCount++;
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    job.RunUntilEmpty();
                     Assert.Equal(1, statusCount);
                 }
             }

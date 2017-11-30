@@ -5,9 +5,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
     public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
@@ -22,7 +23,7 @@ namespace Foundatio.Metrics {
 
         public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
             _options = options;
-            _logger = options.LoggerFactory.CreateLogger(GetType());
+            _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
             if (options.Buffered)
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
@@ -38,38 +39,36 @@ namespace Foundatio.Metrics {
             return counted.InvokeAsync(this, args);
         }
 
-        public Task CounterAsync(string name, int value = 1) {
+        public void Counter(string name, int value = 1) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
-
-            _queue.Enqueue(entry);
-            return Task.CompletedTask;
+                SubmitMetric(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
-        public Task GaugeAsync(string name, double value) {
+        public void Gauge(string name, double value) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
-
-            _queue.Enqueue(entry);
-            return Task.CompletedTask;
+                SubmitMetric(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
-        public Task TimerAsync(string name, int milliseconds) {
+        public void Timer(string name, int milliseconds) {
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
             if (!_options.Buffered)
-                return SubmitMetricAsync(entry);
-
-            _queue.Enqueue(entry);
-            return Task.CompletedTask;
+                SubmitMetric(entry);
+            else
+                _queue.Enqueue(entry);
         }
 
         private void OnMetricsTimer(object state) {
             try {
                 FlushAsync().AnyContext().GetAwaiter().GetResult();
             } catch (Exception ex) {
-                _logger.Error(ex, () => $"Error flushing metrics: {ex.Message}");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error flushing metrics: {Message}", ex.Message);
             }
         }
 
@@ -78,14 +77,15 @@ namespace Foundatio.Metrics {
             if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
-            _logger.Trace("Flushing metrics: count={count}", _queue.Count);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Flushing metrics: count={Count}", _queue.Count);
 
             try {
                 _sendingMetrics = true;
 
                 var startTime = SystemClock.UtcNow;
                 var entries = new List<MetricEntry>();
-                while (_queue.TryDequeue(out MetricEntry entry)) {
+                while (_queue.TryDequeue(out var entry)) {
                     entries.Add(entry);
                     if (entry.EnqueuedDate > startTime)
                         break;
@@ -94,18 +94,19 @@ namespace Foundatio.Metrics {
                 if (entries.Count == 0)
                     return;
 
-                _logger.Trace("Dequeued {count} metrics", entries.Count);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeued {Count} metrics", entries.Count);
                 await SubmitMetricsAsync(entries).AnyContext();
             } finally {
                 _sendingMetrics = false;
             }
         }
 
-        private Task SubmitMetricAsync(MetricEntry metric) {
-            return SubmitMetricsAsync(new List<MetricEntry> { metric });
+        private void SubmitMetric(MetricEntry metric) {
+            SubmitMetricsAsync(new List<MetricEntry> { metric }).GetAwaiter().GetResult();
         }
 
         protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics) {
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             foreach (var timeBucket in _timeBuckets) {
                 try {
                     // counters
@@ -118,8 +119,8 @@ namespace Foundatio.Metrics {
                             Entries = e.ToList()
                         }).ToList();
 
-                    if (metrics.Count > 1 && counters.Count > 0)
-                        _logger.Trace(() => $"Aggregated {counters.Count} counter(s) into {groupedCounters.Count} counter group(s)");
+                    if (metrics.Count > 1 && counters.Count > 0 && isTraceLogLevelEnabled)
+                        _logger.LogTrace("Aggregated {CountersCount} counter(s) into {GroupedCountersCount} counter group(s)", counters.Count, groupedCounters.Count);
 
                     // gauges
                     var gauges = metrics.Where(e => e.Type == MetricType.Gauge).ToList();
@@ -135,8 +136,8 @@ namespace Foundatio.Metrics {
                             Entries = e.ToList()
                         }).ToList();
 
-                    if (metrics.Count > 1 && gauges.Count > 0)
-                        _logger.Trace(() => $"Aggregated {gauges.Count} gauge(s) into {groupedGauges.Count} gauge group(s)");
+                    if (metrics.Count > 1 && gauges.Count > 0 && isTraceLogLevelEnabled)
+                        _logger.LogTrace("Aggregated {GaugesCount} gauge(s) into {GroupedGaugesCount} gauge group(s)", gauges.Count, groupedGauges.Count);
 
                     // timings
                     var timings = metrics.Where(e => e.Type == MetricType.Timing).ToList();
@@ -151,32 +152,35 @@ namespace Foundatio.Metrics {
                             Entries = e.ToList()
                         }).ToList();
 
-                    if (metrics.Count > 1 && timings.Count > 0)
-                        _logger.Trace(() => $"Aggregated {timings.Count} timing(s) into {groupedTimings.Count} timing group(s)");
+                    if (metrics.Count > 1 && timings.Count > 0 && isTraceLogLevelEnabled)
+                        _logger.LogTrace("Aggregated {TimingsCount} timing(s) into {GroupedTimingsCount} timing group(s)", timings.Count, groupedTimings.Count);
 
                     // store aggregated metrics
-
                     if (counters.Count > 0 || gauges.Count > 0 || timings.Count > 0)
                         await StoreAggregatedMetricsInternalAsync(timeBucket, groupedCounters, groupedGauges, groupedTimings).AnyContext();
                 } catch (Exception ex) {
-                    _logger.Error(ex, $"Error aggregating metrics: {ex.Message}");
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Error aggregating metrics: {Message}", ex.Message);
                     throw;
                 }
             }
         }
 
         private async Task StoreAggregatedMetricsInternalAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
-            _logger.Trace(() => $"Storing {counters.Count} counters, {gauges.Count} gauges, {timings.Count} timings.");
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Storing {CountersCount} counters, {GaugesCount} gauges, {TimingsCount} timings.", counters.Count, gauges.Count, timings.Count);
 
             try {
                 await Run.WithRetriesAsync(() => StoreAggregatedMetricsAsync(timeBucket, counters, gauges, timings)).AnyContext();
             } catch (Exception ex) {
-                _logger.Error(ex, $"Error storing aggregated metrics: {ex.Message}");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error storing aggregated metrics: {Message}", ex.Message);
                 throw;
             }
 
             await OnCountedAsync(counters.Sum(c => c.Value)).AnyContext();
-            _logger.Trace("Done storing aggregated metrics");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Done storing aggregated metrics");
         }
 
         protected abstract Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
@@ -191,14 +195,15 @@ namespace Foundatio.Metrics {
 
             long currentCount = count;
             var resetEvent = new AsyncAutoResetEvent(false);
-            DateTime start = SystemClock.UtcNow;
+            var start = SystemClock.UtcNow;
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             using (Counted.AddHandler((s, e) => {
                 currentCount -= e.Value;
                 resetEvent.Set();
                 return Task.CompletedTask;
             })) {
-                _logger.Trace("Wait: count={count}", currentCount);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Wait: count={Count}", currentCount);
 
                 if (work != null)
                     await work().AnyContext();
@@ -211,11 +216,13 @@ namespace Foundatio.Metrics {
                         await resetEvent.WaitAsync(cancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
 
-                    _logger.Trace("Got signal: count={currentCount} expected={count}", currentCount, count);
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Got signal: count={CurrentCount} expected={Count}", currentCount, count);
                 } while (cancellationToken.IsCancellationRequested == false && currentCount > 0);
             }
 
-            _logger.Trace("Done waiting: count={currentCount} expected={count} success={success} time={time}", currentCount, count, currentCount <= 0, SystemClock.UtcNow.Subtract(start));
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, count, currentCount <= 0, SystemClock.UtcNow.Subtract(start));
 
             return currentCount <= 0;
         }

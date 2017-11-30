@@ -6,9 +6,9 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : MessageBusOptionsBase {
@@ -49,53 +49,62 @@ namespace Foundatio.Messaging {
                 }
             };
 
-            if (!_subscribers.TryAdd(subscriber.Id, subscriber))
-                _logger.Error("Unable to add subscriber {subscriberId}", subscriber.Id);
+            if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
+                _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
             return Task.CompletedTask;
         }
 
         public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
-            _logger.Trace("Adding subscriber for {0}.", typeof(T).FullName);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
-        protected async Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
-            Type messageType = GetMessageBodyType(message);
+        protected Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
+            var messageType = GetMessageBodyType(message);
             if (messageType == null)
-                return;
+                return Task.CompletedTask;
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
-                _logger.Trace(() => $"Done sending message to 0 subscribers for message type {messageType.Name}.");
-                return;
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
+                return Task.CompletedTask;
             }
 
             object body;
             try {
-                body = await serializer.DeserializeAsync(message.Data, messageType).AnyContext();
+                body = serializer.Deserialize(message.Data, messageType);
             } catch (Exception ex) {
-                _logger.Warn(ex, "Error deserializing messsage body: {0}", ex.Message);
-                return;
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning(ex, "Error deserializing messsage body: {Message}", ex.Message);
+                return Task.CompletedTask;
             }
 
             if (body == null) {
-                _logger.Warn("Unable to send null message for type {0}", messageType.Name);
-                return;
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning("Unable to send null message for type {MessageType}", messageType.Name);
+                return Task.CompletedTask;
             }
 
-            await SendMessageToSubscribersAsync(subscribers, messageType, body).AnyContext();
+            return SendMessageToSubscribersAsync(subscribers, messageType, body);
         }
 
         protected async Task SendMessageToSubscribersAsync(List<Subscriber> subscribers, Type messageType, object message) {
-            _logger.Trace(() => $"Found {subscribers.Count} subscribers for message type {messageType.Name}.");
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
+
             foreach (var subscriber in subscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out Subscriber sub))
-                        _logger.Trace("Removed cancelled subscriber: {subscriberId}", subscriber.Id);
-                    else
-                        _logger.Trace("Unable to remove cancelled subscriber: {subscriberId}", subscriber.Id);
+                    if (_subscribers.TryRemove(subscriber.Id, out var _)) {
+                        if (isTraceLogLevelEnabled)
+                            _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
+                    } else if (isTraceLogLevelEnabled) {
+                        _logger.LogTrace("Unable to remove cancelled subscriber: {SubscriberId}", subscriber.Id);
+                    }
 
                     continue;
                 }
@@ -103,10 +112,13 @@ namespace Foundatio.Messaging {
                 try {
                     await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                 } catch (Exception ex) {
-                    _logger.Warn(ex, "Error sending message to subscriber: {0}", ex.Message);
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning(ex, "Error sending message to subscriber: {Message}", ex.Message);
                 }
             }
-            _logger.Trace(() => $"Done sending message to {subscribers.Count} subscribers for message type {messageType.Name}.");
+
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Done sending message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
         }
 
         protected Type GetMessageBodyType(MessageBusData message) {
@@ -117,7 +129,9 @@ namespace Foundatio.Messaging {
                 try {
                     return Type.GetType(type);
                 } catch (Exception ex) {
-                    _logger.Warn(ex, "Error getting message body type: {0}", type);
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+
                     return null;
                 }
             });
@@ -142,7 +156,7 @@ namespace Foundatio.Messaging {
             if (_delayedMessages == null || _delayedMessages.Count == 0)
                 return DateTime.MaxValue;
 
-            DateTime nextMessageSendTime = DateTime.MaxValue;
+            var nextMessageSendTime = DateTime.MaxValue;
             var messagesToSend = new List<Guid>();
 
             // Add 50ms to the current time so we can batch up any other messages that will
@@ -155,22 +169,25 @@ namespace Foundatio.Messaging {
                     nextMessageSendTime = pair.Value.SendTime;
             }
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             foreach (var messageId in messagesToSend) {
-                if (!_delayedMessages.TryRemove(messageId, out DelayedMessage message))
+                if (!_delayedMessages.TryRemove(messageId, out var message))
                     continue;
 
-                _logger.Trace("Sending delayed message scheduled for {0} for type {1}", message.SendTime.ToString("o"), message.MessageType);
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Sending delayed message scheduled for {SendTime} for type {MessageType}", message.SendTime.ToString("o"), message.MessageType);
                 await PublishAsync(message.MessageType, message.Message).AnyContext();
             }
 
-            _logger.Trace("DoMaintenance next message send time: {0}", nextMessageSendTime.ToString("o"));
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("DoMaintenance next message send time: {SendTime}", nextMessageSendTime.ToString("o"));
             return nextMessageSendTime;
         }
 
         public string MessageBusId { get; protected set; }
 
         public override void Dispose() {
-            _logger.Trace("Disposing");
+            _logger.LogTrace("Disposing");
             base.Dispose();
             _delayedMessages?.Clear();
             _subscribers?.Clear();

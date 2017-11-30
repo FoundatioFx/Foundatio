@@ -2,8 +2,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock {
     public class ThrottlingLockProvider : ILockProvider {
@@ -13,7 +14,7 @@ namespace Foundatio.Lock {
         private readonly ILogger _logger;
 
         public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null) {
-            _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
+            _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger<ThrottlingLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
             _maxHitsPerPeriod = maxHitsPerPeriod;
 
@@ -25,7 +26,8 @@ namespace Foundatio.Lock {
         }
 
         public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Trace("AcquireLockAsync: {name}", name);
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Name}", name);
 
             bool allowLock = false;
             byte errors = 0;
@@ -34,10 +36,12 @@ namespace Foundatio.Lock {
                 string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
 
                 try {
-                    _logger.Trace("Current time: {0} throttle: {1} key: {2}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
-                    _logger.Trace("Current hit count: {0} max: {1}", hitCount, _maxHitsPerPeriod);
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                     if (hitCount <= _maxHitsPerPeriod - 1) {
                         hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
 
@@ -47,28 +51,26 @@ namespace Foundatio.Lock {
                             break;
                         }
 
-                        _logger.Trace("Max hits exceeded after increment for {0}.", name);
-                    } else {
-                        _logger.Trace("Max hits exceeded for {0}.", name);
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Max hits exceeded after increment for {Name}.", name);
+                    } else if (isTraceLogLevelEnabled) {
+                        _logger.LogTrace("Max hits exceeded for {Name}.", name);
                     }
 
-                    if (cancellationToken.IsCancellationRequested) {
-                        _logger.Trace("Cancellation Requested.");
+                    if (cancellationToken.IsCancellationRequested)
                         break;
-                    }
 
                     var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                     if (sleepUntil > SystemClock.UtcNow) {
-                        _logger.Trace("Sleeping until key expires: {0}", sleepUntil - SystemClock.UtcNow);
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - SystemClock.UtcNow);
                         await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
                     } else {
-                        _logger.Trace("Default sleep.");
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep.");
                         await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                     }
                 } catch (OperationCanceledException) {
                     return null;
                 } catch (Exception ex) {
-                    _logger.Error(ex, "Error acquiring throttled lock: name={0} message={1}", name, ex.Message);
+                    _logger.LogError(ex, "Error acquiring throttled lock: name={Name} message={Message}", name, ex.Message);
                     errors++;
                     if (errors >= 3)
                         break;
@@ -77,14 +79,13 @@ namespace Foundatio.Lock {
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
-            if (cancellationToken.IsCancellationRequested) {
-                _logger.Trace("Cancellation requested.");
-            }
+            if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
+                _logger.LogTrace("Cancellation requested.");
 
             if (!allowLock)
                 return null;
 
-            _logger.Trace("Allowing lock: {0}", name);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Allowing lock: {Name}", name);
             return new DisposableLock(name, this, _logger);
         }
 
@@ -95,11 +96,11 @@ namespace Foundatio.Lock {
         }
 
         public Task ReleaseAsync(string name) {
-            _logger.Trace("ReleaseAsync: {0}", name);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("ReleaseAsync: {Name}", name);
             return Task.CompletedTask;
         }
-        public Task RenewAsync(String name, TimeSpan? lockExtension = null) {
-            _logger.Trace("RenewAsync: {0}", name);
+        public Task RenewAsync(string name, TimeSpan? lockExtension = null) {
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RenewAsync: {Name}", name);
             return Task.CompletedTask;
         }
 

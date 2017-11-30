@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
@@ -50,6 +51,7 @@ namespace Foundatio.Queues {
             => queue.StartWorkingAsync((entry, token) => handler(entry), autoComplete, cancellationToken);
     }
 
+    [DebuggerDisplay("Queued={Queued}, Working={Working}, Deadletter={Deadletter}, Enqueued={Enqueued}, Dequeued={Dequeued}, Completed={Completed}, Abandoned={Abandoned}, Errors={Errors}, Timeouts={Timeouts}")]
     public class QueueStats {
         public long Queued { get; set; }
         public long Working { get; set; }

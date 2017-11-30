@@ -6,8 +6,9 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NCrontab;
 using Topshelf;
 
@@ -76,13 +77,14 @@ namespace Foundatio.CronJob {
         public ScheduledJobRunner(Func<IJob> jobFactory, string schedule, ICacheClient cacheClient, ILoggerFactory loggerFactory = null) {
             _jobFactory = jobFactory;
             Schedule = schedule;
-            _logger = loggerFactory.CreateLogger<ScheduledJobRunner>();
+            _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
 
             _runner = new JobRunner(jobFactory, loggerFactory, runContinuous: false);
 
             _cronSchedule = CrontabSchedule.TryParse(schedule, s => s, e => {
                 var ex = e();
-                _logger.Error(ex, $"Error parsing schedule {schedule}: {ex.Message}");
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error parsing schedule {Schedule}: {Message}", schedule, ex.Message);
                 return null;
             });
 

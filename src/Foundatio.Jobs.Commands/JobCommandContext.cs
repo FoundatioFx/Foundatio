@@ -1,6 +1,6 @@
 ﻿using System;
-using Foundatio.Logging;
 using Microsoft.Extensions.CommandLineUtils;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs.Commands {
     public class JobCommandContext {

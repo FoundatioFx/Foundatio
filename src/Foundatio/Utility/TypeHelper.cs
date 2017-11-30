@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class TypeHelper {
@@ -32,12 +32,14 @@ namespace Foundatio.Utility {
 
             var type = Type.GetType(fullTypeName);
             if (type == null) {
-                logger?.Error("Unable to resolve type: \"{0}\".", fullTypeName);
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                    logger.LogError("Unable to resolve type: {TypeFullName}.", fullTypeName);
                 return null;
             }
 
             if (expectedBase != null && !expectedBase.IsAssignableFrom(type)) {
-                logger?.Error("Type \"{0}\" must be assignable to type: \"{1}\".", fullTypeName, expectedBase.FullName);
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                    logger.LogError("Type {TypeFullName} must be assignable to type: {ExpectedFullName}.", fullTypeName, expectedBase.FullName);
                 return null;
             }
 
@@ -74,10 +76,10 @@ namespace Foundatio.Utility {
                 // Examples:
                 // ConsoleApp.Program+Foo`1+Bar
                 // ConsoleApp.Program+Foo`1+Bar`1
-                for (var i = 0; i < parts.Length; i++) {
-                    var partName = parts[i];
+                for (int i = 0; i < parts.Length; i++) {
+                    string partName = parts[i];
 
-                    var backTickIndex = partName.IndexOf('`');
+                    int backTickIndex = partName.IndexOf('`');
                     if (backTickIndex >= 0) {
                         // Since '.' is typically used to filter log messages in a hierarchy kind of scenario,
                         // do not include any generic type information as part of the name.

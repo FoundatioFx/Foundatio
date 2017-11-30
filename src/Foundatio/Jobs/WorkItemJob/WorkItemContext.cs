@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Foundatio.Lock;
 
 namespace Foundatio.Jobs {
@@ -25,9 +24,11 @@ namespace Foundatio.Jobs {
             return _progressCallback(progress, message);
         }
 
-        public async Task RenewLockAsync() {
+        public Task RenewLockAsync() {
             if (WorkItemLock != null)
-                await WorkItemLock.RenewAsync().AnyContext();
+                return WorkItemLock.RenewAsync();
+
+            return Task.CompletedTask;
         }
 
         public T GetData<T>() where T : class {

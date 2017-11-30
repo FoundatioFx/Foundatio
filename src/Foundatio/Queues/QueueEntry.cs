@@ -47,9 +47,11 @@ namespace Foundatio.Queues {
             return _queue.AbandonAsync(this);
         }
 
-        public async Task DisposeAsync() {
+        public Task DisposeAsync() {
             if (!IsAbandoned && !IsCompleted)
-                await AbandonAsync().AnyContext();
+                return AbandonAsync();
+
+            return Task.CompletedTask;
         }
     }
 

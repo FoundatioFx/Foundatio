@@ -4,11 +4,11 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -25,65 +25,65 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CounterAsync() {
-            await StartListeningAsync(1);
-            await _client.CounterAsync("counter");
+        public void Counter() {
+            StartListening(1);
+            _client.Counter("counter");
             var messages = GetMessages();
             Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task CounterAsyncWithValue() {
-            await StartListeningAsync(1);
+        public void CounterWithValue() {
+            StartListening(1);
 
-            await _client.CounterAsync("counter", 5);
+            _client.Counter("counter", 5);
             var messages = GetMessages();
             Assert.Equal("test.counter:5|c", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task GaugeAsync() {
-            await StartListeningAsync(1);
+        public void Gauge() {
+            StartListening(1);
 
-            await _client.GaugeAsync("gauge", 1.1);
+            _client.Gauge("gauge", 1.1);
             var messages = GetMessages();
             Assert.Equal("test.gauge:1.1|g", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task TimerAsync() {
-            await StartListeningAsync(1);
+        public void Timer() {
+            StartListening(1);
 
-            await _client.TimerAsync("timer", 1);
+            _client.Timer("timer", 1);
             var messages = GetMessages();
             Assert.Equal("test.timer:1|ms", messages.FirstOrDefault());
         }
 
         [Fact]
-        public async Task CanSendOffline() {
-            await _client.CounterAsync("counter");
+        public void CanSendOffline() {
+            _client.Counter("counter");
             var messages = GetMessages();
             Assert.Empty(messages);
         }
 
         [Fact]
-        public async Task CanSendMultithreaded() {
+        public void CanSendMultithreaded() {
             const int iterations = 100;
-            await StartListeningAsync(iterations);
+            StartListening(iterations);
 
-            await Run.InParallelAsync(iterations, async i =>{
-                await SystemClock.SleepAsync(50);
-                await _client.CounterAsync("counter");
+            Parallel.For(0, iterations, i => {
+                SystemClock.Sleep(50);
+                _client.Counter("counter");
             });
             
             var messages = GetMessages();
             Assert.Equal(iterations, messages.Count);
         }
 
-        [Fact(Skip = "Flakey")]
+        [Fact]
         public async Task CanSendMultiple() {
             const int iterations = 100000;
-            await StartListeningAsync(iterations);
+            StartListening(iterations);
 
             var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
 
@@ -92,23 +92,24 @@ namespace Foundatio.Tests.Metrics {
                 if (index % (iterations / 10) == 0)
                     StopListening();
 
-                await _client.CounterAsync("counter");
-                await metrics.CounterAsync("counter");
+                _client.Counter("counter");
+                metrics.Counter("counter");
 
                 if (index % (iterations / 10) == 0)
-                    await StartListeningAsync(iterations - index);
+                    StartListening(iterations - index);
 
-                if (index % (iterations / 20) == 0)
-                    _logger.Trace((await metrics.GetCounterStatsAsync("counter")).ToString());
+                if (index % (iterations / 20) == 0 && _logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            _logger.Info((await metrics.GetCounterStatsAsync("counter")).ToString());
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation((await metrics.GetCounterStatsAsync("counter")).ToString());
 
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
-            await SystemClock.SleepAsync(250);
+            SystemClock.Sleep(250);
             var messages = GetMessages();
             int expected = iterations - (iterations / (iterations / 10));
             Assert.InRange(messages.Count, expected - 10, expected + 10);
@@ -122,15 +123,15 @@ namespace Foundatio.Tests.Metrics {
             return _listener.GetMessages();
         }
 
-        private Task StartListeningAsync(int expectedMessageCount) {
+        private void StartListening(int expectedMessageCount) {
             _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
             _listenerThread.Start(expectedMessageCount);
 
-            return SystemClock.SleepAsync(75);
+            SystemClock.Sleep(75);
         }
 
         private void StopListening() {
-            _listenerThread.Abort();
+            _listener.StopListening();
         }
 
         public void Dispose() {

@@ -1,10 +1,8 @@
-using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.AsyncEx
-{
+namespace Foundatio.AsyncEx {
     /// <summary>
     /// Provides extension methods for the <see cref="Task"/> and <see cref="Task{T}"/> types.
     /// </summary>

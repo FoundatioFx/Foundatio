@@ -1,4 +1,3 @@
-using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,8 +5,7 @@ using Foundatio.AsyncEx.Synchronous;
 
 // Original idea by Stephen Toub: http://blogs.msdn.com/b/pfxteam/archive/2012/02/11/10266923.aspx
 
-namespace Foundatio.AsyncEx
-{
+namespace Foundatio.AsyncEx {
     /// <summary>
     /// An async-compatible auto-reset event.
     /// </summary>

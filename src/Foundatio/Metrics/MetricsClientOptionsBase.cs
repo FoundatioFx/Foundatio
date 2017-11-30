@@ -1,5 +1,5 @@
 ﻿using System;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public abstract class MetricsClientOptionsBase {

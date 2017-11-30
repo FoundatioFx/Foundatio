@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
@@ -15,8 +16,10 @@ namespace Foundatio.Storage {
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
-            if (!folder.EndsWith("\\"))
-                folder += "\\";
+
+            char lastCharacter = folder[folder.Length - 1];
+            if (!lastCharacter.Equals(Path.DirectorySeparatorChar) && !lastCharacter.Equals(Path.AltDirectorySeparatorChar))
+                folder += Path.DirectorySeparatorChar;
 
             Folder = folder;
 
@@ -29,6 +32,8 @@ namespace Foundatio.Storage {
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
+            
+            path = path.NormalizePath();
 
             try {
                 if (!await ExistsAsync(path).AnyContext())
@@ -43,6 +48,8 @@ namespace Foundatio.Storage {
         public Task<FileSpec> GetFileInfoAsync(string path) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
+            
+            path = path.NormalizePath();
 
             var info = new FileInfo(Path.Combine(Folder, path));
             if (!info.Exists)
@@ -59,6 +66,8 @@ namespace Foundatio.Storage {
         public Task<bool> ExistsAsync(string path) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
+            
+            path = path.NormalizePath();
 
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
@@ -66,6 +75,8 @@ namespace Foundatio.Storage {
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
+            
+            path = path.NormalizePath();
 
             string directory = Path.GetDirectoryName(Path.Combine(Folder, path));
             if (!Directory.Exists(directory))
@@ -90,6 +101,9 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(newpath))
                 throw new ArgumentNullException(nameof(newpath));
+            
+            path = path.NormalizePath();
+            newpath = newpath.NormalizePath();
 
             try {
                 lock (_lockObject) {
@@ -118,6 +132,8 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrWhiteSpace(targetpath))
                 throw new ArgumentNullException(nameof(targetpath));
+            
+            path = path.NormalizePath();
 
             try {
                 lock (_lockObject) {
@@ -138,6 +154,8 @@ namespace Foundatio.Storage {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
+            path = path.NormalizePath();
+            
             try {
                 File.Delete(Path.Combine(Folder, path));
             } catch (Exception) {
@@ -148,15 +166,15 @@ namespace Foundatio.Storage {
         }
 
         public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken)) {
-            if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
+            if (searchPattern == null || String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 Directory.Delete(Folder, true);
                 return Task.CompletedTask;
             }
-            
-            searchPattern = searchPattern.Replace("/", "\\");
+
+            searchPattern = searchPattern.NormalizePath();
 
             string path = Path.Combine(Folder, searchPattern);
-            if (path.EndsWith("\\") || path.EndsWith("\\*")) {
+            if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith(Path.DirectorySeparatorChar + "*")) {
                 string directory = Path.GetDirectoryName(path);
                 if (Directory.Exists(directory)) {
                     Directory.Delete(directory, true);
@@ -178,10 +196,10 @@ namespace Foundatio.Storage {
             if (limit.HasValue && limit.Value <= 0)
                 return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 
-            if (String.IsNullOrEmpty(searchPattern))
+            if (searchPattern == null || String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
-
-            searchPattern = searchPattern.Replace("/", "\\");
+            
+            searchPattern = searchPattern.NormalizePath();
 
             var list = new List<FileSpec>();
             if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))

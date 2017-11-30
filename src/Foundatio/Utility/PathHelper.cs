@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Reflection;
 
 namespace Foundatio.Utility {
     public static class PathHelper {
@@ -9,7 +8,10 @@ namespace Foundatio.Utility {
         public static string ExpandPath(string path) {
             if (String.IsNullOrEmpty(path))
                 return path;
-            
+
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+            path = path.Replace('\\', Path.DirectorySeparatorChar);
+
             if (!path.StartsWith(DATA_DIRECTORY, StringComparison.OrdinalIgnoreCase))
                 return Path.GetFullPath(path);
 
@@ -34,7 +36,7 @@ namespace Foundatio.Utility {
             try {
                 string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
                 if (String.IsNullOrEmpty(dataDirectory))
-                    dataDirectory = Path.GetDirectoryName(typeof(PathHelper).GetTypeInfo().Assembly.Location);
+                    dataDirectory = AppContext.BaseDirectory;
 
                 if (!String.IsNullOrEmpty(dataDirectory))
                     return Path.GetFullPath(dataDirectory);

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     public class MaintenanceBase : IDisposable {
@@ -9,8 +10,8 @@ namespace Foundatio.Utility {
         protected readonly ILogger _logger;
 
         public MaintenanceBase(ILoggerFactory loggerFactory) {
-            _loggerFactory = loggerFactory;
-            _logger = loggerFactory.CreateLogger(GetType());
+            _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+            _logger = _loggerFactory.CreateLogger(GetType());
         }
 
         protected void InitializeMaintenance(TimeSpan? dueTime = null, TimeSpan? intervalTime = null) {

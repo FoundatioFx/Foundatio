@@ -2,8 +2,7 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class Run {
@@ -38,8 +37,8 @@ namespace Foundatio.Utility {
                 currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
 
             do {
-                if (attempts > 1)
-                    logger?.Info($"Retrying {attempts.ToOrdinal()} attempt after {SystemClock.UtcNow.Subtract(startTime).TotalMilliseconds}ms...");
+                if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
 
                 try {
                     return await action().AnyContext();
@@ -47,7 +46,9 @@ namespace Foundatio.Utility {
                     if (attempts >= maxAttempts)
                         throw;
 
-                    logger?.Error(ex, $"Retry error: {ex.Message}");
+                    if (logger != null && logger.IsEnabled(LogLevel.Error))
+                        logger.LogError(ex, "Retry error: {Message}", ex.Message);
+
                     await SystemClock.SleepAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 
@@ -59,6 +60,6 @@ namespace Foundatio.Utility {
             throw new TaskCanceledException("Should not get here.");
         }
 
-        private static int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
+        private static readonly int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
     }
 }

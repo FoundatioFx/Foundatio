@@ -2,18 +2,18 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Utility;
 using Foundatio.Jobs;
-using Foundatio.Logging;
-using Foundatio.ServiceProviders;
+using Foundatio.SampleJob;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.CronJob {
     public class Program {
         public static void Main() {
-            var loggerFactory = new LoggerFactory();
+            var loggerFactory = new LoggerFactory().AddConsole();
             var logger = loggerFactory.CreateLogger<Program>();
 
-            var serviceProvider = ServiceProvider.FindAndGetServiceProvider(typeof(EveryMinuteJob), loggerFactory);
+            var serviceProvider = SampleServiceProvider.Create(loggerFactory);
 
             for (int i = 0; i < 5; i++) {
                 Task.Run(() => {
@@ -25,7 +25,8 @@ namespace Foundatio.CronJob {
                     // every even minute
                     cronService.Add(() => serviceProvider.GetService<EvenMinuteJob>(), "*/2 * * * *");
 
-                    logger.Info($"Cron Service ({i}) Running on {Thread.CurrentThread.ManagedThreadId}");
+                    if (logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Cron Service ({Instance}) Running on {ManagedThreadId}", i, Thread.CurrentThread.ManagedThreadId);
                     cronService.Run();
                 });
             }
@@ -42,7 +43,8 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"EveryMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("EveryMinuteJob Run {ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
     }
@@ -55,7 +57,8 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"EvenMinuteJob Run {Thread.CurrentThread.ManagedThreadId}");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("EvenMinuteJob Run {ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
     }

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Logging.Xunit {
     internal class TestLogger : ILogger {
@@ -32,14 +33,14 @@ namespace Foundatio.Logging.Xunit {
             };
 
             switch (state) {
-                case LogData logData:
-                    logEntry.Properties["CallerMemberName"] = logData.MemberName;
-                    logEntry.Properties["CallerFilePath"] = logData.FilePath;
-                    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
+                //case LogData logData:
+                //    logEntry.Properties["CallerMemberName"] = logData.MemberName;
+                //    logEntry.Properties["CallerFilePath"] = logData.FilePath;
+                //    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
 
-                    foreach (var property in logData.Properties)
-                        logEntry.Properties[property.Key] = property.Value;
-                    break;
+                //    foreach (var property in logData.Properties)
+                //        logEntry.Properties[property.Key] = property.Value;
+                //    break;
                 case IDictionary<string, object> logDictionary:
                     foreach (var property in logDictionary)
                         logEntry.Properties[property.Key] = property.Value;
@@ -62,6 +63,13 @@ namespace Foundatio.Logging.Xunit {
             return logLevel >= _loggerFactory.MinimumLevel;
         }
 
+        public IDisposable BeginScope<TState>(TState state) {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            return Push(state);
+        }
+
         public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
@@ -76,8 +84,8 @@ namespace Foundatio.Logging.Xunit {
         }
 
         private static ImmutableStack<object> CurrentScopeStack {
-            get { return _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>(); }
-            set { _currentScopeStack.Value = new Wrapper { Value = value }; }
+            get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
+            set => _currentScopeStack.Value = new Wrapper { Value = value };
         }
 
         private static IDisposable Push(object state) {

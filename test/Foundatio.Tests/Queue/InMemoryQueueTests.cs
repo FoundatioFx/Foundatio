@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -22,8 +22,8 @@ namespace Foundatio.Tests.Queue {
                     WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
                     LoggerFactory = Log
                 });
-
-            _logger.Debug("Queue Id: {queueId}", _queue.QueueId);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
             return _queue;
         }
 
@@ -34,7 +34,7 @@ namespace Foundatio.Tests.Queue {
             try {
                 await queue.DeleteQueueAsync();
             } catch (Exception ex) {
-                _logger.Error(ex, "Error cleaning up queue");
+                _logger.LogError(ex, "Error cleaning up queue");
             }
         }
 
@@ -45,30 +45,30 @@ namespace Foundatio.Tests.Queue {
                 try {
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        _logger.Info("First Enqueuing.");
+                        _logger.LogInformation("First Enqueuing.");
                     }));
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        _logger.Info("Second Enqueuing.");
+                        _logger.LogInformation("Second Enqueuing.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        _logger.Info("First.");
+                        _logger.LogInformation("First.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
                         await SystemClock.SleepAsync(250);
-                        _logger.Info("Second.");
+                        _logger.LogInformation("Second.");
                     }));
 
                     var sw = Stopwatch.StartNew();
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();
-                    _logger.Trace("Time {0}", sw.Elapsed);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
 
                     sw.Restart();
                     await q.EnqueueAsync(new SimpleWorkItem());
                     sw.Stop();
-                    _logger.Trace("Time {0}", sw.Elapsed);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 } finally {
                     foreach (var disposable in disposables)
                         disposable.Dispose();

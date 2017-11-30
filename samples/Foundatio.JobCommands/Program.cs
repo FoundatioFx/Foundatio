@@ -3,16 +3,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Commands;
-using Foundatio.Logging;
-using Foundatio.Logging.NLog;
 using Microsoft.Extensions.CommandLineUtils;
+using Microsoft.Extensions.Logging;
 using SimpleInjector;
 
 namespace Foundatio.CronJob {
     public class Program {
         public static int Main(string[] args) {
-            var loggerFactory = new LoggerFactory();
-            loggerFactory.AddNLog();
+            var loggerFactory = new LoggerFactory().AddConsole();
 
             var getServiceProvider = new Func<IServiceProvider>(() => {
                 var container = new Container();
@@ -39,7 +37,8 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"Sample1Job Run {Thread.CurrentThread.ManagedThreadId}");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Sample1Job Run {ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
     }
@@ -55,7 +54,8 @@ namespace Foundatio.CronJob {
         public string CustomArg { get; set; }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"Sample2Job Run CustomArg={CustomArg} {Thread.CurrentThread.ManagedThreadId}");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Sample2Job Run  CustomArg={CustomArg} {ManagedThreadId}", CustomArg, Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
 
@@ -80,7 +80,8 @@ namespace Foundatio.CronJob {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
-            _logger.Info($"ExcludeMeJob Run {Thread.CurrentThread.ManagedThreadId}");
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("ExcludeMeJob Run {ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
     }
