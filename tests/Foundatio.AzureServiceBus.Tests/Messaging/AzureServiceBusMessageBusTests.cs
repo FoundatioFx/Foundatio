@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Logging;
 using Foundatio.Tests.Utility;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -26,7 +26,7 @@ namespace Foundatio.AzureServiceBus.Tests.Messaging {
                 TopicRequiresDuplicateDetection = false,
                 SubscriptionAutoDeleteOnIdle = TimeSpan.FromMinutes(5),
                 SubscriptionEnableBatchedOperations = true,
-                SubscriptionMaxDeliveryCount = int.MaxValue,
+                SubscriptionMaxDeliveryCount = Int32.MaxValue,
                 PrefetchCount = 500,
                 LoggerFactory = Log
             });
