@@ -4,7 +4,6 @@ using System.Linq;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
-
     public static class AttributeExtensions {
         public static int ApproximateReceiveCount(this IDictionary<string, string> attributes) {
             if (attributes == null)
@@ -16,7 +15,6 @@ namespace Foundatio.Queues {
             int.TryParse(v, out int value);
             return value;
         }
-
 
         public static DateTime SentTimestamp(this IDictionary<string, string> attributes) {
             // message was sent to the queue (epoch time in milliseconds)
@@ -55,7 +53,6 @@ namespace Foundatio.Queues {
 
             var redrivePolicy = JsonMapper.ToObject(v);
 
-
             string arn =  redrivePolicy["deadLetterTargetArn"]?.ToString();
             if (string.IsNullOrEmpty(arn))
                 return null;
@@ -63,7 +60,5 @@ namespace Foundatio.Queues {
             var parts = arn.Split(':');
             return parts.LastOrDefault();
         }
-
     }
-
 }

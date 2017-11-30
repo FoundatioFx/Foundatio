@@ -2,30 +2,17 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
 using Amazon.Runtime;
 using Foundatio.Extensions;
-using Foundatio.Logging;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public class CloudWatchMetricsClient : BufferedMetricsClientBase, IMetricsClientStats {
         private readonly Lazy<AmazonCloudWatchClient> _client;
         private readonly CloudWatchMetricsClientOptions _options;
-
-        [Obsolete("Use the options overload")]
-        public CloudWatchMetricsClient(AWSCredentials credentials, RegionEndpoint region, string @namespace = null, string metricPrefix = null, bool buffered = true, IEnumerable<Dimension> dimensions = null, ILoggerFactory loggerFactory = null)
-            : this(new CloudWatchMetricsClientOptions {
-                Credentials = credentials,
-                RegionEndpoint = region,
-                Namespace = @namespace,
-                Dimensions = dimensions?.ToList() ?? new List<Dimension>(),
-                Buffered = buffered,
-                Prefix = metricPrefix,
-                LoggerFactory = loggerFactory
-            }) {}
 
         public CloudWatchMetricsClient(CloudWatchMetricsClientOptions options) : base(options) {
             _options = options;
@@ -52,7 +39,7 @@ namespace Foundatio.Metrics {
                 if (metricsPage.Count == 0)
                     break;
 
-                _logger.Trace(() => $"Sending PutMetricData to AWS for {metricsPage.Count} metric(s)");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Sending PutMetricData to AWS for {Count} metric(s)", metricsPage.Count);
                 // do retries
                 var response = await _client.Value.PutMetricDataAsync(new PutMetricDataRequest {
                     Namespace = _options.Namespace,
@@ -145,7 +132,7 @@ namespace Foundatio.Metrics {
 
         private int GetStatsPeriod(DateTime start, DateTime end) {
             double totalMinutes = end.Subtract(start).TotalMinutes;
-            TimeSpan interval = TimeSpan.FromMinutes(1);
+            var interval = TimeSpan.FromMinutes(1);
             if (totalMinutes >= 60 * 24 * 7)
                 interval = TimeSpan.FromDays(1);
             else if (totalMinutes >= 60 * 2)

@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Amazon.Runtime;
-using Foundatio.Logging;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -34,7 +34,7 @@ namespace Foundatio.AWS.Tests.Queues {
                 LoggerFactory = Log,
             });
 
-            _logger.Debug("Queue Id: {queueId}", queue.QueueId);
+            _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
         }
 

@@ -12,25 +12,18 @@ using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
 using Foundatio.Extensions;
-using Foundatio.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Storage {
-    [Obsolete("S3Storage has been renamed to S3FileStorage")]
-    public class S3Storage : S3FileStorage {
-        public S3Storage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) : base(credentials, region, bucket, loggerFactory) {}
-    }
-
     public class S3FileStorage : IFileStorage {
         private readonly AWSCredentials _credentials;
         private readonly RegionEndpoint _region;
         private readonly string _bucket;
-        private readonly ILogger _logger;
 
         public S3FileStorage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) {
             _credentials = credentials;
             _region = region;
             _bucket = bucket;
-            _logger = loggerFactory.CreateLogger<S3FileStorage>();
         }
 
         private AmazonS3Client CreateClient() {

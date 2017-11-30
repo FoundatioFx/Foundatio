@@ -7,13 +7,14 @@ using Amazon.Runtime;
 using Foundatio.Metrics;
 using Foundatio.Tests.Metrics;
 using Foundatio.Tests.Utility;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.AWS.Tests.Metrics {
     public class CloudWatchMetricsTests : MetricsClientTestBase {
         public CloudWatchMetricsTests(ITestOutputHelper output) : base(output) {
-            Log.MinimumLevel = Logging.LogLevel.Trace;
+            Log.MinimumLevel = LogLevel.Trace;
         }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
