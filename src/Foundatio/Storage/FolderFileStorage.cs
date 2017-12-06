@@ -22,33 +22,28 @@ namespace Foundatio.Storage {
                 folder += Path.DirectorySeparatorChar;
 
             Folder = folder;
-
-            if (!Directory.Exists(folder))
-                Directory.CreateDirectory(folder);
+            Directory.CreateDirectory(folder);
         }
 
         public string Folder { get; set; }
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
             
             path = path.NormalizePath();
 
             try {
-                if (!await ExistsAsync(path).AnyContext())
-                    return null;
-
-                return File.OpenRead(Path.Combine(Folder, path));
+                return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
             } catch (FileNotFoundException) {
-                return null;
+                return Task.FromResult<Stream>(null);
             }
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             path = path.NormalizePath();
 
             var info = new FileInfo(Path.Combine(Folder, path));
@@ -66,24 +61,24 @@ namespace Foundatio.Storage {
         public Task<bool> ExistsAsync(string path) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
-            
-            path = path.NormalizePath();
 
+            path = path.NormalizePath();
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             path = path.NormalizePath();
 
-            string directory = Path.GetDirectoryName(Path.Combine(Folder, path));
-            if (!Directory.Exists(directory))
+            string file = Path.Combine(Folder, path);
+            string directory = Path.GetDirectoryName(file);
+            if (directory != null)
                 Directory.CreateDirectory(directory);
 
             try {
-                using (var fileStream = File.Create(Path.Combine(Folder, path))) {
+                using (var fileStream = File.Create(file)) {
                     if (stream.CanSeek)
                         stream.Seek(0, SeekOrigin.Begin);
 
@@ -108,7 +103,7 @@ namespace Foundatio.Storage {
             try {
                 lock (_lockObject) {
                     string directory = Path.GetDirectoryName(newpath);
-                    if (directory != null && !Directory.Exists(Path.Combine(Folder, directory)))
+                    if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
                     string oldFullPath = Path.Combine(Folder, path);
@@ -138,7 +133,7 @@ namespace Foundatio.Storage {
             try {
                 lock (_lockObject) {
                     string directory = Path.GetDirectoryName(targetpath);
-                    if (directory != null && !Directory.Exists(Path.Combine(Folder, directory)))
+                    if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
