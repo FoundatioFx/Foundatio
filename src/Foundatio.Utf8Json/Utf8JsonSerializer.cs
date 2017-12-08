@@ -6,8 +6,6 @@ using Utf8Json.Resolvers;
 
 namespace Foundatio.Utf8Json {
     public class Utf8JsonSerializer : ISerializer {
-        public static ISerializer Default = new Utf8JsonSerializer();
-
         private readonly IJsonFormatterResolver _formatterResolver;
 
         public Utf8JsonSerializer(IJsonFormatterResolver resolver = null) {
