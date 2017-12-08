@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using Foundatio.JsonNet;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using MessagePack.Resolvers;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;
@@ -28,7 +30,7 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanCloneSerializedModel() {
+        public void CanCloneJsonSerializedModel() {
             var model = new CloneModel {
                 IntProperty = 1,
                 StringProperty = "test",
@@ -37,8 +39,8 @@ namespace Foundatio.Tests.Utility {
             };
 
             var serializer = new JsonNetSerializer();
-            string json = serializer.SerializeToString(model);
-            var deserialized = serializer.Deserialize<CloneModel>(json);
+            var result = serializer.SerializeToBytes(model);
+            var deserialized = serializer.Deserialize<CloneModel>(result);
             Assert.Equal(model.IntProperty, deserialized.IntProperty);
             Assert.Equal(model.StringProperty, deserialized.StringProperty);
             Assert.Equal(model.ListProperty, deserialized.ListProperty);
@@ -53,11 +55,37 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, cdm.IntProperty);
         }
 
-        private class CloneModel {
-            public int IntProperty { get; set; }
-            public string StringProperty { get; set; }
-            public List<int> ListProperty { get; set; }
-            public object ObjectProperty { get; set; }
+        [Fact]
+        public void CanCloneMessagePackSerializedModel() {
+            var model = new CloneModel {
+                IntProperty = 1,
+                StringProperty = "test",
+                ListProperty = new List<int> { 1 },
+                ObjectProperty = new CloneModel { IntProperty = 1 }
+            };
+
+            var serializer = MessagePackSerializer.Default;
+            var result = serializer.SerializeToBytes(model);
+            var deserialized = serializer.Deserialize<CloneModel>(result);
+            Assert.Equal(model.IntProperty, deserialized.IntProperty);
+            Assert.Equal(model.StringProperty, deserialized.StringProperty);
+            Assert.Equal(model.ListProperty, deserialized.ListProperty);
+            var dm = (Dictionary<object, object>)deserialized.ObjectProperty;
+            Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, Convert.ToInt32(dm["IntProperty"]));
+
+            var cloned = deserialized.DeepClone();
+            Assert.Equal(model.IntProperty, cloned.IntProperty);
+            Assert.Equal(model.StringProperty, cloned.StringProperty);
+            Assert.Equal(model.ListProperty, cloned.ListProperty);
+            var cdm = (Dictionary<object, object>)cloned.ObjectProperty;
+            Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, Convert.ToInt32(cdm["IntProperty"]));
         }
+    }
+
+    public class CloneModel {
+        public int IntProperty { get; set; }
+        public string StringProperty { get; set; }
+        public List<int> ListProperty { get; set; }
+        public object ObjectProperty { get; set; }
     }
 }

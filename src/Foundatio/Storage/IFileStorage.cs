@@ -5,8 +5,8 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Serializer;
 using Foundatio.Utility;
-using Newtonsoft.Json;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IDisposable {
@@ -36,21 +36,19 @@ namespace Foundatio.Storage {
 
     public static class FileStorageExtensions {
         public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
-            string json = JsonConvert.SerializeObject(data);
-            return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(json ?? String.Empty)), cancellationToken);
+            var serializer = storage.GetSerializer();
+            var bytes = serializer.SerializeToBytes(data);
+            return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            string fileContents = null;
+            var serializer = storage.GetSerializer();
             using (Stream stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
                 if (stream != null)
-                    fileContents = await new StreamReader(stream).ReadToEndAsync().AnyContext();
+                    return serializer.Deserialize<T>(stream);
             }
 
-            if (String.IsNullOrEmpty(fileContents))
-                return default(T);
-
-            return JsonConvert.DeserializeObject<T>(fileContents);
+            return default(T);
         }
 
         public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files) {

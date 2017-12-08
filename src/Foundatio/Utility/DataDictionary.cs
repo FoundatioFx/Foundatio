@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Foundatio.Utility {
     public class DataDictionary : Dictionary<string, object> {
@@ -43,18 +41,6 @@ namespace Foundatio.Utility {
 
             if (data == null)
                 return defaultValue;
-
-            if (data is string) {
-                try {
-                    return JsonConvert.DeserializeObject<T>((string)data);
-                } catch {}
-            }
-
-            if (data is JObject) {
-                try {
-                    return JsonConvert.DeserializeObject<T>(data.ToString());
-                } catch {}
-            }
 
             try {
                 return data.ToType<T>();

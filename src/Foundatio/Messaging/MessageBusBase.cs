@@ -20,7 +20,7 @@ namespace Foundatio.Messaging {
 
         public MessageBusBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            _serializer = options.Serializer ?? new JsonNetSerializer();
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
 
             InitializeMaintenance();

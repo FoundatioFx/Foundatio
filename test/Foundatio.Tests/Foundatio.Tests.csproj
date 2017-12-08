@@ -16,6 +16,7 @@
     <DotNetCliToolReference Include="dotnet-xunit" Version="2.3.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio.JsonNet\Foundatio.JsonNet.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
 </Project>

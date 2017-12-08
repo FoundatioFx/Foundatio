@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <PackageTags>Distributed;Jobs</PackageTags>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <PackageTags>MetricsNET;Metrics;Stats;StatsD;Logging;Log</PackageTags>
+    <NoWarn>NU1701;CS1591</NoWarn>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
@@ -10,11 +11,9 @@
     <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Exceptionless.DateTimeExtensions" Version="3.3.96" />
-    <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
 </Project>
