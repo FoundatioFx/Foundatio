@@ -18,11 +18,13 @@ namespace Foundatio.Serializer {
         }
 
         public static T Deserialize<T>(this ISerializer serializer, string data) {
-            return (T)serializer.Deserialize(new MemoryStream(Encoding.UTF8.GetBytes(data ?? String.Empty)), typeof(T));
+            var bytes = data != null ? Encoding.UTF8.GetBytes(data) : Array.Empty<byte>();
+            return (T)serializer.Deserialize(new MemoryStream(bytes), typeof(T));
         }
 
         public static object Deserialize(this ISerializer serializer, string data, Type objectType) {
-            return serializer.Deserialize(new MemoryStream(Encoding.UTF8.GetBytes(data ?? String.Empty)), objectType);
+            var bytes = data != null ? Encoding.UTF8.GetBytes(data) : Array.Empty<byte>();
+            return serializer.Deserialize(new MemoryStream(bytes), objectType);
         }
 
         public static T Deserialize<T>(this ISerializer serializer, byte[] data) {
@@ -31,13 +33,6 @@ namespace Foundatio.Serializer {
 
         public static object Deserialize(this ISerializer serializer, byte[] data, Type objectType) {
             return serializer.Deserialize(new MemoryStream(data), objectType);
-        }
-
-        public static string SerializeToString<T>(this ISerializer serializer, T value) {
-            if (value == null)
-                return null;
-
-            return Encoding.UTF8.GetString(serializer.SerializeToBytes(value));
         }
 
         public static byte[] SerializeToBytes<T>(this ISerializer serializer, T value) {
