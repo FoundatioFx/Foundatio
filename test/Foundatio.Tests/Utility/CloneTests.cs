@@ -64,7 +64,7 @@ namespace Foundatio.Tests.Utility {
                 ObjectProperty = new CloneModel { IntProperty = 1 }
             };
 
-            var serializer = MessagePackSerializer.Default;
+            var serializer = DefaultSerializer.Instance;
             var result = serializer.SerializeToBytes(model);
             var deserialized = serializer.Deserialize<CloneModel>(result);
             Assert.Equal(model.IntProperty, deserialized.IntProperty);

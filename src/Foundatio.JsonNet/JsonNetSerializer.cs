@@ -1,12 +1,12 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Newtonsoft.Json;
-using System;
 using Foundatio.Serializer;
 
 namespace Foundatio.JsonNet {
     public class JsonNetSerializer : ISerializer {
         private readonly JsonSerializer _serializer;
-        
+
         public JsonNetSerializer(JsonSerializerSettings settings = null) {
             _serializer = JsonSerializer.Create(settings ?? new JsonSerializerSettings());
         }

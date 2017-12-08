@@ -5,17 +5,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
-using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
-    public class FolderFileStorage : IFileStorage, IHaveSerializer {
+    public class FolderFileStorage : IFileStorage {
         private readonly object _lockObject = new object();
-        private readonly ISerializer _serializer;
 
-        public FolderFileStorage(string folder, ISerializer serializer = null) {
+        public FolderFileStorage(string folder) {
             folder = PathHelper.ExpandPath(folder);
-            _serializer = serializer ?? DefaultSerializer.Instance;
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
@@ -29,7 +26,6 @@ namespace Foundatio.Storage {
         }
 
         public string Folder { get; set; }
-        ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))

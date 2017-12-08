@@ -8,8 +8,10 @@ namespace Foundatio.Serializer {
         void Serialize(object value, Stream output);
     }
 
+    public interface IBinarySerializer : ISerializer {}
+
     public static class DefaultSerializer {
-        public static ISerializer Instance { get; set; } = MessagePackSerializer.Default;
+        public static ISerializer Instance { get; set; } = new MessagePackSerializer();
     }
 
     public static class SerializerExtensions {
@@ -35,18 +37,24 @@ namespace Foundatio.Serializer {
             return serializer.Deserialize(new MemoryStream(data), objectType);
         }
 
+        public static string SerializeToString<T>(this ISerializer serializer, T value) {
+            if (serializer is IBinarySerializer)
+                throw new ArgumentException("Unable to serialize binary content to a string");
+
+            if (value == null) 
+                return null; 
+ 
+            return Encoding.UTF8.GetString(serializer.SerializeToBytes(value)); 
+        } 
+
         public static byte[] SerializeToBytes<T>(this ISerializer serializer, T value) {
             if (value == null)
                 return null;
-            
+
             var stream = new MemoryStream();
             serializer.Serialize(value, stream);
 
             return stream.ToArray();
-        }
-
-        public static ISerializer GetSerializer(this object target) {
-            return target is IHaveSerializer accessor ? accessor.Serializer : DefaultSerializer.Instance;
         }
     }
 }

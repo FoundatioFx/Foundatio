@@ -35,14 +35,18 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
-            var serializer = storage.GetSerializer();
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, ISerializer serializer = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (serializer == null)
+                serializer = DefaultSerializer.Instance;
+
             var bytes = serializer.SerializeToBytes(data);
             return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
-        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            var serializer = storage.GetSerializer();
+        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, ISerializer serializer = null, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (serializer == null)
+                serializer = DefaultSerializer.Instance;
+
             using (Stream stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
                 if (stream != null)
                     return serializer.Deserialize<T>(stream);

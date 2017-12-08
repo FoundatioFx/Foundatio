@@ -4,9 +4,7 @@ using MessagePack;
 using MessagePack.Resolvers;
 
 namespace Foundatio.Serializer {
-    public class MessagePackSerializer : ISerializer {
-        public static ISerializer Default = new MessagePackSerializer();
-
+    public class MessagePackSerializer : IBinarySerializer {
         private readonly IFormatterResolver _formatterResolver;
 
         public MessagePackSerializer(IFormatterResolver resolver = null) {
