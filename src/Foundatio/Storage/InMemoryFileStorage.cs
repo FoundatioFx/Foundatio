@@ -7,21 +7,25 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.Extensions;
+using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
     public class InMemoryFileStorage : IFileStorage {
         private readonly Dictionary<string, Tuple<FileSpec, byte[]>> _storage = new Dictionary<string, Tuple<FileSpec, byte[]>>(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new object();
+        private readonly ISerializer _serializer;
 
-        public InMemoryFileStorage() : this(1024 * 1024 * 256, 100) {}
+        public InMemoryFileStorage(ISerializer serializer = null) : this(1024 * 1024 * 256, 100, serializer) {}
 
-        public InMemoryFileStorage(long maxFileSize, int maxFiles) {
+        public InMemoryFileStorage(long maxFileSize, int maxFiles, ISerializer serializer = null) {
             MaxFileSize = maxFileSize;
             MaxFiles = maxFiles;
+            _serializer = serializer ?? DefaultSerializer.Instance;
         }
 
         public long MaxFileSize { get; set; }
         public long MaxFiles { get; set; }
+        ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))

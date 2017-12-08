@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
@@ -19,6 +20,7 @@ namespace Foundatio.Storage {
         public IFileStorage UnscopedStorage { get; private set; }
 
         public string Scope { get; private set; }
+        ISerializer IHaveSerializer.Serializer => UnscopedStorage.Serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             if (String.IsNullOrWhiteSpace(path))

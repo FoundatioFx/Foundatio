@@ -9,7 +9,7 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
-    public interface IFileStorage : IDisposable {
+    public interface IFileStorage : IHaveSerializer, IDisposable {
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
@@ -35,21 +35,15 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, ISerializer serializer = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (serializer == null)
-                serializer = DefaultSerializer.Instance;
-
-            var bytes = serializer.SerializeToBytes(data);
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
+            var bytes = storage.Serializer.SerializeToBytes(data);
             return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
-        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, ISerializer serializer = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (serializer == null)
-                serializer = DefaultSerializer.Instance;
-
+        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
             using (Stream stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
                 if (stream != null)
-                    return serializer.Deserialize<T>(stream);
+                    return storage.Serializer.Deserialize<T>(stream);
             }
 
             return default(T);

@@ -5,7 +5,7 @@ using Utf8Json;
 using Utf8Json.Resolvers;
 
 namespace Foundatio.Utf8Json {
-    public class Utf8JsonSerializer : ISerializer {
+    public class Utf8JsonSerializer : ITextSerializer {
         private readonly IJsonFormatterResolver _formatterResolver;
 
         public Utf8JsonSerializer(IJsonFormatterResolver resolver = null) {

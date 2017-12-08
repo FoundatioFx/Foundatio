@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using Foundatio.Serializer;
 
 namespace Foundatio.JsonNet {
-    public class JsonNetSerializer : ISerializer {
+    public class JsonNetSerializer : ITextSerializer {
         private readonly JsonSerializer _serializer;
 
         public JsonNetSerializer(JsonSerializerSettings settings = null) {

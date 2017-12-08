@@ -4,7 +4,7 @@ using MessagePack;
 using MessagePack.Resolvers;
 
 namespace Foundatio.Serializer {
-    public class MessagePackSerializer : IBinarySerializer {
+    public class MessagePackSerializer : ISerializer {
         private readonly IFormatterResolver _formatterResolver;
 
         public MessagePackSerializer(IFormatterResolver resolver = null) {
