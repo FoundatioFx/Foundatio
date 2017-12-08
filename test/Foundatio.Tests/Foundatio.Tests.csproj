@@ -18,5 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.JsonNet\Foundatio.JsonNet.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Utf8Json\Foundatio.Utf8Json.csproj" />
   </ItemGroup>
 </Project>

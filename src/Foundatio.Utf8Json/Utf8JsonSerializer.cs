@@ -1,10 +1,9 @@
 ﻿using System;
 using System.IO;
-using Foundatio.Serializer;
 using Utf8Json;
 using Utf8Json.Resolvers;
 
-namespace Foundatio.Utf8Json {
+namespace Foundatio.Serializer {
     public class Utf8JsonSerializer : ITextSerializer {
         private readonly IJsonFormatterResolver _formatterResolver;
 

@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.JsonNet;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using MessagePack.Resolvers;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;

@@ -1,9 +1,8 @@
 ﻿using System;
 using System.IO;
 using Newtonsoft.Json;
-using Foundatio.Serializer;
 
-namespace Foundatio.JsonNet {
+namespace Foundatio.Serializer {
     public class JsonNetSerializer : ITextSerializer {
         private readonly JsonSerializer _serializer;
 
