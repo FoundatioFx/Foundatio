@@ -104,7 +104,9 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            var brokeredMessage = new BrokeredMessage(_serializer.SerializeToStream(data), true);
+            var stream = new MemoryStream();
+            _serializer.Serialize(data, stream);
+            var brokeredMessage = new BrokeredMessage(stream, true);
             await _queueClient.SendAsync(brokeredMessage).AnyContext(); // TODO: See if there is a way to send a batch of messages.
 
             var entry = new QueueEntry<T>(brokeredMessage.MessageId, data, this, SystemClock.UtcNow, 0);

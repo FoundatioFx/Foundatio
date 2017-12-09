@@ -93,12 +93,13 @@ namespace Foundatio.Messaging {
         }
 
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var data = _serializer.SerializeToStream(new MessageBusData {
+            var stream = new MemoryStream();
+            _serializer.Serialize(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = _serializer.SerializeToString(message)
-            });
+            }, stream);
 
-            var brokeredMessage = new BrokeredMessage(data, true);
+            var brokeredMessage = new BrokeredMessage(stream, true);
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
