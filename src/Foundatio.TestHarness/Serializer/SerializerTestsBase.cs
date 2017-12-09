@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes.Jobs;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
@@ -62,6 +64,44 @@ namespace Foundatio.Tests.Serializer {
             Assert.Equal(model.ListProperty, actual.ListProperty);
             Assert.NotNull(model.ObjectProperty);
             Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
+        }
+    }
+
+    [MemoryDiagnoser]
+    [ShortRunJob]
+    public abstract class SerializerBenchmarkBase {
+        private ISerializer _serializer;
+        private readonly SerializeModel _data = new SerializeModel {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = new List<int> { 1 },
+            ObjectProperty = new SerializeModel { IntProperty = 1 }
+        };
+
+        private byte[] _serializedData;
+
+        protected abstract ISerializer GetSerializer();
+
+        [GlobalSetup]
+        public void Setup() {
+            _serializer = GetSerializer();
+            _serializedData = _serializer.SerializeToBytes(_data);
+        }
+
+        [Benchmark]
+        public byte[] Serialize() {
+            return _serializer.SerializeToBytes(_data);
+        }
+        
+        [Benchmark]
+        public SerializeModel Deserialize() {
+            return _serializer.Deserialize<SerializeModel>(_serializedData);
+        }
+
+        [Benchmark]
+        public SerializeModel RoundTrip() {
+            var serializedData = _serializer.SerializeToBytes(_data);
+            return _serializer.Deserialize<SerializeModel>(serializedData);
         }
     }
 
