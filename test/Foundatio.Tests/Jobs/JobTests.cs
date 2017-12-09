@@ -60,7 +60,7 @@ namespace Foundatio.Tests.Jobs {
             var sw = Stopwatch.StartNew();
             job.RunContinuous(cancellationToken: TimeSpan.FromMilliseconds(100).ToCancellationToken());
             sw.Stop();
-            Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(800));
+            Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(95), TimeSpan.FromMilliseconds(800));
 
             var jobInstance = new HelloWorldJob();
             Assert.NotNull(jobInstance);
