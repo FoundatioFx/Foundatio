@@ -24,7 +24,7 @@ namespace Foundatio.Caching {
 
         public RedisCacheClient(RedisCacheClientOptions options) {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
-            options.Serializer = options.Serializer ?? new JsonNetSerializer();
+            options.Serializer = options.Serializer ?? DefaultSerializer.Instance;
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
         }

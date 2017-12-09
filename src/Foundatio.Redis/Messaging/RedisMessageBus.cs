@@ -56,7 +56,7 @@ namespace Foundatio.Messaging {
             }
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
-            var data = _serializer.Serialize(new MessageBusData {
+            var data = _serializer.SerializeToBytes(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = _serializer.SerializeToString(message)
             });

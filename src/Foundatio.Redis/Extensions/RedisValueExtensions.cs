@@ -28,40 +28,42 @@ namespace Foundatio.Redis {
                 return redisValue;
 
             Type t = typeof(T);
-            if (t == TypeHelper.ByteArrayType)
-                redisValue = value as byte[];
+            if (t == TypeHelper.StringType)
+                redisValue = value.ToString();
             else if (t == TypeHelper.BoolType)
                 redisValue = Convert.ToBoolean(value);
-            else if (t == TypeHelper.CharType)
-                redisValue = Convert.ToChar(value);
-            else if (t == TypeHelper.SByteType)
-                redisValue = Convert.ToSByte(value);
             else if (t == TypeHelper.ByteType)
                 redisValue = Convert.ToByte(value);
             else if (t == TypeHelper.Int16Type)
                 redisValue = Convert.ToInt16(value);
-            else if (t == TypeHelper.UInt16Type)
-                redisValue = Convert.ToUInt16(value);
             else if (t == TypeHelper.Int32Type)
                 redisValue = Convert.ToInt32(value);
-            else if (t == TypeHelper.UInt32Type)
-                redisValue = Convert.ToUInt32(value);
             else if (t == TypeHelper.Int64Type)
                 redisValue = Convert.ToInt64(value);
+            else if (t == TypeHelper.DoubleType)
+                redisValue = Convert.ToDouble(value);
+            else if (t == TypeHelper.StringType)
+                redisValue = value.ToString();
+            else if (t == TypeHelper.CharType)
+                redisValue = Convert.ToChar(value);
+            else if (t == TypeHelper.SByteType)
+                redisValue = Convert.ToSByte(value);
+            else if (t == TypeHelper.UInt16Type)
+                redisValue = Convert.ToUInt16(value);
+            else if (t == TypeHelper.UInt32Type)
+                redisValue = Convert.ToUInt32(value);
             else if (t == TypeHelper.UInt64Type)
                 redisValue = Convert.ToUInt64(value);
             else if (t == TypeHelper.SingleType)
                 redisValue = Convert.ToSingle(value);
-            else if (t == TypeHelper.DoubleType)
-                redisValue = Convert.ToDouble(value);
             //else if (type == TypeHelper.DecimalType)
             //    redisValue = Convert.ToDecimal(value);
             //else if (type == TypeHelper.DateTimeType)
             //    redisValue = Convert.ToDateTime(value);
-            else if (t == TypeHelper.StringType)
-                redisValue = value.ToString();
+            else if (t == TypeHelper.ByteArrayType)
+                redisValue = value as byte[];
             else
-                redisValue = serializer.Serialize(value);
+                redisValue = serializer.SerializeToBytes(value);
 
             return redisValue;
         }
