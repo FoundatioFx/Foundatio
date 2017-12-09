@@ -146,7 +146,7 @@ namespace Foundatio.Lock {
         }
     }
 
-    internal class CacheLockReleased {
+    public class CacheLockReleased {
         public string Name { get; set; }
     }
 }
