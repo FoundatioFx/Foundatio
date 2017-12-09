@@ -12,6 +12,7 @@ using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
 using Foundatio.Extensions;
+using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Storage {
@@ -19,12 +20,16 @@ namespace Foundatio.Storage {
         private readonly AWSCredentials _credentials;
         private readonly RegionEndpoint _region;
         private readonly string _bucket;
+        private readonly ISerializer _serializer;
 
-        public S3FileStorage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ILoggerFactory loggerFactory = null) {
+        public S3FileStorage(AWSCredentials credentials, RegionEndpoint region, string bucket = "storage", ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
             _credentials = credentials;
             _region = region;
             _bucket = bucket;
+            _serializer = serializer ?? DefaultSerializer.Instance;
         }
+
+        ISerializer IHaveSerializer.Serializer => _serializer;
 
         private AmazonS3Client CreateClient() {
             return new AmazonS3Client(_credentials, _region);
