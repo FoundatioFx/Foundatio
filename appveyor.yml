@@ -35,8 +35,6 @@ after_test:
 artifacts:
   - path: artifacts\*.nupkg
     name: NuGet
-
-artifacts:
   - path: test\Foundatio.Tests\bin\Release\netcoreapp2.0\BenchmarkDotNet.Artifacts
     name: Benchmarks
 
