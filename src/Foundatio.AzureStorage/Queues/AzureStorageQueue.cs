@@ -62,7 +62,7 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            var message = new CloudQueueMessage(_serializer.SerializeToString(data));
+            var message = CloudQueueMessage.CreateCloudQueueMessageFromByteArray(_serializer.SerializeToBytes(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
 
             var entry = new QueueEntry<T>(message.Id, data, this, SystemClock.UtcNow, 0);
