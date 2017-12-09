@@ -58,7 +58,7 @@ namespace Foundatio.Messaging {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
             var data = _serializer.SerializeToBytes(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = _serializer.SerializeToString(message)
+                Data = _serializer.SerializeToBytes(message)
             });
 
             await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
