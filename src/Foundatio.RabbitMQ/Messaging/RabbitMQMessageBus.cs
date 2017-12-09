@@ -132,7 +132,7 @@ namespace Foundatio.Messaging {
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             var data = _serializer.SerializeToBytes(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = _serializer.SerializeToString(message)
+                Data = _serializer.SerializeToBytes(message)
             });
 
             // if the rabbitmq plugin is not availaible then use the base class delay mechanism
