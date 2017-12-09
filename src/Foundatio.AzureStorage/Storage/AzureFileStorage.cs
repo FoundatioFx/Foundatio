@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Azure.Extensions;
 using Foundatio.Extensions;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
@@ -14,13 +15,17 @@ using Microsoft.WindowsAzure.Storage.Blob;
 namespace Foundatio.Storage {
     public class AzureFileStorage : IFileStorage {
         private readonly CloudBlobContainer _container;
+        private readonly ISerializer _serializer;
 
-        public AzureFileStorage(string connectionString, string containerName = "storage") {
+        public AzureFileStorage(string connectionString, string containerName = "storage", ISerializer serializer = null) {
             var account = CloudStorageAccount.Parse(connectionString);
             var client = account.CreateCloudBlobClient();
             _container = client.GetContainerReference(containerName);
             _container.CreateIfNotExistsAsync().GetAwaiter().GetResult();
+            _serializer = serializer ?? DefaultSerializer.Instance;
         }
+
+        ISerializer IHaveSerializer.Serializer => _serializer;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             var blockBlob = _container.GetBlockBlobReference(path);
