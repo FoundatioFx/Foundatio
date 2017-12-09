@@ -223,7 +223,8 @@ namespace Foundatio.Queues {
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
-                        if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error))
+                            _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
