@@ -5,9 +5,9 @@
     <PackageTags>File;Storage;Amazon;AWS;S3;Distributed;</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.4.3" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.5" />
     <PackageReference Include="AWSSDK.S3" Version="3.3.15" />
     <PackageReference Include="AWSSDK.SQS" Version="3.3.3.2" />
-    <PackageReference Include="Foundatio" Version="7.0.1599-pre" />
+    <PackageReference Include="Foundatio" Version="7.0.1605-pre" />
   </ItemGroup>
 </Project>
