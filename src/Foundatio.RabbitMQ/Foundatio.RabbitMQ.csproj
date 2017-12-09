@@ -10,7 +10,7 @@
     <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="6.0.1586" />
+    <PackageReference Include="Foundatio" Version="7.0.1599-pre" />
     <PackageReference Include="RabbitMQ.Client" Version="5.0.1" />
   </ItemGroup>
 </Project>

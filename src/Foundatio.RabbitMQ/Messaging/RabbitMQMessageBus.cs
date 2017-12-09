@@ -130,7 +130,7 @@ namespace Foundatio.Messaging {
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var data = _serializer.Serialize(new MessageBusData {
+            var data = _serializer.SerializeToBytes(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
                 Data = _serializer.SerializeToString(message)
             });
