@@ -96,7 +96,7 @@ namespace Foundatio.Messaging {
             var stream = new MemoryStream();
             _serializer.Serialize(new MessageBusData {
                 Type = messageType.AssemblyQualifiedName,
-                Data = _serializer.SerializeToString(message)
+                Data = _serializer.SerializeToBytes(message)
             }, stream);
 
             var brokeredMessage = new BrokeredMessage(stream, true);
