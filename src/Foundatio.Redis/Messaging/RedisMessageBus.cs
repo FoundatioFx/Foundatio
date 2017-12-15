@@ -45,7 +45,7 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            SendMessageToSubscribersAsync(message, _serializer).GetAwaiter().GetResult();
+            SendMessageToSubscribersAsync(message, _serializer).AnyContext().GetAwaiter().GetResult();
         }
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {

@@ -23,10 +23,10 @@ namespace Foundatio.Caching {
         private LoadedLuaScript _delByWildcardScript;
 
         public RedisCacheClient(RedisCacheClientOptions options) {
-            options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
-            options.Serializer = options.Serializer ?? DefaultSerializer.Instance;
             _options = options;
+            options.Serializer = options.Serializer ?? DefaultSerializer.Instance;
             _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
+            options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         }
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {

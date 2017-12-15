@@ -85,24 +85,24 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+        protected override Task<QueueStats> GetQueueStatsImplAsync() {
             var queued = Database.ListLengthAsync(QueueListName);
             var wait = Database.ListLengthAsync(WaitListName);
             var working = Database.ListLengthAsync(WorkListName);
             var deadLetter = Database.ListLengthAsync(DeadListName);
 
-            await Task.WhenAll(queued, wait, working, deadLetter).AnyContext();
-            return new QueueStats {
-                Queued = queued.Result + wait.Result,
-                Working = working.Result,
-                Deadletter = deadLetter.Result,
-                Enqueued = _enqueuedCount,
-                Dequeued = _dequeuedCount,
-                Completed = _completedCount,
-                Abandoned = _abandonedCount,
-                Errors = _workerErrorCount,
-                Timeouts = _workItemTimeoutCount
-            };
+            return Task.WhenAll(queued, wait, working, deadLetter)
+                .ContinueWith(t => new QueueStats {
+                    Queued = queued.Result + wait.Result,
+                    Working = working.Result,
+                    Deadletter = deadLetter.Result,
+                    Enqueued = _enqueuedCount,
+                    Dequeued = _dequeuedCount,
+                    Completed = _completedCount,
+                    Abandoned = _abandonedCount,
+                    Errors = _workerErrorCount,
+                    Timeouts = _workItemTimeoutCount
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
         private string QueueListName { get; set; }
@@ -307,7 +307,6 @@ namespace Foundatio.Queues {
             var enqueuedTimeTicks = Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger);
             var attemptsValue = Run.WithRetriesAsync(() => _cache.GetAsync(GetAttemptsKey(workId), 1), logger: _logger);
             await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
-
             return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result);
         }
 

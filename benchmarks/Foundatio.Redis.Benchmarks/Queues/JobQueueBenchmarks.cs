@@ -18,38 +18,38 @@ namespace Foundatio.Benchmarks.Queues {
             _redisQueue.DeleteQueueAsync().GetAwaiter().GetResult();
         }
 
-        [IterationSetup(Target = nameof(RunInMemoryJobUntilEmpty))]
-        public void EnqueueInMemoryQueue() {
-            EnqueueQueue(_inMemoryQueue);
+        [IterationSetup(Target = nameof(RunInMemoryJobUntilEmptyAsync))]
+        public Task EnqueueInMemoryQueueAsync() {
+            return EnqueueQueueAsync(_inMemoryQueue);
         }
 
         [Benchmark]
-        public void RunInMemoryJobUntilEmpty() {
-            RunJobUntilEmpty(_inMemoryQueue);
+        public Task RunInMemoryJobUntilEmptyAsync() {
+            return RunJobUntilEmptyAsync(_inMemoryQueue);
         }
 
-        [IterationSetup(Target = nameof(RunRedisQueueJobUntilEmpty))]
-        public void EnqueueRedisQueue() {
-            EnqueueQueue(_redisQueue);
+        [IterationSetup(Target = nameof(RunRedisQueueJobUntilEmptyAsync))]
+        public Task EnqueueRedisQueueAsync() {
+            return EnqueueQueueAsync(_redisQueue);
         }
 
         [Benchmark]
-        public void RunRedisQueueJobUntilEmpty() {
-            RunJobUntilEmpty(_redisQueue);
+        public Task RunRedisQueueJobUntilEmptyAsync() {
+            return RunJobUntilEmptyAsync(_redisQueue);
         }
 
-        private void EnqueueQueue(IQueue<QueueItem> queue) {
+        private async Task EnqueueQueueAsync(IQueue<QueueItem> queue) {
             try {
                 for (int i = 0; i < ITEM_COUNT; i++)
-                    queue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
+                    await queue.EnqueueAsync(new QueueItem { Id = i });
             } catch (Exception ex) {
                 Console.WriteLine(ex);
             }
         }
 
-        private void RunJobUntilEmpty(IQueue<QueueItem> queue) {
+        private Task RunJobUntilEmptyAsync(IQueue<QueueItem> queue) {
             var job = new BenchmarkJobQueue(queue);
-            job.RunUntilEmpty();
+            return job.RunUntilEmptyAsync();
         }
     }
 
