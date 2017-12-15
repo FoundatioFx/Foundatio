@@ -20,10 +20,12 @@ namespace Foundatio.Metrics {
         private readonly Timer _flushTimer;
         private readonly MetricsClientOptionsBase _options;
         protected readonly ILogger _logger;
+        protected readonly Retry _retry;
 
         public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+            _retry = new Retry(_logger);
             if (options.Buffered)
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
         }
@@ -175,7 +177,7 @@ namespace Foundatio.Metrics {
                 _logger.LogTrace("Storing {CountersCount} counters, {GaugesCount} gauges, {TimingsCount} timings.", counters.Count, gauges.Count, timings.Count);
 
             try {
-                await Run.WithRetriesAsync(() => StoreAggregatedMetricsAsync(timeBucket, counters, gauges, timings)).AnyContext();
+                await _retry.RunAsync(() => StoreAggregatedMetricsAsync(timeBucket, counters, gauges, timings)).AnyContext();
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error storing aggregated metrics: {Message}", ex.Message);

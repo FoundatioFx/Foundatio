@@ -18,11 +18,13 @@ namespace Foundatio.Lock {
         private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
         private readonly ILogger _logger;
+        private readonly Retry _retry;
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
+            _retry = new Retry(_logger);
         }
 
         private async Task EnsureTopicSubscriptionAsync() {
@@ -123,7 +125,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string name) {
-            var result = await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(name), logger: _logger).AnyContext();
+            var result = await _retry.RunAsync(() => _cacheClient.GetAsync<object>(name)).AnyContext();
             return result.HasValue;
         }
 
@@ -131,7 +133,7 @@ namespace Foundatio.Lock {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("ReleaseAsync Start: {Name}", name);
 
-            await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(name), 15, logger: _logger).AnyContext();
+            await _retry.RunAsync(() => _cacheClient.RemoveAsync(name), 15).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Name = name }).AnyContext();
 
             if (isTraceLogLevelEnabled) _logger.LogTrace("ReleaseAsync Complete: {Name}", name);
@@ -142,7 +144,7 @@ namespace Foundatio.Lock {
             if (!lockExtension.HasValue)
                 lockExtension = TimeSpan.FromMinutes(20);
 
-            return Run.WithRetriesAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value));
+            return _retry.RunAsync(() => _cacheClient.SetExpirationAsync(name, lockExtension.Value));
         }
     }
 

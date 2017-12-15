@@ -12,7 +12,11 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics {
     public abstract class MetricsClientTestBase : TestWithLoggingBase {
-        public MetricsClientTestBase(ITestOutputHelper output) : base(output) {}
+        protected Retry _retry;
+
+        public MetricsClientTestBase(ITestOutputHelper output) : base(output) {
+            _retry = new Retry(_logger);
+        }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
 
@@ -56,10 +60,10 @@ namespace Foundatio.Tests.Metrics {
         }
 
         private async Task AssertCounterAsync(IMetricsClientStats client, string name, long expected) {
-            await Run.WithRetriesAsync(async () => {
+            await _retry.RunAsync(async () => {
                 long actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
                 Assert.Equal(expected, actual);
-            }, 8, logger: _logger);
+            });
         }
 
         public virtual async Task CanGetBufferedQueueMetricsAsync() {
