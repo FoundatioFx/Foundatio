@@ -71,7 +71,6 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunMultipleInstances() {
-            Log.MinimumLevel = LogLevel.Trace;
             var job = new HelloWorldJob(Log);
 
             HelloWorldJob.GlobalRunCount = 0;
