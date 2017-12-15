@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Exceptionless.DateTimeExtensions;
 using Foundatio.Jobs.Commands.Extensions;
 using Microsoft.Extensions.CommandLineUtils;
@@ -127,7 +128,7 @@ namespace Foundatio.Jobs.Commands {
                                 Int32.TryParse(limitOption.Value(), out limit);
 
                             var job = lazyServiceProvider.Value.GetService(jobType) as IJob;
-                            return new JobRunner(job, loggerFactory, runContinuous: isContinuous, interval: interval, initialDelay: delay, iterationLimit: limit).RunInConsole();
+                            return new JobRunner(job, loggerFactory, runContinuous: isContinuous, interval: interval, initialDelay: delay, iterationLimit: limit).RunInConsoleAsync();
                         });
                     }
                     c.HelpOption("-?|-h|--help");
@@ -161,9 +162,9 @@ namespace Foundatio.Jobs.Commands {
                     }
 
                     if (jobType == null)
-                        return -1;
+                        return Task.FromResult(-1);
 
-                    return new JobRunner(() => lazyServiceProvider.Value.GetService(jobType) as IJob, loggerFactory, runContinuous: isContinuous, interval: interval).RunInConsole();
+                    return new JobRunner(() => lazyServiceProvider.Value.GetService(jobType) as IJob, loggerFactory, runContinuous: isContinuous, interval: interval).RunInConsoleAsync();
                 });
             });
 

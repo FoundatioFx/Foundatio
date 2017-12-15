@@ -42,11 +42,11 @@ namespace Foundatio.Jobs {
 
         public CancellationTokenSource CancellationTokenSource { get; private set; }
 
-        public int RunInConsole() {
+        public async Task<int> RunInConsoleAsync() {
             int result;
             try {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(GetShutdownCancellationToken(_logger));
-                bool success = RunAsync(CancellationTokenSource.Token).GetAwaiter().GetResult();
+                bool success = await RunAsync(CancellationTokenSource.Token).AnyContext();
                 result = success ? 0 : -1;
 
                 if (Debugger.IsAttached)
@@ -76,7 +76,7 @@ namespace Foundatio.Jobs {
 
         public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_options.InstanceCount == 1) {
-                new Task(async () => {
+                Task.Run(async () => {
                     try {
                         await RunAsync(cancellationToken).AnyContext();
                     } catch (TaskCanceledException) {
@@ -85,7 +85,7 @@ namespace Foundatio.Jobs {
                             _logger.LogError(ex, "Error running job in background: {Message}", ex.Message);
                         throw;
                     }
-                }, cancellationToken, TaskCreationOptions.LongRunning).TryStart();
+                }, cancellationToken);
             } else {
                 var ignored = RunAsync(cancellationToken);
             }
@@ -112,28 +112,26 @@ namespace Foundatio.Jobs {
                     await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
                 if (_options.RunContinuous && _options.InstanceCount > 1) {
-                    var tasks = new List<Task>();
+                    var tasks = new List<Task>(_options.InstanceCount);
                     for (int i = 0; i < _options.InstanceCount; i++) {
-                        var task = new Task(() => {
+                        tasks.Add(Task.Run(async () => {
                             try {
                                 var jobInstance = _options.JobFactory();
-                                jobInstance.RunContinuous(_options.Interval, _options.IterationLimit, cancellationToken);
+                                await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
                             } catch (TaskCanceledException) {
                             } catch (Exception ex) {
                                 if (_logger.IsEnabled(LogLevel.Error))
                                     _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
                                 throw;
                             }
-                        }, cancellationToken, TaskCreationOptions.LongRunning);
-                        tasks.Add(task);
-                        task.TryStart();
+                        }, cancellationToken));
                     }
 
                     await Task.WhenAll(tasks).AnyContext();
                 } else if (_options.RunContinuous && _options.InstanceCount == 1) {
-                    job.RunContinuous(_options.Interval, _options.IterationLimit, cancellationToken);
+                    await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
                 } else {
-                    var result = job.TryRun(cancellationToken);
+                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     JobExtensions.LogResult(result, _logger, _jobName);
 
                     return result.IsSuccess;

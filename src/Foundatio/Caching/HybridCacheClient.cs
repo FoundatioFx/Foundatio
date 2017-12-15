@@ -24,7 +24,7 @@ namespace Foundatio.Caching {
             _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger<HybridCacheClient>.Instance;
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
-            _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).GetAwaiter().GetResult();
+            _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
             _localCache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }) { MaxItems = 100 };
             _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
         }

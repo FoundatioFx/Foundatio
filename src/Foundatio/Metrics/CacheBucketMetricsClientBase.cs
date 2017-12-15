@@ -137,7 +137,7 @@ namespace Foundatio.Metrics {
 
             await Task.WhenAll(countTask, totalTask, lastTask, minTask, maxTask).AnyContext();
 
-            ICollection <GaugeStat> stats = new List<GaugeStat>();
+            ICollection<GaugeStat> stats = new List<GaugeStat>();
             for (int i = 0; i < maxBuckets.Count; i++) {
                 string countKey = countBuckets[i].Key;
                 string totalKey = totalBuckets[i].Key;
@@ -167,7 +167,7 @@ namespace Foundatio.Metrics {
             return new GaugeStatSummary(name, stats, start.Value, end.Value);
         }
 
-        public async Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
+        public Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
                 start = SystemClock.UtcNow.AddHours(-4);
 
@@ -186,33 +186,34 @@ namespace Foundatio.Metrics {
             var minTask = _cache.GetAllAsync<int>(minBuckets.Select(k => k.Key));
             var maxTask = _cache.GetAllAsync<int>(maxBuckets.Select(k => k.Key));
 
-            await Task.WhenAll(countTask, durationTask, minTask, maxTask).AnyContext();
+            return Task.WhenAll(countTask, durationTask, minTask, maxTask)
+                .ContinueWith(t => {
+                    ICollection<TimingStat> stats = new List<TimingStat>();
+                    for (int i = 0; i < countBuckets.Count; i++) {
+                        string countKey = countBuckets[i].Key;
+                        string durationKey = durationBuckets[i].Key;
+                        string minKey = minBuckets[i].Key;
+                        string maxKey = maxBuckets[i].Key;
 
-            ICollection<TimingStat> stats = new List<TimingStat>();
-            for (int i = 0; i < countBuckets.Count; i++) {
-                string countKey = countBuckets[i].Key;
-                string durationKey = durationBuckets[i].Key;
-                string minKey = minBuckets[i].Key;
-                string maxKey = maxBuckets[i].Key;
+                        stats.Add(new TimingStat {
+                            Time = countBuckets[i].Time,
+                            Count = countTask.Result[countKey].Value,
+                            TotalDuration = durationTask.Result[durationKey].Value,
+                            MinDuration = minTask.Result[minKey].Value,
+                            MaxDuration = maxTask.Result[maxKey].Value
+                        });
+                    }
 
-                stats.Add(new TimingStat {
-                    Time = countBuckets[i].Time,
-                    Count = countTask.Result[countKey].Value,
-                    TotalDuration = durationTask.Result[durationKey].Value,
-                    MinDuration = minTask.Result[minKey].Value,
-                    MaxDuration = maxTask.Result[maxKey].Value
-                });
-            }
+                    stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new TimingStat {
+                        Time = d,
+                        Count = s.Sum(i => i.Count),
+                        MinDuration = s.Min(i => i.MinDuration),
+                        MaxDuration = s.Max(i => i.MaxDuration),
+                        TotalDuration = s.Sum(i => i.TotalDuration)
+                    }, dataPoints);
 
-            stats = stats.ReduceTimeSeries(s => s.Time, (s, d) => new TimingStat {
-                Time = d,
-                Count = s.Sum(i => i.Count),
-                MinDuration = s.Min(i => i.MinDuration),
-                MaxDuration = s.Max(i => i.MaxDuration),
-                TotalDuration = s.Sum(i => i.TotalDuration)
-            }, dataPoints);
-
-            return new TimingStatSummary(name, stats, start.Value, end.Value);
+                    return new TimingStatSummary(name, stats, start.Value, end.Value);
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
         private string GetBucketKey(string metricType, string statName, DateTime? dateTime = null, TimeSpan? interval = null, string suffix = null) {

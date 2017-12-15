@@ -66,7 +66,7 @@ namespace Foundatio.CronJob {
             app.OnExecute(() => {
                 var job = context.ServiceProvider.Value.GetService(typeof(Sample2Job)) as Sample2Job;
                 job.CustomArg = argOption.Value();
-                return new JobRunner(job, context.LoggerFactory, runContinuous: true, interval: TimeSpan.FromSeconds(1)).RunInConsole();
+                return new JobRunner(job, context.LoggerFactory, runContinuous: true, interval: TimeSpan.Zero).RunInConsoleAsync();
             });
         }
     }

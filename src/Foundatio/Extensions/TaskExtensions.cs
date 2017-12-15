@@ -16,12 +16,6 @@ namespace Foundatio.Utility {
             return resetEvent.WaitAsync(timeout.ToCancellationToken());
         }
 
-        public static void TryStart(this Task task) {
-            try {
-                task.Start();
-            } catch (InvalidOperationException) { }
-        }
-
         [DebuggerStepThrough]
         public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task) {
             return task.ConfigureAwait(continueOnCapturedContext: false);

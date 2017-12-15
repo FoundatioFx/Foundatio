@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Jobs {
 
                 var job = new SampleQueueJob(queue, null, Log);
                 await SystemClock.SleepAsync(10);
-                await Task.WhenAll(Task.Run(() => job.RunUntilEmpty()), enqueueTask);
+                await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
@@ -56,7 +56,7 @@ namespace Foundatio.Tests.Jobs {
                 var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
                 await SystemClock.SleepAsync(10);
-                await Task.WhenAll(Task.Run(() => job.RunUntilEmpty()), enqueueTask);
+                await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
@@ -95,12 +95,11 @@ namespace Foundatio.Tests.Jobs {
                     _logger.LogInformation("Done enqueueing");
 
                     var cancellationTokenSource = new CancellationTokenSource();
-                    await Run.InParallelAsync(jobCount, index => {
+                    await Run.InParallelAsync(jobCount, async index => {
                         var queue = queues[index - 1];
                         var job = new SampleQueueJob(queue, metrics, Log);
-                        job.RunUntilEmpty(cancellationTokenSource.Token);
+                        await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                         cancellationTokenSource.Cancel();
-                        return Task.CompletedTask;
                     });
                     _logger.LogInformation("Done running jobs until empty");
 

@@ -120,15 +120,14 @@ namespace Foundatio.Caching {
             }
         }
 
-        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
+        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             var map = new Dictionary<string, Task<CacheValue<T>>>();
             foreach (string key in keys)
                 map[key] = GetAsync<T>(key);
 
-            await Task.WhenAll(map.Values).AnyContext();
-#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
-            return map.ToDictionary(k => k.Key, v => v.Value.Result);
-#pragma warning restore AsyncFixer02 // Long running or blocking operations under an async method
+            return Task.WhenAll(map.Values)
+                .ContinueWith<IDictionary<string, CacheValue<T>>>(t => 
+                    map.ToDictionary(k => k.Key, v => v.Value.Result), TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

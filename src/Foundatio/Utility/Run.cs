@@ -6,13 +6,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class Run {
-        public static async Task DelayedAsync(TimeSpan delay, Func<Task> action) {
-            await Task.Run(async () => {
-                if (delay.Ticks > 0)
-                    await SystemClock.SleepAsync(delay).AnyContext();
+        public static Task DelayedAsync(TimeSpan delay, Func<Task> action) {
+            return Task.Run(() => {
+                if (delay.Ticks <= 0)
+                    return action();
 
-                await action().AnyContext();
-            }).AnyContext();
+                return SystemClock.SleepAsync(delay).ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
+            });
         }
 
         public static Task InParallelAsync(int iterations, Func<int, Task> work) {
@@ -20,10 +20,7 @@ namespace Foundatio.Utility {
         }
 
         public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {
-            return WithRetriesAsync(async () => {
-                await action().AnyContext();
-                return Task.CompletedTask;
-            }, maxAttempts, retryInterval, cancellationToken, logger);
+            return WithRetriesAsync(() => action().ContinueWith(t => Task.CompletedTask, TaskContinuationOptions.OnlyOnRanToCompletion), maxAttempts, retryInterval, cancellationToken, logger);
         }
 
         public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {

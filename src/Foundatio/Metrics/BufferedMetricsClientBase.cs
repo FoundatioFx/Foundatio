@@ -64,6 +64,9 @@ namespace Foundatio.Metrics {
         }
 
         private void OnMetricsTimer(object state) {
+            if (_sendingMetrics || _queue.IsEmpty)
+                return;
+
             try {
                 FlushAsync().AnyContext().GetAwaiter().GetResult();
             } catch (Exception ex) {
@@ -102,7 +105,7 @@ namespace Foundatio.Metrics {
         }
 
         private void SubmitMetric(MetricEntry metric) {
-            SubmitMetricsAsync(new List<MetricEntry> { metric }).GetAwaiter().GetResult();
+            SubmitMetricsAsync(new List<MetricEntry> { metric }).AnyContext().GetAwaiter().GetResult();
         }
 
         protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics) {
@@ -229,7 +232,7 @@ namespace Foundatio.Metrics {
 
         public virtual void Dispose() {
             _flushTimer?.Dispose();
-            FlushAsync().GetAwaiter().GetResult();
+            FlushAsync().AnyContext().GetAwaiter().GetResult();
             _queue?.Clear();
         }
 

@@ -21,7 +21,7 @@ namespace Foundatio.Metrics {
             return result.Last;
         }
 
-        public static async Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, string subMetricName = null, DateTime? utcStart = null, DateTime? utcEnd = null, int dataPoints = 20) {
+        public static Task<QueueStatSummary> GetQueueStatsAsync(this IMetricsClientStats stats, string name, string subMetricName = null, DateTime? utcStart = null, DateTime? utcEnd = null, int dataPoints = 20) {
             if (subMetricName == null)
                 subMetricName = String.Empty;
             else
@@ -37,19 +37,18 @@ namespace Foundatio.Metrics {
             var abandonedTask = stats.GetCounterStatsAsync($"{name}{subMetricName}.abandoned", utcStart, utcEnd, dataPoints);
             var processTimeTask = stats.GetTimerStatsAsync($"{name}{subMetricName}.processtime", utcStart, utcEnd, dataPoints);
 
-            await Task.WhenAll(countTask, workingTask, deadletterTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask).AnyContext();
-
-            return new QueueStatSummary {
-                Count = countTask.Result,
-                Working = workingTask.Result,
-                Deadletter = deadletterTask.Result,
-                Enqueued = enqueuedTask.Result,
-                QueueTime = queueTimeTask.Result,
-                Dequeued = dequeuedTask.Result,
-                Completed = completedTask.Result,
-                Abandoned = abandonedTask.Result,
-                ProcessTime = processTimeTask.Result
-            };
+            return Task.WhenAll(countTask, workingTask, deadletterTask, enqueuedTask, queueTimeTask, dequeuedTask, completedTask, abandonedTask, processTimeTask)
+                .ContinueWith(t => new QueueStatSummary {
+                    Count = countTask.Result,
+                    Working = workingTask.Result,
+                    Deadletter = deadletterTask.Result,
+                    Enqueued = enqueuedTask.Result,
+                    QueueTime = queueTimeTask.Result,
+                    Dequeued = dequeuedTask.Result,
+                    Completed = completedTask.Result,
+                    Abandoned = abandonedTask.Result,
+                    ProcessTime = processTimeTask.Result
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
         }
     }
 }

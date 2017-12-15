@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Jobs {
     public class HelloWorldJob : JobBase {
         private readonly string _id;
 
-        public HelloWorldJob() : base(null) {
+        public HelloWorldJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
