@@ -36,10 +36,10 @@ namespace Foundatio.Jobs {
                     LogResult(result, logger, jobName);
                     iterations++;
 
-                    // Maybe look into yeilding threads. task scheduler queue is starving.
+                    // Maybe look into yielding threads. task scheduler queue is starving.
                     if (result.Error != null) {
                         SystemClock.Sleep(Math.Max(interval?.Milliseconds ?? 0, 100));
-                    } else if (interval.HasValue) {
+                    } else if (interval.HasValue && interval.Value > TimeSpan.Zero) {
                         SystemClock.Sleep(interval.Value);
                     } else if (sw.ElapsedMilliseconds > 5000) {
                         // allow for cancellation token to get set
