@@ -70,8 +70,8 @@ namespace Foundatio.Tests.Serializer {
     [MemoryDiagnoser]
     [ShortRunJob]
     public abstract class SerializerBenchmarkBase {
-        private ISerializer _serializer;
-        private readonly SerializeModel _data = new SerializeModel {
+        protected ISerializer _serializer;
+        protected readonly SerializeModel _data = new SerializeModel {
             IntProperty = 1,
             StringProperty = "test",
             ListProperty = new List<int> { 1 },

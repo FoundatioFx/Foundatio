@@ -10,6 +10,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using SimpleInjector;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -71,9 +72,9 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunMultipleInstances() {
-            var job = new HelloWorldJob(Log);
-
             HelloWorldJob.GlobalRunCount = 0;
+            
+            var job = new HelloWorldJob(Log);
             await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 1).RunAsync(TimeSpan.FromSeconds(1).ToCancellationToken());
             Assert.Equal(5, HelloWorldJob.GlobalRunCount);
 
@@ -111,6 +112,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunThrottledJobs() {
+            Log.MinimumLevel = LogLevel.Trace;
             using (var client = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
                 var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
 
@@ -121,6 +123,41 @@ namespace Foundatio.Tests.Jobs {
                 _logger.LogInformation(jobs.Sum(j => j.RunCount).ToString());
                 Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
             }
+        }
+
+        [Fact]
+        public async Task CanTolerateException() {
+            const int iterations = 10;
+
+            _logger.LogInformation($"Thread count: {Process.GetCurrentProcess().Threads.Count}");
+            
+            Log.MinimumLevel = LogLevel.Trace;
+            var job = new ThrowsJob(Log);
+            await job.RunContinuousAsync(null, iterations);
+
+            _logger.LogInformation($"Thread count: {Process.GetCurrentProcess().Threads.Count}");
+            Assert.Equal(iterations, job.RunCount);
+        }
+
+        [Fact]
+        public void CanTolerateExceptionInJobCommandRunner() {
+            const int iterations = 10;
+
+            _logger.LogInformation($"Thread count: {Process.GetCurrentProcess().Threads.Count}");
+
+            Log.MinimumLevel = LogLevel.Trace;
+            var container = new Container();
+            container.RegisterSingleton<ILoggerFactory>(Log);
+            container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
+
+            container.RegisterSingleton<ThrowsJob>();
+
+            int result = Foundatio.Jobs.Commands.JobCommands.Run(new[] { "Throws", "-l", iterations.ToString() }, container, null, Log);
+            Assert.Equal(0, result);
+
+            var job = container.GetInstance<ThrowsJob>();
+            _logger.LogInformation($"Thread count: {Process.GetCurrentProcess().Threads.Count}");
+            Assert.Equal(iterations, job.RunCount);
         }
 
         [Fact(Skip = "Meant to be run manually.")]

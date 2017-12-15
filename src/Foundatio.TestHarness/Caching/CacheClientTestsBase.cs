@@ -11,6 +11,9 @@ using Xunit.Abstractions;
 using Foundatio.Utility;
 using Newtonsoft.Json;
 using System.Linq;
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes.Jobs;
+using Foundatio.Tests.Serializer;
 
 namespace Foundatio.Tests.Caching {
     public abstract class CacheClientTestsBase : TestWithLoggingBase {
@@ -563,6 +566,48 @@ namespace Foundatio.Tests.Caching {
 
                 var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
             }
+        }
+    }
+
+    [MemoryDiagnoser]
+    [ShortRunJob]
+    public abstract class CacheClientBenchmarkBase {
+        protected ICacheClient _cacheClient;
+        protected readonly SerializeModel _data = new SerializeModel {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = new List<int> { 1 },
+            ObjectProperty = new SerializeModel { IntProperty = 1 }
+        };
+
+        private byte[] _serializedData;
+
+        protected abstract ICacheClient GetCacheClient();
+
+        [GlobalSetup]
+        public void Setup() {
+            _cacheClient = GetCacheClient();
+            //_serializedData = _cacheClient.SerializeToBytes(_data);
+        }
+
+        [Benchmark]
+        public Task<bool> SetSimpleValue() {
+            return _cacheClient.SetAsync("test", 1);
+        }
+
+        [Benchmark]
+        public Task<CacheValue<int>> SetAndGetSimpleValue() {
+            return _cacheClient.SetAsync("test", 1).ContinueWith(t => _cacheClient.GetAsync<int>("test")).Unwrap();
+        }
+
+        [Benchmark]
+        public Task<bool> SetModelValue() {
+            return _cacheClient.SetAsync("test", _data);
+        }
+
+        [Benchmark]
+        public Task<CacheValue<SerializeModel>> SetAndGetModelValue() {
+            return _cacheClient.SetAsync("test", _data).ContinueWith(t => _cacheClient.GetAsync<SerializeModel>("test")).Unwrap();
         }
     }
 

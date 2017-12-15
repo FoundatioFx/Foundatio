@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.TestHarness.Utility;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -117,6 +118,19 @@ namespace Foundatio.Tests.Caching {
                     Assert.Equal(2, cache.Misses);
                 }
             }
+        }
+
+        [Fact]
+        public virtual void Benchmark() {
+            var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<InMemoryCacheClientBenchmark>();
+            _logger.LogInformation(summary.ToJson());
+        }
+
+    }
+
+    public class InMemoryCacheClientBenchmark : CacheClientBenchmarkBase {
+        protected override ICacheClient GetCacheClient() {
+            return new InMemoryCacheClient();
         }
     }
 }

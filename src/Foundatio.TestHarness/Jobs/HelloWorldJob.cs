@@ -26,6 +26,27 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 
+    public class ThrowsJob : JobBase {
+        private readonly string _id;
+
+        public ThrowsJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+            _id = Guid.NewGuid().ToString("N").Substring(0, 10);
+        }
+
+        public static int GlobalRunCount;
+        public int RunCount { get; set; }
+
+        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+            RunCount++;
+            Interlocked.Increment(ref GlobalRunCount);
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("HelloWorld Running: instance={Id} runs={RunCount} global={GlobalRunCount} threadid={ThreadId}", _id, RunCount, GlobalRunCount, Thread.CurrentThread.ManagedThreadId);
+
+            throw new Exception("I am bad!");
+        }
+    }
+
     public class LongRunningJob : JobBase {
         private readonly string _id;
         private int _iterationCount;
