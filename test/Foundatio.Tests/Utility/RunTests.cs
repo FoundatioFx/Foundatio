@@ -1,10 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
-using Foundatio.Serializer;
 using Foundatio.Utility;
-using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -21,6 +18,18 @@ namespace Foundatio.Tests.Utility {
             }, 5));
             
             Assert.Equal(5, count);
+        }
+
+        [Fact]
+        public async Task CanRunDelayed() {
+            var start = SystemClock.Now;
+            TimeSpan duration = TimeSpan.Zero;
+            await Run.DelayedRunAsync(TimeSpan.FromMilliseconds(100), () => {
+                duration = SystemClock.Now.Subtract(start);
+                return Task.CompletedTask;
+            });
+            Assert.True(duration > TimeSpan.FromMilliseconds(60));
+
         }
     }
 }

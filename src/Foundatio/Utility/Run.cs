@@ -7,13 +7,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     public static class Run {
-        public static Task DelayedAsync(TimeSpan delay, Func<Task> action) {
+        public static Task DelayedRunAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default(CancellationToken)) {
+            return DelayedRunAsync(delay, ct => action(), cancellationToken);
+        }
+
+        public static Task DelayedRunAsync(TimeSpan delay, Func<CancellationToken, Task> action, CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.Run(() => {
                 if (delay.Ticks <= 0)
-                    return action();
+                    return action(cancellationToken);
 
-                return SystemClock.SleepAsync(delay).ContinueWith(t => action());
-            });
+                return SystemClock.SleepAsync(delay, cancellationToken)
+                    .ContinueWith(t => action(cancellationToken), cancellationToken);
+            }, cancellationToken);
         }
 
         public static Task InParallelAsync(int iterations, Func<int, Task> work) {
@@ -59,23 +64,15 @@ namespace Foundatio.Utility {
         }
        
         public Task RunAsync(Func<Task> action, CancellationToken cancellationToken = default(CancellationToken)) {
-            return RunAsync(() => {
-                return action().ContinueWith(t => Task.CompletedTask);
-            }, _policy.DefaultMaxAttempts, cancellationToken);
+            return RunAsync(action, _policy.DefaultMaxAttempts, cancellationToken);
         }
        
         public Task RunAsync(Func<Task> action, int maxAttempts, CancellationToken cancellationToken = default(CancellationToken)) {
-            return RunAsync(() => {
-                return action().ContinueWith(t => Task.CompletedTask);
-            }, maxAttempts, cancellationToken);
+            return RunAsync(action, maxAttempts, cancellationToken);
         }
 
         public Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (action == null)
-                throw new ArgumentNullException(nameof(action));
-
-            var startTime = SystemClock.UtcNow;
-            return action().ContinueWith(task => RetryContinuation(task, action, 1, _policy.DefaultMaxAttempts, startTime, cancellationToken));
+            return RunAsync(action, _policy.DefaultMaxAttempts, cancellationToken);
         }
 
         public Task<T> RunAsync<T>(Func<Task<T>> action, int maxAttempts, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -83,7 +80,7 @@ namespace Foundatio.Utility {
                 throw new ArgumentNullException(nameof(action));
 
             var startTime = SystemClock.UtcNow;
-            return action().ContinueWith(task => RetryContinuation(task, action, 1, maxAttempts, startTime, cancellationToken));
+            return action().ContinueWith(task => RetryContinuation(task, action, 1, maxAttempts, startTime, cancellationToken), cancellationToken);
         }
 
         private T RetryContinuation<T>(Task<T> task, Func<Task<T>> action, int attempts, int maxAttempts, DateTime startTime, CancellationToken cancellationToken) {
@@ -94,25 +91,24 @@ namespace Foundatio.Utility {
                 _policy.Logger.LogError(task.Exception.InnerException, "Retry error: {Message}", task.Exception.InnerException.Message);
 
             if (attempts <= maxAttempts - 1 && _policy.ShouldRetryFunc(task.Exception.InnerException)) {
-                return SystemClock.SleepAsync(_policy.RetryIntervalFunc(attempts))
+                return SystemClock.SleepAsync(_policy.RetryIntervalFunc(attempts), cancellationToken)
                     .ContinueWith(t => {
                         if (_policy.Logger.IsEnabled(LogLevel.Information))
                             _policy.Logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
-                            
+                        
                         return action();
-                    }).Unwrap()
-                    .ContinueWith(retryTask => RetryContinuation(retryTask, action, attempts++, maxAttempts, startTime, cancellationToken))
+                    }, cancellationToken).Unwrap()
+                    .ContinueWith(retryTask => RetryContinuation(retryTask, action, attempts++, maxAttempts, startTime, cancellationToken), cancellationToken)
                     .Result;
             }
 
             // will rethrow
             return task.Result;
-
         }
     }
 
     public class DefaultRetryPolicy : IRetryPolicy {
-        private static readonly int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
+        private static readonly int[] _defaultBackoffIntervals = { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
         private static readonly Random _rnd = new Random();
 
         public int DefaultMaxAttempts { get; set; } = 5;

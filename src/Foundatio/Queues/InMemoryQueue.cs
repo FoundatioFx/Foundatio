@@ -195,7 +195,7 @@ namespace Foundatio.Queues {
             if (info.Attempts < _options.Retries + 1) {
                 if (_options.RetryDelay > TimeSpan.Zero) {
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item to wait list for future retry: {Id}", entry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(info.Attempts), () => RetryAsync(info));
+                    var unawaited = Run.DelayedRunAsync(GetRetryDelay(info.Attempts), () => RetryAsync(info));
                 } else {
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
                     var unawaited = Task.Run(() => RetryAsync(info));

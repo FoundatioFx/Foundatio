@@ -127,6 +127,15 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanTolerateException() {
+            Log.MinimumLevel = LogLevel.Trace;
+            var job = new ThrowsJob(Log);
+            var result = await job.TryRunAsync();
+            Assert.False(result.IsSuccess);
+            Assert.NotNull(result.Error);
+        }
+
+        [Fact]
+        public async Task CanTolerateContinuousException() {
             const int iterations = 10;
 
             _logger.LogInformation($"Thread count: {Process.GetCurrentProcess().Threads.Count}");
