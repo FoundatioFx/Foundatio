@@ -13,16 +13,14 @@ namespace Foundatio.Jobs {
     }
 
     public static class JobExtensions {
-        public static Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default(CancellationToken)) {
-            return job.RunAsync(cancellationToken)
-                .ContinueWith(t => {
-                     if (t.IsFaulted)
-                         return JobResult.FromException(t.Exception.InnerException);
-                     if (t.IsCanceled)
-                         return JobResult.Cancelled;
-
-                     return t.Result;
-                 });
+        public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default(CancellationToken)) {
+            try {
+                return await job.RunAsync(cancellationToken).AnyContext();
+            } catch (OperationCanceledException) {
+                return JobResult.Cancelled;
+            } catch (Exception ex) {
+                return JobResult.FromException(ex);
+            }
         }
 
         public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
