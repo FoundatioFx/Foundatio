@@ -22,12 +22,14 @@ namespace Foundatio.Tests.Metrics {
                     return;
 
                 metrics.Gauge("mygauge", 12d);
+                await Task.Delay(10);
                 Assert.Equal(12d, (await stats.GetGaugeStatsAsync("mygauge")).Last);
                 metrics.Gauge("mygauge", 10d);
                 metrics.Gauge("mygauge", 5d);
                 metrics.Gauge("mygauge", 4d);
                 metrics.Gauge("mygauge", 12d);
                 metrics.Gauge("mygauge", 20d);
+                await Task.Delay(10);
                 Assert.Equal(20d, (await stats.GetGaugeStatsAsync("mygauge")).Last);
             }
         }
@@ -44,9 +46,11 @@ namespace Foundatio.Tests.Metrics {
                 await AssertCounterAsync(stats, "c1", 6);
 
                 metrics.Gauge("g1", 2.534);
+                await Task.Delay(10);
                 Assert.Equal(2.534, await stats.GetLastGaugeValueAsync("g1"));
 
                 metrics.Timer("t1", 50788);
+                await Task.Delay(10);
                 var timer = await stats.GetTimerStatsAsync("t1");
                 Assert.Equal(1, timer.Count);
 

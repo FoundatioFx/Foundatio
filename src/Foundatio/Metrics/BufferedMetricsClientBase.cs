@@ -29,7 +29,7 @@ namespace Foundatio.Metrics {
             if (options.Buffered) {
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
             } else {
-                _taskQueue = new TaskQueue(maxDegreeOfParallelism: 2);
+                _taskQueue = new TaskQueue();
                 _taskQueue.RunContinuous();
             }
         }
