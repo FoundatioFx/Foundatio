@@ -52,7 +52,8 @@ namespace Foundatio.Messaging {
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
 
-            return SendMessageToSubscribersAsync(subscribers, messageType, message.DeepClone());
+            SendMessageToSubscribers(subscribers, messageType, message.DeepClone());
+            return Task.CompletedTask;
         }
     }
 }

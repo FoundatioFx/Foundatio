@@ -21,7 +21,7 @@ namespace Foundatio.Queues {
         private int _working;
         private readonly ILogger _logger;
 
-        public TaskQueue(int maxItems = Int32.MaxValue, int maxDegreeOfParallelism = 1, ILoggerFactory loggerFactory = null) {
+        public TaskQueue(int maxItems = Int32.MaxValue, byte maxDegreeOfParallelism = 1, ILoggerFactory loggerFactory = null) {
             _maxItems = maxItems;
             _maxDegreeOfParallelism = maxDegreeOfParallelism;
             _logger = loggerFactory?.CreateLogger<TaskQueue>() ?? NullLogger<TaskQueue>.Instance;
@@ -34,7 +34,7 @@ namespace Foundatio.Queues {
 
         public bool Enqueue(Func<Task> task) {
             if (_queue.Count >= _maxItems) {
-                _logger.LogWarning("Ignoring queued task: Queue is full");
+                _logger.LogError("Ignoring queued task: Queue is full");
                 return false;
             }
 
@@ -47,7 +47,7 @@ namespace Foundatio.Queues {
             return RunImplAsync(false, token);
         }
 
-        public void RunContinuousAsync(CancellationToken token = default(CancellationToken)) {
+        public void RunContinuous(CancellationToken token = default(CancellationToken)) {
             _logger.LogInformation("Running continuous task queue");
             Task.Run(() => RunImplAsync(true, token), GetLinkedDisposableCanncellationToken(token))
                 .ContinueWith(t => {
@@ -58,7 +58,7 @@ namespace Foundatio.Queues {
                         _logger.LogWarning("Task queue was cancelled.");
                     } else {
                         _logger.LogError("Continous task queue execution finished and will retry.");
-                        RunContinuousAsync(token);
+                        RunContinuous(token);
                     }
                 }
             );
@@ -135,7 +135,7 @@ namespace Foundatio.Queues {
             }
 
             int tasksToStart = _maxDegreeOfParallelism - _workers.Count;
-            for (int i = 1; i <= tasksToStart; i++)
+            for (int i = 0; i < tasksToStart; i++)
                 AddWorkerTask(isTraceLogLevelEnabled, linkedDisposableCanncellationToken);
 
             while (!_workers.IsEmpty) {

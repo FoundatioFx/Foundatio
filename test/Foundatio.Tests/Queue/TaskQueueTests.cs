@@ -1,16 +1,12 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Attributes.Jobs;
-using Foundatio.Caching;
 using Foundatio.Logging.Xunit;
 using Foundatio.Queues;
 using Foundatio.TestHarness.Utility;
-using Foundatio.Tests.Serializer;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -114,7 +110,7 @@ namespace Foundatio.Tests.Queue {
             var queue = new TaskQueue(maxDegreeOfParallelism: 1, loggerFactory: Log);
 
             var cancellationTokenSource = new CancellationTokenSource();
-            queue.RunContinuousAsync(cancellationTokenSource.Token);
+            queue.RunContinuous(cancellationTokenSource.Token);
             await Task.Delay(20);
             _logger.LogInformation("Checking worker count");
             Assert.Equal(1, queue.Workers);
@@ -183,8 +179,8 @@ namespace Foundatio.Tests.Queue {
             Log.MinimumLevel = LogLevel.Trace;
             const int NumberOfEnqueuedItems = 1000;
             const int MaxDelayInMilliseconds = 20;
-            const int MaxDEgreeOfParallelism = 4;
-            var queue = new TaskQueue(maxDegreeOfParallelism: MaxDEgreeOfParallelism, loggerFactory: Log);
+            const int MaxDegreeOfParallelism = 4;
+            var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, loggerFactory: Log);
 
             for (int i = 0; i < NumberOfEnqueuedItems; i++) {
                 queue.Enqueue(async () => {
@@ -198,12 +194,11 @@ namespace Foundatio.Tests.Queue {
 
             var sw = Stopwatch.StartNew();
             await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, NumberOfEnqueuedItems / MaxDEgreeOfParallelism, NumberOfEnqueuedItems * MaxDelayInMilliseconds / MaxDEgreeOfParallelism);
+            Assert.InRange(sw.ElapsedMilliseconds, NumberOfEnqueuedItems / MaxDegreeOfParallelism, NumberOfEnqueuedItems * MaxDelayInMilliseconds / MaxDegreeOfParallelism);
         }
 
         // TODO: Can cancel slow tasks
         // TODO: Cancel/dispose
-
 
         [Fact] 
         public void Benchmark() { 
@@ -217,20 +212,14 @@ namespace Foundatio.Tests.Queue {
     public class TaskQueueBenchmark {
         private TaskQueue _queue;
 
-        [Params(100, 1_000, 10_000)]
-        public int ItemsToEnqueue { get; set; }
-
-        [Params(1, 2, 4)]
-        public int MaxDegreeOfParallelism { get; set; }
-
-        [Params(0, 10)]
-        public int MaxDelay { get; set; }
+        [Params(1, 2)]
+        public byte MaxDegreeOfParallelism { get; set; }
 
         [GlobalSetup] 
         public void Setup() { 
             _queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism);
-            for (int i = 0; i < ItemsToEnqueue; i++) {
-                _queue.Enqueue(() => MaxDelay > 0 ? Task.Delay(MaxDelay) : Task.CompletedTask);
+            for (int i = 0; i < 100; i++) {
+                _queue.Enqueue(() => Task.CompletedTask);
             }
         } 
  
