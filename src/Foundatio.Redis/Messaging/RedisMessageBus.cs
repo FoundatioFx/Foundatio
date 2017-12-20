@@ -25,13 +25,13 @@ namespace Foundatio.Messaging {
 
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
-                await _options.Subscriber.SubscribeAsync(_options.Topic, OnMessageAsync).AnyContext();
+                await _options.Subscriber.SubscribeAsync(_options.Topic, OnMessage).AnyContext();
                 _isSubscribed = true;
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
             }
         }
 
-        private async void OnMessageAsync(RedisChannel channel, RedisValue value) {
+        private void OnMessage(RedisChannel channel, RedisValue value) {
             if (_subscribers.IsEmpty)
                 return;
 
@@ -45,7 +45,7 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
+            SendMessageToSubscribers(message, _serializer);
         }
 
         protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
@@ -74,7 +74,7 @@ namespace Foundatio.Messaging {
 
                     bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
-                    _options.Subscriber.Unsubscribe(_options.Topic, OnMessageAsync, CommandFlags.FireAndForget);
+                    _options.Subscriber.Unsubscribe(_options.Topic, OnMessage, CommandFlags.FireAndForget);
                     _isSubscribed = false;
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
                 }
