@@ -69,7 +69,8 @@ namespace Foundatio.Messaging {
                 return brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message);
             }
 
-            return SendMessageToSubscribersAsync(message, _serializer);
+            SendMessageToSubscribers(message, _serializer);
+            return Task.CompletedTask;
         }
 
         private bool TopicIsCreated => _topicClient != null;
