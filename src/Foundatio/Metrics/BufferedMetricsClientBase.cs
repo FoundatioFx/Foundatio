@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,6 +18,7 @@ namespace Foundatio.Metrics {
         };
 
         private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>();
+        private readonly TaskQueue _taskQueue;
         private readonly Timer _flushTimer;
         private readonly MetricsClientOptionsBase _options;
         protected readonly ILogger _logger;
@@ -24,8 +26,12 @@ namespace Foundatio.Metrics {
         public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
-            if (options.Buffered)
+            if (options.Buffered) {
                 _flushTimer = new Timer(OnMetricsTimer, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+            } else {
+                _taskQueue = new TaskQueue(maxDegreeOfParallelism: 2);
+                _taskQueue.RunContinuous();
+            }
         }
 
         public AsyncEvent<CountedEventArgs> Counted { get; } = new AsyncEvent<CountedEventArgs>(true);
@@ -105,7 +111,7 @@ namespace Foundatio.Metrics {
         }
 
         private void SubmitMetric(MetricEntry metric) {
-            SubmitMetricsAsync(new List<MetricEntry> { metric }).AnyContext().GetAwaiter().GetResult();
+            _taskQueue.Enqueue(() => SubmitMetricsAsync(new List<MetricEntry> { metric }));
         }
 
         protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics) {
@@ -231,6 +237,7 @@ namespace Foundatio.Metrics {
         }
 
         public virtual void Dispose() {
+            _taskQueue?.Dispose();
             _flushTimer?.Dispose();
             FlushAsync().AnyContext().GetAwaiter().GetResult();
             _queue?.Clear();
