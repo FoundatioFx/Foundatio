@@ -55,7 +55,7 @@ namespace Foundatio.Messaging {
 
                 CreateQueue(_subscriberChannel);
                 var consumer = new EventingBasicConsumer(_subscriberChannel);
-                consumer.Received += OnMessageAsync;
+                consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
 
                 _subscriberChannel.BasicConsume(_options.Topic, true, consumer);
@@ -69,7 +69,7 @@ namespace Foundatio.Messaging {
                 _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
         }
 
-        private async void OnMessageAsync(object sender, BasicDeliverEventArgs e) {
+        private void OnMessage(object sender, BasicDeliverEventArgs e) {
             if (_subscribers.IsEmpty)
                 return;
 
@@ -83,7 +83,7 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            await SendMessageToSubscribersAsync(message, _serializer).AnyContext();
+            SendMessageToSubscribers(message, _serializer);
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
