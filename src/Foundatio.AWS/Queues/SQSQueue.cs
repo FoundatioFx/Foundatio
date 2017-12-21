@@ -250,7 +250,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
+            var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
                 bool isTraceLevelLogging = _logger.IsEnabled(LogLevel.Trace);
@@ -261,14 +261,14 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> entry = null;
                     try {
-                        entry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
+                        entry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
                     } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || entry == null)
                         continue;
 
                     try {
-                        await handler(entry, linkedCancellationToken).AnyContext();
+                        await handler(entry, linkedCancellationToken.Token).AnyContext();
                         if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted)
                             await entry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
@@ -281,7 +281,7 @@ namespace Foundatio.Queues {
                 }
 
                 if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-            }, linkedCancellationToken);
+            }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 
         public override void Dispose() {
