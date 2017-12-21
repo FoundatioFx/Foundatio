@@ -194,7 +194,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
+            var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
@@ -205,20 +205,21 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
                     } catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try {
-                        await handler(queueEntry, linkedCancellationToken).AnyContext();
+                        await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     }
                     catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
-                        if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                        if (_logger.IsEnabled(LogLevel.Error))
+                            _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
@@ -226,7 +227,7 @@ namespace Foundatio.Queues {
                 }
 
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
-            }, linkedCancellationToken);
+            }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 
         private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry) {
