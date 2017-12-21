@@ -16,10 +16,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue {
     public class TaskQueueTests : TestWithLoggingBase {
-        public TaskQueueTests(ITestOutputHelper output) : base(output) {
-            Log.SetLogLevel<TaskQueue>(LogLevel.Trace);
-            Log.SetLogLevel<TaskQueueTests>(LogLevel.Trace);
-        }
+        public TaskQueueTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
         public async Task CanProcessEmptyQueue() {
@@ -147,7 +144,7 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public async Task CanProcessQuickly() {
-            Log.MinimumLevel = LogLevel.Trace;
+            Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 1000;
 
             int completed = 0;
@@ -165,18 +162,17 @@ namespace Foundatio.Tests.Queue {
                 queue.Start();
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);
                 Assert.Equal(NumberOfEnqueuedItems, completed);
-                Assert.InRange(sw.ElapsedMilliseconds, 15, 200);
             }
         }
 
         [Fact]
         public async Task CanProcessInParrallelQuickly() {
-            Log.MinimumLevel = LogLevel.Trace;
+            Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 1000;
             const int MaxDegreeOfParallelism = 2;
 
@@ -191,12 +187,12 @@ namespace Foundatio.Tests.Queue {
                 }
 
                 Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
-                
+
                 var sw = Stopwatch.StartNew();
                 queue.Start();
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);
@@ -206,7 +202,7 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public async Task CanProcessInParrallelQuicklyWithRandomDelays() {
-            Log.MinimumLevel = LogLevel.Trace;
+            Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 1000;
             const int MaxDelayInMilliseconds = 20;
             const int MaxDegreeOfParallelism = 4;
@@ -228,7 +224,7 @@ namespace Foundatio.Tests.Queue {
                 queue.Start();
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);

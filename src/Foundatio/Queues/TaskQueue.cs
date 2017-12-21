@@ -87,7 +87,7 @@ namespace Foundatio.Queues {
                                 } else if (t.IsCanceled) {
                                     _logger.LogWarning("Dequeue task was cancelled.");
                                 } else if (isTraceLogLevelEnabled) {
-                                   // _logger.LogTrace("Finished running dequeued task.");
+                                    _logger.LogTrace("Finished running dequeued task.");
                                 }
 
                                 if (_queueEmptyAction != null && _working == 0 && _queue.IsEmpty) {
