@@ -92,7 +92,8 @@ namespace Foundatio.Queues {
                                     _logger.LogTrace("Finished running dequeued task.");
                                 }
 
-                                if (_queueEmptyAction != null && _working == 0 && _queue.IsEmpty) {
+                                if (_queueEmptyAction != null && _working == 0 && _queue.IsEmpty && _queue.Count == 0) {
+                                    if (isTraceLogLevelEnabled) _logger.LogTrace("Running completed action..");
                                     // NOTE: There could be a race here where an a sepmaphore was taken but the queue was empty.
                                     _queueEmptyAction();
                                 }

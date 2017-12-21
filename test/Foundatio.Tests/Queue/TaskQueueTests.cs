@@ -29,11 +29,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanRun() {
+        public void CanRun() {
             Log.MinimumLevel = LogLevel.Trace;
 
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 queue.Enqueue(() => {
                     _logger.LogTrace("Running Task");
@@ -44,7 +44,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, queue.Queued);
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(1, completed);
@@ -52,11 +52,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanRunAndWait() {
+        public void CanRunAndWait() {
             Log.MinimumLevel = LogLevel.Trace;
 
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 queue.Enqueue(() => {
                     _logger.LogTrace("Running Task");
@@ -67,13 +67,13 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(1, queue.Queued);
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(1, completed);
 
-                await SystemClock.SleepAsync(30);
-                countdown.AddCount();
+                SystemClock.Sleep(30);
+                countdown.Reset();
 
                 queue.Enqueue(() => {
                     _logger.LogTrace("Running Task");
@@ -81,7 +81,7 @@ namespace Foundatio.Tests.Queue {
                     return Task.CompletedTask;
                 });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(2, completed);
@@ -102,11 +102,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanHandleTaskFailure() {
+        public void CanHandleTaskFailure() {
             Log.MinimumLevel = LogLevel.Trace;
 
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 queue.Enqueue(() => {
                     _logger.LogTrace("Running Task 1");
@@ -114,12 +114,12 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 queue.Enqueue(async () => {
-                    _logger.LogTrace("Running Task 1");
+                    _logger.LogTrace("Running Task 2");
                     throw new Exception("Exception in Queued Task");
                 });
 
                 queue.Enqueue(() => {
-                    _logger.LogTrace("Running Task 2");
+                    _logger.LogTrace("Running Task 3");
                     Interlocked.Increment(ref completed);
                     return Task.CompletedTask;
                 });
@@ -128,7 +128,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal(0, queue.Working);
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);
@@ -137,10 +137,10 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanRunInParallel() {
+        public void CanRunInParallel() {
             Log.MinimumLevel = LogLevel.Trace;
 
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(maxDegreeOfParallelism: 2, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 int completed = 0;
                 queue.Enqueue(async () => { await SystemClock.SleepAsync(10); Interlocked.Increment(ref completed); });
@@ -151,7 +151,7 @@ namespace Foundatio.Tests.Queue {
 
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);
@@ -160,10 +160,10 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanRunContinously() {
+        public void CanRunContinously() {
             Log.MinimumLevel = LogLevel.Trace;
 
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 int completed = 0;
                 queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
@@ -171,7 +171,7 @@ namespace Foundatio.Tests.Queue {
                 queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
                 Assert.InRange(queue.Queued, 1, 3);
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                countdown.Wait(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
                 Assert.Equal(0, queue.Working);
@@ -180,12 +180,12 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanProcessQuickly() {
+        public void CanProcessQuickly() {
             Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 1000;
 
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 for (int i = 0; i < NumberOfEnqueuedItems; i++) {
                     queue.Enqueue(() => {
@@ -198,7 +198,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                countdown.Wait(TimeSpan.FromSeconds(5));
                 _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
@@ -208,13 +208,13 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanProcessInParrallelQuickly() {
+        public void CanProcessInParrallelQuickly() {
             Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 1000;
             const int MaxDegreeOfParallelism = 2;
 
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 for (int i = 0; i < NumberOfEnqueuedItems; i++) {
                     queue.Enqueue(() => {
@@ -228,7 +228,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                countdown.Wait(TimeSpan.FromSeconds(5));
                 _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.InRange(countdown.CurrentCount, -1, 0); // TODO: There is a possibility where on completed could be called twice.
                 Assert.Equal(0, queue.Queued);
@@ -238,14 +238,14 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public async Task CanProcessInParrallelQuicklyWithRandomDelays() {
+        public void CanProcessInParrallelQuicklyWithRandomDelays() {
             Log.MinimumLevel = LogLevel.Debug;
             const int NumberOfEnqueuedItems = 500;
             const int MaxDelayInMilliseconds = 10;
             const int MaxDegreeOfParallelism = 4;
             
             int completed = 0;
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new CountdownEvent(1);
             using(var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
                 for (int i = 0; i < NumberOfEnqueuedItems; i++) {
                     queue.Enqueue(async () => {
@@ -260,7 +260,7 @@ namespace Foundatio.Tests.Queue {
                 var sw = Stopwatch.StartNew();
                 queue.Start();
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(NumberOfEnqueuedItems * MaxDelayInMilliseconds));
+                countdown.Wait(TimeSpan.FromSeconds(NumberOfEnqueuedItems * MaxDelayInMilliseconds));
                 _logger.LogInformation("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(0, queue.Queued);
