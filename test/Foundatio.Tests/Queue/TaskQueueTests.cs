@@ -4,9 +4,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Attributes.Jobs;
+using Foundatio.AsyncEx;
 using Foundatio.Logging.Xunit;
 using Foundatio.Queues;
 using Foundatio.TestHarness.Utility;
+using Foundatio.Tests.Extensions;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -22,156 +25,183 @@ namespace Foundatio.Tests.Queue {
         public async Task CanProcessEmptyQueue() {
             Log.MinimumLevel = LogLevel.Trace;
             var queue = new TaskQueue(loggerFactory: Log);
-            await queue.RunAsync();
+            await SystemClock.SleepAsync(30);
+            queue.Dispose();
+            await SystemClock.SleepAsync(1);
+            Assert.Equal(0, queue.Working);
         }
 
         [Fact]
-        public async Task CanRespectMaxItems() {
+        public async Task CanRun() {
             Log.MinimumLevel = LogLevel.Trace;
-            var queue = new TaskQueue(maxItems: 2, loggerFactory: Log);
-            _logger.LogTrace("Enqueueing Task with Delay of 10ms");
-            queue.Enqueue(async () => {
-                _logger.LogTrace("Starting Delay for 10ms");
-                await Task.Delay(10);
-                _logger.LogTrace("Finished Delay for 10ms");
-            });
-            _logger.LogTrace("Enqueueing Task with Delay of 20ms");
-            queue.Enqueue(async () => {
-                _logger.LogTrace("Starting Delay for 20ms");
-                await Task.Delay(20);
-                _logger.LogTrace("Finished Delay for 20ms");
-            });
-            _logger.LogTrace("Enqueueing Task with Delay of 30ms");
-            queue.Enqueue(async () => {
-                _logger.LogTrace("Starting Delay for 30ms");
-                await Task.Delay(30);
-                _logger.LogTrace("Finished Delay for 30ms");
-            });
 
-            Assert.Equal(2, queue.Queued);
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                queue.Enqueue(() => {
+                    _logger.LogTrace("Running Task");
+                    Interlocked.Increment(ref completed);
+                    return Task.CompletedTask;
+                });
 
-            var sw = Stopwatch.StartNew();
-            await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, 15, 70);
+                Assert.Equal(1, queue.Queued);
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(1, completed);
+            }
+        }
+
+        [Fact]
+        public void CanRespectMaxItems() {
+            Log.MinimumLevel = LogLevel.Trace;
+
+            using (var queue = new TaskQueue(maxItems: 1, autoStart: false, loggerFactory: Log)) {
+                queue.Enqueue(() => Task.CompletedTask);
+                queue.Enqueue(() => Task.CompletedTask);
+
+                Assert.Equal(1, queue.Queued);
+                Assert.Equal(0, queue.Working);
+            }
         }
 
         [Fact]
         public async Task CanHandleTaskFailure() {
             Log.MinimumLevel = LogLevel.Trace;
-            var queue = new TaskQueue(maxItems: 2, loggerFactory: Log);
-            _logger.LogTrace("Enqueueing Task with Delay of 10ms");
-            queue.Enqueue(async () => {
-                _logger.LogTrace("Starting Delay for 10ms");
-                await Task.Delay(10);
-                throw new Exception("Exception in Queued Task");
-            });
-            _logger.LogTrace("Enqueueing Task with Delay of 20ms");
-            queue.Enqueue(async () => {
-                _logger.LogTrace("Starting Delay for 20ms");
-                await Task.Delay(20);
-                _logger.LogTrace("Finished Delay for 20ms");
-            });
 
-            Assert.Equal(2, queue.Queued);
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                queue.Enqueue(() => {
+                    _logger.LogTrace("Running Task 1");
+                    throw new Exception("Exception in Queued Task");
+                });
 
-            var sw = Stopwatch.StartNew();
-            await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, 15, 100);
+                queue.Enqueue(async () => {
+                    _logger.LogTrace("Running Task 1");
+                    throw new Exception("Exception in Queued Task");
+                });
+
+                queue.Enqueue(() => {
+                    _logger.LogTrace("Running Task 2");
+                    Interlocked.Increment(ref completed);
+                    return Task.CompletedTask;
+                });
+
+                Assert.Equal(3, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(1, completed);
+            }
         }
 
         [Fact]
         public async Task CanRunInParallel() {
             Log.MinimumLevel = LogLevel.Trace;
-            var queue = new TaskQueue(maxDegreeOfParallelism: 2, loggerFactory: Log);
-            int completed = 0;
-            queue.Enqueue(async () => { await Task.Delay(30); completed++; });
-            queue.Enqueue(async () => { await Task.Delay(40); completed++; });
-            queue.Enqueue(async () => { await Task.Delay(50); completed++; });
-            Assert.Equal(3, queue.Queued);
-            Assert.Equal(0, queue.Working);
-            Assert.Equal(0, queue.Workers);
 
-            var unawaited = queue.RunAsync();
-            await Task.Delay(10);
-            Assert.Equal(1, queue.Queued);
-            Assert.Equal(2, queue.Working);
-            Assert.Equal(2, queue.Workers);
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(maxDegreeOfParallelism: 2, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                int completed = 0;
+                queue.Enqueue(async () => { await SystemClock.SleepAsync(10); Interlocked.Increment(ref completed); });
+                queue.Enqueue(async () => { await SystemClock.SleepAsync(50); Interlocked.Increment(ref completed); });
+                queue.Enqueue(() => { Assert.Equal(2, queue.Working); Interlocked.Increment(ref completed); return Task.CompletedTask; });
+                Assert.Equal(3, queue.Queued);
+                Assert.Equal(0, queue.Working);
 
-            await unawaited;
-            Assert.Equal(0, queue.Queued);
-            Assert.Equal(0, queue.Working);
-            Assert.Equal(0, queue.Workers);
-            Assert.Equal(3, completed);
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(3, completed);
+            }
         }
 
         [Fact]
         public async Task CanRunContinously() {
             Log.MinimumLevel = LogLevel.Trace;
-            var queue = new TaskQueue(maxDegreeOfParallelism: 1, loggerFactory: Log);
 
-            var cancellationTokenSource = new CancellationTokenSource();
-            queue.RunContinuous(cancellationTokenSource.Token);
-            await Task.Delay(20);
-            _logger.LogInformation("Checking worker count");
-            Assert.Equal(1, queue.Workers);
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                int completed = 0;
+                queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
+                queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
+                queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
+                Assert.InRange(queue.Queued, 1, 3);
 
-            int completed = 0;
-            queue.Enqueue(async () => { await Task.Delay(10); completed++; });
-            queue.Enqueue(async () => { await Task.Delay(10); completed++; });
-            queue.Enqueue(async () => { await Task.Delay(10); completed++; });
-            Assert.InRange(queue.Queued, 1, 3);
-            Assert.Equal(1, queue.Workers);
-            Assert.InRange(queue.Working, 0, 1);
-            
-            await Task.Delay(50);
-            cancellationTokenSource.Cancel();
-            await Task.Delay(50);
-            Assert.Equal(0, queue.Working);
-            Assert.Equal(0, queue.Workers);
-            Assert.Equal(0, queue.Queued);
-            Assert.Equal(3, completed);
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(3, completed);
+            }
         }
 
         [Fact]
         public async Task CanProcessQuickly() {
             Log.MinimumLevel = LogLevel.Trace;
             const int NumberOfEnqueuedItems = 1000;
-            var queue = new TaskQueue(loggerFactory: Log);
 
-            for (int i = 0; i < NumberOfEnqueuedItems; i++) {
-                queue.Enqueue(() => {
-                    _logger.LogTrace("Finished task #{TaskId}", i);
-                    return Task.CompletedTask;
-                });
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                for (int i = 0; i < NumberOfEnqueuedItems; i++) {
+                    queue.Enqueue(() => {
+                        Interlocked.Increment(ref completed);
+                        return Task.CompletedTask;
+                    });
+                }
+
+                Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
+                var sw = Stopwatch.StartNew();
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(NumberOfEnqueuedItems, completed);
+                Assert.InRange(sw.ElapsedMilliseconds, 15, 200);
             }
-
-            Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
-
-            var sw = Stopwatch.StartNew();
-            await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, 15, 200);
         }
 
         [Fact]
-        public async Task CanProcessQuicklyWithRandomDelays() {
+        public async Task CanProcessInParrallelQuickly() {
             Log.MinimumLevel = LogLevel.Trace;
             const int NumberOfEnqueuedItems = 1000;
-            const int MaxDelayInMilliseconds = 20;
-            var queue = new TaskQueue(loggerFactory: Log);
+            const int MaxDegreeOfParallelism = 2;
 
-            for (int i = 0; i < NumberOfEnqueuedItems; i++) {
-                queue.Enqueue(async () => {
-                    var delay = TimeSpan.FromMilliseconds(Exceptionless.RandomData.GetInt(0, MaxDelayInMilliseconds));
-                    await Task.Delay(delay);
-                    _logger.LogTrace("Finished task #{TaskId} with Delay for {Delay:g}", i, delay);
-                });
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                for (int i = 0; i < NumberOfEnqueuedItems; i++) {
+                    queue.Enqueue(() => {
+                        Interlocked.Increment(ref completed);
+                        return Task.CompletedTask;
+                    });
+                }
+
+                Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
+                
+                var sw = Stopwatch.StartNew();
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(NumberOfEnqueuedItems, completed);
             }
-
-            Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
-
-            var sw = Stopwatch.StartNew();
-            await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, NumberOfEnqueuedItems, NumberOfEnqueuedItems * MaxDelayInMilliseconds);
         }
 
         [Fact]
@@ -180,52 +210,59 @@ namespace Foundatio.Tests.Queue {
             const int NumberOfEnqueuedItems = 1000;
             const int MaxDelayInMilliseconds = 20;
             const int MaxDegreeOfParallelism = 4;
-            var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, loggerFactory: Log);
+            
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism, autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                for (int i = 0; i < NumberOfEnqueuedItems; i++) {
+                    queue.Enqueue(async () => {
+                        var delay = TimeSpan.FromMilliseconds(Exceptionless.RandomData.GetInt(0, MaxDelayInMilliseconds));
+                        await SystemClock.SleepAsync(delay);
+                        Interlocked.Increment(ref completed);
+                    });
+                }
 
-            for (int i = 0; i < NumberOfEnqueuedItems; i++) {
-                queue.Enqueue(async () => {
-                    var delay = TimeSpan.FromMilliseconds(Exceptionless.RandomData.GetInt(0, MaxDelayInMilliseconds));
-                    await Task.Delay(delay);
-                    _logger.LogTrace("Finished task #{TaskId} with Delay for {Delay:g}", i, delay);
-                });
+                Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
+                
+                var sw = Stopwatch.StartNew();
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                _logger.LogTrace("Processed {EnqueuedCount} in {Elapsed:g}", NumberOfEnqueuedItems, sw.Elapsed);
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(0, queue.Working);
+                Assert.Equal(NumberOfEnqueuedItems, completed);
             }
-
-            Assert.Equal(NumberOfEnqueuedItems, queue.Queued);
-
-            var sw = Stopwatch.StartNew();
-            await queue.RunAsync();
-            Assert.InRange(sw.ElapsedMilliseconds, NumberOfEnqueuedItems / MaxDegreeOfParallelism, NumberOfEnqueuedItems * MaxDelayInMilliseconds / MaxDegreeOfParallelism);
         }
 
-        // TODO: Can cancel slow tasks
-        // TODO: Cancel/dispose
+        //TODO: Can cancel slow tasks
 
-        [Fact] 
-        public void Benchmark() { 
-            var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<TaskQueueBenchmark>(); 
-            _logger.LogInformation(summary.ToJson()); 
-        } 
+        [Fact]
+        public void Benchmark() {
+            var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<TaskQueueBenchmark>();
+            _logger.LogInformation(summary.ToJson());
+        }
     }
 
-    [MemoryDiagnoser] 
-    [ShortRunJob] 
+    [MemoryDiagnoser]
+    [ShortRunJob]
     public class TaskQueueBenchmark {
-        private TaskQueue _queue;
-
-        [Params(1, 2)]
+        [Params(1, 2, 4)]
         public byte MaxDegreeOfParallelism { get; set; }
 
-        [GlobalSetup] 
-        public void Setup() { 
-            _queue = new TaskQueue(maxDegreeOfParallelism: MaxDegreeOfParallelism);
-            for (int i = 0; i < 100; i++) {
-                _queue.Enqueue(() => Task.CompletedTask);
+        private readonly CountdownEvent _countdown = new CountdownEvent(1);
+
+        [Benchmark]
+        public void Run() {
+            _countdown.Reset();
+            using (var queue = new TaskQueue(autoStart: false, maxDegreeOfParallelism: MaxDegreeOfParallelism, queueEmptyAction: () => _countdown.Signal())) {
+                for (int i = 0; i < 100; i++)
+                    queue.Enqueue(() => Task.CompletedTask);
+
+                queue.Start();
+                _countdown.Wait(5000);
             }
-        } 
- 
-        [Benchmark] 
-        public Task Run() { 
-            return _queue.RunAsync(); 
         }
-    } 
+    }
 }
