@@ -81,11 +81,9 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanSendMultiple() {
+        public void CanSendMultiple() {
             const int iterations = 100000;
             StartListening(iterations);
-
-            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
 
             var sw = Stopwatch.StartNew();
             for (int index = 0; index < iterations; index++) {
@@ -93,26 +91,18 @@ namespace Foundatio.Tests.Metrics {
                     StopListening();
 
                 _client.Counter("counter");
-                metrics.Counter("counter");
 
                 if (index % (iterations / 10) == 0)
                     StartListening(iterations - index);
-
-                if (index % (iterations / 20) == 0 && _logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace((await metrics.GetCounterStatsAsync("counter")).ToString());
             }
 
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation((await metrics.GetCounterStatsAsync("counter")).ToString());
-
             // Require at least 10,000 operations/s
             Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
 
             SystemClock.Sleep(250);
             var messages = GetMessages();
-            int expected = iterations - (iterations / (iterations / 10));
-            Assert.InRange(messages.Count, expected - 90, expected + 10);
+            Assert.InRange(messages.Count, iterations - (iterations / 10), iterations);
             foreach (string message in messages)
                 Assert.Equal("test.counter:1|c", message);
         }
