@@ -200,7 +200,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
+            var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
@@ -211,14 +211,14 @@ namespace Foundatio.Queues {
 
                     IQueueEntry<T> queueEntry = null;
                     try {
-                        queueEntry = await DequeueImplAsync(linkedCancellationToken).AnyContext();
+                        queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
                     } catch (TimeoutException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try {
-                        await handler(queueEntry, linkedCancellationToken).AnyContext();
+                        await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
@@ -233,7 +233,7 @@ namespace Foundatio.Queues {
 
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-            }, linkedCancellationToken);
+            }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
@@ -254,7 +254,10 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    await _autoResetEvent.WaitAsync(GetDequeueCanncellationToken(linkedCancellationToken)).AnyContext();
+                    using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
+                    using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token)) {
+                        await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
+                    }
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
