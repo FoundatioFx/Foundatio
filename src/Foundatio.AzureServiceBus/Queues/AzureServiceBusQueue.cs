@@ -119,8 +119,6 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCanncellationToken(cancellationToken);
-
             // TODO: How do you unsubscribe from this or bail out on queue disposed?
             _logger.LogTrace("WorkerLoop Start {_options.Name}", _options.Name);
             _queueClient.OnMessageAsync(async msg => {
@@ -128,7 +126,10 @@ namespace Foundatio.Queues {
                 var queueEntry = await HandleDequeueAsync(msg).AnyContext();
 
                 try {
-                    await handler(queueEntry, linkedCancellationToken).AnyContext();
+                    using (var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken)) {
+                        await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
+                    }
+
                     if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.CompleteAsync().AnyContext();
                 } catch (Exception ex) {
