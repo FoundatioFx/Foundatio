@@ -24,8 +24,7 @@ namespace Foundatio.Messaging {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
-            _queue = new TaskQueue(options.TaskQueueMaxItems, options.TaskQueueMaxDegreeOfParallelism, options.LoggerFactory);
-            _queue.RunContinuous();
+            _queue = new TaskQueue(options.TaskQueueMaxItems, options.TaskQueueMaxDegreeOfParallelism, loggerFactory: options.LoggerFactory);
 
             InitializeMaintenance();
         }

@@ -18,12 +18,12 @@ namespace Foundatio.Tests.Utility {
         [Fact]
         public async Task CanRun() {
             var resetEvent = new AsyncAutoResetEvent();
-            Func<Task<DateTime?>> callback = () => {
+            Task<DateTime?> Callback() {
                 resetEvent.Set();
                 return null;
-            };
+            }
 
-            using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
+            using (var timer = new ScheduledTimer(Callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
                 await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
             }
@@ -42,15 +42,15 @@ namespace Foundatio.Tests.Utility {
         private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null) {
             var countdown = new AsyncCountdownEvent(2);
 
-            Func<Task<DateTime?>> callback = async () => {
+            async Task<DateTime?> Callback() {
                 _logger.LogInformation("Starting work.");
                 countdown.Signal();
                 await SystemClock.SleepAsync(500);
                 _logger.LogInformation("Finished work.");
                 return null;
-            };
+            }
 
-            using (var timer = new ScheduledTimer(callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log)) {
+            using (var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log)) {
                 timer.ScheduleNext();
                 var t = Task.Run(async () => {
                     for (int i = 0; i < 3; i++) {
@@ -73,20 +73,21 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanRecoverFromError() {
+            int hits = 0;
             var resetEvent = new AsyncAutoResetEvent(false);
 
-            int hits = 0;
-            Func<Task<DateTime?>> callback = () => {
+            Task<DateTime?> Callback() {
                 Interlocked.Increment(ref hits);
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Callback called for the #{Hits} time", hits);
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation("Callback called for the #{Hits} time", hits);
                 if (hits == 1)
                     throw new Exception("Error in callback");
 
                 resetEvent.Set();
                 return Task.FromResult<DateTime?>(null);
-            };
+            }
 
-            using (var timer = new ScheduledTimer(callback, loggerFactory: Log)) {
+            using (var timer = new ScheduledTimer(Callback, loggerFactory: Log)) {
                 timer.ScheduleNext();
                 await resetEvent.WaitAsync(new CancellationTokenSource(800).Token);
                 Assert.Equal(2, hits);

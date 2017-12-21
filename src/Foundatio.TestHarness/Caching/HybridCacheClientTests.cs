@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Caching;
-using Foundatio.Utility;
-using Foundatio.Messaging;
 using Foundatio.AsyncEx;
+using Foundatio.Caching;
+using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -107,21 +107,25 @@ namespace Foundatio.Tests.Caching {
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
                 var firstResetEvent = new AsyncAutoResetEvent(false);
-                Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("First local cache expired: {Key}", args.Key);
-                    firstResetEvent.Set();
-                };
 
-                using (firstCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler)) {
+                void ExpiredHandler(object sender, ItemExpiredEventArgs args) {
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("First local cache expired: {Key}", args.Key);
+                    firstResetEvent.Set();
+                }
+
+                using (firstCache.LocalCache.ItemExpired.AddSyncHandler(ExpiredHandler)) {
                     using (var secondCache = GetCacheClient() as HybridCacheClient) {
                         Assert.NotNull(secondCache);
                         var secondResetEvent = new AsyncAutoResetEvent(false);
-                        Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Second local cache expired: {Key}", args.Key);
-                            secondResetEvent.Set();
-                        };
 
-                        using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
+                        void ExpiredHandler2(object sender, ItemExpiredEventArgs args) {
+                            if (_logger.IsEnabled(LogLevel.Trace))
+                                _logger.LogTrace("Second local cache expired: {Key}", args.Key);
+                            secondResetEvent.Set();
+                        }
+
+                        using (secondCache.LocalCache.ItemExpired.AddSyncHandler(ExpiredHandler2)) {
                             string cacheKey = "will-expire-remote";
                             _logger.LogTrace("First Set");
                             Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));

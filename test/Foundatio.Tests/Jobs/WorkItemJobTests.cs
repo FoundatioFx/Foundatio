@@ -106,7 +106,7 @@ namespace Foundatio.Tests.Jobs {
                                 completedItems.Add(status.WorkItemId);
                         });
 
-                        var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                        var cancellationTokenSource = new CancellationTokenSource(10000);
                         var tasks = new List<Task> {
                             Task.Run(async () => {
                                 await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
