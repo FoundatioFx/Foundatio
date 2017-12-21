@@ -52,6 +52,43 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public async Task CanRunAndWait() {
+            Log.MinimumLevel = LogLevel.Trace;
+
+            int completed = 0;
+            var countdown = new AsyncCountdownEvent(1);
+            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+                queue.Enqueue(() => {
+                    _logger.LogTrace("Running Task");
+                    Interlocked.Increment(ref completed);
+                    return Task.CompletedTask;
+                });
+
+                Assert.Equal(1, queue.Queued);
+                queue.Start();
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(1, completed);
+
+                await SystemClock.SleepAsync(30);
+                countdown.AddCount();
+
+                queue.Enqueue(() => {
+                    _logger.LogTrace("Running Task");
+                    Interlocked.Increment(ref completed);
+                    return Task.CompletedTask;
+                });
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.Equal(0, queue.Queued);
+                Assert.Equal(2, completed);
+            }
+        }
+
+        [Fact]
         public void CanRespectMaxItems() {
             Log.MinimumLevel = LogLevel.Trace;
 

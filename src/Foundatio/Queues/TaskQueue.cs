@@ -53,7 +53,7 @@ namespace Foundatio.Queues {
 
         private void StartWorking() {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            _logger.LogInformation("Running continuous task queue");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Starting worker loop.");
             Task.Run(async () => {
                 while (!_workLoopCancellationTokenSource.Token.IsCancellationRequested) {
                     try {
@@ -63,6 +63,7 @@ namespace Foundatio.Queues {
                                 _semaphore.Release();
 
                             if (_queue.IsEmpty) {
+                                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to deuque task.");
                                 try {
                                     using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
                                     using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_workLoopCancellationTokenSource.Token, timeoutCancellationTokenSource.Token)) {
@@ -74,8 +75,9 @@ namespace Foundatio.Queues {
                             continue;
                         }
 
-                        // TODO: Cancel after x amount of time.
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Running dequeued task");
                         Interlocked.Increment(ref _working);
+                        // TODO: Cancel after x amount of time.
                         var unawaited = Task.Run(() => task(), _workLoopCancellationTokenSource.Token)
                             .ContinueWith(t => {
                                 Interlocked.Decrement(ref _working);
