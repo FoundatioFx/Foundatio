@@ -27,7 +27,7 @@ namespace Foundatio.Queues {
             InitializeMaintenance();
         }
 
-        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.CompletedTask;
         }
 
