@@ -58,5 +58,40 @@ namespace Foundatio.Azure.Tests.Storage {
         public override Task CanConcurrentlyManageFilesAsync() {
             return base.CanConcurrentlyManageFilesAsync();
         }
+
+        [Fact]
+        public override void CanUseDataDirectory() {
+            base.CanUseDataDirectory();
+        }
+
+        [Fact]
+        public override Task CanDeleteEntireFolderAsync() {
+            return base.CanDeleteEntireFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteEntireFolderWithWildcardAsync() {
+            return base.CanDeleteEntireFolderWithWildcardAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteSpecificFilesAsync() {
+            return base.CanDeleteSpecificFilesAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteNestedFolderAsync() {
+            return base.CanDeleteNestedFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
+            return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripSeekableStreamAsync() {
+            return base.CanRoundTripSeekableStreamAsync();
+        }
     }
 }

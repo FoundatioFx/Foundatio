@@ -28,6 +28,9 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
             var blockBlob = _container.GetBlockBlobReference(path);
             try {
                 return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
@@ -40,6 +43,9 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
             var blob = _container.GetBlockBlobReference(path);
             try {
                 await blob.FetchAttributesAsync().AnyContext();
@@ -50,28 +56,53 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
             var blockBlob = _container.GetBlockBlobReference(path);
             return blockBlob.ExistsAsync();
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            if (!stream.CanSeek && stream.Position > 0)
+                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
+
+            if (stream.CanSeek)
+                stream.Seek(0, SeekOrigin.Begin);
+
             var blockBlob = _container.GetBlockBlobReference(path);
             await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
 
             return true;
         }
 
-        public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            var oldBlob = _container.GetBlockBlobReference(oldpath);
-            if (!(await CopyFileAsync(oldpath, newpath, cancellationToken).AnyContext()))
+        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrEmpty(newPath))
+                throw new ArgumentNullException(nameof(newPath));
+
+            var oldBlob = _container.GetBlockBlobReference(path);
+            if (!(await CopyFileAsync(path, newPath, cancellationToken).AnyContext()))
                 return false;
 
             return await oldBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken).AnyContext();
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrEmpty(targetPath))
+                throw new ArgumentNullException(nameof(targetPath));
+
             var oldBlob = _container.GetBlockBlobReference(path);
-            var newBlob = _container.GetBlockBlobReference(targetpath);
+            var newBlob = _container.GetBlockBlobReference(targetPath);
 
             await newBlob.StartCopyAsync(oldBlob, null, null, null, null, cancellationToken).AnyContext();
             while (newBlob.CopyState.Status == CopyStatus.Pending)
@@ -81,6 +112,9 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
             var blockBlob = _container.GetBlockBlobReference(path);
             return blockBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken);
         }
