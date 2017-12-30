@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Exceptionless;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;
@@ -304,6 +305,32 @@ namespace Foundatio.Tests.Storage {
                 Assert.False(await storage.ExistsAsync(@"x\nested\hello.txt"));
                 Assert.False(await storage.ExistsAsync(@"x\nested\again.txt"));
                 Assert.True(await storage.ExistsAsync(@"x\nested\world.csv"));
+            }
+        }
+
+        public virtual async Task CanRoundTripSeekableStreamAsync() {
+            await ResetAsync();
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                const string path = "user.xml";
+                var element = XElement.Parse("<user>Blake</user>");
+
+                using (var memoryStream = new MemoryStream()) {
+                    _logger.LogTrace("Saving xml to stream with position {Position} and is seekable: {CanSeek}.", memoryStream.Position, memoryStream.CanSeek);
+                    element.Save(memoryStream, SaveOptions.DisableFormatting);
+                    _logger.LogTrace("Saving contents with position {Position} and is seekable: {CanSeek}.", memoryStream.Position, memoryStream.CanSeek);
+                    await storage.SaveFileAsync(path, memoryStream);
+                    _logger.LogTrace("Saved contents with position {Position} and is seekable: {CanSeek}.", memoryStream.Position, memoryStream.CanSeek);
+                }
+
+                using (var stream = await storage.GetFileStreamAsync(path)) {
+                    var actual = XElement.Load(stream);
+                    Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
+                }
             }
         }
 
