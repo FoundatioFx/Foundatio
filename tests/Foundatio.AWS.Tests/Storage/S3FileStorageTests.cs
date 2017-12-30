@@ -67,6 +67,11 @@ namespace Foundatio.AWS.Tests.Storage {
         }
 
         [Fact]
+        public override void CanUseDataDirectory() {
+            base.CanUseDataDirectory();
+        }
+
+        [Fact]
         public override Task CanDeleteEntireFolderAsync() {
             return base.CanDeleteEntireFolderAsync();
         }
@@ -89,6 +94,11 @@ namespace Foundatio.AWS.Tests.Storage {
         [Fact]
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripSeekableStreamAsync() {
+            return base.CanRoundTripSeekableStreamAsync();
         }
     }
 }

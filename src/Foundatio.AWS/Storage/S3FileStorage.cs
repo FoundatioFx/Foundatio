@@ -36,7 +36,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             var client = CreateClient();
@@ -56,7 +56,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             using (var client = CreateClient()) {
@@ -84,7 +84,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> ExistsAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             var result = await GetFileInfoAsync(path).AnyContext();
@@ -92,14 +92,21 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
+
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            if (!stream.CanSeek && stream.Position > 0)
+                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
 
             using (var client = CreateClient()) {
                 var req = new PutObjectRequest {
                     BucketName = _bucket,
                     Key = path.Replace('\\', '/'),
-                    InputStream = AmazonS3Util.MakeStreamSeekable(stream)
+                    AutoCloseStream = !stream.CanSeek,
+                    InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream)
                 };
 
                 var res = await client.PutObjectAsync(req, cancellationToken).AnyContext();
@@ -107,18 +114,18 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<bool> RenameFileAsync(string oldpath, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(oldpath))
-                throw new ArgumentNullException(nameof(oldpath));
-            if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException(nameof(newpath));
+        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrEmpty(newPath))
+                throw new ArgumentNullException(nameof(newPath));
 
             using (var client = CreateClient()) {
                 var req = new CopyObjectRequest {
                     SourceBucket = _bucket,
-                    SourceKey = oldpath.Replace('\\', '/'),
+                    SourceKey = path.Replace('\\', '/'),
                     DestinationBucket = _bucket,
-                    DestinationKey = newpath.Replace('\\', '/')
+                    DestinationKey = newPath.Replace('\\', '/')
                 };
 
                 var res = await client.CopyObjectAsync(req, cancellationToken).AnyContext();
@@ -127,7 +134,7 @@ namespace Foundatio.Storage {
 
                 var delReq = new DeleteObjectRequest {
                     BucketName = _bucket,
-                    Key = oldpath.Replace('\\', '/')
+                    Key = path.Replace('\\', '/')
                 };
 
                 var delRes = await client.DeleteObjectAsync(delReq, cancellationToken).AnyContext();
@@ -135,18 +142,18 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException(nameof(targetpath));
+            if (String.IsNullOrEmpty(targetPath))
+                throw new ArgumentNullException(nameof(targetPath));
 
             using (var client = CreateClient()) {
                 var req = new CopyObjectRequest {
                     SourceBucket = _bucket,
                     SourceKey = path.Replace('\\', '/'),
                     DestinationBucket = _bucket,
-                    DestinationKey = targetpath.Replace('\\', '/')
+                    DestinationKey = targetPath.Replace('\\', '/')
                 };
 
                 var res = await client.CopyObjectAsync(req, cancellationToken).AnyContext();
@@ -155,7 +162,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             using (var client = CreateClient()) {
