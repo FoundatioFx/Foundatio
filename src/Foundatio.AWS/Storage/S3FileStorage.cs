@@ -98,13 +98,11 @@ namespace Foundatio.Storage {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            if (!stream.CanSeek && stream.Position > 0)
-                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
-
             using (var client = CreateClient()) {
                 var req = new PutObjectRequest {
                     BucketName = _bucket,
                     Key = path.Replace('\\', '/'),
+                    AutoResetStreamPosition = false,
                     AutoCloseStream = !stream.CanSeek,
                     InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream)
                 };
