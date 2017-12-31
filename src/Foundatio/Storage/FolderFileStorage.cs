@@ -70,15 +70,12 @@ namespace Foundatio.Storage {
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
-        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
-
-            if (!stream.CanSeek && stream.Position > 0)
-                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
 
             path = path.NormalizePath();
 
@@ -89,16 +86,13 @@ namespace Foundatio.Storage {
 
             try {
                 using (var fileStream = File.Create(file)) {
-                    if (stream.CanSeek)
-                        stream.Seek(0, SeekOrigin.Begin);
-
-                    stream.CopyTo(fileStream);
+                    await stream.CopyToAsync(fileStream).AnyContext();
                 }
             } catch (Exception) {
-                return Task.FromResult(false);
+                return false;
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
         public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -106,7 +100,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(newPath))
                 throw new ArgumentNullException(nameof(newPath));
-            
+
             path = path.NormalizePath();
             newPath = newPath.NormalizePath();
 

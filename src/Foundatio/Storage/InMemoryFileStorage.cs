@@ -58,9 +58,6 @@ namespace Foundatio.Storage {
 
         private static byte[] ReadBytes(Stream input) {
             using (var ms = new MemoryStream()) {
-                if (input.CanSeek)
-                    input.Seek(0, SeekOrigin.Begin);
-
                 input.CopyTo(ms);
                 return ms.ToArray();
             }
@@ -72,9 +69,6 @@ namespace Foundatio.Storage {
 
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
-
-            if (!stream.CanSeek && stream.Position > 0)
-                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
 
             path = path.NormalizePath();
             var contents = ReadBytes(stream);
