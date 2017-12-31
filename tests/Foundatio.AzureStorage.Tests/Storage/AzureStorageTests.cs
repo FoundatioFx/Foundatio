@@ -93,5 +93,10 @@ namespace Foundatio.Azure.Tests.Storage {
         public override Task CanRoundTripSeekableStreamAsync() {
             return base.CanRoundTripSeekableStreamAsync();
         }
+
+        [Fact]
+        public override Task WillRespectStreamOffsetAsync() {
+            return base.WillRespectStreamOffsetAsync();
+        }
     }
 }

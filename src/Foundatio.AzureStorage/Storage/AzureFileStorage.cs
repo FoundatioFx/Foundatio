@@ -70,12 +70,6 @@ namespace Foundatio.Storage {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            if (!stream.CanSeek && stream.Position > 0)
-                throw new ArgumentOutOfRangeException(nameof(stream), "Unable to save unseekable stream with a position greater than 0");
-
-            if (stream.CanSeek)
-                stream.Seek(0, SeekOrigin.Begin);
-
             var blockBlob = _container.GetBlockBlobReference(path);
             await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
 
