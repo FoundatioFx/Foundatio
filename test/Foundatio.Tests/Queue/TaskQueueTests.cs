@@ -4,11 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Attributes.Jobs;
-using Foundatio.AsyncEx;
 using Foundatio.Logging.Xunit;
 using Foundatio.Queues;
 using Foundatio.TestHarness.Utility;
-using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -107,7 +105,10 @@ namespace Foundatio.Tests.Queue {
 
             int completed = 0;
             var countdown = new CountdownEvent(1);
-            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
+            using(var queue = new TaskQueue(autoStart: false, queueEmptyAction: () => {
+                if (completed > 0)
+                    countdown.Signal();
+            }, loggerFactory: Log)) {
                 queue.Enqueue(() => {
                     _logger.LogTrace("Running Task 1");
                     throw new Exception("Exception in Queued Task");
@@ -160,12 +161,15 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public void CanRunContinously() {
+        public void CanRunContinuously() {
             Log.MinimumLevel = LogLevel.Trace;
 
+            int completed = 0;
             var countdown = new CountdownEvent(1);
-            using(var queue = new TaskQueue(queueEmptyAction: () => countdown.Signal(), loggerFactory: Log)) {
-                int completed = 0;
+            using(var queue = new TaskQueue(queueEmptyAction: () => {
+                if (completed > 2)
+                    countdown.Signal();
+            }, loggerFactory: Log)) {
                 queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
                 queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });
                 queue.Enqueue(() => { Interlocked.Increment(ref completed); return Task.CompletedTask; });

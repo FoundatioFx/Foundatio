@@ -75,8 +75,8 @@ namespace Foundatio.Queues {
                             continue;
                         }
 
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Running dequeued task");
                         Interlocked.Increment(ref _working);
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Running dequeued task");
                         // TODO: Cancel after x amount of time.
                         var unawaited = Task.Run(() => task(), _workLoopCancellationTokenSource.Token)
                             .ContinueWith(t => {
@@ -94,7 +94,7 @@ namespace Foundatio.Queues {
 
                                 if (_queueEmptyAction != null && _working == 0 && _queue.IsEmpty && _queue.Count == 0) {
                                     if (isTraceLogLevelEnabled) _logger.LogTrace("Running completed action..");
-                                    // NOTE: There could be a race here where an a sepmaphore was taken but the queue was empty.
+                                    // NOTE: There could be a race here where an a semaphore was taken but the queue was empty.
                                     _queueEmptyAction();
                                 }
                             });
