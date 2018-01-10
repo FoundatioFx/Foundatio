@@ -96,7 +96,7 @@ namespace Foundatio.Messaging {
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             var stream = new MemoryStream();
             _serializer.Serialize(new MessageBusData {
-                Type = messageType.AssemblyQualifiedName,
+                Type = String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name),
                 Data = _serializer.SerializeToBytes(message)
             }, stream);
 
