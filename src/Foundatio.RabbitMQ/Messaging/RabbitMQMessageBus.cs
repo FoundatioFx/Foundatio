@@ -131,7 +131,7 @@ namespace Foundatio.Messaging {
         /// The same is a good idea for consumers.</remarks>
         protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             var data = _serializer.SerializeToBytes(new MessageBusData {
-                Type = messageType.AssemblyQualifiedName,
+                Type = String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name),
                 Data = _serializer.SerializeToBytes(message)
             });
 
