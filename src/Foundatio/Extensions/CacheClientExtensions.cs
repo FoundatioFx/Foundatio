@@ -29,7 +29,7 @@ namespace Foundatio.Caching {
         }
 
         public static Task<long> DecrementAsync(this ICacheClient client, string key, int amount = 1, TimeSpan? expiresIn = null) {
-            return IncrementAsync(client, key, amount, expiresIn);
+            return IncrementAsync(client, key, -amount, expiresIn);
         }
 
         public static Task<long> DecrementAsync(this ICacheClient client, string key, int amount = 1, DateTime? expiresAtUtc = null) {
