@@ -142,7 +142,6 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            // TODO: Look up the existing expiration if expiresIn is null.
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
@@ -232,7 +231,6 @@ namespace Foundatio.Caching {
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
 
-            // TODO: Look up the existing expiration if expiresIn is null.
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();

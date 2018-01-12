@@ -834,18 +834,19 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
+                Log.MinimumLevel = LogLevel.Trace;
                 using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
                     queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
                     var resetEvent = new AsyncAutoResetEvent();
                     await queue.StartWorkingAsync(async w => {
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Acquiring distributed lock in work item");
+                        _logger.LogInformation("Acquiring distributed lock in work item");
                         var l = await distributedLock.AcquireAsync("test");
                         Assert.NotNull(l);
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Acquired distributed lock");
+                        _logger.LogInformation("Acquired distributed lock");
                         SystemClock.Sleep(TimeSpan.FromMilliseconds(250));
                         await l.ReleaseAsync();
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Released distributed lock");
+                        _logger.LogInformation("Released distributed lock");
 
                         await w.CompleteAsync();
                         resetEvent.Set();
@@ -856,8 +857,7 @@ namespace Foundatio.Tests.Queue {
 
                     await SystemClock.SleepAsync(1);
                     var stats = await queue.GetQueueStatsAsync();
-                    if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(1, stats.Completed);
                 }
             }

@@ -410,6 +410,66 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanRoundTripLargeNumbersAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                double value = long.MaxValue;
+                Assert.True(await cache.SetAsync("test", value));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+
+                var lowerValue = value - 1000;
+                Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue));
+                Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
+
+                Assert.Equal(0, await cache.SetIfLowerAsync("test", value));
+                Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
+
+                Assert.Equal(1000, await cache.SetIfHigherAsync("test", value));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+
+                Assert.Equal(0, await cache.SetIfHigherAsync("test", lowerValue));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+            }
+        }
+
+        public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                var minExpiration = TimeSpan.FromHours(1).Add(TimeSpan.FromMinutes(59)).Add(TimeSpan.FromSeconds(55));
+                double value = long.MaxValue;
+                Assert.True(await cache.SetAsync("test", value, TimeSpan.FromHours(2)));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+                Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+
+                var lowerValue = value - 1000;
+                Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue, TimeSpan.FromHours(2)));
+                Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
+                Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+
+                Assert.Equal(0, await cache.SetIfLowerAsync("test", value, TimeSpan.FromHours(2)));
+                Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
+                Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+
+                Assert.Equal(1000, await cache.SetIfHigherAsync("test", value, TimeSpan.FromHours(2)));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+                Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+
+                Assert.Equal(0, await cache.SetIfHigherAsync("test", lowerValue, TimeSpan.FromHours(2)));
+                Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+                Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            }
+        }
+
         public virtual async Task CanManageSetsAsync() {
             var cache = GetCacheClient();
             if (cache == null)

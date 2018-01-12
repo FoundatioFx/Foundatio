@@ -174,7 +174,7 @@ namespace Foundatio.Tests.Locks {
             Assert.Null(result);
 
             sw.Restart();
-            result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.0));
+            result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.5));
             sw.Stop();
             if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
             Assert.NotNull(result);
