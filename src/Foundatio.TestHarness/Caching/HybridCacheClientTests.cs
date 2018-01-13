@@ -21,6 +21,21 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanGetAllAsync() {
+            return base.CanGetAllAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAllWithOverlapAsync() {
+            return base.CanGetAllWithOverlapAsync();
+        }
+
+        [Fact]
+        public override Task CanSetAsync() {
+            return base.CanSetAsync();
+        }
+
+        [Fact]
         public override Task CanSetAndGetValueAsync() {
             return base.CanSetAndGetValueAsync();
         }
@@ -61,8 +76,28 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanIncrementAsync() {
+            return base.CanIncrementAsync();
+        }
+
+        [Fact]
         public override Task CanIncrementAndExpireAsync() {
             return base.CanIncrementAndExpireAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAndSetDateTimeAsync() {
+            return base.CanGetAndSetDateTimeAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersAsync() {
+            return base.CanRoundTripLargeNumbersAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+            return base.CanRoundTripLargeNumbersWithExpirationAsync();
         }
 
         [Fact]

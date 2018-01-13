@@ -68,15 +68,31 @@ namespace Foundatio.Caching {
         }
 
         public static Task<long> SetIfHigherAsync(this ICacheClient client, string key, DateTime value, TimeSpan? expiresIn = null) {
-            long unixTime = value.ToUnixTimeSeconds();
+            long unixTime = value.ToUnixTimeMilliseconds();
             return client.SetIfHigherAsync(key, unixTime, expiresIn);
         }
 
         public static Task<long> SetIfLowerAsync(this ICacheClient client, string key, DateTime value, TimeSpan? expiresIn = null) {
-            long unixTime = value.ToUnixTimeSeconds();
+            long unixTime = value.ToUnixTimeMilliseconds();
             return client.SetIfLowerAsync(key, unixTime, expiresIn);
         }
-        
+
+        public static async Task<DateTime> GetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime? defaultValue = null) {
+            var unixTime = await client.GetAsync<long>(key).AnyContext();
+            if (!unixTime.HasValue)
+                return defaultValue ?? DateTime.MinValue;
+
+            return unixTime.Value.FromUnixTimeMilliseconds();
+        }
+
+        public static Task<bool> SetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime value, TimeSpan? expiresIn = null) {
+            return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresIn);
+        }
+
+        public static Task<bool> SetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime value, DateTime expiresAtUtc) {
+            return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresAtUtc.Subtract(SystemClock.UtcNow));
+        }
+
         public static async Task<DateTime> GetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime? defaultValue = null) {
             var unixTime = await client.GetAsync<long>(key).AnyContext();
             if (!unixTime.HasValue)

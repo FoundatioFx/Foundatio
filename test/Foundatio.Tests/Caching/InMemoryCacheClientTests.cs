@@ -80,8 +80,8 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanGetAndSetDateTime() {
-            return base.CanGetAndSetDateTime();
+        public override Task CanGetAndSetDateTimeAsync() {
+            return base.CanGetAndSetDateTimeAsync();
         }
 
         [Fact]

@@ -437,50 +437,68 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanGetAndSetDateTime() {
+        public virtual async Task CanGetAndSetDateTimeAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
             using (cache) {
                 await cache.RemoveAllAsync();
-                
-                DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1));
+
+                DateTime value = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 long unixTimeValue = value.ToUnixTimeSeconds();
                 Assert.True(await cache.SetUnixTimeSecondsAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                var actual = await cache.GetUnixTimeSecondsAsync("test");
+                Assert.Equal(value.Ticks, actual.Ticks);
+                Assert.Equal(value.Kind, actual.Kind);
+
+                value = SystemClock.Now.Floor(TimeSpan.FromMilliseconds(1));
+                unixTimeValue = value.ToUnixTimeMilliseconds();
+                Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                actual = (await cache.GetUnixTimeMillisecondsAsync("test")).ToLocalTime();
+                Assert.Equal(value.Ticks, actual.Ticks);
+                Assert.Equal(value.Kind, actual.Kind);
+
+                value = SystemClock.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+                unixTimeValue = value.ToUnixTimeMilliseconds();
+                Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                actual = await cache.GetUnixTimeMillisecondsAsync("test");
+                Assert.Equal(value.Ticks, actual.Ticks);
+                Assert.Equal(value.Kind, actual.Kind);
 
                 var lowerValue = value - TimeSpan.FromHours(1);
-                var lowerUnixTimeValue = lowerValue.ToUnixTimeSeconds();
-                Assert.Equal((long)TimeSpan.FromHours(1).TotalSeconds, await cache.SetIfLowerAsync("test", lowerValue));
+                var lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
+                Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfLowerAsync("test", lowerValue));
                 Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
 
                 await cache.RemoveAsync("test");
                 
                 Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
                 
                 Assert.Equal(0, await cache.SetIfLowerAsync("test", value.AddHours(1)));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
                 
                 await cache.RemoveAsync("test");
                 
                 Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
                 
                 Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
                 
                 var higherValue = value + TimeSpan.FromHours(1);
-                var higherUnixTimeValue = higherValue.ToUnixTimeSeconds();
-                Assert.Equal((long)TimeSpan.FromHours(1).TotalSeconds, await cache.SetIfHigherAsync("test", higherValue));
+                var higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
+                Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfHigherAsync("test", higherValue));
                 Assert.Equal(higherUnixTimeValue, await cache.GetAsync<long>("test", 0));
-                Assert.Equal(higherValue, await cache.GetUnixTimeSecondsAsync("test"));
+                Assert.Equal(higherValue, await cache.GetUnixTimeMillisecondsAsync("test"));
             }
         }
 
