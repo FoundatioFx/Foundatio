@@ -50,11 +50,11 @@ namespace Foundatio.Caching {
         public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
             return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
-        
+
         public static Task<int> SetAllAsync(this ICacheClient client, IDictionary<string, object> values, DateTime? expiresAtUtc) {
             return client.SetAllAsync(values, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
-        
+
         public static Task SetExpirationAsync(this ICacheClient client, string key, DateTime expiresAtUtc) {
             return client.SetExpirationAsync(key, expiresAtUtc.Subtract(SystemClock.UtcNow));
         }

@@ -40,12 +40,14 @@ namespace Foundatio.Tests.Utility {
         }
 
         private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null) {
-            var countdown = new AsyncCountdownEvent(2);
+            Log.MinimumLevel = LogLevel.Trace;
+            const int iterations = 2;
+            var countdown = new AsyncCountdownEvent(iterations);
 
             async Task<DateTime?> Callback() {
                 _logger.LogInformation("Starting work.");
+                await SystemClock.SleepAsync(250);
                 countdown.Signal();
-                await SystemClock.SleepAsync(500);
                 _logger.LogInformation("Finished work.");
                 return null;
             }
@@ -53,7 +55,7 @@ namespace Foundatio.Tests.Utility {
             using (var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log)) {
                 timer.ScheduleNext();
                 var t = Task.Run(async () => {
-                    for (int i = 0; i < 3; i++) {
+                    for (int i = 0; i < iterations; i++) {
                         await SystemClock.SleepAsync(10);
                         timer.ScheduleNext();
                     }
@@ -62,7 +64,7 @@ namespace Foundatio.Tests.Utility {
                 _logger.LogInformation("Waiting for 300ms");
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
                 _logger.LogInformation("Finished waiting for 300ms");
-                Assert.Equal(1, countdown.CurrentCount);
+                Assert.Equal(iterations - 1, countdown.CurrentCount);
 
                 _logger.LogInformation("Waiting for 1.5 seconds");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));

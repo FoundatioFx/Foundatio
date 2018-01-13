@@ -42,12 +42,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+                        _logger.LogInformation("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
                         Interlocked.Increment(ref statusCount);
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    await job.RunAsync();
                     Assert.Equal(12, statusCount);
                 }
             }

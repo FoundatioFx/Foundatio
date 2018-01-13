@@ -144,6 +144,8 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task WillThrottleCallsAsync() {
+            Log.MinimumLevel = LogLevel.Trace;
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
             const int allowedLocks = 25;
 
             var period = TimeSpan.FromSeconds(2);
@@ -158,25 +160,25 @@ namespace Foundatio.Tests.Locks {
             await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
-                if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Allowed Locks: {Id}", i);
+                _logger.LogInformation("Allowed Locks: {Id}", i);
                 var l = await locker.AcquireAsync(lockName);
                 Assert.NotNull(l);
             }
             sw.Stop();
 
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed:g}", allowedLocks, sw.Elapsed);
+            _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed:g}", allowedLocks, sw.Elapsed);
             Assert.True(sw.Elapsed.TotalSeconds < 1);
 
             sw.Restart();
             var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(350));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
+            _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
             Assert.Null(result);
 
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.5));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
+            _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
             Assert.NotNull(result);
         }
     }
