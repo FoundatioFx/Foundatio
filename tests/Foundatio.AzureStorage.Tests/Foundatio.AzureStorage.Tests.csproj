@@ -7,7 +7,7 @@
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1644-pre" />
+    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1647-pre" />
     <PackageReference Include="RimDev.Automation.StorageEmulator" Version="0.1.0" />
 
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.5.0" />
