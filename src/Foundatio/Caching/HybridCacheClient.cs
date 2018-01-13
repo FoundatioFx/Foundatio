@@ -151,7 +151,13 @@ namespace Foundatio.Caching {
             return await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         }
 
-        public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+        public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+        }
+
+        public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.RemoveAsync(key).AnyContext();
             return await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
@@ -177,7 +183,19 @@ namespace Foundatio.Caching {
             return await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         }
 
+        public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            return await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        }
+
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            return await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
+        }
+
+        public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             await _localCache.RemoveAsync(key).AnyContext();
             return await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();

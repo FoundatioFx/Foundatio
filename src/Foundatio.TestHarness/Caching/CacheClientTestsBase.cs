@@ -417,8 +417,8 @@ namespace Foundatio.Tests.Caching {
 
             using (cache) {
                 await cache.RemoveAllAsync();
-
-                double value = long.MaxValue;
+                
+                double value = 2 * 1000 * 1000 * 1000;
                 Assert.True(await cache.SetAsync("test", value));
                 Assert.Equal(value, await cache.GetAsync<double>("test", 0));
 
@@ -437,6 +437,53 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanGetAndSetDateTime() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+                
+                DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1));
+                long unixTimeValue = value.ToUnixTimeSeconds();
+                Assert.True(await cache.SetUnixTimeSecondsAsync("test", value));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+
+                var lowerValue = value - TimeSpan.FromHours(1);
+                var lowerUnixTimeValue = lowerValue.ToUnixTimeSeconds();
+                Assert.Equal((long)TimeSpan.FromHours(1).TotalSeconds, await cache.SetIfLowerAsync("test", lowerValue));
+                Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
+
+                await cache.RemoveAsync("test");
+                
+                Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                
+                Assert.Equal(0, await cache.SetIfLowerAsync("test", value.AddHours(1)));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                
+                await cache.RemoveAsync("test");
+                
+                Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                
+                Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
+                Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(value, await cache.GetUnixTimeSecondsAsync("test"));
+                
+                var higherValue = value + TimeSpan.FromHours(1);
+                var higherUnixTimeValue = higherValue.ToUnixTimeSeconds();
+                Assert.Equal((long)TimeSpan.FromHours(1).TotalSeconds, await cache.SetIfHigherAsync("test", higherValue));
+                Assert.Equal(higherUnixTimeValue, await cache.GetAsync<long>("test", 0));
+                Assert.Equal(higherValue, await cache.GetUnixTimeSecondsAsync("test"));
+            }
+        }
+
         public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync() {
             var cache = GetCacheClient();
             if (cache == null)
@@ -446,7 +493,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync();
 
                 var minExpiration = TimeSpan.FromHours(1).Add(TimeSpan.FromMinutes(59)).Add(TimeSpan.FromSeconds(55));
-                double value = long.MaxValue;
+                double value = 2 * 1000 * 1000 * 1000;
                 Assert.True(await cache.SetAsync("test", value, TimeSpan.FromHours(2)));
                 Assert.Equal(value, await cache.GetAsync<double>("test", 0));
                 Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
