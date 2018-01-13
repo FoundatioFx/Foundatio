@@ -19,12 +19,12 @@ namespace Foundatio.Caching {
             return await client.RemoveAllAsync(new[] { key }).AnyContext() == 1;
         }
 
-        public static Task<long> IncrementAsync(this ICacheClient client, string key, long amount, DateTime expiresAtUtc) {
-            return client.IncrementAsync(key, amount, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<long> IncrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc) {
+            return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
-        public static Task<double> IncrementAsync(this ICacheClient client, string key, double amount, DateTime expiresAtUtc) {
-            return client.IncrementAsync(key, amount, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<double> IncrementAsync(this ICacheClient client, string key, double amount, DateTime? expiresAtUtc) {
+            return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
         public static Task<long> IncrementAsync(this ICacheClient client, string key, TimeSpan? expiresIn = null) {
@@ -39,20 +39,20 @@ namespace Foundatio.Caching {
             return client.IncrementAsync(key, -amount, expiresIn);
         }
         
-        public static Task<bool> AddAsync<T>(this ICacheClient client, string key, T value, DateTime expiresAtUtc) {
-            return client.AddAsync(key, value, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<bool> AddAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
+            return client.AddAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
-        public static Task<bool> SetAsync<T>(this ICacheClient client, string key, T value, DateTime expiresAtUtc) {
-            return client.SetAsync(key, value, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<bool> SetAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
+            return client.SetAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
-        public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime expiresAtUtc) {
-            return client.ReplaceAsync(key, value, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
+            return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
         
-        public static Task<int> SetAllAsync(this ICacheClient client, IDictionary<string, object> values, DateTime expiresAtUtc) {
-            return client.SetAllAsync(values, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<int> SetAllAsync(this ICacheClient client, IDictionary<string, object> values, DateTime? expiresAtUtc) {
+            return client.SetAllAsync(values, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
         
         public static Task SetExpirationAsync(this ICacheClient client, string key, DateTime expiresAtUtc) {
@@ -89,8 +89,8 @@ namespace Foundatio.Caching {
             return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresIn);
         }
 
-        public static Task<bool> SetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime value, DateTime expiresAtUtc) {
-            return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<bool> SetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime value, DateTime? expiresAtUtc) {
+            return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
         public static async Task<DateTime> GetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime? defaultValue = null) {
@@ -105,8 +105,8 @@ namespace Foundatio.Caching {
             return client.SetAsync(key, value.ToUnixTimeSeconds(), expiresIn);
         }
 
-        public static Task<bool> SetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime value, DateTime expiresAtUtc) {
-            return client.SetAsync(key, value.ToUnixTimeSeconds(), expiresAtUtc.Subtract(SystemClock.UtcNow));
+        public static Task<bool> SetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime value, DateTime? expiresAtUtc) {
+            return client.SetAsync(key, value.ToUnixTimeSeconds(), expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
     }
 }
