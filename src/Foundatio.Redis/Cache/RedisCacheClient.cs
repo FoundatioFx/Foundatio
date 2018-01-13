@@ -209,8 +209,28 @@ namespace Foundatio.Caching {
 
             await LoadScriptsAsync().AnyContext();
 
-            var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
-            return (double)result;
+            if (expiresIn.HasValue) {
+                var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                return (double)result;
+            } else {
+                var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = RedisValue.EmptyString }).AnyContext();
+                return (double)result;
+            }
+        }
+
+        public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            await LoadScriptsAsync().AnyContext();
+
+            if (expiresIn.HasValue) {
+                var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                return (long)result;
+            } else {
+                var result = await Database.ScriptEvaluateAsync(_setIfHigherScript, new { key, value, expires = RedisValue.EmptyString }).AnyContext();
+                return (long)result;
+            }
         }
 
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
@@ -219,8 +239,28 @@ namespace Foundatio.Caching {
 
             await LoadScriptsAsync().AnyContext();
 
-            var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn?.TotalSeconds }).AnyContext();
-            return (double)result;
+            if (expiresIn.HasValue) {
+                var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                return (double)result;
+            } else {
+                var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = RedisValue.EmptyString }).AnyContext();
+                return (double)result;
+            }
+        }
+
+        public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            await LoadScriptsAsync().AnyContext();
+
+            if (expiresIn.HasValue) {
+                var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                return (long)result;
+            } else {
+                var result = await Database.ScriptEvaluateAsync(_setIfLowerScript, new { key, value, expires = RedisValue.EmptyString }).AnyContext();
+                return (long)result;
+            }
         }
 
         private Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None) {
@@ -248,6 +288,24 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (expiresIn?.Ticks < 0) {
+                await this.RemoveAsync(key).AnyContext();
+                return -1;
+            }
+
+            if (expiresIn.HasValue) {
+                await LoadScriptsAsync().AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_incrByAndExpireScript, new { key, value = amount, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                return (double)result;
+            }
+
+            return await Database.StringIncrementAsync(key, amount).AnyContext();
+        }
+
+        public async Task<long> IncrementAsync(string key, long amount = 1, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -331,7 +389,7 @@ namespace Foundatio.Caching {
 if c then
   if tonumber(@value) > c then
     redis.call('set', @key, @value)
-    if (@expires) then
+    if (@expires ~= nil and @expires ~= '') then
       redis.call('expire', @key, math.ceil(@expires))
     end
     return tonumber(@value) - c
@@ -340,7 +398,7 @@ if c then
   end
 else
   redis.call('set', @key, @value)
-  if (@expires) then
+  if (@expires ~= nil and @expires ~= '') then
     redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(@value)
@@ -348,18 +406,18 @@ end";
 
         private const string SET_IF_LOWER = @"local c = tonumber(redis.call('get', @key))
 if c then
-  if tonumber(@value) > c then
+  if tonumber(@value) < c then
     redis.call('set', @key, @value)
-    if (@expires) then
+    if (@expires ~= nil and @expires ~= '') then
       redis.call('expire', @key, math.ceil(@expires))
     end
-    return tonumber(@value) - c
+    return c - tonumber(@value)
   else
     return 0
   end
 else
   redis.call('set', @key, @value)
-  if (@expires) then
+  if (@expires ~= nil and @expires ~= '') then
     redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(@value)
@@ -367,13 +425,13 @@ end";
 
         private const string INCRBY_AND_EXPIRE = @"if math.modf(@value) == 0 then
   local v = redis.call('incrby', @key, @value)
-  if (@expires) then
+  if (@expires ~= nil and @expires ~= '') then
     redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(v)
 else
   local v = redis.call('incrbyfloat', @key, @value)
-  if (@expires) then
+  if (@expires ~= nil and @expires ~= '') then
     redis.call('expire', @key, math.ceil(@expires))
   end
   return tonumber(v)

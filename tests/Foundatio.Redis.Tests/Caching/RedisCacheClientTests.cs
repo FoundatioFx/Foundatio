@@ -87,6 +87,21 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanManageSetsAsync();
         }
 
+        [Fact]
+        public override Task CanGetAndSetDateTime() {
+            return base.CanGetAndSetDateTime();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersAsync() {
+            return base.CanRoundTripLargeNumbersAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+            return base.CanRoundTripLargeNumbersWithExpirationAsync();
+        }
+
         [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughputAsync() {
             return base.MeasureThroughputAsync();
