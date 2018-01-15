@@ -161,7 +161,7 @@ namespace Foundatio.Storage {
 
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
                 }
-            } catch (Exception ex) when(!(ex is FileNotFoundException || ex is DirectoryNotFoundException)) {
+            } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
                 return Task.FromResult(false);
             }
@@ -177,7 +177,7 @@ namespace Foundatio.Storage {
             
             try {
                 File.Delete(Path.Combine(Folder, path));
-            } catch (Exception ex) {
+            } catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
                 _logger.LogError(ex, "Error trying to delete file: {Path}.", path);
                 return Task.FromResult(false);
             }
