@@ -175,7 +175,7 @@ namespace Foundatio.Storage {
             try {
                 File.Delete(Path.Combine(Folder, path));
             } catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
-                _logger.LogError(ex, "Error trying to delete file: {Path}.", path);
+                _logger.LogDebug(ex, "Error trying to delete file: {Path}.", path);
                 return Task.FromResult(false);
             }
 
