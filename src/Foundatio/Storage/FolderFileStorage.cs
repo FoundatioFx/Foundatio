@@ -102,13 +102,13 @@ namespace Foundatio.Storage {
 
             Stream CreateFileStream(string filePath) {
                 try {
-                    return File.Create(filePath);
+                    return new FileStream(filePath, FileMode.Create);
                 }
                 catch (DirectoryNotFoundException) {
                     string directory = Path.GetDirectoryName(filePath);
                     if (directory != null)
                         Directory.CreateDirectory(directory);
-                    return File.Create(filePath);
+                    return new FileStream(filePath, FileMode.Create);
                 }
             }
         }
