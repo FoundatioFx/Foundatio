@@ -90,14 +90,17 @@ namespace Foundatio.Storage {
             string file = Path.Combine(Folder, path);
             string directory = Path.GetDirectoryName(file);
 
-            Directory.CreateDirectory(directory);
-
             try {
                 using (var fileStream = File.Create(file)) {
                     await stream.CopyToAsync(fileStream).AnyContext();
                     return true;
                 }
-            } catch (Exception ex) {
+            }
+            catch (DirectoryNotFoundException) {
+                Directory.CreateDirectory(directory);
+                return await SaveFileAsync(path, stream, cancellationToken);
+            }
+            catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
             }
