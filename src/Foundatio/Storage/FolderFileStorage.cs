@@ -16,10 +16,13 @@ namespace Foundatio.Storage {
         private readonly ISerializer _serializer;
         protected readonly ILogger _logger;
 
-        public FolderFileStorage(string folder, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
-            folder = PathHelper.ExpandPath(folder);
-            _serializer = serializer ?? DefaultSerializer.Instance;
-            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
+        public FolderFileStorage(FolderFileStorageOptions options) {
+            if (options == null) {
+                throw new ArgumentNullException(nameof(options));
+            }
+            var folder = PathHelper.ExpandPath(options.Folder);
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
@@ -44,6 +47,7 @@ namespace Foundatio.Storage {
             try {
                 return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
             } catch (IOException ex) when(ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
                 return Task.FromResult<Stream>(null);
             }
         }
@@ -74,7 +78,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
-        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -87,14 +91,14 @@ namespace Foundatio.Storage {
                     if (stream.CanSeek)
                         stream.Seek(0, SeekOrigin.Begin);
 
-                    stream.CopyTo(fileStream);
+                    await stream.CopyToAsync(fileStream).AnyContext();
+                    return true;
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to save file '{path}'.", path);
-                return Task.FromResult(false);
+                _logger.LogError(ex, "Error trying to save file: {Path}", path);
+                return false;
             }
 
-            return Task.FromResult(true);
 
             Stream CreateFileStream(string filePath) {
                 try {
@@ -134,7 +138,7 @@ namespace Foundatio.Storage {
                     }
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to rename file '{path}' to '{newpath}'.", path, newpath);
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newpath);
                 return Task.FromResult(false);
             }
 
@@ -157,8 +161,8 @@ namespace Foundatio.Storage {
 
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
                 }
-            } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to copy file '{path}' to '{targetpath}'.", path, targetpath);
+            } catch (Exception ex) when(!(ex is FileNotFoundException || ex is DirectoryNotFoundException)) {
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
                 return Task.FromResult(false);
             }
 
@@ -174,7 +178,7 @@ namespace Foundatio.Storage {
             try {
                 File.Delete(Path.Combine(Folder, path));
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to delete file '{path}'.", path);
+                _logger.LogError(ex, "Error trying to delete file: {Path}.", path);
                 return Task.FromResult(false);
             }
 
