@@ -88,9 +88,6 @@ namespace Foundatio.Storage {
 
             try {
                 using (var fileStream = CreateFileStream(file)) {
-                    if (stream.CanSeek)
-                        stream.Seek(0, SeekOrigin.Begin);
-
                     await stream.CopyToAsync(fileStream).AnyContext();
                     return true;
                 }
