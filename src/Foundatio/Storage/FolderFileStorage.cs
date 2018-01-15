@@ -71,7 +71,7 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
