@@ -15,12 +15,13 @@ namespace Foundatio.Storage {
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
 
-        public InMemoryFileStorage(ISerializer serializer = null) : this(1024 * 1024 * 256, 100, serializer) {}
-
-        public InMemoryFileStorage(long maxFileSize, int maxFiles, ISerializer serializer = null) {
-            MaxFileSize = maxFileSize;
-            MaxFiles = maxFiles;
-            _serializer = serializer ?? DefaultSerializer.Instance;
+        public InMemoryFileStorage(InMemoryFileStorageOptions options) {
+            if (options == null) {
+                throw new ArgumentNullException(nameof(options));
+            }
+            MaxFileSize = options.MaxFileSize;
+            MaxFiles = options.MaxFiles;
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
         public long MaxFileSize { get; set; }
