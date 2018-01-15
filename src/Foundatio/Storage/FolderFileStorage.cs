@@ -88,28 +88,18 @@ namespace Foundatio.Storage {
             path = path.NormalizePath();
 
             string file = Path.Combine(Folder, path);
+            string directory = Path.GetDirectoryName(file);
+
+            Directory.CreateDirectory(directory);
 
             try {
-                using (var fileStream = CreateFileStream(file)) {
+                using (var fileStream = File.Create(file)) {
                     await stream.CopyToAsync(fileStream).AnyContext();
                     return true;
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
-            }
-
-
-            Stream CreateFileStream(string filePath) {
-                try {
-                    return File.Create(filePath);
-                }
-                catch (DirectoryNotFoundException) {
-                    string directory = Path.GetDirectoryName(filePath);
-                    if (directory != null)
-                        Directory.CreateDirectory(directory);
-                    return File.Create(filePath);
-                }
             }
         }
 
