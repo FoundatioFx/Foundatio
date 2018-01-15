@@ -128,7 +128,7 @@ namespace Foundatio.Storage {
                     }
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newpath);
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
                 return Task.FromResult(false);
             }
 
