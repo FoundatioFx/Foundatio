@@ -152,7 +152,7 @@ namespace Foundatio.Storage {
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetPath);
                 return Task.FromResult(false);
             }
 
