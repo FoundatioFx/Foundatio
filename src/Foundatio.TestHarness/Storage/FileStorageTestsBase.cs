@@ -428,7 +428,9 @@ namespace Foundatio.Tests.Storage {
         public virtual void CanUseDataDirectory() {
             const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
 
-            var storage = new FolderFileStorage(DATA_DIRECTORY_QUEUE_FOLDER);
+            var storage = new FolderFileStorage(new FolderFileStorageOptions {
+                Folder = DATA_DIRECTORY_QUEUE_FOLDER
+            });
             Assert.NotNull(storage.Folder);
             Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
             Assert.True(storage.Folder.EndsWith("Queue" + Path.DirectorySeparatorChar), storage.Folder);

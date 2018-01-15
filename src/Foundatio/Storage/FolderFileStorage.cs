@@ -7,15 +7,22 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class FolderFileStorage : IFileStorage {
         private readonly object _lockObject = new object();
         private readonly ISerializer _serializer;
+        protected readonly ILogger _logger;
 
-        public FolderFileStorage(string folder, ISerializer serializer = null) {
-            folder = PathHelper.ExpandPath(folder);
-            _serializer = serializer ?? DefaultSerializer.Instance;
+        public FolderFileStorage(FolderFileStorageOptions options) {
+            if (options == null) {
+                throw new ArgumentNullException(nameof(options));
+            }
+            var folder = PathHelper.ExpandPath(options.Folder);
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
@@ -39,7 +46,8 @@ namespace Foundatio.Storage {
 
             try {
                 return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
-            } catch (FileNotFoundException) {
+            } catch (IOException ex) when(ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
                 return Task.FromResult<Stream>(null);
             }
         }
@@ -80,19 +88,29 @@ namespace Foundatio.Storage {
             path = path.NormalizePath();
 
             string file = Path.Combine(Folder, path);
-            string directory = Path.GetDirectoryName(file);
-            if (directory != null)
-                Directory.CreateDirectory(directory);
 
             try {
-                using (var fileStream = File.Create(file)) {
+                using (var fileStream = CreateFileStream(file)) {
                     await stream.CopyToAsync(fileStream).AnyContext();
+                    return true;
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
             }
 
-            return true;
+
+            Stream CreateFileStream(string filePath) {
+                try {
+                    return File.Create(filePath);
+                }
+                catch (DirectoryNotFoundException) {
+                    string directory = Path.GetDirectoryName(filePath);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+                    return File.Create(filePath);
+                }
+            }
         }
 
         public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -119,7 +137,8 @@ namespace Foundatio.Storage {
                         File.Move(oldFullPath, newFullPath);
                     }
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newpath);
                 return Task.FromResult(false);
             }
 
@@ -142,7 +161,8 @@ namespace Foundatio.Storage {
 
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
                 return Task.FromResult(false);
             }
 
@@ -157,7 +177,8 @@ namespace Foundatio.Storage {
             
             try {
                 File.Delete(Path.Combine(Folder, path));
-            } catch (Exception) {
+            } catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                _logger.LogDebug(ex, "Error trying to delete file: {Path}.", path);
                 return Task.FromResult(false);
             }
 
