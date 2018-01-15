@@ -88,28 +88,21 @@ namespace Foundatio.Storage {
             path = path.NormalizePath();
 
             string file = Path.Combine(Folder, path);
+            string directory = Path.GetDirectoryName(file);
 
             try {
-                using (var fileStream = CreateFileStream(file)) {
+                using (var fileStream = File.Create(file)) {
                     await stream.CopyToAsync(fileStream).AnyContext();
                     return true;
                 }
-            } catch (Exception ex) {
+            }
+            catch (DirectoryNotFoundException) {
+                Directory.CreateDirectory(directory);
+                return await SaveFileAsync(path, stream, cancellationToken);
+            }
+            catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
-            }
-
-
-            Stream CreateFileStream(string filePath) {
-                try {
-                    return File.Create(filePath);
-                }
-                catch (DirectoryNotFoundException) {
-                    string directory = Path.GetDirectoryName(filePath);
-                    if (directory != null)
-                        Directory.CreateDirectory(directory);
-                    return File.Create(filePath);
-                }
             }
         }
 
@@ -138,7 +131,7 @@ namespace Foundatio.Storage {
                     }
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newpath);
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
                 return Task.FromResult(false);
             }
 
@@ -162,7 +155,7 @@ namespace Foundatio.Storage {
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetPath);
                 return Task.FromResult(false);
             }
 
