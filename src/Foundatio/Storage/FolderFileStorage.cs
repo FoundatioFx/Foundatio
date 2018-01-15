@@ -7,15 +7,19 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class FolderFileStorage : IFileStorage {
         private readonly object _lockObject = new object();
         private readonly ISerializer _serializer;
+        protected readonly ILogger _logger;
 
-        public FolderFileStorage(string folder, ISerializer serializer = null) {
+        public FolderFileStorage(string folder, ISerializer serializer = null, ILoggerFactory loggerFactory = null) {
             folder = PathHelper.ExpandPath(folder);
             _serializer = serializer ?? DefaultSerializer.Instance;
+            _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
 
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
@@ -39,7 +43,7 @@ namespace Foundatio.Storage {
 
             try {
                 return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
-            } catch (FileNotFoundException) {
+            } catch (IOException ex) when(ex is FileNotFoundException || ex is DirectoryNotFoundException) {
                 return Task.FromResult<Stream>(null);
             }
         }
@@ -77,22 +81,32 @@ namespace Foundatio.Storage {
             path = path.NormalizePath();
 
             string file = Path.Combine(Folder, path);
-            string directory = Path.GetDirectoryName(file);
-            if (directory != null)
-                Directory.CreateDirectory(directory);
 
             try {
-                using (var fileStream = File.Create(file)) {
+                using (var fileStream = CreateFileStream(file)) {
                     if (stream.CanSeek)
                         stream.Seek(0, SeekOrigin.Begin);
 
                     stream.CopyTo(fileStream);
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to save file '{path}'.", path);
                 return Task.FromResult(false);
             }
 
             return Task.FromResult(true);
+
+            Stream CreateFileStream(string filePath) {
+                try {
+                    return File.Create(filePath);
+                }
+                catch (DirectoryNotFoundException) {
+                    string directory = Path.GetDirectoryName(filePath);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+                    return File.Create(filePath);
+                }
+            }
         }
 
         public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -119,7 +133,8 @@ namespace Foundatio.Storage {
                         File.Move(oldFullPath, newFullPath);
                     }
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to rename file '{path}' to '{newpath}'.", path, newpath);
                 return Task.FromResult(false);
             }
 
@@ -142,7 +157,8 @@ namespace Foundatio.Storage {
 
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to copy file '{path}' to '{targetpath}'.", path, targetpath);
                 return Task.FromResult(false);
             }
 
@@ -157,7 +173,8 @@ namespace Foundatio.Storage {
             
             try {
                 File.Delete(Path.Combine(Folder, path));
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to delete file '{path}'.", path);
                 return Task.FromResult(false);
             }
 
