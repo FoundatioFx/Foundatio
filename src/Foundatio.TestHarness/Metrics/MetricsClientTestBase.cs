@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
@@ -166,12 +167,14 @@ namespace Foundatio.Tests.Metrics {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 Assert.True(await task, "Expected at least 4 count within 500 ms");
 
-                task = metrics.WaitForCounterAsync(CounterName, () => {
-                    metrics.Counter(CounterName);
-                    return Task.CompletedTask;
-                }, cancellationToken: TimeSpan.FromMilliseconds(500).ToCancellationToken());
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
-                Assert.True(await task, "Expected at least 5 count within 500 ms");
+                using(var timeoutCancellationTokenSource = new CancellationTokenSource(500)){
+                    task = metrics.WaitForCounterAsync(CounterName, () => {
+                        metrics.Counter(CounterName);
+                        return Task.CompletedTask;
+                    }, cancellationToken: timeoutCancellationTokenSource.Token);
+                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
+                    Assert.True(await task, "Expected at least 5 count within 500 ms");
+                }
 
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation((await metrics.GetCounterStatsAsync(CounterName)).ToString());

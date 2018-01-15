@@ -142,7 +142,6 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            // TODO: Look up the existing expiration if expiresIn is null.
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
@@ -157,6 +156,45 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+                double? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<double?>();
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                }
+
+                if (currentValue.HasValue && currentValue.Value < value) {
+                    difference = value - currentValue.Value;
+                    entry.Value = value;
+                } else
+                    difference = 0;
+
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
+                return entry;
+            });
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            await CleanupAsync().AnyContext();
+
+            return difference;
+        }
+
+        public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (expiresIn?.Ticks < 0) {
+                await RemoveExpiredKeyAsync(key).AnyContext();
+                return -1;
+            }
+
+            long difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
@@ -198,6 +236,45 @@ namespace Foundatio.Caching {
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+                double? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<double?>();
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                }
+
+                if (currentValue.HasValue && currentValue.Value > value) {
+                    difference = currentValue.Value - value;
+                    entry.Value = value;
+                } else
+                    difference = 0;
+
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
+                return entry;
+            });
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            await CleanupAsync().AnyContext();
+
+            return difference;
+        }
+
+        public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (expiresIn?.Ticks < 0) {
+                await RemoveExpiredKeyAsync(key).AnyContext();
+                return -1;
+            }
+
+            long difference = value;
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
@@ -232,7 +309,6 @@ namespace Foundatio.Caching {
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
 
-            // TODO: Look up the existing expiration if expiresIn is null.
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -363,7 +439,7 @@ namespace Foundatio.Caching {
             return SetAsync(key, value, expiresIn);
         }
 
-        public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+        public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -396,6 +472,41 @@ namespace Foundatio.Caching {
                 ScheduleNextMaintenance(expiresAt);
 
             return result.GetValue<double>();
+        }
+
+        public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (expiresIn?.Ticks < 0) {
+                await RemoveExpiredKeyAsync(key).AnyContext();
+                return -1;
+            }
+
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
+            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
+                long? currentValue = null;
+                try {
+                    currentValue = entry.GetValue<long?>();
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                }
+
+                if (currentValue.HasValue)
+                    entry.Value = currentValue.Value + amount;
+                else
+                    entry.Value = amount;
+
+                if (expiresIn.HasValue)
+                    entry.ExpiresAt = expiresAt;
+
+                return entry;
+            });
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            return result.GetValue<long>();
         }
 
         public Task<bool> ExistsAsync(string key) {

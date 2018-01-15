@@ -26,14 +26,16 @@ namespace Foundatio.Jobs {
         IQueue<T> IQueueJob<T>.Queue => _queue.Value;
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = new CancellationToken()) {
-            var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, TimeSpan.FromSeconds(30).ToCancellationToken());
-
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             IQueueEntry<T> queueEntry;
-            try {
-                queueEntry = await _queue.Value.DequeueAsync(linkedCancellationToken.Token).AnyContext();
-            } catch (Exception ex) {
-                return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
+
+            using (var timeoutCancellationTokenSource = new CancellationTokenSource(30000))
+            using (var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCancellationTokenSource.Token)) {
+                try {
+                    queueEntry = await _queue.Value.DequeueAsync(linkedCancellationToken.Token).AnyContext();
+                } catch (Exception ex) {
+                    return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
+                }
             }
 
             return await ProcessAsync(queueEntry, cancellationToken).AnyContext();

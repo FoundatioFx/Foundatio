@@ -82,5 +82,15 @@ namespace Foundatio.Tests.Storage {
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
         }
+
+        [Fact]
+        public override Task CanRoundTripSeekableStreamAsync() {
+            return base.CanRoundTripSeekableStreamAsync();
+        }
+
+        [Fact]
+        public override Task WillRespectStreamOffsetAsync() {
+            return base.WillRespectStreamOffsetAsync();
+        }
     }
 }

@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             var lockValue = await GetLockAsync(cancellationToken).AnyContext();
             if (lockValue == null) {
                 _logger.LogTrace("Unable to acquire job lock.");

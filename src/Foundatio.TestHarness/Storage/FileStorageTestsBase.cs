@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Exceptionless;
 using Foundatio.Logging.Xunit;
 using Foundatio.Storage;
@@ -304,6 +305,60 @@ namespace Foundatio.Tests.Storage {
                 Assert.False(await storage.ExistsAsync(@"x\nested\hello.txt"));
                 Assert.False(await storage.ExistsAsync(@"x\nested\again.txt"));
                 Assert.True(await storage.ExistsAsync(@"x\nested\world.csv"));
+            }
+        }
+
+        public virtual async Task CanRoundTripSeekableStreamAsync() {
+            await ResetAsync();
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                const string path = "user.xml";
+                var element = XElement.Parse("<user>Blake</user>");
+
+                using (var memoryStream = new MemoryStream()) {
+                    _logger.LogTrace("Saving xml to stream with position {Position}.", memoryStream.Position);
+                    element.Save(memoryStream, SaveOptions.DisableFormatting);
+
+                    memoryStream.Seek(0, SeekOrigin.Begin);
+                    _logger.LogTrace("Saving contents with position {Position}", memoryStream.Position);
+                    await storage.SaveFileAsync(path, memoryStream);
+                    _logger.LogTrace("Saved contents with position {Position}.", memoryStream.Position);
+                }
+
+                using (var stream = await storage.GetFileStreamAsync(path)) {
+                    var actual = XElement.Load(stream);
+                    Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
+                }
+            }
+        }
+
+        public virtual async Task WillRespectStreamOffsetAsync() {
+            await ResetAsync();
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                string path = "blake.txt";
+                using (var memoryStream = new MemoryStream()) {
+                    long offset;
+                    using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true)) {
+                        writer.AutoFlush = true;
+                        await writer.WriteAsync("Eric");
+                        offset = memoryStream.Position;
+                        await writer.WriteAsync("Blake");
+                    }
+
+                    memoryStream.Seek(offset, SeekOrigin.Begin);
+                    await storage.SaveFileAsync(path, memoryStream);
+                }
+
+                Assert.Equal("Blake", await storage.GetFileContentsAsync(path));
             }
         }
 

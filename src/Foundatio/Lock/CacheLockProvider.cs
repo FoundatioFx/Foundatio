@@ -91,24 +91,24 @@ namespace Foundatio.Lock {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Delay amount: {Delay} Delay until: {DelayUntil}", delayAmount, SystemClock.UtcNow.Add(delayAmount).ToString("mm:ss.fff"));
 
-                var delayCancellationTokenSource = new CancellationTokenSource(delayAmount);
-                var linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token).Token;
+                using (var delayCancellationTokenSource = new CancellationTokenSource(delayAmount))
+                using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token)) {
+                    var autoResetEvent = _autoResetEvents.GetOrAdd(name, new AsyncAutoResetEvent());
+                    var sw = Stopwatch.StartNew();
 
-                var autoResetEvent = _autoResetEvents.GetOrAdd(name, new AsyncAutoResetEvent());
-                var sw = Stopwatch.StartNew();
-
-                try {
-                    await autoResetEvent.WaitAsync(linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) {
-                    if (delayCancellationTokenSource.IsCancellationRequested) {
+                    try {
+                        await autoResetEvent.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
+                    } catch (OperationCanceledException) {
+                        if (delayCancellationTokenSource.IsCancellationRequested) {
+                            if (isTraceLogLevelEnabled)
+                                _logger.LogTrace("Retrying: Delay exceeded. Cancellation requested: {IsCancellationRequested}", cancellationToken.IsCancellationRequested);
+                            continue;
+                        }
+                    } finally {
+                        sw.Stop();
                         if (isTraceLogLevelEnabled)
-                            _logger.LogTrace("Retrying: Delay exceeded. Cancellation requested: {IsCancellationRequested}", cancellationToken.IsCancellationRequested);
-                        continue;
+                            _logger.LogTrace("Lock {Name} waited {Milliseconds}ms", name, sw.ElapsedMilliseconds);
                     }
-                } finally {
-                    sw.Stop();
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Lock {Name} waited {Milliseconds}ms", name, sw.ElapsedMilliseconds);
                 }
             } while (!cancellationToken.IsCancellationRequested);
 

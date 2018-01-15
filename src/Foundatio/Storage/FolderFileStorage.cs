@@ -39,9 +39,9 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             path = path.NormalizePath();
 
             try {
@@ -53,7 +53,7 @@ namespace Foundatio.Storage {
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
@@ -81,6 +81,9 @@ namespace Foundatio.Storage {
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
+
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
 
             path = path.NormalizePath();
 
@@ -110,23 +113,23 @@ namespace Foundatio.Storage {
             }
         }
 
-        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException(nameof(newpath));
-            
+            if (String.IsNullOrEmpty(newPath))
+                throw new ArgumentNullException(nameof(newPath));
+
             path = path.NormalizePath();
-            newpath = newpath.NormalizePath();
+            newPath = newPath.NormalizePath();
 
             try {
                 lock (_lockObject) {
-                    string directory = Path.GetDirectoryName(newpath);
+                    string directory = Path.GetDirectoryName(newPath);
                     if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
                     string oldFullPath = Path.Combine(Folder, path);
-                    string newFullPath = Path.Combine(Folder, newpath);
+                    string newFullPath = Path.Combine(Folder, newPath);
                     try {
                         File.Move(oldFullPath, newFullPath);
                     } catch (IOException) {
@@ -142,21 +145,21 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException(nameof(targetpath));
+            if (String.IsNullOrEmpty(targetPath))
+                throw new ArgumentNullException(nameof(targetPath));
             
             path = path.NormalizePath();
 
             try {
                 lock (_lockObject) {
-                    string directory = Path.GetDirectoryName(targetpath);
+                    string directory = Path.GetDirectoryName(targetPath);
                     if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
-                    File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
+                    File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
@@ -167,7 +170,7 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();

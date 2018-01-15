@@ -46,7 +46,7 @@ namespace Foundatio.Tests.Locks {
         public override Task WillThrottleCallsAsync() {
             return base.WillThrottleCallsAsync();
         }
-        
+
         public void Dispose() {
             _cache.Dispose();
             _messageBus.Dispose();
