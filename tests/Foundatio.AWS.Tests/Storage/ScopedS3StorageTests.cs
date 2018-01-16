@@ -18,7 +18,12 @@ namespace Foundatio.Tests.Storage {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new ScopedFileStorage(new S3FileStorage(new BasicAWSCredentials(accessKey, secretKey), RegionEndpoint.USEast1, "foundatio", loggerFactory: Log), "scope");
+            return new ScopedFileStorage(new S3FileStorage(new S3FileStorageOptions {
+                Credentials = new BasicAWSCredentials(accessKey, secretKey),
+                Region = RegionEndpoint.USEast1,
+                Bucket = "foundatio",
+                LoggerFactory = Log
+            }), "scope");
         }
 
         [Fact]
