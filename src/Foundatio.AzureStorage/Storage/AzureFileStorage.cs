@@ -17,12 +17,15 @@ namespace Foundatio.Storage {
         private readonly CloudBlobContainer _container;
         private readonly ISerializer _serializer;
 
-        public AzureFileStorage(string connectionString, string containerName = "storage", ISerializer serializer = null) {
-            var account = CloudStorageAccount.Parse(connectionString);
+        public AzureFileStorage(AzureFileStorageOptions options) {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
+            var account = CloudStorageAccount.Parse(options.ConnectionString);
             var client = account.CreateCloudBlobClient();
-            _container = client.GetContainerReference(containerName);
+            _container = client.GetContainerReference(options.ContainerName);
             _container.CreateIfNotExistsAsync().GetAwaiter().GetResult();
-            _serializer = serializer ?? DefaultSerializer.Instance;
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
