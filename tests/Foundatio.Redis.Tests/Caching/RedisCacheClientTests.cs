@@ -48,13 +48,23 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanTryGetAsync() {
+            return base.CanTryGetAsync();
+        }
+
+        [Fact]
+        public override Task CanUseScopedCachesAsync() {
+            return base.CanUseScopedCachesAsync();
+        }
+
+        [Fact]
         public override Task CanSetAndGetObjectAsync() {
             return base.CanSetAndGetObjectAsync();
         }
 
         [Fact]
-        public override Task CanTryGetAsync() {
-            return base.CanTryGetAsync();
+        public override Task CanRemoveByPrefixAsync() {
+            return base.CanRemoveByPrefixAsync();
         }
 
         [Fact]
@@ -73,13 +83,18 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanRemoveByPrefixAsync() {
-            return base.CanRemoveByPrefixAsync();
+        public override Task CanGetAndSetDateTimeAsync() {
+            return base.CanGetAndSetDateTimeAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCachesAsync() {
-            return base.CanUseScopedCachesAsync();
+        public override Task CanRoundTripLargeNumbersAsync() {
+            return base.CanRoundTripLargeNumbersAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+            return base.CanRoundTripLargeNumbersWithExpirationAsync();
         }
 
         [Fact]
