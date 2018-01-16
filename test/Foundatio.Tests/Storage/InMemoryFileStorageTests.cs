@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Storage {
         public InMemoryFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new InMemoryFileStorage();
+            return new InMemoryFileStorage(new InMemoryFileStorageOptions());
         }
 
         [Fact]
@@ -32,6 +32,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanSaveFilesAsync() {
+            return base.CanSaveFilesAsync();
+        }
+
+        [Fact]
         public override Task CanManageFilesAsync() {
             return base.CanManageFilesAsync();
         }
@@ -42,13 +47,13 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
-        public override Task CanSaveFilesAsync() {
-            return base.CanSaveFilesAsync();
+        public override Task CanConcurrentlyManageFilesAsync() {
+            return base.CanConcurrentlyManageFilesAsync();
         }
 
         [Fact]
-        public override Task CanConcurrentlyManageFilesAsync() {
-            return base.CanConcurrentlyManageFilesAsync();
+        public override void CanUseDataDirectory() {
+            base.CanUseDataDirectory();
         }
 
         [Fact]
@@ -74,6 +79,16 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripSeekableStreamAsync() {
+            return base.CanRoundTripSeekableStreamAsync();
+        }
+
+        [Fact]
+        public override Task WillRespectStreamOffsetAsync() {
+            return base.WillRespectStreamOffsetAsync();
         }
     }
 }

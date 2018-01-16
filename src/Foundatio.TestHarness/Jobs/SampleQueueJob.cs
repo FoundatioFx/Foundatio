@@ -43,7 +43,7 @@ namespace Foundatio.Tests.Jobs {
             _lockProvider = lockProvider;
         }
 
-        protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = new CancellationToken()) {
+        protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
             if (_lockProvider != null)
                 return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
 

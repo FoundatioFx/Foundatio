@@ -161,7 +161,7 @@ Allows you to run a long running process (in process or out of process) without 
   var job = new HelloWorldJob();
   await job.RunAsync(); // job.RunCount = 1;
   await job.RunContinuousAsync(iterationLimit: 2); // job.RunCount = 3;
-  await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(TimeSpan.FromMilliseconds(10)).Token); // job.RunCount > 10;
+  await job.RunContinuousAsync(cancellationToken: new CancellationTokenSource(10).Token); // job.RunCount > 10;
   ```
 
 2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
@@ -281,7 +281,7 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 ```csharp
 using Foundatio.Storage;
 
-IFileStorage storage = new InMemoryFileStorage();
+IFileStorage storage = new InMemoryFileStorage(new InMemoryFileStorageOptions());
 await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
 ```

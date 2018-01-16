@@ -188,8 +188,10 @@ namespace Foundatio.Metrics {
 
         protected abstract Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
 
-        public Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
-            return WaitForCounterAsync(statName, () => Task.CompletedTask, count, timeout.ToCancellationToken(TimeSpan.FromSeconds(10)));
+        public async Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
+            using (var cancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(10))) {
+                return await WaitForCounterAsync(statName, () => Task.CompletedTask, count, cancellationTokenSource.Token).AnyContext();
+            }
         }
 
         public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {

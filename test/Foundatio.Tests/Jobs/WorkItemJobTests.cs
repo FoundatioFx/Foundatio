@@ -42,12 +42,12 @@ namespace Foundatio.Tests.Jobs {
 
                     int statusCount = 0;
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+                        _logger.LogInformation("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        statusCount++;
+                        Interlocked.Increment(ref statusCount);
                     });
 
-                    await job.RunUntilEmptyAsync();
+                    await job.RunAsync();
                     Assert.Equal(12, statusCount);
                 }
             }
@@ -106,7 +106,7 @@ namespace Foundatio.Tests.Jobs {
                                 completedItems.Add(status.WorkItemId);
                         });
 
-                        var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                        var cancellationTokenSource = new CancellationTokenSource(10000);
                         var tasks = new List<Task> {
                             Task.Run(async () => {
                                 await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
@@ -157,7 +157,7 @@ namespace Foundatio.Tests.Jobs {
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        statusCount++;
+                        Interlocked.Increment(ref statusCount);
                     });
 
                     await job.RunUntilEmptyAsync();
@@ -191,7 +191,7 @@ namespace Foundatio.Tests.Jobs {
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        statusCount++;
+                        Interlocked.Increment(ref statusCount);
                     });
 
                     await job.RunUntilEmptyAsync();
@@ -247,7 +247,7 @@ namespace Foundatio.Tests.Jobs {
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        statusCount++;
+                        Interlocked.Increment(ref statusCount);
                     });
 
                     await job.RunUntilEmptyAsync();

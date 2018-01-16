@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Caching;
-using Foundatio.Utility;
-using Foundatio.Messaging;
 using Foundatio.AsyncEx;
+using Foundatio.Caching;
+using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -18,6 +18,21 @@ namespace Foundatio.Tests.Caching {
 
         protected override ICacheClient GetCacheClient() {
             return new HybridCacheClient(_distributedCache, _messageBus, Log);
+        }
+
+        [Fact]
+        public override Task CanGetAllAsync() {
+            return base.CanGetAllAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAllWithOverlapAsync() {
+            return base.CanGetAllWithOverlapAsync();
+        }
+
+        [Fact]
+        public override Task CanSetAsync() {
+            return base.CanSetAsync();
         }
 
         [Fact]
@@ -61,8 +76,28 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanIncrementAsync() {
+            return base.CanIncrementAsync();
+        }
+
+        [Fact]
         public override Task CanIncrementAndExpireAsync() {
             return base.CanIncrementAndExpireAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAndSetDateTimeAsync() {
+            return base.CanGetAndSetDateTimeAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersAsync() {
+            return base.CanRoundTripLargeNumbersAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+            return base.CanRoundTripLargeNumbersWithExpirationAsync();
         }
 
         [Fact]
@@ -107,21 +142,25 @@ namespace Foundatio.Tests.Caching {
             using (var firstCache = GetCacheClient() as HybridCacheClient) {
                 Assert.NotNull(firstCache);
                 var firstResetEvent = new AsyncAutoResetEvent(false);
-                Action<object, ItemExpiredEventArgs> expiredHandler = (sender, args) => {
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("First local cache expired: {Key}", args.Key);
-                    firstResetEvent.Set();
-                };
 
-                using (firstCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler)) {
+                void ExpiredHandler(object sender, ItemExpiredEventArgs args) {
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("First local cache expired: {Key}", args.Key);
+                    firstResetEvent.Set();
+                }
+
+                using (firstCache.LocalCache.ItemExpired.AddSyncHandler(ExpiredHandler)) {
                     using (var secondCache = GetCacheClient() as HybridCacheClient) {
                         Assert.NotNull(secondCache);
                         var secondResetEvent = new AsyncAutoResetEvent(false);
-                        Action<object, ItemExpiredEventArgs> expiredHandler2 = (sender, args) => {
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Second local cache expired: {Key}", args.Key);
-                            secondResetEvent.Set();
-                        };
 
-                        using (secondCache.LocalCache.ItemExpired.AddSyncHandler(expiredHandler2)) {
+                        void ExpiredHandler2(object sender, ItemExpiredEventArgs args) {
+                            if (_logger.IsEnabled(LogLevel.Trace))
+                                _logger.LogTrace("Second local cache expired: {Key}", args.Key);
+                            secondResetEvent.Set();
+                        }
+
+                        using (secondCache.LocalCache.ItemExpired.AddSyncHandler(ExpiredHandler2)) {
                             string cacheKey = "will-expire-remote";
                             _logger.LogTrace("First Set");
                             Assert.True(await firstCache.AddAsync(cacheKey, new SimpleModel { Data1 = "test" }, TimeSpan.FromMilliseconds(250)));

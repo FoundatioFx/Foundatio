@@ -7,16 +7,6 @@ using Foundatio.AsyncEx;
 namespace Foundatio.Utility {
     internal static class TaskExtensions {
         [DebuggerStepThrough]
-        public static Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout) {
-            return resetEvent.WaitAsync(timeout.ToCancellationToken());
-        }
-
-        [DebuggerStepThrough]
-        public static Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout) {
-            return resetEvent.WaitAsync(timeout.ToCancellationToken());
-        }
-
-        [DebuggerStepThrough]
         public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task) {
             return task.ConfigureAwait(continueOnCapturedContext: false);
         }

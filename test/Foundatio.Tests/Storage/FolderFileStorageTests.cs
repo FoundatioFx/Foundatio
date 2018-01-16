@@ -8,7 +8,9 @@ namespace Foundatio.Tests.Storage {
         public FolderFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new FolderFileStorage("|DataDirectory|\\temp");
+            return new FolderFileStorage(new FolderFileStorageOptions {
+                Folder = "|DataDirectory|\\temp"
+            });
         }
 
         [Fact]
@@ -79,6 +81,16 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        }
+
+        [Fact]
+        public override Task CanRoundTripSeekableStreamAsync() {
+            return base.CanRoundTripSeekableStreamAsync();
+        }
+
+        [Fact]
+        public override Task WillRespectStreamOffsetAsync() {
+            return base.WillRespectStreamOffsetAsync();
         }
     }
 }

@@ -7,16 +7,23 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class FolderFileStorage : IFileStorage {
         private readonly object _lockObject = new object();
         private readonly ISerializer _serializer;
+        protected readonly ILogger _logger;
 
-        public FolderFileStorage(string folder, ISerializer serializer = null) {
-            folder = PathHelper.ExpandPath(folder);
-            _serializer = serializer ?? DefaultSerializer.Instance;
+        public FolderFileStorage(FolderFileStorageOptions options) {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
 
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
+
+            string folder = PathHelper.ExpandPath(options.Folder);
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
 
@@ -32,20 +39,22 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             path = path.NormalizePath();
 
             try {
                 return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
-            } catch (FileNotFoundException) {
+            } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
                 return Task.FromResult<Stream>(null);
             }
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
@@ -63,55 +72,63 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
-        public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            path = path.NormalizePath();
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
 
+            path = path.NormalizePath();
             string file = Path.Combine(Folder, path);
-            string directory = Path.GetDirectoryName(file);
+
+            try {
+                using (var fileStream = CreateFileStream(file)) {
+                    await stream.CopyToAsync(fileStream).AnyContext();
+                    return true;
+                }
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to save file: {Path}", path);
+                return false;
+            }
+        }
+
+        private Stream CreateFileStream(string filePath) {
+            try {
+                return File.Create(filePath);
+            } catch (DirectoryNotFoundException) { }
+
+            string directory = Path.GetDirectoryName(filePath);
             if (directory != null)
                 Directory.CreateDirectory(directory);
 
-            try {
-                using (var fileStream = File.Create(file)) {
-                    if (stream.CanSeek)
-                        stream.Seek(0, SeekOrigin.Begin);
-
-                    stream.CopyTo(fileStream);
-                }
-            } catch (Exception) {
-                return Task.FromResult(false);
-            }
-
-            return Task.FromResult(true);
+            return File.Create(filePath);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException(nameof(newpath));
-            
+            if (String.IsNullOrEmpty(newPath))
+                throw new ArgumentNullException(nameof(newPath));
+
             path = path.NormalizePath();
-            newpath = newpath.NormalizePath();
+            newPath = newPath.NormalizePath();
 
             try {
                 lock (_lockObject) {
-                    string directory = Path.GetDirectoryName(newpath);
+                    string directory = Path.GetDirectoryName(newPath);
                     if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
                     string oldFullPath = Path.Combine(Folder, path);
-                    string newFullPath = Path.Combine(Folder, newpath);
+                    string newFullPath = Path.Combine(Folder, newPath);
                     try {
                         File.Move(oldFullPath, newFullPath);
                     } catch (IOException) {
@@ -119,30 +136,32 @@ namespace Foundatio.Storage {
                         File.Move(oldFullPath, newFullPath);
                     }
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
                 return Task.FromResult(false);
             }
 
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException(nameof(targetpath));
-            
+            if (String.IsNullOrEmpty(targetPath))
+                throw new ArgumentNullException(nameof(targetPath));
+
             path = path.NormalizePath();
 
             try {
                 lock (_lockObject) {
-                    string directory = Path.GetDirectoryName(targetpath);
+                    string directory = Path.GetDirectoryName(targetPath);
                     if (directory != null)
                         Directory.CreateDirectory(Path.Combine(Folder, directory));
 
-                    File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetpath));
+                    File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
-            } catch (Exception) {
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetPath);
                 return Task.FromResult(false);
             }
 
@@ -150,14 +169,15 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
-            
+
             try {
                 File.Delete(Path.Combine(Folder, path));
-            } catch (Exception) {
+            } catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                _logger.LogDebug(ex, "Error trying to delete file: {Path}.", path);
                 return Task.FromResult(false);
             }
 
@@ -197,7 +217,7 @@ namespace Foundatio.Storage {
 
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
-            
+
             searchPattern = searchPattern.NormalizePath();
 
             var list = new List<FileSpec>();

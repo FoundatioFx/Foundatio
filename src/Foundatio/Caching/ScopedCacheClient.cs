@@ -88,7 +88,11 @@ namespace Foundatio.Caching {
             return UnscopedCache.ReplaceAsync(GetScopedCacheKey(key), value, expiresIn);
         }
 
-        public Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null) {
+        public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
+            return UnscopedCache.IncrementAsync(GetScopedCacheKey(key), amount, expiresIn);
+        }
+
+        public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
             return UnscopedCache.IncrementAsync(GetScopedCacheKey(key), amount, expiresIn);
         }
         
@@ -108,7 +112,15 @@ namespace Foundatio.Caching {
             return UnscopedCache.SetIfHigherAsync(GetScopedCacheKey(key), value, expiresIn);
         }
 
+        public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
+            return UnscopedCache.SetIfHigherAsync(GetScopedCacheKey(key), value, expiresIn);
+        }
+
         public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
+            return UnscopedCache.SetIfLowerAsync(GetScopedCacheKey(key), value, expiresIn);
+        }
+
+        public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
             return UnscopedCache.SetIfLowerAsync(GetScopedCacheKey(key), value, expiresIn);
         }
 

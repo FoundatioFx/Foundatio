@@ -15,12 +15,13 @@ namespace Foundatio.Storage {
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
 
-        public InMemoryFileStorage(ISerializer serializer = null) : this(1024 * 1024 * 256, 100, serializer) {}
+        public InMemoryFileStorage(InMemoryFileStorageOptions options) {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
 
-        public InMemoryFileStorage(long maxFileSize, int maxFiles, ISerializer serializer = null) {
-            MaxFileSize = maxFileSize;
-            MaxFiles = maxFiles;
-            _serializer = serializer ?? DefaultSerializer.Instance;
+            MaxFileSize = options.MaxFileSize;
+            MaxFiles = options.MaxFiles;
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
         public long MaxFileSize { get; set; }
@@ -28,7 +29,7 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
@@ -41,7 +42,7 @@ namespace Foundatio.Storage {
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
@@ -49,7 +50,7 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> ExistsAsync(string path) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
@@ -64,8 +65,11 @@ namespace Foundatio.Storage {
         }
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
+
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
 
             path = path.NormalizePath();
             var contents = ReadBytes(stream);
@@ -87,49 +91,49 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(newpath))
-                throw new ArgumentNullException(nameof(newpath));
+            if (String.IsNullOrEmpty(newPath))
+                throw new ArgumentNullException(nameof(newPath));
 
             path = path.NormalizePath();
-            newpath = newpath.NormalizePath();
+            newPath = newPath.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult(false);
 
-                _storage[newpath] = _storage[path];
-                _storage[newpath].Item1.Path = newpath;
-                _storage[newpath].Item1.Modified = SystemClock.UtcNow;
+                _storage[newPath] = _storage[path];
+                _storage[newPath].Item1.Path = newPath;
+                _storage[newPath].Item1.Modified = SystemClock.UtcNow;
                 _storage.Remove(path);
             }
 
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetpath, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            if (String.IsNullOrWhiteSpace(targetpath))
-                throw new ArgumentNullException(nameof(targetpath));
+            if (String.IsNullOrEmpty(targetPath))
+                throw new ArgumentNullException(nameof(targetPath));
 
             path = path.NormalizePath();
-            targetpath = targetpath.NormalizePath();
+            targetPath = targetPath.NormalizePath();
             lock (_lock) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult(false);
 
-                _storage[targetpath] = _storage[path];
-                _storage[targetpath].Item1.Path = targetpath;
-                _storage[targetpath].Item1.Modified = SystemClock.UtcNow;
+                _storage[targetPath] = _storage[path];
+                _storage[targetPath].Item1.Path = targetPath;
+                _storage[targetPath].Item1.Modified = SystemClock.UtcNow;
             }
 
             return Task.FromResult(true);
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (String.IsNullOrWhiteSpace(path))
+            if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();

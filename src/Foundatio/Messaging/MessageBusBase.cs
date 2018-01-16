@@ -6,12 +6,14 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : MessageBusOptionsBase {
+        private readonly TaskQueue _queue;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
@@ -22,6 +24,7 @@ namespace Foundatio.Messaging {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
+            _queue = new TaskQueue(options.TaskQueueMaxItems, options.TaskQueueMaxDegreeOfParallelism, loggerFactory: options.LoggerFactory);
 
             InitializeMaintenance();
         }
@@ -62,16 +65,16 @@ namespace Foundatio.Messaging {
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
-        protected Task SendMessageToSubscribersAsync(MessageBusData message, ISerializer serializer) {
+        protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
             var messageType = GetMessageBodyType(message);
             if (messageType == null)
-                return Task.CompletedTask;
+                return;
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
-                return Task.CompletedTask;
+                return;
             }
 
             object body;
@@ -80,19 +83,19 @@ namespace Foundatio.Messaging {
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "Error deserializing messsage body: {Message}", ex.Message);
-                return Task.CompletedTask;
+                return;
             }
 
             if (body == null) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning("Unable to send null message for type {MessageType}", messageType.Name);
-                return Task.CompletedTask;
+                return;
             }
 
-            return SendMessageToSubscribersAsync(subscribers, messageType, body);
+            SendMessageToSubscribers(subscribers, messageType, body);
         }
 
-        protected async Task SendMessageToSubscribersAsync(List<Subscriber> subscribers, Type messageType, object message) {
+        protected void SendMessageToSubscribers(List<Subscriber> subscribers, Type messageType, object message) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
@@ -109,16 +112,21 @@ namespace Foundatio.Messaging {
                     continue;
                 }
 
-                try {
-                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error sending message to subscriber: {Message}", ex.Message);
-                }
+                _queue.Enqueue(async () => {
+                    if (subscriber.CancellationToken.IsCancellationRequested)
+                        return;
+
+                    try {
+                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                    } catch (Exception ex) {
+                        if (_logger.IsEnabled(LogLevel.Warning))
+                            _logger.LogWarning(ex, "Error sending message to subscriber: {Message}", ex.Message);
+                    }
+                });
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Done sending message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
+                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
         }
 
         protected Type GetMessageBodyType(MessageBusData message) {
@@ -188,6 +196,7 @@ namespace Foundatio.Messaging {
 
         public override void Dispose() {
             _logger.LogTrace("Disposing");
+            _queue.Dispose();
             base.Dispose();
             _delayedMessages?.Clear();
             _subscribers?.Clear();

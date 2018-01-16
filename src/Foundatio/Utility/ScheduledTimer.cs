@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -102,6 +103,7 @@ namespace Foundatio.Utility {
                 _isRunning = true;
                 DateTime? next = null;
 
+                var sw = Stopwatch.StartNew();
                 try {
                     next = await _timerCallback().AnyContext();
                 } catch (Exception ex) {
@@ -109,10 +111,13 @@ namespace Foundatio.Utility {
                         _logger.LogError(ex, "Error running scheduled timer callback: {Message}", ex.Message);
 
                     _shouldRunAgainImmediately = true;
+                } finally {
+                    sw.Stop();
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Callback took: {Elapsed:g}", sw.Elapsed);
                 }
 
                 if (_minimumInterval > TimeSpan.Zero) {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping for minimum interval: {Interval}", _minimumInterval);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
                     await SystemClock.SleepAsync(_minimumInterval).AnyContext();
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Finished sleeping");
                 }
