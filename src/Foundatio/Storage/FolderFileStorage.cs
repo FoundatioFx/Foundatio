@@ -17,13 +17,13 @@ namespace Foundatio.Storage {
         protected readonly ILogger _logger;
 
         public FolderFileStorage(FolderFileStorageOptions options) {
-            if (options == null) {
+            if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            }
-            var folder = PathHelper.ExpandPath(options.Folder);
+
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger<FolderFileStorage>.Instance;
 
+            string folder = PathHelper.ExpandPath(options.Folder);
             if (!Path.IsPathRooted(folder))
                 folder = Path.GetFullPath(folder);
 
@@ -46,8 +46,9 @@ namespace Foundatio.Storage {
 
             try {
                 return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
-            } catch (IOException ex) when(ex is FileNotFoundException || ex is DirectoryNotFoundException) {
-                _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
+            } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
                 return Task.FromResult<Stream>(null);
             }
         }
@@ -86,7 +87,6 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(stream));
 
             path = path.NormalizePath();
-
             string file = Path.Combine(Folder, path);
 
             try {
@@ -98,19 +98,18 @@ namespace Foundatio.Storage {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
             }
+        }
 
+        private Stream CreateFileStream(string filePath) {
+            try {
+                return File.Create(filePath);
+            } catch (DirectoryNotFoundException) { }
 
-            Stream CreateFileStream(string filePath) {
-                try {
-                    return File.Create(filePath);
-                }
-                catch (DirectoryNotFoundException) {
-                    string directory = Path.GetDirectoryName(filePath);
-                    if (directory != null)
-                        Directory.CreateDirectory(directory);
-                    return File.Create(filePath);
-                }
-            }
+            string directory = Path.GetDirectoryName(filePath);
+            if (directory != null)
+                Directory.CreateDirectory(directory);
+
+            return File.Create(filePath);
         }
 
         public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -138,7 +137,7 @@ namespace Foundatio.Storage {
                     }
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newpath);
+                _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
                 return Task.FromResult(false);
             }
 
@@ -150,7 +149,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(targetPath))
                 throw new ArgumentNullException(nameof(targetPath));
-            
+
             path = path.NormalizePath();
 
             try {
@@ -162,7 +161,7 @@ namespace Foundatio.Storage {
                     File.Copy(Path.Combine(Folder, path), Path.Combine(Folder, targetPath));
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetpath);
+                _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetPath);
                 return Task.FromResult(false);
             }
 
@@ -174,7 +173,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
-            
+
             try {
                 File.Delete(Path.Combine(Folder, path));
             } catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
@@ -218,7 +217,7 @@ namespace Foundatio.Storage {
 
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
-            
+
             searchPattern = searchPattern.NormalizePath();
 
             var list = new List<FileSpec>();

@@ -281,7 +281,7 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 ```csharp
 using Foundatio.Storage;
 
-IFileStorage storage = new InMemoryFileStorage();
+IFileStorage storage = new InMemoryFileStorage(new InMemoryFileStorageOptions());
 await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
 ```

@@ -16,9 +16,9 @@ namespace Foundatio.Storage {
         private readonly ISerializer _serializer;
 
         public InMemoryFileStorage(InMemoryFileStorageOptions options) {
-            if (options == null) {
+            if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            }
+
             MaxFileSize = options.MaxFileSize;
             MaxFiles = options.MaxFiles;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
