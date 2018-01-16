@@ -135,7 +135,7 @@ namespace Foundatio.Messaging {
                 Data = _serializer.SerializeToBytes(message)
             });
 
-            // if the rabbitmq plugin is not availaible then use the base class delay mechanism
+            // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
                 return AddDelayedMessageAsync(messageType, message, delay.Value);
@@ -147,9 +147,9 @@ namespace Foundatio.Messaging {
 
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
             if (_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
-                // Its necessary to typecast long to int because rabbitmq on the consumer side is reading the
+                // Its necessary to typecast long to int because RabbitMQ on the consumer side is reading the
                 // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
-                // and the data will be delievered immediately.
+                // and the data will be delivered immediately.
                 basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(delay.Value.TotalMilliseconds) } };
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
