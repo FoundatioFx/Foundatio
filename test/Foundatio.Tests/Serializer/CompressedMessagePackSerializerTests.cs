@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Serializer {
         public CompressedMessagePackSerializerTests(ITestOutputHelper output) : base(output) { }
 
         protected override ISerializer GetSerializer() {
-            return new MessagePackSerializer(compressEnabled: true);
+            return new MessagePackSerializer(useCompression: true);
         }
 
         [Fact]
@@ -31,7 +31,7 @@ namespace Foundatio.Tests.Serializer {
 
     public class CompressedMessagePackSerializerBenchmark : SerializerBenchmarkBase {
         protected override ISerializer GetSerializer() {
-            return new MessagePackSerializer(compressEnabled: true);
+            return new MessagePackSerializer(useCompression: true);
         }
     }
 }
