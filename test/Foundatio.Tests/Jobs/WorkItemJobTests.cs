@@ -5,11 +5,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Logging.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
+using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -40,15 +42,17 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    int statusCount = 0;
+
+                    var countdown = new AsyncCountdownEvent(12);
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         _logger.LogInformation("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        Interlocked.Increment(ref statusCount);
+                        countdown.Signal();
                     });
 
                     await job.RunAsync();
-                    Assert.Equal(12, statusCount);
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown.CurrentCount);
                 }
             }
         }
