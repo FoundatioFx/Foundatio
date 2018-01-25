@@ -146,7 +146,7 @@ namespace Foundatio.Tests.Metrics {
                 });
 
                 var task = metrics.WaitForCounterAsync(CounterName, 1, TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, "Expected at least 1 count within 500 ms");
 
                 Task.Run(async () => {
@@ -155,7 +155,7 @@ namespace Foundatio.Tests.Metrics {
                 });
 
                 task = metrics.WaitForCounterAsync(CounterName, timeout: TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, "Expected at least 2 count within 500 ms");
 
                 Task.Run(async () => {
@@ -164,7 +164,7 @@ namespace Foundatio.Tests.Metrics {
                 });
 
                 task = metrics.WaitForCounterAsync(CounterName, 2, TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, "Expected at least 4 count within 500 ms");
 
                 using(var timeoutCancellationTokenSource = new CancellationTokenSource(500)){

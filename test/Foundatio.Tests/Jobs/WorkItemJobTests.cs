@@ -157,15 +157,16 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    int statusCount = 0;
+                    var countdown = new AsyncCountdownEvent(11);
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        Interlocked.Increment(ref statusCount);
+                        countdown.Signal();
                     });
 
                     await job.RunUntilEmptyAsync();
-                    Assert.Equal(11, statusCount);
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown.CurrentCount);
                 }
             }
         }
@@ -191,15 +192,16 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    int statusCount = 0;
+                    var countdown = new AsyncCountdownEvent(11);
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        Interlocked.Increment(ref statusCount);
+                        countdown.Signal();
                     });
 
                     await job.RunUntilEmptyAsync();
-                    Assert.Equal(11, statusCount);
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown.CurrentCount);
                 }
             }
         }
@@ -247,15 +249,16 @@ namespace Foundatio.Tests.Jobs {
                         SomeData = "Test"
                     }, true);
 
-                    int statusCount = 0;
+                    var countdown = new AsyncCountdownEvent(1);
                     await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                         Assert.Equal(jobId, status.WorkItemId);
-                        Interlocked.Increment(ref statusCount);
+                        countdown.Signal();
                     });
 
                     await job.RunUntilEmptyAsync();
-                    Assert.Equal(1, statusCount);
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown.CurrentCount);
                 }
             }
         }
