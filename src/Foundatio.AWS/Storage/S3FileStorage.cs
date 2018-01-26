@@ -34,7 +34,11 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         private AmazonS3Client CreateClient() {
-            return new AmazonS3Client(_credentials, _region);
+            if (_credentials == null) {
+                return _region == null ? new AmazonS3Client() : new AmazonS3Client(_region);
+            } else {
+                return _region == null ? new AmazonS3Client(_credentials) : new AmazonS3Client(_credentials, _region);
+            }
         }
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
@@ -79,7 +83,8 @@ namespace Foundatio.Storage {
                         Modified = res.LastModified.ToUniversalTime(),
                         Path = path
                     };
-                } catch (AmazonS3Exception) {
+                }
+                catch (AmazonS3Exception) {
                     return null;
                 }
             }
@@ -268,6 +273,6 @@ namespace Foundatio.Storage {
             };
         }
 
-        public void Dispose() {}
+        public void Dispose() { }
     }
 }
