@@ -83,8 +83,7 @@ namespace Foundatio.Storage {
                         Modified = res.LastModified.ToUniversalTime(),
                         Path = path
                     };
-                }
-                catch (AmazonS3Exception) {
+                } catch (AmazonS3Exception) {
                     return null;
                 }
             }
@@ -273,6 +272,6 @@ namespace Foundatio.Storage {
             };
         }
 
-        public void Dispose() { }
+        public void Dispose() {}
     }
 }
