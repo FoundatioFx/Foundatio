@@ -20,9 +20,8 @@ namespace Foundatio.AWS.Tests.Storage {
                 return null;
 
             return new S3FileStorage(new S3FileStorageOptions {
-                LoggerFactory = Log,
-                ConnectionString = $"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio"
-            });
+                LoggerFactory = Log
+            }.WithConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio"));
         }
 
         [Fact]

@@ -26,12 +26,11 @@ namespace Foundatio.AWS.Tests.Queues {
                 return null;
 
             var queue = new SQSQueue<SimpleWorkItem>(new SQSQueueOptions<SimpleWorkItem> {
-                ConnectionString = $"id={accessKey};secret={secretKey}",
                 Name = _queueName,
                 Retries = retries,
                 WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
                 LoggerFactory = Log,
-            });
+            }.WithConnectionString($"id={accessKey};secret={secretKey}"));
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
