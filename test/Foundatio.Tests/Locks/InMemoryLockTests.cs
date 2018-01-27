@@ -13,8 +13,8 @@ namespace Foundatio.Tests.Locks {
         private readonly IMessageBus _messageBus;
 
         public InMemoryLockTests(ITestOutputHelper output) : base(output) {
-            _cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
-            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            _cache = new InMemoryCacheClient(o => o.WithLoggerFactory(Log));
+            _messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log));
         }
 
         protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {

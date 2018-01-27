@@ -27,6 +27,14 @@ namespace Foundatio.Queues {
             InitializeMaintenance();
         }
 
+        public InMemoryQueue(Action<InMemoryQueueOptions<T>> config) : this(ConfigureOptions(config)) { }
+
+        private static InMemoryQueueOptions<T> ConfigureOptions(Action<InMemoryQueueOptions<T>> config) {
+            var options = new InMemoryQueueOptions<T>();
+            config?.Invoke(options);
+            return options;
+        }
+
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.CompletedTask;
         }

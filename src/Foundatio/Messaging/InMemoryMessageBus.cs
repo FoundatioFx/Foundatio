@@ -13,6 +13,14 @@ namespace Foundatio.Messaging {
 
         public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
 
+        public InMemoryMessageBus(Action<InMemoryMessageBusOptions> config) : this(ConfigureOptions(config)) { }
+
+        private static InMemoryMessageBusOptions ConfigureOptions(Action<InMemoryMessageBusOptions> config) {
+            var options = new InMemoryMessageBusOptions();
+            config?.Invoke(options);
+            return options;
+        }
+
         public long MessagesSent => _messagesSent;
 
         public long GetMessagesSent(Type messageType) {

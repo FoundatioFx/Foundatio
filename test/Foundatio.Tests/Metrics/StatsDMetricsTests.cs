@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Metrics {
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
             _listener = new UdpListener("127.0.0.1", _port);
-            _client = new StatsDMetricsClient(new StatsDMetricsClientOptions { ServerName = "127.0.0.1", Port = _port, Prefix = "test" });
+            _client = new StatsDMetricsClient(o => o.WithServer("127.0.0.1", _port).WithPrefix("test"));
         }
 
         [Fact]
