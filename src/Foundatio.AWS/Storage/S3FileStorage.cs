@@ -25,20 +25,25 @@ namespace Foundatio.Storage {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            _credentials = options.Credentials;
-            _region = options.Region;
-            _bucket = options.Bucket;
+            var connection = S3FileStorageConnection.Parse(options.ConnectionString);
+            _credentials = connection.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+            _region = connection.Region ?? FallbackRegionFactory.GetRegionEndpoint();
+            _bucket = connection.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
+        }
+
+        public S3FileStorage(Action<S3FileStorageOptions> config):this(ConfigureOptions(config)) { }
+
+        private static S3FileStorageOptions ConfigureOptions(Action<S3FileStorageOptions> config) {
+            var options = new S3FileStorageOptions();
+            config?.Invoke(options);
+            return options;
         }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         private AmazonS3Client CreateClient() {
-            if (_credentials == null) {
-                return _region == null ? new AmazonS3Client() : new AmazonS3Client(_region);
-            } else {
-                return _region == null ? new AmazonS3Client(_credentials) : new AmazonS3Client(_credentials, _region);
-            }
+            return new AmazonS3Client(_credentials, _region);
         }
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {

@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Amazon;
-using Amazon.CloudWatch.Model;
-using Amazon.Runtime;
 using Foundatio.Metrics;
 using Foundatio.Tests.Metrics;
 using Foundatio.Tests.Utility;
@@ -32,11 +29,9 @@ namespace Foundatio.AWS.Tests.Metrics {
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
             return new CloudWatchMetricsClient(new CloudWatchMetricsClientOptions {
-                Credentials = new BasicAWSCredentials(accessKey, secretKey),
-                RegionEndpoint = RegionEndpoint.USEast1,
+                ConnectionString = $"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}",
                 Prefix = "foundatio/tests/metrics",
                 Buffered = buffered,
-                Dimensions = new List<Dimension> { new Dimension { Name = "Test Id", Value = id } },
                 LoggerFactory = Log
             });
          }

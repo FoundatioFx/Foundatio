@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon.Runtime;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
@@ -27,7 +26,7 @@ namespace Foundatio.AWS.Tests.Queues {
                 return null;
 
             var queue = new SQSQueue<SimpleWorkItem>(new SQSQueueOptions<SimpleWorkItem> {
-                Credentials = new BasicAWSCredentials(accessKey, secretKey),
+                ConnectionString = $"id={accessKey};secret={secretKey}",
                 Name = _queueName,
                 Retries = retries,
                 WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),

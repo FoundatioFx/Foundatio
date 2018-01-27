@@ -27,7 +27,16 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
-            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(options.Credentials ?? FallbackCredentialsFactory.GetCredentials(), options.RegionEndpoint));
+            var connection = SQSQueueConnection.Parse(options.ConnectionString);
+            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(connection.Credentials ?? FallbackCredentialsFactory.GetCredentials(), connection.Region ?? FallbackRegionFactory.GetRegionEndpoint()));
+        }
+
+        public SQSQueue(Action<SQSQueueOptions<T>> config) : this(ConfigureOptions(config)) { }
+
+        private static SQSQueueOptions<T> ConfigureOptions(Action<SQSQueueOptions<T>> config) {
+            var options = new SQSQueueOptions<T>();
+            config?.Invoke(options);
+            return options;
         }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
