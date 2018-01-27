@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Messaging {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
             return _messageBus;
         }
 
@@ -24,7 +24,7 @@ namespace Foundatio.Tests.Messaging {
 
         [Fact]
         public async Task CanCheckMessageCounts() {
-            var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
             await messageBus.PublishAsync(new SimpleMessageA {
                 Data = "Hello"
             });

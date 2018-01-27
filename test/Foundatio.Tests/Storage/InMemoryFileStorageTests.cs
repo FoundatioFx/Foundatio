@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Storage {
         public InMemoryFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new InMemoryFileStorage(new InMemoryFileStorageOptions());
+            return new InMemoryFileStorage(o => { });
         }
 
         [Fact]

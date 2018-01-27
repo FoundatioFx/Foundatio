@@ -21,6 +21,8 @@ namespace Foundatio.Caching {
             InitializeMaintenance();
         }
 
+        public InMemoryCacheClient(Action<IOptionsBuilder<InMemoryCacheClientOptions>> config) : this(OptionsBuilder<InMemoryCacheClientOptions>.Build(config)) { }
+
         public int Count => _memory.Count;
         public int? MaxItems { get; set; }
         public bool ShouldCloneValues { get; set; }

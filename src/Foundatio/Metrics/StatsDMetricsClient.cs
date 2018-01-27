@@ -7,11 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
-    public class StatsDMetricsClientOptions : MetricsClientOptionsBase {
-        public string ServerName { get; set; }
-        public int Port { get; set; }
-    }
-
     public class StatsDMetricsClient : IMetricsClient {
         private readonly object _lock = new object();
         private Socket _socket;
@@ -27,6 +22,9 @@ namespace Foundatio.Metrics {
             if (!String.IsNullOrEmpty(options.Prefix))
                 options.Prefix = options.Prefix.EndsWith(".") ? options.Prefix : String.Concat(options.Prefix, ".");
         }
+
+        public StatsDMetricsClient(Action<IOptionsBuilder<StatsDMetricsClientOptions>> config) 
+            : this(OptionsBuilder<StatsDMetricsClientOptions>.Build(config)) { }
 
         public void Counter(string name, int value = 1) {
             Send(BuildMetric("c", name, value.ToString(CultureInfo.InvariantCulture)));

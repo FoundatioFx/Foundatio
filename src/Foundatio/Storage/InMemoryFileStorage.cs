@@ -24,6 +24,9 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
+        public InMemoryFileStorage(Action<IOptionsBuilder<InMemoryFileStorageOptions>> config) 
+            : this(OptionsBuilder<InMemoryFileStorageOptions>.Build(config)) { }
+
         public long MaxFileSize { get; set; }
         public long MaxFiles { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;

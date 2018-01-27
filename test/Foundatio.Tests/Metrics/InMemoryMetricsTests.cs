@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Metrics {
         public InMemoryMetricsTests(ITestOutputHelper output) : base(output) { }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
-            return new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log, Buffered = buffered });
+            return new InMemoryMetricsClient(o => o.LoggerFactory(Log).Buffered(buffered));
         }
 
         [Fact]

@@ -20,4 +20,43 @@ namespace Foundatio.Messaging {
         public ISerializer Serializer { get; set; }
         public ILoggerFactory LoggerFactory { get; set; }
     }
+
+    public static class MessageBusOptionsExtensions {
+        public static IOptionsBuilder<MessageBusOptionsBase> Topic(this IOptionsBuilder<MessageBusOptionsBase> builder, string topic) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            if (string.IsNullOrEmpty(topic))
+                throw new ArgumentNullException(nameof(topic));
+            builder.Target.Topic = topic;
+            return builder;
+        }
+
+        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxItems(this IOptionsBuilder<MessageBusOptionsBase> builder, int maxItems) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.TaskQueueMaxItems = maxItems;
+            return builder;
+        }
+
+        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxDegreeOfParallelism(this IOptionsBuilder<MessageBusOptionsBase> builder, byte maxDegree) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
+            return builder;
+        }
+
+        public static IOptionsBuilder<MessageBusOptionsBase> Serializer(this IOptionsBuilder<MessageBusOptionsBase> builder, ISerializer serializer) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            return builder;
+        }
+
+        public static IOptionsBuilder<MessageBusOptionsBase> LoggerFactory(this IOptionsBuilder<MessageBusOptionsBase> builder, ILoggerFactory loggerFactory) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return builder;
+        }
+    }
 }
