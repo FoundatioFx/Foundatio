@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Jobs {
         public InMemoryJobQueueTests(ITestOutputHelper output) : base(output) {}
 
         protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay) {
-            return new InMemoryQueue<SampleQueueWorkItem>(o => o.WithRetryDelay(retryDelay).WithRetries(retries).WithLoggerFactory(Log));
+            return new InMemoryQueue<SampleQueueWorkItem>(o => o.RetryDelay(retryDelay).Retries(retries).LoggerFactory(Log));
         }
 
         [Fact]

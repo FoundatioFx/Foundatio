@@ -23,8 +23,8 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithLoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
+                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -61,10 +61,10 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanHandleMultipleWorkItemInstances() {
             const int workItemCount = 1000;
 
-            using (var metrics = new InMemoryMetricsClient(o => o.WithLoggerFactory(Log))) {
-                using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithRetryDelay(TimeSpan.Zero).WithRetries(0).WithLoggerFactory(Log))) {
+            using (var metrics = new InMemoryMetricsClient(o => o.LoggerFactory(Log))) {
+                using (var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log))) {
                     queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
-                    using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+                    using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                         var handlerRegistry = new WorkItemHandlers();
                         var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
                         var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -145,8 +145,8 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemWithClassHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithLoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
+                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -172,8 +172,8 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemWithDelegateHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithLoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
+                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -207,8 +207,8 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItemJobUntilEmpty() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithLoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
+                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
@@ -233,8 +233,8 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunBadWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.WithRetryDelay(TimeSpan.FromMilliseconds(500)).WithLoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.WithLoggerFactory(Log))) {
+            using (var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.FromMilliseconds(500)).LoggerFactory(Log))) {
+                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
                     var handlerRegistry = new WorkItemHandlers();
                     var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 

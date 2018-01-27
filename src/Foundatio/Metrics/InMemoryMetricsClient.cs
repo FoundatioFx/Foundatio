@@ -3,15 +3,11 @@ using Foundatio.Caching;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : CacheBucketMetricsClientBase {
-        public InMemoryMetricsClient(InMemoryMetricsClientOptions options) : base(new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = options?.LoggerFactory }),  options) { }
+        public InMemoryMetricsClient(InMemoryMetricsClientOptions options) 
+            : base(new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = options?.LoggerFactory }),  options) { }
 
-        public InMemoryMetricsClient(Action<InMemoryMetricsClientOptions> config) : this(ConfigureOptions(config)) { }
-
-        private static InMemoryMetricsClientOptions ConfigureOptions(Action<InMemoryMetricsClientOptions> config) {
-            var options = new InMemoryMetricsClientOptions();
-            config?.Invoke(options);
-            return options;
-        }
+        public InMemoryMetricsClient(Action<IOptionsBuilder<InMemoryMetricsClientOptions>> config)
+            : this(OptionsBuilder<InMemoryMetricsClientOptions>.Build(config)) { }
 
         public override void Dispose() {
             base.Dispose();

@@ -24,13 +24,8 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public InMemoryFileStorage(Action<InMemoryFileStorageOptions> config) : this(ConfigureOptions(config)) { }
-
-        private static InMemoryFileStorageOptions ConfigureOptions(Action<InMemoryFileStorageOptions> config) {
-            var options = new InMemoryFileStorageOptions();
-            config?.Invoke(options);
-            return options;
-        }
+        public InMemoryFileStorage(Action<IOptionsBuilder<InMemoryFileStorageOptions>> config) 
+            : this(OptionsBuilder<InMemoryFileStorageOptions>.Build(config)) { }
 
         public long MaxFileSize { get; set; }
         public long MaxFiles { get; set; }

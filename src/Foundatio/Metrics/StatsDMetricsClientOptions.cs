@@ -7,13 +7,13 @@ namespace Foundatio.Metrics {
     }
 
     public static class StatsDMetricsClientOptionsExtensions {
-        public static StatsDMetricsClientOptions WithServer(this StatsDMetricsClientOptions options, string serverName, int port = 8125) {
+        public static IOptionsBuilder<StatsDMetricsClientOptions> Server(this IOptionsBuilder<StatsDMetricsClientOptions> options, string serverName, int port = 8125) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
             if (String.IsNullOrEmpty(serverName))
                 throw new ArgumentNullException(nameof(serverName));
-            options.ServerName = serverName;
-            options.Port = port;
+            options.Target.ServerName = serverName;
+            options.Target.Port = port;
             return options;
         }
     }

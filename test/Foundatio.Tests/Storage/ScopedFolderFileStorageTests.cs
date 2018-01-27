@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Storage {
         public ScopedFolderFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new ScopedFileStorage(new FolderFileStorage(o => o.WithFolder("|DataDirectory|\\temp")), "scoped");
+            return new ScopedFileStorage(new FolderFileStorage(o => o.Folder("|DataDirectory|\\temp")), "scoped");
         }
 
         [Fact]

@@ -6,13 +6,13 @@ namespace Foundatio.Storage {
     }
 
     public static class FolderFileStorageOptionsExtensions {
-        public static FolderFileStorageOptions WithFolder(this FolderFileStorageOptions options, string folder) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
+        public static IOptionsBuilder<FolderFileStorageOptions> Folder(this IOptionsBuilder<FolderFileStorageOptions> builder, string folder) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
             if (string.IsNullOrEmpty(folder))
                 throw new ArgumentNullException(nameof(folder));
-            options.Folder = folder;
-            return options;
+            builder.Target.Folder = folder;
+            return builder;
         }
     }
 }

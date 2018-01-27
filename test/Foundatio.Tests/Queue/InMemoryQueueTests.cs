@@ -17,10 +17,10 @@ namespace Foundatio.Tests.Queue {
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
                 _queue = new InMemoryQueue<SimpleWorkItem>(
-                    o => o.WithRetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
-                        .WithRetries(retries)
-                        .WithWorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-                        .WithLoggerFactory(Log));
+                    o => o.RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
+                        .Retries(retries)
+                        .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                        .LoggerFactory(Log));
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
             return _queue;
@@ -39,7 +39,7 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public async Task TestAsyncEvents() {
-            using (var q = new InMemoryQueue<SimpleWorkItem>(o => o.WithLoggerFactory(Log))) {
+            using (var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log))) {
                 var disposables = new List<IDisposable>(5);
                 try {
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {

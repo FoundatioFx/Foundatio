@@ -9,31 +9,31 @@ namespace Foundatio.Metrics {
     }
 
     public static class MetricsClientOptionsExtensions {
-        public static MetricsClientOptionsBase WithPrefix(this MetricsClientOptionsBase options, string prefix) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
+        public static IOptionsBuilder<MetricsClientOptionsBase> Prefix(this IOptionsBuilder<MetricsClientOptionsBase> builder, string prefix) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
             if (string.IsNullOrEmpty(prefix))
                 throw new ArgumentNullException(nameof(prefix));
-            options.Prefix = prefix;
-            return options;
+            builder.Target.Prefix = prefix;
+            return builder;
         }
 
-        public static MetricsClientOptionsBase WithLoggerFactory(this MetricsClientOptionsBase options, ILoggerFactory loggerFactory) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            return options;
+        public static IOptionsBuilder<MetricsClientOptionsBase> LoggerFactory(this IOptionsBuilder<MetricsClientOptionsBase> builder, ILoggerFactory loggerFactory) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return builder;
         }
 
-        public static MetricsClientOptionsBase ShouldBuffer(this MetricsClientOptionsBase options, bool enableBuffer) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.Buffered = enableBuffer;
-            return options;
+        public static IOptionsBuilder<MetricsClientOptionsBase> Buffered(this IOptionsBuilder<MetricsClientOptionsBase> builder, bool enableBuffer) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.Buffered = enableBuffer;
+            return builder;
         }
 
-        public static MetricsClientOptionsBase EnableBuffer(this MetricsClientOptionsBase options) => options.ShouldBuffer(true);
+        public static IOptionsBuilder<MetricsClientOptionsBase> EnableBuffer(this IOptionsBuilder<MetricsClientOptionsBase> options) => options.Buffered(true);
 
-        public static MetricsClientOptionsBase DisableBuffer(this MetricsClientOptionsBase options) => options.ShouldBuffer(false);
+        public static IOptionsBuilder<MetricsClientOptionsBase> DisableBuffer(this IOptionsBuilder<MetricsClientOptionsBase> options) => options.Buffered(false);
     }
 }

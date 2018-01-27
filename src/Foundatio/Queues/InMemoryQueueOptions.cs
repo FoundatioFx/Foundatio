@@ -7,18 +7,18 @@ namespace Foundatio.Queues {
     }
 
     public static class InMemoryQueueOptionsExtensions {
-        public static InMemoryQueueOptions<T> WithRetryDelay<T>(this InMemoryQueueOptions<T> options, TimeSpan retryDelay) where T : class {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.RetryDelay = retryDelay;
-            return options;
+        public static IOptionsBuilder<InMemoryQueueOptions<T>> RetryDelay<T>(this IOptionsBuilder<InMemoryQueueOptions<T>> builder, TimeSpan retryDelay) where T : class {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.RetryDelay = retryDelay;
+            return builder;
         }
 
-        public static InMemoryQueueOptions<T> WithRetryMultipliers<T>(this InMemoryQueueOptions<T> options, int[] multipliers) where T : class {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.RetryMultipliers = multipliers ?? throw new ArgumentNullException(nameof(multipliers));
-            return options;
+        public static IOptionsBuilder<InMemoryQueueOptions<T>> RetryMultipliers<T>(this IOptionsBuilder<InMemoryQueueOptions<T>> builder, int[] multipliers) where T : class {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.RetryMultipliers = multipliers ?? throw new ArgumentNullException(nameof(multipliers));
+            return builder;
         }
     }
 }

@@ -7,10 +7,10 @@ namespace Foundatio.Caching {
     }
 
     public static class CacheClientOptionsExtensions {
-        public static CacheClientOptionsBase WithLoggerFactory(this CacheClientOptionsBase options, ILoggerFactory loggerFactory) {
+        public static IOptionsBuilder<CacheClientOptionsBase> LoggerFactory(this IOptionsBuilder<CacheClientOptionsBase> options, ILoggerFactory loggerFactory) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            options.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            options.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
             return options;
         }
     }

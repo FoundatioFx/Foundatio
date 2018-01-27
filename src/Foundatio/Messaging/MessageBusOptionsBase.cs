@@ -22,41 +22,41 @@ namespace Foundatio.Messaging {
     }
 
     public static class MessageBusOptionsExtensions {
-        public static MessageBusOptionsBase WithTopic(this MessageBusOptionsBase options, string topic) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
+        public static IOptionsBuilder<MessageBusOptionsBase> Topic(this IOptionsBuilder<MessageBusOptionsBase> builder, string topic) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
-            options.Topic = topic;
-            return options;
+            builder.Target.Topic = topic;
+            return builder;
         }
 
-        public static MessageBusOptionsBase WithTaskQueueMaxItems(this MessageBusOptionsBase options, int maxItems) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.TaskQueueMaxItems = maxItems;
-            return options;
+        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxItems(this IOptionsBuilder<MessageBusOptionsBase> builder, int maxItems) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.TaskQueueMaxItems = maxItems;
+            return builder;
         }
 
-        public static MessageBusOptionsBase WithTaskQueueMaxDegreeOfParallelism(this MessageBusOptionsBase options, byte maxDegree) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.TaskQueueMaxDegreeOfParallelism = maxDegree;
-            return options;
+        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxDegreeOfParallelism(this IOptionsBuilder<MessageBusOptionsBase> builder, byte maxDegree) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
+            return builder;
         }
 
-        public static MessageBusOptionsBase WithSerializer(this MessageBusOptionsBase options, ISerializer serializer) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-            return options;
+        public static IOptionsBuilder<MessageBusOptionsBase> Serializer(this IOptionsBuilder<MessageBusOptionsBase> builder, ISerializer serializer) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            return builder;
         }
 
-        public static MessageBusOptionsBase WithLoggerFactory(this MessageBusOptionsBase options, ILoggerFactory loggerFactory) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            return options;
+        public static IOptionsBuilder<MessageBusOptionsBase> LoggerFactory(this IOptionsBuilder<MessageBusOptionsBase> builder, ILoggerFactory loggerFactory) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return builder;
         }
     }
 }

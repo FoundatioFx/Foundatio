@@ -8,18 +8,18 @@ namespace Foundatio.Storage {
     }
 
     public static class InMemoryFileStorageOptionsExtensions {
-        public static InMemoryFileStorageOptions WithMaxFileSize(this InMemoryFileStorageOptions options, long fileSize) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.MaxFileSize = fileSize;
-            return options;
+        public static IOptionsBuilder<InMemoryFileStorageOptions> MaxFileSize(this IOptionsBuilder<InMemoryFileStorageOptions> builder, long fileSize) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.MaxFileSize = fileSize;
+            return builder;
         }
 
-        public static InMemoryFileStorageOptions WithMaxFiles(this InMemoryFileStorageOptions options, int fileCount) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-            options.MaxFiles = fileCount;
-            return options;
+        public static IOptionsBuilder<InMemoryFileStorageOptions> MaxFileSize(this IOptionsBuilder<InMemoryFileStorageOptions> builder, int fileCount) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+            builder.Target.MaxFiles = fileCount;
+            return builder;
         }
     }
 }
