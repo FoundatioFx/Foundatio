@@ -32,13 +32,8 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public S3FileStorage(Action<S3FileStorageOptions> config):this(ConfigureOptions(config)) { }
-
-        private static S3FileStorageOptions ConfigureOptions(Action<S3FileStorageOptions> config) {
-            var options = new S3FileStorageOptions();
-            config?.Invoke(options);
-            return options;
-        }
+        public S3FileStorage(Action<IOptionsBuilder<S3FileStorageOptions>> config)
+            : this(OptionsBuilder<S3FileStorageOptions>.Build(config)) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 

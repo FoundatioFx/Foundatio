@@ -19,9 +19,9 @@ namespace Foundatio.AWS.Tests.Storage {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new S3FileStorage(new S3FileStorageOptions {
-                LoggerFactory = Log
-            }.WithConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio"));
+            return new S3FileStorage(
+                o => o.ConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio")
+                    .LoggerFactory(Log));
         }
 
         [Fact]

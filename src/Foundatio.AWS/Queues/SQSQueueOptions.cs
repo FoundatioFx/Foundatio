@@ -10,49 +10,49 @@ namespace Foundatio.Queues {
     }
 
     public static class SQSQueueOptionsExtensions {
-        public static SQSQueueOptions<T> WithConnectionString<T>(this SQSQueueOptions<T> options, string connectionString) where T : class {
+        public static IOptionsBuilder<SQSQueueOptions<T>> ConnectionString<T>(this IOptionsBuilder<SQSQueueOptions<T>> options, string connectionString) where T : class {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
             if (string.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
-            options.ConnectionString = connectionString;
+            options.Target.ConnectionString = connectionString;
             return options;
         }
 
-        public static SQSQueueOptions<T> WithReadQueueTimeout<T>(this SQSQueueOptions<T> options, TimeSpan timeout) where T : class {
+        public static IOptionsBuilder<SQSQueueOptions<T>> ReadQueueTimeout<T>(this IOptionsBuilder<SQSQueueOptions<T>> options, TimeSpan timeout) where T : class {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            options.ReadQueueTimeout = timeout;
+            options.Target.ReadQueueTimeout = timeout;
             return options;
         }
 
-        public static SQSQueueOptions<T> WithDequeueInterval<T>(this SQSQueueOptions<T> options, TimeSpan interval) where T : class {
+        public static IOptionsBuilder<SQSQueueOptions<T>> DequeueInterval<T>(this IOptionsBuilder<SQSQueueOptions<T>> options, TimeSpan interval) where T : class {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            options.DequeueInterval = interval;
+            options.Target.DequeueInterval = interval;
             return options;
         }
 
-        public static SQSQueueOptions<T> ShouldCreateQueue<T>(this SQSQueueOptions<T> options, bool enabled) where T : class {
+        public static IOptionsBuilder<SQSQueueOptions<T>> CanCreateQueue<T>(this IOptionsBuilder<SQSQueueOptions<T>> options, bool enabled) where T : class {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            options.CanCreateQueue = enabled;
+            options.Target.CanCreateQueue = enabled;
             return options;
         }
 
-        public static SQSQueueOptions<T> EnableCreateQueue<T>(this SQSQueueOptions<T> options) where T : class => options.ShouldCreateQueue(true);
+        public static IOptionsBuilder<SQSQueueOptions<T>> EnableCreateQueue<T>(this IOptionsBuilder<SQSQueueOptions<T>> options) where T : class => options.CanCreateQueue(true);
 
-        public static SQSQueueOptions<T> DisableCreateQueue<T>(this SQSQueueOptions<T> options) where T : class => options.ShouldCreateQueue(false);
+        public static IOptionsBuilder<SQSQueueOptions<T>> DisableCreateQueue<T>(this IOptionsBuilder<SQSQueueOptions<T>> options) where T : class => options.CanCreateQueue(false);
 
-        public static SQSQueueOptions<T> SupportDeadLetter<T>(this SQSQueueOptions<T> options, bool supported) where T : class {
+        public static IOptionsBuilder<SQSQueueOptions<T>> SupportDeadLetter<T>(this IOptionsBuilder<SQSQueueOptions<T>> options, bool supported) where T : class {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            options.SupportDeadLetter = supported;
+            options.Target.SupportDeadLetter = supported;
             return options;
         }
 
-        public static SQSQueueOptions<T> EnableDeadLetter<T>(this SQSQueueOptions<T> options) where T : class => options.SupportDeadLetter(true);
+        public static IOptionsBuilder<SQSQueueOptions<T>> EnableDeadLetter<T>(this IOptionsBuilder<SQSQueueOptions<T>> options) where T : class => options.SupportDeadLetter(true);
 
-        public static SQSQueueOptions<T> DisableDeadLetter<T>(this SQSQueueOptions<T> options) where T : class => options.SupportDeadLetter(false);
+        public static IOptionsBuilder<SQSQueueOptions<T>> DisableDeadLetter<T>(this IOptionsBuilder<SQSQueueOptions<T>> options) where T : class => options.SupportDeadLetter(false);
     }
 }

@@ -30,13 +30,8 @@ namespace Foundatio.Metrics {
                 }));
         }
 
-        public CloudWatchMetricsClient(Action<CloudWatchMetricsClientOptions> config) : this(ConfigureOptions(config)) { }
-
-        private static CloudWatchMetricsClientOptions ConfigureOptions(Action<CloudWatchMetricsClientOptions> config) {
-            var options = new CloudWatchMetricsClientOptions();
-            config?.Invoke(options);
-            return options;
-        }
+        public CloudWatchMetricsClient(Action<IOptionsBuilder<CloudWatchMetricsClientOptions>> config) 
+            : this(OptionsBuilder<CloudWatchMetricsClientOptions>.Build(config)) { }
 
         protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
             var metrics = new List<MetricDatum>();

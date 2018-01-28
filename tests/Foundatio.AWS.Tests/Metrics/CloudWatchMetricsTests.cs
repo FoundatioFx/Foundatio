@@ -28,12 +28,12 @@ namespace Foundatio.AWS.Tests.Metrics {
                 return null;
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
-            return new CloudWatchMetricsClient(new CloudWatchMetricsClientOptions {
-                Prefix = "foundatio/tests/metrics",
-                Buffered = buffered,
-                LoggerFactory = Log
-            }.WithConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}"));
-         }
+            return new CloudWatchMetricsClient(o =>
+                o.ConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}")
+                    .Prefix("foundatio/tests/metrics")
+                    .Buffered(buffered)
+                    .LoggerFactory(Log));
+        }
 
         [Fact]
         public override Task CanSetGaugesAsync() {
