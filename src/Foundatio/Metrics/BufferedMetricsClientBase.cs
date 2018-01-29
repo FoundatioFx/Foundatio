@@ -18,10 +18,10 @@ namespace Foundatio.Metrics {
 
         private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>();
         private readonly Timer _flushTimer;
-        private readonly MetricsClientOptionsBase _options;
+        private readonly SharedMetricsClientOptions _options;
         protected readonly ILogger _logger;
 
-        public BufferedMetricsClientBase(MetricsClientOptionsBase options) {
+        public BufferedMetricsClientBase(SharedMetricsClientOptions options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
             if (options.Buffered)

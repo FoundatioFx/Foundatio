@@ -8,7 +8,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : QueueOptionsBase<T> {
+    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();

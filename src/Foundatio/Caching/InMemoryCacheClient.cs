@@ -15,13 +15,16 @@ namespace Foundatio.Caching {
         private long _hits;
         private long _misses;
 
+        public InMemoryCacheClient() : this(o => o) {}
+
         public InMemoryCacheClient(InMemoryCacheClientOptions options = null) : base(options?.LoggerFactory) {
             ShouldCloneValues = true;
             _memory = new ConcurrentDictionary<string, CacheEntry>();
             InitializeMaintenance();
         }
 
-        public InMemoryCacheClient(Action<IOptionsBuilder<InMemoryCacheClientOptions>> config) : this(OptionsBuilder<InMemoryCacheClientOptions>.Build(config)) { }
+        public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder> config)
+            : this(config().Target) { }
 
         public int Count => _memory.Count;
         public int? MaxItems { get; set; }

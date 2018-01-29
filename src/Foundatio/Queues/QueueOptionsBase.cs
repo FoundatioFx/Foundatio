@@ -5,7 +5,7 @@ using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
-    public abstract class QueueOptionsBase<T>  where T : class {
+    public class SharedQueueOptions<T> where T : class {
         public string Name { get; set; } = typeof(T).Name;
         public int Retries { get; set; } = 2;
         public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
@@ -14,61 +14,52 @@ namespace Foundatio.Queues {
         public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public static class QueueOptionsExtensions {
-        public static IOptionsBuilder<QueueOptionsBase<T>> Name<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, string name) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            if (string.IsNullOrEmpty(name))
-                throw new ArgumentNullException(nameof(name));
-            builder.Target.Name = name;
-            return builder;
+    public class SharedQueueOptionsBuilder<T> where T: class {
+        protected readonly SharedQueueOptions<T> _target;
+
+        public SharedQueueOptionsBuilder(SharedQueueOptions<T> target) {
+            _target = target;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> Retries<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, int retries) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.Retries = retries;
-            return builder;
+        public TOptions Name<TOptions>(string name) where TOptions : SharedQueueOptionsBuilder<T> {
+            _target.Name = name;
+            return (TOptions)this;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> WorkItemTimeout<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, TimeSpan timeout) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.WorkItemTimeout = timeout;
-            return builder;
+        public TOptions Retries<TOptions>(int retries) where TOptions : SharedQueueOptionsBuilder<T> {
+            _target.Retries = retries;
+            return (TOptions)this;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> Behaviors<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, IEnumerable<IQueueBehavior<T>> behaviors) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.Behaviors = behaviors;
-            return builder;
+        public TOptions WorkItemTimeout<TOptions>(TimeSpan timeout) where TOptions : SharedQueueOptionsBuilder<T>{
+            _target.WorkItemTimeout = timeout;
+            return (TOptions)this;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> AddBehavior<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, IQueueBehavior<T> behavior) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            if(behavior == null)
+        public TOptions Behaviors<TOptions>(IEnumerable<IQueueBehavior<T>> behaviors) where TOptions : SharedQueueOptionsBuilder<T>{
+            _target.Behaviors = behaviors;
+            return (TOptions)this;
+        }
+
+        public TOptions AddBehavior<TOptions>(IQueueBehavior<T> behavior) where TOptions : SharedQueueOptionsBuilder<T>{
+            if (behavior == null)
                 throw new ArgumentNullException(nameof(behavior));
-            if (builder.Target.Behaviors == null)
-                builder.Target.Behaviors = new[] {behavior};
+            if (_target.Behaviors == null)
+                _target.Behaviors = new[] { behavior };
             else
-                builder.Target.Behaviors = builder.Target.Behaviors.Concat(new[] {behavior});
-            return builder;
+                _target.Behaviors = _target.Behaviors.Concat(new[] { behavior });
+
+            return (TOptions)this;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> LoggerFactory<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, ILoggerFactory loggerFactory) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            return builder;
+        public TOptions LoggerFactory<TOptions>(ILoggerFactory loggerFactory) where TOptions : SharedQueueOptionsBuilder<T>{
+            _target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return (TOptions)this;
         }
 
-        public static IOptionsBuilder<QueueOptionsBase<T>> Serializer<T>(this IOptionsBuilder<QueueOptionsBase<T>> builder, ISerializer serializer) where T : class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-            return builder;
+        public TOptions Serializer<TOptions>(ISerializer serializer) where TOptions : SharedQueueOptionsBuilder<T>{
+            _target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            return (TOptions)this;
         }
     }
 }

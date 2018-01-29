@@ -15,6 +15,8 @@ namespace Foundatio.Storage {
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
 
+        public InMemoryFileStorage() : this(o => o) {}
+
         public InMemoryFileStorage(InMemoryFileStorageOptions options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
@@ -24,7 +26,7 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public InMemoryFileStorage(Action<IOptionsBuilder<InMemoryFileStorageOptions>> config) 
+        public InMemoryFileStorage(Builder<InMemoryFileStorageOptions> config) 
             : this(OptionsBuilder<InMemoryFileStorageOptions>.Build(config)) { }
 
         public long MaxFileSize { get; set; }

@@ -3,7 +3,7 @@ using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusOptionsBase {
+    public class SharedMessageBusOptions {
         /// <summary>
         /// The topic name
         /// </summary>
@@ -21,42 +21,34 @@ namespace Foundatio.Messaging {
         public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public static class MessageBusOptionsExtensions {
-        public static IOptionsBuilder<MessageBusOptionsBase> Topic(this IOptionsBuilder<MessageBusOptionsBase> builder, string topic) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
+    public interface ISharedMessageBusOptionsBuilder : IOptionsBuilder {}
+
+    public static class SharedMessageBusOptionsBuilderExtensions {
+        public static T Topic<T>(this T builder, string topic) where T: ISharedMessageBusOptionsBuilder {
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
-            builder.Target.Topic = topic;
-            return builder;
+            builder.Target<SharedMessageBusOptions>().Topic = topic;
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxItems(this IOptionsBuilder<MessageBusOptionsBase> builder, int maxItems) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.TaskQueueMaxItems = maxItems;
-            return builder;
+        public static T TaskQueueMaxItems<T>(this T builder, int maxItems) where T: ISharedMessageBusOptionsBuilder {
+            builder.Target<SharedMessageBusOptions>().TaskQueueMaxItems = maxItems;
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MessageBusOptionsBase> TaskQueueMaxDegreeOfParallelism(this IOptionsBuilder<MessageBusOptionsBase> builder, byte maxDegree) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
-            return builder;
+        public static T TaskQueueMaxDegreeOfParallelism<T>(this T builder, byte maxDegree) where T: ISharedMessageBusOptionsBuilder {
+            builder.Target<SharedMessageBusOptions>().TaskQueueMaxDegreeOfParallelism = maxDegree;
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MessageBusOptionsBase> Serializer(this IOptionsBuilder<MessageBusOptionsBase> builder, ISerializer serializer) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-            return builder;
+        public static T Serializer<T>(this T builder, ISerializer serializer) where T: ISharedMessageBusOptionsBuilder {
+            builder.Target<SharedMessageBusOptions>().Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MessageBusOptionsBase> LoggerFactory(this IOptionsBuilder<MessageBusOptionsBase> builder, ILoggerFactory loggerFactory) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            return builder;
+        public static T LoggerFactory<T>(this T builder, ILoggerFactory loggerFactory) where T: ISharedMessageBusOptionsBuilder {
+            builder.Target<SharedMessageBusOptions>().LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return (T)builder;
         }
     }
 }

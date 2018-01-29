@@ -2,38 +2,34 @@
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
-    public abstract class MetricsClientOptionsBase {
+    public class SharedMetricsClientOptions {
         public bool Buffered { get; set; } = true;
         public string Prefix { get; set; }
         public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public static class MetricsClientOptionsExtensions {
-        public static IOptionsBuilder<MetricsClientOptionsBase> Prefix(this IOptionsBuilder<MetricsClientOptionsBase> builder, string prefix) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
+    public interface ISharedMetricsClientOptionsBuilder : IOptionsBuilder {}
+
+    public static class MetricsClientOptionsBuilderExtensions {
+        public static T Buffered<T>(this T builder, bool buffered) where T: ISharedMetricsClientOptionsBuilder {
+            builder.Target<SharedMetricsClientOptions>().Buffered = buffered;
+            return (T)builder;
+        }
+
+        public static T Prefix<T>(this T builder, string prefix) where T: ISharedMetricsClientOptionsBuilder {
             if (string.IsNullOrEmpty(prefix))
                 throw new ArgumentNullException(nameof(prefix));
-            builder.Target.Prefix = prefix;
-            return builder;
+            builder.Target<SharedMetricsClientOptions>().Prefix = prefix;
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MetricsClientOptionsBase> LoggerFactory(this IOptionsBuilder<MetricsClientOptionsBase> builder, ILoggerFactory loggerFactory) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            return builder;
+        public static T LoggerFactory<T>(this T builder, ILoggerFactory loggerFactory) where T: ISharedMetricsClientOptionsBuilder {
+            builder.Target<SharedMetricsClientOptions>().LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            return (T)builder;
         }
 
-        public static IOptionsBuilder<MetricsClientOptionsBase> Buffered(this IOptionsBuilder<MetricsClientOptionsBase> builder, bool enableBuffer) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target.Buffered = enableBuffer;
-            return builder;
-        }
+        public static T EnableBuffer<T>(this T builder) where T: ISharedMetricsClientOptionsBuilder => builder.Buffered(true);
 
-        public static IOptionsBuilder<MetricsClientOptionsBase> EnableBuffer(this IOptionsBuilder<MetricsClientOptionsBase> options) => options.Buffered(true);
-
-        public static IOptionsBuilder<MetricsClientOptionsBase> DisableBuffer(this IOptionsBuilder<MetricsClientOptionsBase> options) => options.Buffered(false);
+        public static T DisableBuffer<T>(this T builder) where T: ISharedMetricsClientOptionsBuilder => builder.Buffered(false);
     }
 }
