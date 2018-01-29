@@ -28,6 +28,9 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
+        public AzureFileStorage(Action<IOptionsBuilder<AzureFileStorageOptions>> config) 
+            : this(OptionsBuilder<AzureFileStorageOptions>.Build(config)) { }
+        
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {

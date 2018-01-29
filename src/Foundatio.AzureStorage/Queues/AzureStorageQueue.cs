@@ -37,6 +37,9 @@ namespace Foundatio.Queues {
             _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-poison");
         }
 
+        public AzureStorageQueue(Action<IOptionsBuilder<AzureStorageQueueOptions<T>>> config) 
+            : this(OptionsBuilder<AzureStorageQueueOptions<T>>.Build(config)) { }
+
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_queueCreated)
                 return;
