@@ -35,8 +35,8 @@ namespace Foundatio.Storage {
             Directory.CreateDirectory(folder);
         }
 
-        public FolderFileStorage(Builder<FolderFileStorageOptions> config) 
-            : this(OptionsBuilder<FolderFileStorageOptions>.Build(config)) { }
+        public FolderFileStorage(Builder<FolderFileStorageOptionsBuilder, FolderFileStorageOptions> config) 
+            : this(config(new FolderFileStorageOptionsBuilder()).Build()) { }
 
         public string Folder { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;

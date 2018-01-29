@@ -23,8 +23,8 @@ namespace Foundatio.Caching {
             InitializeMaintenance();
         }
 
-        public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder> config)
-            : this(config().Target) { }
+        public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
+            : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
 
         public int Count => _memory.Count;
         public int? MaxItems { get; set; }

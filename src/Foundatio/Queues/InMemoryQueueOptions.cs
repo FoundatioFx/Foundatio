@@ -6,11 +6,7 @@ namespace Foundatio.Queues {
         public int[] RetryMultipliers { get; set; } = { 1, 3, 5, 10 };
     }
 
-    public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T>, IOptionsBuilder<InMemoryQueueOptions<T>> where T: class {
-        public InMemoryQueueOptionsBuilder() : base(new InMemoryQueueOptions<T>()) {}
-
-        public InMemoryQueueOptions<T> Target => _target as InMemoryQueueOptions<T>;
-
+    public class InMemoryQueueOptionsBuilder<T> : OptionsBuilder<InMemoryQueueOptions<T>>, ISharedQueueOptionsBuilder where T: class {
         public InMemoryQueueOptionsBuilder<T> RetryDelay(TimeSpan retryDelay) {
             Target.RetryDelay = retryDelay;
             return this;

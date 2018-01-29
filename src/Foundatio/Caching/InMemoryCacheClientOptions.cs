@@ -1,7 +1,8 @@
 using System;
+using Foundatio.Utility;
 
 namespace Foundatio.Caching {
-    public class InMemoryCacheClientOptions : SharedCacheClientOptions {}
+    public class InMemoryCacheClientOptions : SharedOptions {}
 
-    public class InMemoryCacheClientOptionsBuilder : OptionsBuilder<InMemoryCacheClientOptions>, ISharedCacheClientOptionsBuilder {}
+    public class InMemoryCacheClientOptionsBuilder : OptionsBuilder<InMemoryCacheClientOptions>, ISharedOptionsBuilder {}
 }

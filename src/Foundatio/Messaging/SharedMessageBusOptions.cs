@@ -1,9 +1,10 @@
 using System;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
-    public class SharedMessageBusOptions {
+    public class SharedMessageBusOptions : SharedOptions {
         /// <summary>
         /// The topic name
         /// </summary>
@@ -17,11 +18,9 @@ namespace Foundatio.Messaging {
         /// Controls the maximum number of threads that will process queued subscriber messages.
         /// </summary>
         public byte TaskQueueMaxDegreeOfParallelism { get; set; } = 4;
-        public ISerializer Serializer { get; set; }
-        public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public interface ISharedMessageBusOptionsBuilder : IOptionsBuilder {}
+    public interface ISharedMessageBusOptionsBuilder : ISharedOptionsBuilder {}
 
     public static class SharedMessageBusOptionsBuilderExtensions {
         public static T Topic<T>(this T builder, string topic) where T: ISharedMessageBusOptionsBuilder {
@@ -38,16 +37,6 @@ namespace Foundatio.Messaging {
 
         public static T TaskQueueMaxDegreeOfParallelism<T>(this T builder, byte maxDegree) where T: ISharedMessageBusOptionsBuilder {
             builder.Target<SharedMessageBusOptions>().TaskQueueMaxDegreeOfParallelism = maxDegree;
-            return (T)builder;
-        }
-
-        public static T Serializer<T>(this T builder, ISerializer serializer) where T: ISharedMessageBusOptionsBuilder {
-            builder.Target<SharedMessageBusOptions>().Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-            return (T)builder;
-        }
-
-        public static T LoggerFactory<T>(this T builder, ILoggerFactory loggerFactory) where T: ISharedMessageBusOptionsBuilder {
-            builder.Target<SharedMessageBusOptions>().LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
             return (T)builder;
         }
     }

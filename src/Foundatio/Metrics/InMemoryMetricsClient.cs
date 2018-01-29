@@ -8,8 +8,8 @@ namespace Foundatio.Metrics {
         public InMemoryMetricsClient(InMemoryMetricsClientOptions options) 
             : base(new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = options?.LoggerFactory }), options) { }
 
-        public InMemoryMetricsClient(Builder<InMemoryMetricsClientOptionsBuilder> config)
-            : this(config().Target) { }
+        public InMemoryMetricsClient(Builder<InMemoryMetricsClientOptionsBuilder, InMemoryMetricsClientOptions> config)
+            : this(config(new InMemoryMetricsClientOptionsBuilder()).Build()) { }
 
         public override void Dispose() {
             base.Dispose();
