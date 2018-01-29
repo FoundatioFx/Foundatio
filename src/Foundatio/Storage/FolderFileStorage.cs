@@ -35,7 +35,7 @@ namespace Foundatio.Storage {
             Directory.CreateDirectory(folder);
         }
 
-        public FolderFileStorage(Action<IOptionsBuilder<FolderFileStorageOptions>> config) 
+        public FolderFileStorage(Builder<FolderFileStorageOptions> config) 
             : this(OptionsBuilder<FolderFileStorageOptions>.Build(config)) { }
 
         public string Folder { get; set; }

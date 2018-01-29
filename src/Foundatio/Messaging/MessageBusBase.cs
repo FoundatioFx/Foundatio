@@ -12,7 +12,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : MessageBusOptionsBase {
+    public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : SharedMessageBusOptions {
         private readonly TaskQueue _queue;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();

@@ -10,14 +10,14 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageOptionsExtensions {
-        public static IOptionsBuilder<FileStorageOptionsBase> Serializer(this IOptionsBuilder<FileStorageOptionsBase> builder, ISerializer serializer) {
+        public static IOptionsBuilder<T> Serializer<T>(this IOptionsBuilder<T> builder, ISerializer serializer) where T : FileStorageOptionsBase {
             if (builder == null)
                 throw new ArgumentNullException(nameof(builder));
             builder.Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             return builder;
         }
 
-        public static IOptionsBuilder<FileStorageOptionsBase> LoggerFactory(this IOptionsBuilder<FileStorageOptionsBase> builder, ILoggerFactory loggerFactory) {
+        public static IOptionsBuilder<T> LoggerFactory<T>(this IOptionsBuilder<T> builder, ILoggerFactory loggerFactory) where T : FileStorageOptionsBase {
             if (builder == null)
                 throw new ArgumentNullException(nameof(builder));
             builder.Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));

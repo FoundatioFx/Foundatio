@@ -23,11 +23,13 @@ namespace Foundatio.Queues {
         private int _workerErrorCount;
         private int _workerItemTimeoutCount;
 
+        public InMemoryQueue() : this(o => o) {}
+
         public InMemoryQueue(InMemoryQueueOptions<T> options) : base(options) {
             InitializeMaintenance();
         }
 
-        public InMemoryQueue(Action<IOptionsBuilder<InMemoryQueueOptions<T>>> config) : this(OptionsBuilder<InMemoryQueueOptions<T>>.Build(config)) { }
+        public InMemoryQueue(Builder<InMemoryQueueOptions<T>> config) : this(new InMemoryQueueOptionsBuilder<T>().Build(config)) { }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             return Task.CompletedTask;

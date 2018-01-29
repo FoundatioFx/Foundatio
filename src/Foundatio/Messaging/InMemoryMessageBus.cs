@@ -11,9 +11,11 @@ namespace Foundatio.Messaging {
         private readonly ConcurrentDictionary<Type, long> _messageCounts = new ConcurrentDictionary<Type, long>();
         private long _messagesSent;
 
+        public InMemoryMessageBus() : this(o => o) {}
+
         public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
 
-        public InMemoryMessageBus(Action<IOptionsBuilder<InMemoryMessageBusOptions>> config) : this(OptionsBuilder<InMemoryMessageBusOptions>.Build(config)) { }
+        public InMemoryMessageBus(Builder<InMemoryMessageBusOptionsBuilder> config) : this(config().Target) { }
 
         public long MessagesSent => _messagesSent;
 

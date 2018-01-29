@@ -11,7 +11,7 @@ namespace Foundatio.Metrics {
         protected readonly ICacheClient _cache;
         private readonly string _prefix;
 
-        public CacheBucketMetricsClientBase(ICacheClient cache, MetricsClientOptionsBase options) : base(options) {
+        public CacheBucketMetricsClientBase(ICacheClient cache, SharedMetricsClientOptions options) : base(options) {
             _cache = cache;
             _prefix = !String.IsNullOrEmpty(options.Prefix) ? (!options.Prefix.EndsWith(":") ? options.Prefix + ":" : options.Prefix) : String.Empty;
 
