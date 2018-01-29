@@ -1,14 +1,14 @@
 ﻿using System;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
-    public class SharedMetricsClientOptions {
+    public class SharedMetricsClientOptions : SharedOptions {
         public bool Buffered { get; set; } = true;
         public string Prefix { get; set; }
-        public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public interface ISharedMetricsClientOptionsBuilder : IOptionsBuilder {}
+    public interface ISharedMetricsClientOptionsBuilder : ISharedOptionsBuilder {}
 
     public static class MetricsClientOptionsBuilderExtensions {
         public static T Buffered<T>(this T builder, bool buffered) where T: ISharedMetricsClientOptionsBuilder {
@@ -20,11 +20,6 @@ namespace Foundatio.Metrics {
             if (string.IsNullOrEmpty(prefix))
                 throw new ArgumentNullException(nameof(prefix));
             builder.Target<SharedMetricsClientOptions>().Prefix = prefix;
-            return (T)builder;
-        }
-
-        public static T LoggerFactory<T>(this T builder, ILoggerFactory loggerFactory) where T: ISharedMetricsClientOptionsBuilder {
-            builder.Target<SharedMetricsClientOptions>().LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
             return (T)builder;
         }
 

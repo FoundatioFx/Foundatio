@@ -15,7 +15,8 @@ namespace Foundatio.Messaging {
 
         public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
 
-        public InMemoryMessageBus(Builder<InMemoryMessageBusOptionsBuilder> config) : this(config().Target) { }
+        public InMemoryMessageBus(Builder<InMemoryMessageBusOptionsBuilder, InMemoryMessageBusOptions> config)
+            : this(config(new InMemoryMessageBusOptionsBuilder()).Build()) { }
 
         public long MessagesSent => _messagesSent;
 

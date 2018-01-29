@@ -23,8 +23,8 @@ namespace Foundatio.Metrics {
                 options.Prefix = options.Prefix.EndsWith(".") ? options.Prefix : String.Concat(options.Prefix, ".");
         }
 
-        public StatsDMetricsClient(Builder<StatsDMetricsClientOptionsBuilder> config) 
-            : this(config().Target) { }
+        public StatsDMetricsClient(Builder<StatsDMetricsClientOptionsBuilder, StatsDMetricsClientOptions> config) 
+            : this(config(new StatsDMetricsClientOptionsBuilder()).Build()) { }
 
         public void Counter(string name, int value = 1) {
             Send(BuildMetric("c", name, value.ToString(CultureInfo.InvariantCulture)));

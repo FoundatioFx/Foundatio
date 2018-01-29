@@ -5,16 +5,24 @@ namespace Foundatio {
         object Target { get; }
     }
 
+    public interface IOptionsBuilder<T> : IOptionsBuilder {
+        T Build();
+    }
+
     public static class OptionsBuilderExtensions {
         public static T Target<T>(this IOptionsBuilder builder) {
             return (T)builder.Target;
         }
     }
 
-    public class OptionsBuilder<T> : IOptionsBuilder where T : class, new() {
+    public class OptionsBuilder<T> : IOptionsBuilder<T> where T : class, new() {
         public T Target { get; } = new T();
         object IOptionsBuilder.Target => Target;
+
+        public virtual T Build() {
+            return Target;
+        }
     }
 
-    public delegate T Builder<T>(T builder = default(T)) where T: class, IOptionsBuilder, new();
+    public delegate TBuilder Builder<TBuilder, TOptions>(TBuilder builder) where TBuilder: class, IOptionsBuilder<TOptions>, new();
 }
