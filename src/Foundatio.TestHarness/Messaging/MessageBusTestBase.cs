@@ -38,13 +38,15 @@ namespace Foundatio.Tests.Messaging {
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
+                    Assert.True(msg.Items.ContainsKey("Test"));
                     countdown.Signal();
                     _logger.LogTrace("Set event");
                 });
 
                 await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
-                    Data = "Hello"
+                    Data = "Hello",
+                    Items = { { "Test", "Test" } }
                 });
                 _logger.LogTrace("Published one...");
 

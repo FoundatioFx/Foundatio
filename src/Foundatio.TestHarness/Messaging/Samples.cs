@@ -1,7 +1,14 @@
-﻿namespace Foundatio.Tests.Messaging {
+using Foundatio.Utility;
+
+namespace Foundatio.Tests.Messaging {
     public class SimpleMessageA : ISimpleMessage {
+        public SimpleMessageA() {
+            Items = new DataDictionary();
+        }
         public string Data { get; set; }
         public int Count { get; set; }
+            
+        public DataDictionary Items { get; set; }
     }
 
     public class DerivedSimpleMessageA : SimpleMessageA { }
