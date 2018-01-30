@@ -104,6 +104,32 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
+        public virtual async Task CanSendBaseMessageAsync() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(1);
+                await messageBus.SubscribeAsync<DerivedSimpleMessageA>(msg => {
+                    _logger.LogTrace("Got message");
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                    _logger.LogTrace("Set event");
+                });
+
+                await SystemClock.SleepAsync(100);
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                });
+                _logger.LogTrace("Published one...");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
         public virtual async Task CanSendDelayedMessageAsync() {
             const int numConcurrentMessages = 1000;
             var messageBus = GetMessageBus();

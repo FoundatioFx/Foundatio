@@ -113,8 +113,15 @@ namespace Foundatio.Messaging {
                 }
 
                 _queue.Enqueue(async () => {
-                    if (subscriber.CancellationToken.IsCancellationRequested)
+                    if (subscriber.CancellationToken.IsCancellationRequested) {
+                        if (isTraceLogLevelEnabled)
+                            _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
+
                         return;
+                    }
+
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Calling Subscriber action: {SubscriberId}", subscriber.Id);
 
                     try {
                         await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
