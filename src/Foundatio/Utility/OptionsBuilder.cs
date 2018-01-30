@@ -5,7 +5,7 @@ namespace Foundatio {
         object Target { get; }
     }
 
-    public interface IOptionsBuilder<T> : IOptionsBuilder {
+    public interface IOptionsBuilder<out T> : IOptionsBuilder {
         T Build();
     }
 
