@@ -7,7 +7,7 @@ namespace Foundatio.Storage {
         public int MaxFiles { get; set; } = 100;
     }
 
-    public class InMemoryFileStorageOptionsBuilder : OptionsBuilder<InMemoryFileStorageOptions>, ISharedOptionsBuilder {
+    public class InMemoryFileStorageOptionsBuilder : SharedOptionsBuilder<InMemoryFileStorageOptions, InMemoryFileStorageOptionsBuilder> {
         public InMemoryFileStorageOptionsBuilder MaxFileSize(long maxFileSize) {
             Target.MaxFileSize = maxFileSize;
             return this;

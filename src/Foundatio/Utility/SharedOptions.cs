@@ -8,21 +8,17 @@ namespace Foundatio {
         public ILoggerFactory LoggerFactory { get; set; }
     }
 
-    public interface ISharedOptionsBuilder : IOptionsBuilder {}
-
-    public static class SharedOptionsBuilderExtensions {
-        public static T Serializer<T>(this T builder, ISerializer serializer) where T: ISharedOptionsBuilder {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target<SharedOptions>().Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));;
-            return (T)builder;
+    public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
+        where TOption : SharedOptions, new()
+        where TBuilder : SharedOptionsBuilder<TOption, TBuilder> {
+        public TBuilder Serializer(ISerializer serializer) {
+            Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer)); ;
+            return (TBuilder)this;
         }
 
-        public static T LoggerFactory<T>(this T builder, ILoggerFactory loggerFactory) where T: ISharedOptionsBuilder {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            builder.Target<SharedOptions>().LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));;
-            return (T)builder;
+        public TBuilder LoggerFactory(ILoggerFactory loggerFactory) {
+            Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory)); ;
+            return (TBuilder)this;
         }
     }
 }

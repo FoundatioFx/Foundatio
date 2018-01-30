@@ -6,7 +6,7 @@ namespace Foundatio.Storage {
         public string Folder { get; set; }
     }
 
-    public class FolderFileStorageOptionsBuilder : OptionsBuilder<FolderFileStorageOptions>, ISharedOptionsBuilder {
+    public class FolderFileStorageOptionsBuilder : SharedOptionsBuilder<FolderFileStorageOptions, FolderFileStorageOptionsBuilder> {
         public FolderFileStorageOptionsBuilder Folder(string folder) {
             if (string.IsNullOrEmpty(folder))
                 throw new ArgumentNullException(nameof(folder));

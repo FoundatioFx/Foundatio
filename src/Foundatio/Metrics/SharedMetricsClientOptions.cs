@@ -8,23 +8,23 @@ namespace Foundatio.Metrics {
         public string Prefix { get; set; }
     }
 
-    public interface ISharedMetricsClientOptionsBuilder : ISharedOptionsBuilder {}
-
-    public static class MetricsClientOptionsBuilderExtensions {
-        public static T Buffered<T>(this T builder, bool buffered) where T: ISharedMetricsClientOptionsBuilder {
-            builder.Target<SharedMetricsClientOptions>().Buffered = buffered;
-            return (T)builder;
+    public class SharedMetricsClientOptionsBuilder<TOption,TBuilder> : SharedOptionsBuilder<TOption, TBuilder>
+        where TOption: SharedMetricsClientOptions ,new()
+        where TBuilder: SharedMetricsClientOptionsBuilder<TOption, TBuilder> {
+        public TBuilder Buffered(bool buffered) {
+            Target.Buffered = buffered;
+            return (TBuilder)this;
         }
 
-        public static T Prefix<T>(this T builder, string prefix) where T: ISharedMetricsClientOptionsBuilder {
+        public TBuilder Prefix(string prefix) {
             if (string.IsNullOrEmpty(prefix))
                 throw new ArgumentNullException(nameof(prefix));
-            builder.Target<SharedMetricsClientOptions>().Prefix = prefix;
-            return (T)builder;
+            Target.Prefix = prefix;
+            return (TBuilder)this;
         }
 
-        public static T EnableBuffer<T>(this T builder) where T: ISharedMetricsClientOptionsBuilder => builder.Buffered(true);
+        public TBuilder EnableBuffer() => Buffered(true);
 
-        public static T DisableBuffer<T>(this T builder) where T: ISharedMetricsClientOptionsBuilder => builder.Buffered(false);
+        public TBuilder DisableBuffer() => Buffered(false);
     }
 }

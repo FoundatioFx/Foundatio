@@ -4,5 +4,5 @@ using Foundatio.Utility;
 namespace Foundatio.Caching {
     public class InMemoryCacheClientOptions : SharedOptions {}
 
-    public class InMemoryCacheClientOptionsBuilder : OptionsBuilder<InMemoryCacheClientOptions>, ISharedOptionsBuilder {}
+    public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCacheClientOptions, InMemoryCacheClientOptionsBuilder> {}
 }

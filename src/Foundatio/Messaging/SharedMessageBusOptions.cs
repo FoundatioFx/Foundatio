@@ -20,24 +20,24 @@ namespace Foundatio.Messaging {
         public byte TaskQueueMaxDegreeOfParallelism { get; set; } = 4;
     }
 
-    public interface ISharedMessageBusOptionsBuilder : ISharedOptionsBuilder {}
-
-    public static class SharedMessageBusOptionsBuilderExtensions {
-        public static T Topic<T>(this T builder, string topic) where T: ISharedMessageBusOptionsBuilder {
+    public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
+        where TOptions : SharedMessageBusOptions, new()
+        where TBuilder : SharedMessageBusOptionsBuilder<TOptions, TBuilder> {
+        public TBuilder Topic(string topic) {
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
-            builder.Target<SharedMessageBusOptions>().Topic = topic;
-            return (T)builder;
+            Target.Topic = topic;
+            return (TBuilder)this;
         }
 
-        public static T TaskQueueMaxItems<T>(this T builder, int maxItems) where T: ISharedMessageBusOptionsBuilder {
-            builder.Target<SharedMessageBusOptions>().TaskQueueMaxItems = maxItems;
-            return (T)builder;
+        public TBuilder TaskQueueMaxItems(int maxItems) {
+            Target.TaskQueueMaxItems = maxItems;
+            return (TBuilder)this;
         }
 
-        public static T TaskQueueMaxDegreeOfParallelism<T>(this T builder, byte maxDegree) where T: ISharedMessageBusOptionsBuilder {
-            builder.Target<SharedMessageBusOptions>().TaskQueueMaxDegreeOfParallelism = maxDegree;
-            return (T)builder;
+        public TBuilder TaskQueueMaxDegreeOfParallelism(byte maxDegree) {
+            Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
+            return (TBuilder)this;
         }
     }
 }
