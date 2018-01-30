@@ -32,7 +32,7 @@ namespace Foundatio.Messaging {
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         protected abstract Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
         public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
-            if (message == null)
+            if (messageType == null || message == null)
                 return;
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
@@ -45,8 +45,11 @@ namespace Foundatio.Messaging {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
                 Action = (message, token) => {
-                    if (!(message is T))
+                    if (!(message is T)) {
+                        if (_logger.IsEnabled(LogLevel.Trace))
+                            _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                         return Task.CompletedTask;
+                    }
 
                     return handler((T)message, cancellationToken);
                 }
@@ -121,10 +124,12 @@ namespace Foundatio.Messaging {
                     }
 
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Calling Subscriber action: {SubscriberId}", subscriber.Id);
+                        _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
 
                     try {
                         await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        if (isTraceLogLevelEnabled)
+                            _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
                     } catch (Exception ex) {
                         if (_logger.IsEnabled(LogLevel.Warning))
                             _logger.LogWarning(ex, "Error sending message to subscriber: {Message}", ex.Message);
