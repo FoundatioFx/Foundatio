@@ -64,7 +64,8 @@ namespace Foundatio.Queues {
                 if (_maintenanceTask != null)
                     return;
 
-                _logger.LogTrace("Starting maintenance for {_options.Name}.", _options.Name);
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Starting maintenance for {Name}.", _options.Name);
                 _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoopAsync(_queueDisposedCancellationTokenSource.Token));
             }
         }
