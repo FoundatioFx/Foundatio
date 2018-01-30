@@ -16,7 +16,7 @@ namespace Foundatio.Queues {
         public string Name { get; set; } = typeof(T).Name;
         public int Retries { get; set; } = 2;
         public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
-        public IEnumerable<IQueueBehavior<T>> Behaviors { get; set; }
+        public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
     }
 
     public interface ISharedQueueOptionsBuilder : ISharedOptionsBuilder {}
