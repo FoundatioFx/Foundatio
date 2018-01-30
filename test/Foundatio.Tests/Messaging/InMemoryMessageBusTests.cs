@@ -44,11 +44,6 @@ namespace Foundatio.Tests.Messaging {
         }
 
         [Fact]
-        public override Task CanSendBaseMessageAsync() {
-            return base.CanSendBaseMessageAsync();
-        }
-
-        [Fact]
         public override Task CanSendDerivedMessageAsync() {
             return base.CanSendDerivedMessageAsync();
         }
