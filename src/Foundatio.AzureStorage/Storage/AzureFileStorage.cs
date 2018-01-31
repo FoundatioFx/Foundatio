@@ -28,8 +28,8 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public AzureFileStorage(Action<IOptionsBuilder<AzureFileStorageOptions>> config) 
-            : this(OptionsBuilder<AzureFileStorageOptions>.Build(config)) { }
+        public AzureFileStorage(Builder<AzureFileStorageOptionsBuilder, AzureFileStorageOptions> config)
+            : this(config(new AzureFileStorageOptionsBuilder()).Build()) { }
         
         ISerializer IHaveSerializer.Serializer => _serializer;
 

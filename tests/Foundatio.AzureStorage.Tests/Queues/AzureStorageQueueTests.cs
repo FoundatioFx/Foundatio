@@ -21,15 +21,14 @@ namespace Foundatio.Azure.Tests.Queue {
                 return null;
 
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue Id: {Name}", _queueName);
-            return new AzureStorageQueue<SimpleWorkItem>(new AzureStorageQueueOptions<SimpleWorkItem> {
-                ConnectionString = connectionString,
-                Name = _queueName,
-                Retries = retries,
-                RetryPolicy = retries <= 0 ? new NoRetry() : (IRetryPolicy)new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries),
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                DequeueInterval = TimeSpan.FromMilliseconds(100),
-                LoggerFactory = Log
-            });
+            return new AzureStorageQueue<SimpleWorkItem>(o => o
+                .ConnectionString(connectionString)
+                .Name(_queueName)
+                .Retries(retries)
+                .RetryPolicy(retries <= 0 ? new NoRetry() : (IRetryPolicy)new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries))
+                .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                .DequeueInterval(TimeSpan.FromMilliseconds(100))
+                .LoggerFactory(Log));
         }
 
         protected override Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {

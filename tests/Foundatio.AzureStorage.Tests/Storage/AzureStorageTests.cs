@@ -16,10 +16,7 @@ namespace Foundatio.Azure.Tests.Storage {
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
-            return new AzureFileStorage(new AzureFileStorageOptions {
-                ConnectionString = connectionString,
-                LoggerFactory = Log
-            });
+            return new AzureFileStorage(o => o.ConnectionString(connectionString).LoggerFactory(Log));
         }
 
         [Fact]

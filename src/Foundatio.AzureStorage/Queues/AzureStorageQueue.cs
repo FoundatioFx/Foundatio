@@ -27,7 +27,7 @@ namespace Foundatio.Queues {
         public AzureStorageQueue(AzureStorageQueueOptions<T> options) : base(options) {
             if (String.IsNullOrEmpty(options.ConnectionString))
                 throw new ArgumentException("ConnectionString is required.");
-
+            
             var account = CloudStorageAccount.Parse(options.ConnectionString);
             var client = account.CreateCloudQueueClient();
             if (options.RetryPolicy != null)
@@ -37,8 +37,8 @@ namespace Foundatio.Queues {
             _deadletterQueueReference = client.GetQueueReference($"{_options.Name}-poison");
         }
 
-        public AzureStorageQueue(Action<IOptionsBuilder<AzureStorageQueueOptions<T>>> config) 
-            : this(OptionsBuilder<AzureStorageQueueOptions<T>>.Build(config)) { }
+        public AzureStorageQueue(Builder<AzureStorageQueueOptionsBuilder<T>, AzureStorageQueueOptions<T>> config)
+            : this(config(new AzureStorageQueueOptionsBuilder<T>()).Build()) { }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
             if (_queueCreated)

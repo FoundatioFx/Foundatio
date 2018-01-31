@@ -2,35 +2,26 @@
 using Microsoft.WindowsAzure.Storage.RetryPolicies;
 
 namespace Foundatio.Queues {
-    public class AzureStorageQueueOptions<T> : QueueOptionsBase<T> where T : class {
+    public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class {
         public string ConnectionString { get; set; }
         public IRetryPolicy RetryPolicy { get; set; }
         public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
     }
 
-    public static class FileStorageOptionsExtensions {
-        public static IOptionsBuilder<AzureStorageQueueOptions<T>> ConnectionString<T>(this IOptionsBuilder<AzureStorageQueueOptions<T>> builder, string connectionString) where T: class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-            
-            builder.Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-            return builder;
+    public class AzureStorageQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureStorageQueueOptions<T>, AzureStorageQueueOptionsBuilder<T>> where T: class {
+        public AzureStorageQueueOptionsBuilder<T> ConnectionString(string connectionString) {
+            Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+            return this;
         }
 
-        public static IOptionsBuilder<AzureStorageQueueOptions<T>> ContainerName<T>(this IOptionsBuilder<AzureStorageQueueOptions<T>> builder, IRetryPolicy retryPolicy) where T: class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-
-            builder.Target.RetryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
-            return builder;
+        public AzureStorageQueueOptionsBuilder<T> RetryPolicy(IRetryPolicy retryPolicy) {
+            Target.RetryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
+            return this;
         }
 
-        public static IOptionsBuilder<AzureStorageQueueOptions<T>> DequeueInterval<T>(this IOptionsBuilder<AzureStorageQueueOptions<T>> builder, TimeSpan dequeueInterval) where T: class {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
-
-            builder.Target.DequeueInterval = dequeueInterval;
-            return builder;
+        public AzureStorageQueueOptionsBuilder<T> DequeueInterval(TimeSpan dequeueInterval) {
+            Target.DequeueInterval = dequeueInterval;
+            return this;
         }
     }
 }
