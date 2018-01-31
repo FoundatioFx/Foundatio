@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
 using Amazon.Runtime;
@@ -18,15 +19,19 @@ namespace Foundatio.Metrics {
 
         public CloudWatchMetricsClient(CloudWatchMetricsClientOptions options) : base(options) {
             _options = options;
-            var connection = CloudWatchMetricsConnection.Parse(options.ConnectionString);
-            _namespace = connection.Namespace;
-            _dimensions = connection.Dimensions;
+            var connectionString = new CloudWatchMetricsConnectionStringBuilder(options.ConnectionString);
+            _namespace = connectionString.Namespace;
+            _dimensions = connectionString.Dimensions;
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
-                connection.Credentials ?? FallbackCredentialsFactory.GetCredentials(),
+                string.IsNullOrEmpty(connectionString.AccessKey)
+                    ? FallbackCredentialsFactory.GetCredentials()
+                    : new BasicAWSCredentials(connectionString.AccessKey, connectionString.SecretKey),
                 new AmazonCloudWatchConfig {
                     LogResponse = false,
                     DisableLogging = true,
-                    RegionEndpoint = connection.Region ?? FallbackRegionFactory.GetRegionEndpoint()
+                    RegionEndpoint = string.IsNullOrEmpty(connectionString.Region)
+                        ? FallbackRegionFactory.GetRegionEndpoint()
+                        : RegionEndpoint.GetBySystemName(connectionString.Region)
                 }));
         }
 
