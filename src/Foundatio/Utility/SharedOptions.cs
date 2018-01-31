@@ -12,12 +12,12 @@ namespace Foundatio {
         where TOption : SharedOptions, new()
         where TBuilder : SharedOptionsBuilder<TOption, TBuilder> {
         public TBuilder Serializer(ISerializer serializer) {
-            Target.Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer)); ;
+            Target.Serializer = serializer;
             return (TBuilder)this;
         }
 
         public TBuilder LoggerFactory(ILoggerFactory loggerFactory) {
-            Target.LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory)); ;
+            Target.LoggerFactory = loggerFactory;
             return (TBuilder)this;
         }
     }
