@@ -29,7 +29,7 @@ namespace Foundatio.Queues {
             return (TBuilder)this;
         }
 
-        public TBuilder Behaviors(ICollection<IQueueBehavior<T>> behaviors) {
+        public TBuilder Behaviors(params IQueueBehavior<T>[] behaviors) {
             Target.Behaviors = behaviors;
             return (TBuilder)this;
         }
@@ -37,6 +37,7 @@ namespace Foundatio.Queues {
         public TBuilder AddBehavior(IQueueBehavior<T> behavior) {
             if (behavior == null)
                 throw new ArgumentNullException(nameof(behavior));
+            
             if (Target.Behaviors == null)
                 Target.Behaviors = new List<IQueueBehavior<T>> ();
             Target.Behaviors.Add(behavior);
