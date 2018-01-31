@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Foundatio.Queues {
     public class InMemoryQueueOptions<T> : SharedQueueOptions<T> where T : class {

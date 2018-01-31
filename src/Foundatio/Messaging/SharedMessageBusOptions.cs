@@ -1,7 +1,4 @@
 using System;
-using Foundatio.Serializer;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public class SharedMessageBusOptions : SharedOptions {

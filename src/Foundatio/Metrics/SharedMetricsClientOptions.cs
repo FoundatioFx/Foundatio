@@ -1,6 +1,4 @@
 ﻿using System;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Metrics {
     public class SharedMetricsClientOptions : SharedOptions {

@@ -1,16 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Foundatio.Serializer;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class SharedQueueOptions<T> : SharedOptions where T : class {
         public string Name { get; set; } = typeof(T).Name;
         public int Retries { get; set; } = 2;
         public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
-        public IEnumerable<IQueueBehavior<T>> Behaviors { get; set; }
+        public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
     }
 
     public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder> 
@@ -32,7 +29,7 @@ namespace Foundatio.Queues {
             return (TBuilder)this;
         }
 
-        public TBuilder Behaviors(IEnumerable<IQueueBehavior<T>> behaviors) {
+        public TBuilder Behaviors(ICollection<IQueueBehavior<T>> behaviors) {
             Target.Behaviors = behaviors;
             return (TBuilder)this;
         }
@@ -41,9 +38,8 @@ namespace Foundatio.Queues {
             if (behavior == null)
                 throw new ArgumentNullException(nameof(behavior));
             if (Target.Behaviors == null)
-                Target.Behaviors = new[] { behavior };
-            else
-                Target.Behaviors = Target.Behaviors.Concat(new[] { behavior });
+                Target.Behaviors = new List<IQueueBehavior<T>> ();
+            Target.Behaviors.Add(behavior);
 
             return (TBuilder)this;
         }
