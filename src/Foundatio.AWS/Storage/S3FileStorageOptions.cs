@@ -1,18 +1,16 @@
 ﻿using System;
 
 namespace Foundatio.Storage {
-    public class S3FileStorageOptions : FileStorageOptionsBase {
+    public class S3FileStorageOptions : SharedOptions {
         public string ConnectionString { get; set; }
     }
 
-    public static class S3FileStorageOptionsExtensions {
-        public static IOptionsBuilder<S3FileStorageOptions> ConnectionString(this IOptionsBuilder<S3FileStorageOptions> options, string connectionString) {
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
+    public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder> {
+        public S3FileStorageOptionsBuilder ConnectionString(string connectionString) {
             if (string.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
-            options.Target.ConnectionString = connectionString;
-            return options;
+            Target.ConnectionString = connectionString;
+            return this;
         }
     }
 }

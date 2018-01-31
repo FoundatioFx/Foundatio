@@ -32,8 +32,8 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public S3FileStorage(Action<IOptionsBuilder<S3FileStorageOptions>> config)
-            : this(OptionsBuilder<S3FileStorageOptions>.Build(config)) { }
+        public S3FileStorage(Builder<S3FileStorageOptionsBuilder, S3FileStorageOptions> builder)
+            : this(builder(new S3FileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 

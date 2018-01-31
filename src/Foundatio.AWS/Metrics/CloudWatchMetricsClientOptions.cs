@@ -1,18 +1,16 @@
 using System;
 
 namespace Foundatio.Metrics {
-    public class CloudWatchMetricsClientOptions : MetricsClientOptionsBase {
+    public class CloudWatchMetricsClientOptions : SharedMetricsClientOptions {
         public string ConnectionString { get; set; }
     }
 
-    public static class CloudWatchMetricsClientOptionsExtensions {
-        public static IOptionsBuilder<CloudWatchMetricsClientOptions> ConnectionString(this IOptionsBuilder<CloudWatchMetricsClientOptions> builder, string connectionString) {
-            if (builder == null)
-                throw new ArgumentNullException(nameof(builder));
+    public class CloudWatchMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<CloudWatchMetricsClientOptions, CloudWatchMetricsClientOptionsBuilder> {
+        public CloudWatchMetricsClientOptionsBuilder ConnectionString(string connectionString) {
             if (string.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
-            builder.Target.ConnectionString = connectionString;
-            return builder;
+            Target.ConnectionString = connectionString;
+            return this;
         }
     }
 }

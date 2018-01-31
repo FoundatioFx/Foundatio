@@ -31,8 +31,8 @@ namespace Foundatio.Queues {
             _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(connection.Credentials ?? FallbackCredentialsFactory.GetCredentials(), connection.Region ?? FallbackRegionFactory.GetRegionEndpoint()));
         }
 
-        public SQSQueue(Action<IOptionsBuilder<SQSQueueOptions<T>>> config) 
-            : this(OptionsBuilder<SQSQueueOptions<T>>.Build(config)) { }
+        public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
+            : this(builder(new SQSQueueOptionsBuilder<T>()).Build()) { }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (!String.IsNullOrEmpty(_queueUrl))
