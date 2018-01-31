@@ -1,7 +1,7 @@
 ![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
 
-[![Build status](https://ci.appveyor.com/api/projects/status/dyaa7xd7a3m0q82r?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-redis)
-[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.Redis.svg?style=flat)](https://www.nuget.org/packages/Foundatio.Redis/)
+[![Build status](https://ci.appveyor.com/api/projects/status/8ccl17fc2tahbwuu?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio)
+[![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
@@ -60,7 +60,7 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 ```csharp
 using Foundatio.Caching;
 
-ICacheClient cache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
+ICacheClient cache = new InMemoryCacheClient();
 await cache.SetAsync("test", 1);
 var value = await cache.GetAsync<int>("test");
 ```
@@ -79,7 +79,7 @@ Queues offer First In, First Out (FIFO) message delivery. We provide four differ
 ```csharp
 using Foundatio.Queues;
 
-IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem>());
+IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
 
 await queue.EnqueueAsync(new SimpleWorkItem {
     Data = "Hello"
@@ -103,12 +103,12 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 ```csharp
 using Foundatio.Lock;
 
-ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), new InMemoryMessageBus(new InMemoryMessageBusOptions()));
+ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
 using (await locker.AcquireAsync("test")) {
   // ...
 }
 
-ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), 1, TimeSpan.FromMinutes(1));
+ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
 using (await locker.AcquireAsync("test")) {
   // ...
 }
@@ -128,7 +128,7 @@ Allows you to publish and subscribe to messages flowing through your application
 ```csharp
 using Foundatio.Messaging;
 
-IMessageBus messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
+IMessageBus messageBus = new InMemoryMessageBus();
 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
   // Got message
 });
@@ -190,7 +190,7 @@ Allows you to run a long running process (in process or out of process) without 
 
   ```csharp
    // Register the queue for HelloWorldQueueItem.
-  container.AddSingleton<IQueue<HelloWorldQueueItem>>(s => new InMemoryQueue<HelloWorldQueueItem>(new InMemoryQueueOptions<WorkItemData>()));
+  container.AddSingleton<IQueue<HelloWorldQueueItem>>(s => new InMemoryQueue<HelloWorldQueueItem>());
 
   // To trigger the job we need to queue the HelloWorldWorkItem message.
   // This assumes that we injected an instance of IQueue<HelloWorldWorkItem> queue
@@ -248,7 +248,7 @@ Allows you to run a long running process (in process or out of process) without 
   container.AddSingleton(handlers);
 
   // Register the queue for WorkItemData.
-  container.AddSingleton<IQueue<WorkItemData>>(s => new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData>()));
+  container.AddSingleton<IQueue<WorkItemData>>(s => new InMemoryQueue<WorkItemData>());
 
   // The job runner will automatically look for and run all registered WorkItemHandlers.
   new JobRunner(container.GetRequiredService<WorkItemJob>(), instanceCount: 2).RunInBackground();
@@ -281,7 +281,7 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 ```csharp
 using Foundatio.Storage;
 
-IFileStorage storage = new InMemoryFileStorage(new InMemoryFileStorageOptions());
+IFileStorage storage = new InMemoryFileStorage();
 await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
 ```
@@ -300,7 +300,7 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 #### Sample
 
 ```csharp
-IMetricsClient metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+IMetricsClient metrics = new InMemoryMetricsClient();
 metrics.Counter("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
