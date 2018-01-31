@@ -6,8 +6,19 @@ using StackExchange.Redis;
 
 namespace Foundatio.Caching {
     public class RedisHybridCacheClient : HybridCacheClient {
-        public RedisHybridCacheClient(ConnectionMultiplexer connectionMultiplexer, ISerializer serializer = null, ILoggerFactory loggerFactory = null)
-            : base(new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = connectionMultiplexer, Serializer = serializer, LoggerFactory = loggerFactory }), new RedisMessageBus(new RedisMessageBusOptions { Subscriber = connectionMultiplexer.GetSubscriber(), Topic = "cache-messages", Serializer = serializer, LoggerFactory = loggerFactory }), loggerFactory) { }
+        public RedisHybridCacheClient(RedisCacheClientOptions options)
+            : base(new RedisCacheClient(o => o
+                .ConnectionMultiplexer(options.ConnectionMultiplexer)
+                .Serializer(options.Serializer)
+                .LoggerFactory(options.LoggerFactory)),
+            new RedisMessageBus(o => o
+                .Subscriber(options.ConnectionMultiplexer.GetSubscriber())
+                .Topic("cache-messages")
+                .Serializer(options.Serializer)
+                .LoggerFactory(options.LoggerFactory)), options.LoggerFactory) { }
+
+        public RedisHybridCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
+            : this(config(new RedisCacheClientOptionsBuilder()).Build()) { }
 
         public override void Dispose() {
             base.Dispose();

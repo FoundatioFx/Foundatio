@@ -15,6 +15,9 @@ namespace Foundatio.Messaging {
 
         public RedisMessageBus(RedisMessageBusOptions options) : base(options) { }
 
+        public RedisMessageBus(Builder<RedisMessageBusOptionsBuilder, RedisMessageBusOptions> config)
+            : this(config(new RedisMessageBusOptionsBuilder()).Build()) { }
+
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
             if (_isSubscribed)
                 return;

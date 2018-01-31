@@ -6,8 +6,8 @@ using StackExchange.Redis;
 namespace Foundatio.Benchmarks.Queues {
     public class QueueBenchmarks {
         private const int ITEM_COUNT = 1000;
-        private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>(new InMemoryQueueOptions<QueueItem>());
-        private readonly IQueue<QueueItem> _redisQueue = new RedisQueue<QueueItem>(new RedisQueueOptions<QueueItem> { ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost") });
+        private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>();
+        private readonly IQueue<QueueItem> _redisQueue = new RedisQueue<QueueItem>(o => o.ConnectionMultiplexer(ConnectionMultiplexer.Connect("localhost")));
 
         [IterationSetup]
         public void Setup() {

@@ -53,6 +53,9 @@ namespace Foundatio.Queues {
                 _logger.LogTrace("Queue {QueueId} created. Retries: {Retries} Retry Delay: {RetryDelay}", QueueId, _options.Retries, _options.RetryDelay.ToString());
         }
 
+        public RedisQueue(Builder<RedisQueueOptionsBuilder<T>, RedisQueueOptions<T>> config)
+            : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
+
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) => Task.CompletedTask;
 
         private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null;

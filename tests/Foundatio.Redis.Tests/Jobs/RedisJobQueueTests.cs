@@ -14,12 +14,12 @@ namespace Foundatio.Redis.Tests.Jobs {
         }
 
         protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay) {
-            return new RedisQueue<SampleQueueWorkItem>(new RedisQueueOptions<SampleQueueWorkItem> {
-                ConnectionMultiplexer = SharedConnection.GetMuxer(),
-                Retries = retries,
-                RetryDelay = retryDelay,
-                LoggerFactory = Log
-            });
+            return new RedisQueue<SampleQueueWorkItem>(o => o
+                .ConnectionMultiplexer(SharedConnection.GetMuxer())
+                .Retries(retries)
+                .RetryDelay(retryDelay)
+                .LoggerFactory(Log)
+            );
         }
 
         [Fact]

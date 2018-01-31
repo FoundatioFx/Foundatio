@@ -29,6 +29,9 @@ namespace Foundatio.Caching {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         }
 
+        public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
+            : this(config(new RedisCacheClientOptionsBuilder()).Build()) { }
+
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null) {
                 var endpoints = _options.ConnectionMultiplexer.GetEndPoints(true);

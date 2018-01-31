@@ -20,7 +20,7 @@ namespace Foundatio.Redis.Tests.Messaging {
         }
 
         protected override IMessageBus GetMessageBus() {
-            return new RedisMessageBus(new RedisMessageBusOptions { Subscriber = SharedConnection.GetMuxer().GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
+            return new RedisMessageBus(o => o.Subscriber(SharedConnection.GetMuxer().GetSubscriber()).Topic("test-messages").LoggerFactory(Log));
         }
 
         [Fact]

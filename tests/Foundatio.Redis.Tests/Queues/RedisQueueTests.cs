@@ -27,15 +27,15 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            var queue = new RedisQueue<SimpleWorkItem>(new RedisQueueOptions<SimpleWorkItem> {
-                ConnectionMultiplexer = SharedConnection.GetMuxer(),
-                Retries = retries,
-                RetryDelay = retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)),
-                DeadLetterMaxItems = deadLetterMaxItems,
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                RunMaintenanceTasks = runQueueMaintenance,
-                LoggerFactory = Log
-            });
+            var queue = new RedisQueue<SimpleWorkItem>(o => o
+                .ConnectionMultiplexer(SharedConnection.GetMuxer())
+                .Retries(retries)
+                .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
+                .DeadLetterMaxItems(deadLetterMaxItems)
+                .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                .RunMaintenanceTasks(runQueueMaintenance)
+                .LoggerFactory(Log)
+            );
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
