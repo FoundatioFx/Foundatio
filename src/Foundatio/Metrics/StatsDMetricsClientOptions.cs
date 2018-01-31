@@ -6,7 +6,7 @@ namespace Foundatio.Metrics {
         public int Port { get; set; } = 8125;
     }
 
-    public class StatsDMetricsClientOptionsBuilder : OptionsBuilder<StatsDMetricsClientOptions>, ISharedMetricsClientOptionsBuilder {
+    public class StatsDMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<StatsDMetricsClientOptions, StatsDMetricsClientOptionsBuilder> {
         public StatsDMetricsClientOptionsBuilder Server(string serverName, int port = 8125) {
             if (String.IsNullOrEmpty(serverName))
                 throw new ArgumentNullException(nameof(serverName));

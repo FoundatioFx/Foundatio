@@ -1,40 +1,47 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Foundatio.Serializer;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
-    public interface ISharedQueueOptions {
-        string Name { get; set; }
-        int Retries { get; set; }
-        TimeSpan WorkItemTimeout { get; set; }
-    }
-
-    public class SharedQueueOptions<T> : SharedOptions, ISharedQueueOptions where T : class {
+    public class SharedQueueOptions<T> : SharedOptions where T : class {
         public string Name { get; set; } = typeof(T).Name;
         public int Retries { get; set; } = 2;
         public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
         public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
     }
 
-    public interface ISharedQueueOptionsBuilder : ISharedOptionsBuilder {}
-
-    public static class SharedQueueOptionsBuilderExtensions {
-        public static TBuilder Name<TBuilder>(this TBuilder builder, string name) where TBuilder: ISharedQueueOptionsBuilder {
-            builder.Target<ISharedQueueOptions>().Name = name;
-            return (TBuilder)builder;
+    public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder> 
+        where T : class
+        where TOptions : SharedQueueOptions<T>, new()
+        where TBuilder : SharedQueueOptionsBuilder<T, TOptions, TBuilder> {
+        public TBuilder Name(string name) {
+            Target.Name = name;
+            return (TBuilder)this;
         }
 
-        public static TBuilder Retries<TBuilder>(this TBuilder builder, int retries) where TBuilder : ISharedQueueOptionsBuilder {
-            builder.Target<ISharedQueueOptions>().Retries = retries;
-            return (TBuilder)builder;
+        public TBuilder Retries(int retries) {
+            Target.Retries = retries;
+            return (TBuilder)this;
         }
 
-        public static TBuilder WorkItemTimeout<TBuilder>(this TBuilder builder, TimeSpan timeout) where TBuilder : ISharedQueueOptionsBuilder {
-            builder.Target<ISharedQueueOptions>().WorkItemTimeout = timeout;
-            return (TBuilder)builder;
+        public TBuilder WorkItemTimeout(TimeSpan timeout) {
+            Target.WorkItemTimeout = timeout;
+            return (TBuilder)this;
+        }
+
+        public TBuilder Behaviors(ICollection<IQueueBehavior<T>> behaviors) {
+            Target.Behaviors = behaviors;
+            return (TBuilder)this;
+        }
+
+        public TBuilder AddBehavior(IQueueBehavior<T> behavior) {
+            if (behavior == null)
+                throw new ArgumentNullException(nameof(behavior));
+            if (Target.Behaviors == null)
+                Target.Behaviors = new List<IQueueBehavior<T>> ();
+            Target.Behaviors.Add(behavior);
+
+            return (TBuilder)this;
         }
     }
 }
