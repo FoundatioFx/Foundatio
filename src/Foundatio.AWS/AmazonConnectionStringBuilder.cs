@@ -12,6 +12,8 @@ namespace Foundatio {
         protected AmazonConnectionStringBuilder() { }
 
         protected AmazonConnectionStringBuilder(string connectionString) {
+            if(String.IsNullOrEmpty(connectionString))
+                throw new ArgumentNullException(nameof(connectionString));
             Parse(connectionString);
         }
 
@@ -31,12 +33,16 @@ namespace Foundatio {
         protected virtual bool ParseItem(string key, string value) {
             if (String.Equals(key, "AccessKey", StringComparison.OrdinalIgnoreCase) ||
                 String.Equals(key, "Access Key", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "AccessKeyId", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "Access Key Id", StringComparison.OrdinalIgnoreCase) ||
                 String.Equals(key, "Id", StringComparison.OrdinalIgnoreCase)) {
                 AccessKey = value;
                 return true;
             }
             if (String.Equals(key, "SecretKey", StringComparison.OrdinalIgnoreCase) ||
                 String.Equals(key, "Secret Key", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "SecretAccessKey", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "Secret Access Key", StringComparison.OrdinalIgnoreCase) ||
                 String.Equals(key, "Secret", StringComparison.OrdinalIgnoreCase)) {
                 SecretKey = value;
                 return true;

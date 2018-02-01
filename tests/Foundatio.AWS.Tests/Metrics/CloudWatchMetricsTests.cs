@@ -29,7 +29,7 @@ namespace Foundatio.AWS.Tests.Metrics {
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
             return new CloudWatchMetricsClient(o =>
-                o.ConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}")
+                o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}")
                     .Prefix("foundatio/tests/metrics")
                     .Buffered(buffered)
                     .LoggerFactory(Log));

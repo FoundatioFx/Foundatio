@@ -18,7 +18,7 @@ namespace Foundatio.Tests.Storage {
                 return null;
 
             return new ScopedFileStorage(new S3FileStorage(
-                o => o.ConnectionString($"id={accessKey};secret={secretKey},region={RegionEndpoint.USEast1.SystemName};bucket=foundatio")
+                o => o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio")
                     .LoggerFactory(Log)), "scope");
         }
 
