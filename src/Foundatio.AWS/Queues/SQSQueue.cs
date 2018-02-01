@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -27,8 +28,18 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
-            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(options.Credentials ?? FallbackCredentialsFactory.GetCredentials(), options.RegionEndpoint));
+            var connectionString = new SQSQueueConnectionStringBuilder(options.ConnectionString);
+            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(
+                string.IsNullOrEmpty(connectionString.AccessKey)
+                    ? FallbackCredentialsFactory.GetCredentials()
+                    : new BasicAWSCredentials(connectionString.AccessKey, connectionString.SecretKey), 
+                string.IsNullOrEmpty(connectionString.Region)
+                    ? FallbackRegionFactory.GetRegionEndpoint()
+                    : RegionEndpoint.GetBySystemName(connectionString.Region)));
         }
+
+        public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
+            : this(builder(new SQSQueueOptionsBuilder<T>()).Build()) { }
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (!String.IsNullOrEmpty(_queueUrl))

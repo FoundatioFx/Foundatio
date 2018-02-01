@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Amazon;
-using Amazon.Runtime;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
@@ -18,12 +17,9 @@ namespace Foundatio.Tests.Storage {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            return new ScopedFileStorage(new S3FileStorage(new S3FileStorageOptions {
-                Credentials = new BasicAWSCredentials(accessKey, secretKey),
-                Region = RegionEndpoint.USEast1,
-                Bucket = "foundatio",
-                LoggerFactory = Log
-            }), "scope");
+            return new ScopedFileStorage(new S3FileStorage(
+                o => o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio")
+                    .LoggerFactory(Log)), "scope");
         }
 
         [Fact]

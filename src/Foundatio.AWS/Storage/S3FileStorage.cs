@@ -25,11 +25,19 @@ namespace Foundatio.Storage {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            _credentials = options.Credentials;
-            _region = options.Region;
-            _bucket = options.Bucket;
+            var connectionString = new S3FileStorageConnectionStringBuilder(options.ConnectionString);
+            _credentials = string.IsNullOrEmpty(connectionString.AccessKey)
+                ? FallbackCredentialsFactory.GetCredentials()
+                : new BasicAWSCredentials(connectionString.AccessKey, connectionString.SecretKey);
+            _region = string.IsNullOrEmpty(connectionString.Region)
+                ? FallbackRegionFactory.GetRegionEndpoint()
+                : RegionEndpoint.GetBySystemName(connectionString.Region);
+            _bucket = connectionString.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
+
+        public S3FileStorage(Builder<S3FileStorageOptionsBuilder, S3FileStorageOptions> builder)
+            : this(builder(new S3FileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 

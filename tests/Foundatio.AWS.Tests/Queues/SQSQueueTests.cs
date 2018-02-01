@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon.Runtime;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
@@ -26,13 +25,11 @@ namespace Foundatio.AWS.Tests.Queues {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
-            var queue = new SQSQueue<SimpleWorkItem>(new SQSQueueOptions<SimpleWorkItem> {
-                Credentials = new BasicAWSCredentials(accessKey, secretKey),
-                Name = _queueName,
-                Retries = retries,
-                WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
-                LoggerFactory = Log,
-            });
+            var queue = new SQSQueue<SimpleWorkItem>(
+                o => o.ConnectionString($"id={accessKey};secret={secretKey}")
+                    .Name(_queueName).Retries(retries)
+                    .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                    .LoggerFactory(Log));
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
