@@ -7,7 +7,7 @@
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1676-pre" />
+    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1680-pre" />
     <PackageReference Include="RimDev.Automation.StorageEmulator" Version="0.1.0" />
 
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.5.0" />
@@ -18,8 +18,5 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
   </ItemGroup>
 </Project>
