@@ -76,6 +76,9 @@ namespace Foundatio.Metrics {
         }
 
         public override CloudWatchMetricsClientOptions Build() {
+            if (String.IsNullOrEmpty(Target.ConnectionString))
+                return Target;
+            
             var connectionString = new CloudWatchMetricsConnectionStringBuilder(Target.ConnectionString);
             if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
                 Target.AccessKey = connectionString.AccessKey;

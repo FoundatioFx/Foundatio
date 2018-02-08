@@ -46,6 +46,9 @@ namespace Foundatio.Storage {
         }
 
         public override S3FileStorageOptions Build() {
+            if (String.IsNullOrEmpty(Target.ConnectionString))
+                return Target;
+            
             var connectionString = new S3FileStorageConnectionStringBuilder(Target.ConnectionString);
             if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
                 Target.AccessKey = connectionString.AccessKey;

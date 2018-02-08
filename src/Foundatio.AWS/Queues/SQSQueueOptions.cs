@@ -70,6 +70,9 @@ namespace Foundatio.Queues {
         }
 
         public override SQSQueueOptions<T> Build() {
+            if (String.IsNullOrEmpty(Target.ConnectionString))
+                return Target;
+            
             var connectionString = new SQSQueueConnectionStringBuilder(Target.ConnectionString);
             if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
                 Target.AccessKey = connectionString.AccessKey;
