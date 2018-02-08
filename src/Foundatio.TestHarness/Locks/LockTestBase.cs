@@ -69,6 +69,31 @@ namespace Foundatio.Tests.Locks {
             Assert.Equal(25, counter);
         }
 
+        public virtual async Task CanReleaseLockMultipleTimes() {
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
+
+            await locker.ReleaseAsync("test");
+
+            var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1));
+            await lock1.ReleaseAsync();
+            Assert.False(await locker.IsLockedAsync("test"));
+
+            var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1));
+            
+            // has already been released, should not release other people's lock
+            await lock1.ReleaseAsync();
+            Assert.True(await locker.IsLockedAsync("test"));
+            
+            // has already been released, should not release other people's lock
+            await lock1.DisposeAsync();
+            Assert.True(await locker.IsLockedAsync("test"));
+
+            await lock2.ReleaseAsync();
+            Assert.False(await locker.IsLockedAsync("test"));
+        }
+
         public virtual async Task LockWillTimeoutAsync() {
             Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
 

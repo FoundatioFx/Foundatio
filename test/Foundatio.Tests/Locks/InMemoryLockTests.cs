@@ -47,6 +47,11 @@ namespace Foundatio.Tests.Locks {
             return base.WillThrottleCallsAsync();
         }
 
+        [Fact]
+        public override Task CanReleaseLockMultipleTimes() {
+            return base.CanReleaseLockMultipleTimes();
+        }
+
         public void Dispose() {
             _cache.Dispose();
             _messageBus.Dispose();
