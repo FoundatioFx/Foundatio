@@ -19,19 +19,18 @@ namespace Foundatio.Metrics {
 
         public CloudWatchMetricsClient(CloudWatchMetricsClientOptions options) : base(options) {
             _options = options;
-            var connectionString = new CloudWatchMetricsConnectionStringBuilder(options.ConnectionString);
-            _namespace = connectionString.Namespace;
-            _dimensions = connectionString.Dimensions;
+            _namespace = options.Namespace;
+            _dimensions = options.Dimensions;
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
-                string.IsNullOrEmpty(connectionString.AccessKey)
+                String.IsNullOrEmpty(options.AccessKey)
                     ? FallbackCredentialsFactory.GetCredentials()
-                    : new BasicAWSCredentials(connectionString.AccessKey, connectionString.SecretKey),
+                    : new BasicAWSCredentials(options.AccessKey, options.SecretKey),
                 new AmazonCloudWatchConfig {
                     LogResponse = false,
                     DisableLogging = true,
-                    RegionEndpoint = string.IsNullOrEmpty(connectionString.Region)
+                    RegionEndpoint = String.IsNullOrEmpty(options.Region)
                         ? FallbackRegionFactory.GetRegionEndpoint()
-                        : RegionEndpoint.GetBySystemName(connectionString.Region)
+                        : RegionEndpoint.GetBySystemName(options.Region)
                 }));
         }
 

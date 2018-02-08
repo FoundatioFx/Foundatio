@@ -28,14 +28,13 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
-            var connectionString = new SQSQueueConnectionStringBuilder(options.ConnectionString);
             _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(
-                string.IsNullOrEmpty(connectionString.AccessKey)
+                String.IsNullOrEmpty(options.AccessKey)
                     ? FallbackCredentialsFactory.GetCredentials()
-                    : new BasicAWSCredentials(connectionString.AccessKey, connectionString.SecretKey), 
-                string.IsNullOrEmpty(connectionString.Region)
+                    : new BasicAWSCredentials(options.AccessKey, options.SecretKey), 
+                String.IsNullOrEmpty(options.Region)
                     ? FallbackRegionFactory.GetRegionEndpoint()
-                    : RegionEndpoint.GetBySystemName(connectionString.Region)));
+                    : RegionEndpoint.GetBySystemName(options.Region)));
         }
 
         public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
