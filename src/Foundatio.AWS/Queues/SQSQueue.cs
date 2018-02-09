@@ -29,12 +29,8 @@ namespace Foundatio.Queues {
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
             _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(
-                String.IsNullOrEmpty(options.AccessKey)
-                    ? FallbackCredentialsFactory.GetCredentials()
-                    : new BasicAWSCredentials(options.AccessKey, options.SecretKey), 
-                String.IsNullOrEmpty(options.Region)
-                    ? FallbackRegionFactory.GetRegionEndpoint()
-                    : RegionEndpoint.GetBySystemName(options.Region)));
+                options.Credentials ?? FallbackCredentialsFactory.GetCredentials(), 
+                options.Region ?? FallbackRegionFactory.GetRegionEndpoint()));
         }
 
         public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 

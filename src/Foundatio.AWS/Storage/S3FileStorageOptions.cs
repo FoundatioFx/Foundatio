@@ -1,12 +1,13 @@
 ﻿using System;
+using Amazon;
+using Amazon.Runtime;
 
 namespace Foundatio.Storage {
     public class S3FileStorageOptions : SharedOptions {
         public string ConnectionString { get; set; }
         public string Bucket { get; set; }
-        public string AccessKey { get; set; }
-        public string SecretKey { get; set; }
-        public string Region { get; set; }
+        public AWSCredentials Credentials { get; set; }
+        public RegionEndpoint Region { get; set; }
     }
 
     public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder> {
@@ -24,24 +25,34 @@ namespace Foundatio.Storage {
             return this;
         }
 
-        public S3FileStorageOptionsBuilder AccessKey(string accessKey) {
-            if (string.IsNullOrEmpty(accessKey))
-                throw new ArgumentNullException(nameof(accessKey));
-            Target.AccessKey = accessKey;
+        public S3FileStorageOptionsBuilder Credentials(AWSCredentials credentials) {
+            if (credentials == null)
+                throw new ArgumentNullException(nameof(credentials));
+            Target.Credentials = credentials;
             return this;
         }
 
-        public S3FileStorageOptionsBuilder SecretKey(string secretKey) {
-            if (string.IsNullOrEmpty(secretKey))
+        public S3FileStorageOptionsBuilder Credentials(string accessKey, string secretKey) {
+            if (String.IsNullOrEmpty(accessKey))
+                throw new ArgumentNullException(nameof(accessKey));
+            if (String.IsNullOrEmpty(secretKey))
                 throw new ArgumentNullException(nameof(secretKey));
-            Target.SecretKey = secretKey;
+                
+            Target.Credentials = new BasicAWSCredentials(accessKey, secretKey);
+            return this;
+        }
+
+        public S3FileStorageOptionsBuilder Region(RegionEndpoint region) {
+            if (region == null)
+                throw new ArgumentNullException(nameof(region));
+            Target.Region = region;
             return this;
         }
 
         public S3FileStorageOptionsBuilder Region(string region) {
-            if (string.IsNullOrEmpty(region))
+            if (String.IsNullOrEmpty(region))
                 throw new ArgumentNullException(nameof(region));
-            Target.Region = region;
+            Target.Region = RegionEndpoint.GetBySystemName(region);
             return this;
         }
 
@@ -50,17 +61,14 @@ namespace Foundatio.Storage {
                 return Target;
             
             var connectionString = new S3FileStorageConnectionStringBuilder(Target.ConnectionString);
-            if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
-                Target.AccessKey = connectionString.AccessKey;
+            if (Target.Credentials == null)
+                Target.Credentials = connectionString.GetCredentials();
 
-            if (String.IsNullOrEmpty(Target.SecretKey) && !String.IsNullOrEmpty(connectionString.SecretKey))
-                Target.SecretKey = connectionString.SecretKey;
+            if (Target.Region == null)
+                Target.Region = connectionString.GetRegion();
 
             if (String.IsNullOrEmpty(Target.Bucket) && !String.IsNullOrEmpty(connectionString.Bucket))
                 Target.Bucket = connectionString.Bucket;
-
-            if (String.IsNullOrEmpty(Target.Region) && !String.IsNullOrEmpty(connectionString.Region))
-                Target.Region = connectionString.Region;
 
             return Target;
         }

@@ -25,12 +25,8 @@ namespace Foundatio.Storage {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            _credentials = String.IsNullOrEmpty(options.AccessKey)
-                ? FallbackCredentialsFactory.GetCredentials()
-                : new BasicAWSCredentials(options.AccessKey, options.SecretKey);
-            _region = String.IsNullOrEmpty(options.Region)
-                ? FallbackRegionFactory.GetRegionEndpoint()
-                : RegionEndpoint.GetBySystemName(options.Region);
+            _credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+            _region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
             _bucket = options.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }

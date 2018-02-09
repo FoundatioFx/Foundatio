@@ -22,15 +22,11 @@ namespace Foundatio.Metrics {
             _namespace = options.Namespace;
             _dimensions = options.Dimensions;
             _client = new Lazy<AmazonCloudWatchClient>(() => new AmazonCloudWatchClient(
-                String.IsNullOrEmpty(options.AccessKey)
-                    ? FallbackCredentialsFactory.GetCredentials()
-                    : new BasicAWSCredentials(options.AccessKey, options.SecretKey),
+                options.Credentials ?? FallbackCredentialsFactory.GetCredentials(),
                 new AmazonCloudWatchConfig {
                     LogResponse = false,
                     DisableLogging = true,
-                    RegionEndpoint = String.IsNullOrEmpty(options.Region)
-                        ? FallbackRegionFactory.GetRegionEndpoint()
-                        : RegionEndpoint.GetBySystemName(options.Region)
+                    RegionEndpoint = options.Region ?? FallbackRegionFactory.GetRegionEndpoint()
                 }));
         }
 

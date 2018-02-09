@@ -1,11 +1,12 @@
 ﻿using System;
+using Amazon;
+using Amazon.Runtime;
 
 namespace Foundatio.Queues {
     public class SQSQueueOptions<T> : SharedQueueOptions<T> where T : class {
         public string ConnectionString { get; set; }
-        public string AccessKey { get; set; }
-        public string SecretKey { get; set; }
-        public string Region { get; set; }
+        public AWSCredentials Credentials { get; set; }
+        public RegionEndpoint Region { get; set; }
         public bool CanCreateQueue { get; set; } = true;
         public bool SupportDeadLetter { get; set; } = true;
         public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
@@ -48,24 +49,34 @@ namespace Foundatio.Queues {
 
         public SQSQueueOptionsBuilder<T> DisableDeadLetter() => SupportDeadLetter(false);
 
-        public SQSQueueOptionsBuilder<T> AccessKey(string accessKey) {
-            if (string.IsNullOrEmpty(accessKey))
-                throw new ArgumentNullException(nameof(accessKey));
-            Target.AccessKey = accessKey;
+        public SQSQueueOptionsBuilder<T> Credentials(AWSCredentials credentials) {
+            if (credentials == null)
+                throw new ArgumentNullException(nameof(credentials));
+            Target.Credentials = credentials;
             return this;
         }
 
-        public SQSQueueOptionsBuilder<T> SecretKey(string secretKey) {
-            if (string.IsNullOrEmpty(secretKey))
+        public SQSQueueOptionsBuilder<T> Credentials(string accessKey, string secretKey) {
+            if (String.IsNullOrEmpty(accessKey))
+                throw new ArgumentNullException(nameof(accessKey));
+            if (String.IsNullOrEmpty(secretKey))
                 throw new ArgumentNullException(nameof(secretKey));
-            Target.SecretKey = secretKey;
+                
+            Target.Credentials = new BasicAWSCredentials(accessKey, secretKey);
+            return this;
+        }
+
+        public SQSQueueOptionsBuilder<T> Region(RegionEndpoint region) {
+            if (region == null)
+                throw new ArgumentNullException(nameof(region));
+            Target.Region = region;
             return this;
         }
 
         public SQSQueueOptionsBuilder<T> Region(string region) {
-            if (string.IsNullOrEmpty(region))
+            if (String.IsNullOrEmpty(region))
                 throw new ArgumentNullException(nameof(region));
-            Target.Region = region;
+            Target.Region = RegionEndpoint.GetBySystemName(region);
             return this;
         }
 
@@ -74,14 +85,11 @@ namespace Foundatio.Queues {
                 return Target;
             
             var connectionString = new SQSQueueConnectionStringBuilder(Target.ConnectionString);
-            if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
-                Target.AccessKey = connectionString.AccessKey;
+            if (Target.Credentials == null)
+                Target.Credentials = connectionString.GetCredentials();
 
-            if (String.IsNullOrEmpty(Target.SecretKey) && !String.IsNullOrEmpty(connectionString.SecretKey))
-                Target.SecretKey = connectionString.SecretKey;
-
-            if (String.IsNullOrEmpty(Target.Region) && !String.IsNullOrEmpty(connectionString.Region))
-                Target.Region = connectionString.Region;
+            if (Target.Region == null)
+                Target.Region = connectionString.GetRegion();
 
             return Target;
         }

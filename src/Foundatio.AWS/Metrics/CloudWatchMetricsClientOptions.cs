@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
+using Amazon;
 using Amazon.CloudWatch.Model;
+using Amazon.Runtime;
 
 namespace Foundatio.Metrics {
     public class CloudWatchMetricsClientOptions : SharedMetricsClientOptions {
         public string ConnectionString { get; set; }
-        public string AccessKey { get; set; }
-        public string SecretKey { get; set; }
-        public string Region { get; set; }
+        public AWSCredentials Credentials { get; set; }
+        public RegionEndpoint Region { get; set; }
         public string Namespace { get; set; }
         public List<Dimension> Dimensions { get; set; } = new List<Dimension>();
     }
@@ -20,24 +21,34 @@ namespace Foundatio.Metrics {
             return this;
         }
 
-        public CloudWatchMetricsClientOptionsBuilder AccessKey(string accessKey) {
-            if (String.IsNullOrEmpty(accessKey))
-                throw new ArgumentNullException(nameof(accessKey));
-            Target.AccessKey = accessKey;
+        public CloudWatchMetricsClientOptionsBuilder Credentials(AWSCredentials credentials) {
+            if (credentials == null)
+                throw new ArgumentNullException(nameof(credentials));
+            Target.Credentials = credentials;
             return this;
         }
 
-        public CloudWatchMetricsClientOptionsBuilder SecretKey(string secretKey) {
+        public CloudWatchMetricsClientOptionsBuilder Credentials(string accessKey, string secretKey) {
+            if (String.IsNullOrEmpty(accessKey))
+                throw new ArgumentNullException(nameof(accessKey));
             if (String.IsNullOrEmpty(secretKey))
                 throw new ArgumentNullException(nameof(secretKey));
-            Target.SecretKey = secretKey;
+                
+            Target.Credentials = new BasicAWSCredentials(accessKey, secretKey);
+            return this;
+        }
+
+        public CloudWatchMetricsClientOptionsBuilder Region(RegionEndpoint region) {
+            if (region == null)
+                throw new ArgumentNullException(nameof(region));
+            Target.Region = region;
             return this;
         }
 
         public CloudWatchMetricsClientOptionsBuilder Region(string region) {
             if (String.IsNullOrEmpty(region))
                 throw new ArgumentNullException(nameof(region));
-            Target.Region = region;
+            Target.Region = RegionEndpoint.GetBySystemName(region);
             return this;
         }
 
@@ -80,14 +91,11 @@ namespace Foundatio.Metrics {
                 return Target;
             
             var connectionString = new CloudWatchMetricsConnectionStringBuilder(Target.ConnectionString);
-            if (String.IsNullOrEmpty(Target.AccessKey) && !String.IsNullOrEmpty(connectionString.AccessKey))
-                Target.AccessKey = connectionString.AccessKey;
+            if (Target.Credentials == null)
+                Target.Credentials = connectionString.GetCredentials();
 
-            if (String.IsNullOrEmpty(Target.SecretKey) && !String.IsNullOrEmpty(connectionString.SecretKey))
-                Target.SecretKey = connectionString.SecretKey;
-
-            if (String.IsNullOrEmpty(Target.Region) && !String.IsNullOrEmpty(connectionString.Region))
-                Target.Region = connectionString.Region;
+            if (Target.Region == null)
+                Target.Region = connectionString.GetRegion();
 
             if (String.IsNullOrEmpty(Target.Namespace) && !String.IsNullOrEmpty(connectionString.Namespace))
                 Target.Namespace = connectionString.Namespace;

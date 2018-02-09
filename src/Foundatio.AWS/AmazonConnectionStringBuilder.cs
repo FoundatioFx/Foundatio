@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Linq;
+using Amazon;
+using Amazon.Runtime;
 
 namespace Foundatio {
     public abstract class AmazonConnectionStringBuilder {
@@ -28,6 +30,18 @@ namespace Foundatio {
                     throw new ArgumentException($"The option '{optionKey}' cannot be recognized in connection string.", nameof(connectionString));
                 }
             }
+        }
+
+        public AWSCredentials GetCredentials() {
+            return !String.IsNullOrEmpty(AccessKey)	
+                ? new BasicAWSCredentials(AccessKey, SecretKey)
+                : null;
+        }
+
+        public RegionEndpoint GetRegion() {
+            return !String.IsNullOrEmpty(Region)
+                ? RegionEndpoint.GetBySystemName(Region)
+                : null;
         }
 
         protected virtual bool ParseItem(string key, string value) {
