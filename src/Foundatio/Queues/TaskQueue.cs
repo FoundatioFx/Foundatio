@@ -63,7 +63,7 @@ namespace Foundatio.Queues {
                                 _semaphore.Release();
 
                             if (_queue.IsEmpty) {
-                                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to deuque task.");
+                                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue task.");
                                 try {
                                     using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
                                     using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_workLoopCancellationTokenSource.Token, timeoutCancellationTokenSource.Token)) {
