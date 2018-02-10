@@ -45,6 +45,9 @@ namespace Foundatio.Queues {
             _namespaceManager = NamespaceManager.CreateFromConnectionString(options.ConnectionString);
         }
 
+        public AzureServiceBusQueue(Builder<AzureServiceBusQueueOptionsBuilder<T>, AzureServiceBusQueueOptions<T>> config)
+            : this(config(new AzureServiceBusQueueOptionsBuilder<T>()).Build()) { }
+
         private bool QueueIsCreated => _queueClient != null;
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (QueueIsCreated)

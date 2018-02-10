@@ -27,6 +27,9 @@ namespace Foundatio.Messaging {
             _subscriptionName = _options.SubscriptionName ?? MessageBusId;
         }
 
+        public AzureServiceBusMessageBus(Builder<AzureServiceBusMessageBusOptionsBuilder, AzureServiceBusMessageBusOptions> config)
+            : this(config(new AzureServiceBusMessageBusOptionsBuilder()).Build()) { }
+
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
             if (_subscriptionClient != null)
                 return;

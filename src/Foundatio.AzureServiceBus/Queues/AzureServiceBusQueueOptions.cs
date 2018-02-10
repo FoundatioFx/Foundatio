@@ -3,7 +3,7 @@ using Microsoft.ServiceBus;
 using Microsoft.ServiceBus.Messaging;
 
 namespace Foundatio.Queues {
-    public class AzureServiceBusQueueOptions<T> : QueueOptionsBase<T> where T : class {
+    public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : class {
         public string ConnectionString { get; set; }
 
         /// <summary>
@@ -90,5 +90,97 @@ namespace Foundatio.Queues {
         /// Returns the retry policy;
         /// </summary>
         public RetryPolicy RetryPolicy { get; set; }
+    }
+
+    public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureServiceBusQueueOptions<T>, AzureServiceBusQueueOptionsBuilder<T>> where T : class {
+        public AzureServiceBusQueueOptionsBuilder<T> ConnectionString(string connectionString) {
+            Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> AutoDeleteOnIdle(TimeSpan autoDeleteOnIdle) {
+            Target.AutoDeleteOnIdle = autoDeleteOnIdle;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> MaxSizeInMegabytes(long maxSizeInMegabytes) {
+            Target.MaxSizeInMegabytes = maxSizeInMegabytes;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> RequiresDuplicateDetection(bool requiresDuplicateDetection) {
+            Target.RequiresDuplicateDetection = requiresDuplicateDetection;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> RequiresSession(bool requiresSession) {
+            Target.RequiresSession = requiresSession;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> DefaultMessageTimeToLive(TimeSpan defaultMessageTimeToLive) {
+            Target.DefaultMessageTimeToLive = defaultMessageTimeToLive;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> EnableDeadLetteringOnMessageExpiration(bool enableDeadLetteringOnMessageExpiration) {
+            Target.EnableDeadLetteringOnMessageExpiration = enableDeadLetteringOnMessageExpiration;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> DuplicateDetectionHistoryTimeWindow(TimeSpan duplicateDetectionHistoryTimeWindow) {
+            Target.DuplicateDetectionHistoryTimeWindow = duplicateDetectionHistoryTimeWindow;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> EnableBatchedOperations(bool enableBatchedOperations) {
+            Target.EnableBatchedOperations = enableBatchedOperations;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> IsAnonymousAccessible(bool isAnonymousAccessible) {
+            Target.IsAnonymousAccessible = isAnonymousAccessible;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> SupportOrdering(bool supportOrdering) {
+            Target.SupportOrdering = supportOrdering;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> Status(EntityStatus status) {
+            Target.Status = status;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> ForwardTo(string forwardTo) {
+            Target.ForwardTo = forwardTo ?? throw new ArgumentNullException(nameof(forwardTo));
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> ForwardDeadLetteredMessagesTo(string forwardDeadLetteredMessagesTo) {
+            Target.ForwardDeadLetteredMessagesTo = forwardDeadLetteredMessagesTo ?? throw new ArgumentNullException(nameof(forwardDeadLetteredMessagesTo));
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> EnablePartitioning(bool enablePartitioning) {
+            Target.EnablePartitioning = enablePartitioning;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> UserMetadata(string userMetadata) {
+            Target.UserMetadata = userMetadata ?? throw new ArgumentNullException(nameof(userMetadata));
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> EnableExpress(bool enableExpress) {
+            Target.EnableExpress = enableExpress;
+            return this;
+        }
+
+        public AzureServiceBusQueueOptionsBuilder<T> RetryPolicy(RetryPolicy retryPolicy) {
+            Target.RetryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
+            return this;
+        }
     }
 }
