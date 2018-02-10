@@ -33,6 +33,9 @@ namespace Foundatio.Messaging {
             _factory = new ConnectionFactory { Uri = new Uri(options.ConnectionString), AutomaticRecoveryEnabled = true };
         }
 
+        public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
+            : this(config(new RabbitMQMessageBusOptionsBuilder()).Build()) { }
+
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
             if (_subscriberChannel != null)
                 return;
