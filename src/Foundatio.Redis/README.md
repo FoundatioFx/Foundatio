@@ -4,8 +4,6 @@
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
-Includes implementations in Redis, Azure, AWS and in memory (for development).
-
 Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Caching](#caching)
 - [Queues](#queues)
