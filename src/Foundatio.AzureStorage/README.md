@@ -31,6 +31,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
 - [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
+- [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
 - [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
 
 ## Getting Started (Development)
@@ -60,7 +61,7 @@ Caching allows you to store and access data lightning fast, saving you exspensiv
 ```csharp
 using Foundatio.Caching;
 
-ICacheClient cache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
+ICacheClient cache = new InMemoryCacheClient();
 await cache.SetAsync("test", 1);
 var value = await cache.GetAsync<int>("test");
 ```
@@ -79,7 +80,7 @@ Queues offer First In, First Out (FIFO) message delivery. We provide four differ
 ```csharp
 using Foundatio.Queues;
 
-IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem>());
+IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
 
 await queue.EnqueueAsync(new SimpleWorkItem {
     Data = "Hello"
@@ -103,12 +104,12 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 ```csharp
 using Foundatio.Lock;
 
-ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), new InMemoryMessageBus(new InMemoryMessageBusOptions()));
+ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
 using (await locker.AcquireAsync("test")) {
   // ...
 }
 
-ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), 1, TimeSpan.FromMinutes(1));
+ILockProvider locker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
 using (await locker.AcquireAsync("test")) {
   // ...
 }
@@ -128,7 +129,7 @@ Allows you to publish and subscribe to messages flowing through your application
 ```csharp
 using Foundatio.Messaging;
 
-IMessageBus messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
+IMessageBus messageBus = new InMemoryMessageBus();
 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
   // Got message
 });
@@ -190,7 +191,7 @@ Allows you to run a long running process (in process or out of process) without 
 
   ```csharp
    // Register the queue for HelloWorldQueueItem.
-  container.AddSingleton<IQueue<HelloWorldQueueItem>>(s => new InMemoryQueue<HelloWorldQueueItem>(new InMemoryQueueOptions<WorkItemData>()));
+  container.AddSingleton<IQueue<HelloWorldQueueItem>>(s => new InMemoryQueue<HelloWorldQueueItem>());
 
   // To trigger the job we need to queue the HelloWorldWorkItem message.
   // This assumes that we injected an instance of IQueue<HelloWorldWorkItem> queue
@@ -248,7 +249,7 @@ Allows you to run a long running process (in process or out of process) without 
   container.AddSingleton(handlers);
 
   // Register the queue for WorkItemData.
-  container.AddSingleton<IQueue<WorkItemData>>(s => new InMemoryQueue<WorkItemData>(new InMemoryQueueOptions<WorkItemData>()));
+  container.AddSingleton<IQueue<WorkItemData>>(s => new InMemoryQueue<WorkItemData>());
 
   // The job runner will automatically look for and run all registered WorkItemHandlers.
   new JobRunner(container.GetRequiredService<WorkItemJob>(), instanceCount: 2).RunInBackground();
@@ -272,7 +273,8 @@ We provide different file storage implementations that derive from the [`IFileSt
 2. [FolderFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
 4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
-5. [AliyunFileStorage](https://github.com/FoundatioFx/Foundatio.Aliyun/blob/master/src/Foundatio.Aliyun/Storage/AliyunFileStorage.cs): An Aliyun file storage implementation.
+5. [Minio](https://github.com/FoundatioFx/Foundatio.Minio/blob/master/src/Foundatio.Minio/Storage/MinioFileStorage.cs) An Minio file storage implementation.
+6. [AliyunFileStorage](https://github.com/FoundatioFx/Foundatio.Aliyun/blob/master/src/Foundatio.Aliyun/Storage/AliyunFileStorage.cs): An Aliyun file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons.
 
@@ -281,7 +283,7 @@ We recommend using all of the `IFileStorage` implementations as singletons.
 ```csharp
 using Foundatio.Storage;
 
-IFileStorage storage = new InMemoryFileStorage(new InMemoryFileStorageOptions());
+IFileStorage storage = new InMemoryFileStorage();
 await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
 ```
@@ -300,7 +302,7 @@ We recommend using all of the `IMetricsClient` implementations as singletons.
 #### Sample
 
 ```csharp
-IMetricsClient metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+IMetricsClient metrics = new InMemoryMetricsClient();
 metrics.Counter("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
