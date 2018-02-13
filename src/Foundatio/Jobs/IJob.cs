@@ -81,7 +81,7 @@ namespace Foundatio.Jobs {
                     logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
                 else if (!String.IsNullOrEmpty(result.Message))
                     logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
-                else if (logger.IsEnabled(LogLevel.Trace))
+                else if (logger.IsEnabled(LogLevel.Debug))
                     logger.LogDebug("Job run {JobName} succeeded.", jobName);
             } else if (logger.IsEnabled(LogLevel.Error)) {
                 logger.LogError("Null job run result for {JobName}.", jobName);
