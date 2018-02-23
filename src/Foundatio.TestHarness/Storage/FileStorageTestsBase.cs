@@ -45,19 +45,15 @@ namespace Foundatio.Tests.Storage {
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
                 await storage.SaveFileAsync(@"q\new.txt", "new");
                 await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
+
                 Assert.Equal(3, (await storage.GetFileListAsync()).Count());
                 Assert.Single(await storage.GetFileListAsync(limit: 1));
-                Assert.Single(await storage.GetFileListAsync(@"archived\*"));
                 Assert.Single(await storage.GetFileListAsync(@"long\path\in\here\*stuff*.json"));
-                Assert.Single(await storage.GetFileListAsync(@"q\*"));
 
-                var file = (await storage.GetFileListAsync(@"archived\*")).FirstOrDefault();
-                Assert.NotNull(file);
+                Assert.Single(await storage.GetFileListAsync(@"archived\*"));
                 Assert.Equal("archived", await storage.GetFileContentsAsync(@"archived\archived.txt"));
 
-
-                file = (await storage.GetFileListAsync(@"q\*")).FirstOrDefault();
-                Assert.NotNull(file);
+                Assert.Single(await storage.GetFileListAsync(@"q\*"));
                 Assert.Equal("new", await storage.GetFileContentsAsync(@"q\new.txt"));
             }
         }
@@ -121,8 +117,7 @@ namespace Foundatio.Tests.Storage {
 
             using (storage) {
                 await storage.SaveFileAsync("test.txt", "test");
-                Assert.Single(await storage.GetFileListAsync());
-                var file = (await storage.GetFileListAsync()).FirstOrDefault();
+                var file = (await storage.GetFileListAsync()).Single();
                 Assert.NotNull(file);
                 Assert.Equal("test.txt", file.Path);
                 string content = await storage.GetFileContentsAsync("test.txt");
@@ -195,12 +190,8 @@ namespace Foundatio.Tests.Storage {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 Assert.Equal(2, (await storage.GetFileListAsync()).Count());
-                Assert.Single(await storage.GetFileListAsync(limit: 1));
-                Assert.Equal(2, (await storage.GetFileListAsync(@"x\*")).Count());
-                Assert.Single(await storage.GetFileListAsync(@"x\nested\*"));
 
                 await storage.DeleteFilesAsync(@"x");
-                
                 Assert.Empty(await storage.GetFileListAsync());
             }
         }

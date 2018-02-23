@@ -9,13 +9,13 @@
   <Import Project="sourcelink.props" Condition="'$(ProjectParentDirectoryName)' == 'src'" />
 
   <ItemGroup>
-    <PackageReference Include="AsyncFixer" Version="1.1.5" PrivateAssets="All" />
+    <PackageReference Include="AsyncFixer" Version="1.1.6" PrivateAssets="All" />
   </ItemGroup>
 
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
-    <Copyright>Copyright (c) 2017 Foundatio.  All rights reserved.</Copyright>
+    <Copyright>Copyright (c) 2018 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
