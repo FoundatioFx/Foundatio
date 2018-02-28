@@ -33,6 +33,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
 - [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
+- [SshNet](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) - Storage
 
 ## Getting Started (Development)
 
