@@ -149,7 +149,7 @@ namespace Foundatio.AzureServiceBus.Tests.Queue {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
-        // NOTE: Not using this test because you can set specific delay times for servicebus
+        [Fact(Skip = "Not using this test because you can set specific delay times for servicebus")]
         public override Task CanDelayRetryAsync() {
             return base.CanDelayRetryAsync();
         }
