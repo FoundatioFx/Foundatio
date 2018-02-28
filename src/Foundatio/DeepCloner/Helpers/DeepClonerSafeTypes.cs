@@ -27,11 +27,12 @@ namespace Foundatio.Force.DeepCloner.Helpers
 							typeof(float), typeof(double), typeof(decimal), typeof(char), typeof(string), typeof(bool), typeof(DateTime),
 							typeof(IntPtr), typeof(UIntPtr),
 							// do not clone such native type
-							Type.GetType("System.RuntimeType")
+							Type.GetType("System.RuntimeType"),
+							Type.GetType("System.RuntimeTypeHandle")
 						}) KnownTypes.TryAdd(x, true);
 		}
 
-		internal static bool IsTypeSafe(Type type, HashSet<Type> processingTypes)
+		internal static bool CanNotCopyType(Type type, HashSet<Type> processingTypes)
 		{
 			bool isSafe;
 			if (KnownTypes.TryGetValue(type, out isSafe)) return isSafe;
@@ -53,7 +54,19 @@ namespace Foundatio.Force.DeepCloner.Helpers
 				return true;
 			}
 
+			if (type.FullName.StartsWith("System.Reflection.") && type.Assembly == typeof(PropertyInfo).Assembly)
+			{
+				KnownTypes.TryAdd(type, true);
+				return true;
+			}
 
+			// catched by previous condition
+			/*if (type.FullName.StartsWith("System.Reflection.Emit") && type.Assembly == typeof(System.Reflection.Emit.OpCode).Assembly)
+			{
+				KnownTypes.TryAdd(type, true);
+				return true;
+			}*/
+			
 			// this types are serious native resources, it is better not to clone it
 			if (type.IsSubclassOf(typeof(System.Runtime.ConstrainedExecution.CriticalFinalizerObject)))
 			{
@@ -118,7 +131,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 					continue;
 
 				// not safe and not not safe. we need to go deeper
-				if (!IsTypeSafe(fieldType, processingTypes))
+				if (!CanNotCopyType(fieldType, processingTypes))
 				{
 					KnownTypes.TryAdd(type, false);
 					return false;
@@ -132,7 +145,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 		/// <summary>
 		/// Classes with only safe fields are safe for ShallowClone (if they root objects for copying)
 		/// </summary>
-		internal static bool IsClassSafe(Type type)
+		internal static bool CanNotDeepCopyClass(Type type)
 		{
 			bool isSafe;
 			if (KnownClasses.TryGetValue(type, out isSafe)) return isSafe;
@@ -154,7 +167,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			}
 			while (tp != null);
 
-			if (fi.Any(fieldInfo => !IsTypeSafe(fieldInfo.FieldType, null)))
+			if (fi.Any(fieldInfo => !CanNotCopyType(fieldInfo.FieldType, null)))
 			{
 				KnownClasses.TryAdd(type, false);
 				return false;

@@ -69,7 +69,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 
 			foreach (var fieldInfo in fi)
 			{
-				if (isDeepClone && !DeepClonerSafeTypes.IsTypeSafe(fieldInfo.FieldType, null))
+				if (isDeepClone && !DeepClonerSafeTypes.CanNotCopyType(fieldInfo.FieldType, null))
 				{
 					var methodInfo = fieldInfo.FieldType.IsValueType()
 						? typeof(DeepClonerGenerator).GetPrivateStaticMethod("CloneStructInternal")
@@ -138,7 +138,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 				else
 				{
 					var methodName = "Clone1DimArrayClassInternal";
-					if (DeepClonerSafeTypes.IsTypeSafe(elementType, null)) methodName = "Clone1DimArraySafeInternal";
+					if (DeepClonerSafeTypes.CanNotCopyType(elementType, null)) methodName = "Clone1DimArraySafeInternal";
 					else if (elementType.IsValueType()) methodName = "Clone1DimArrayStructInternal";
 					var methodInfo = typeof(ClonerToExprGenerator).GetPrivateStaticMethod(methodName).MakeGenericMethod(elementType);
 					var callS = Expression.Call(methodInfo, Expression.Convert(from, type), Expression.Convert(to, type), state);
@@ -206,7 +206,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			var l1 = Math.Min(objFrom.GetLength(0), objTo.GetLength(0));
 			var l2 = Math.Min(objFrom.GetLength(1), objTo.GetLength(1));
 			state.AddKnownRef(objFrom, objTo);
-			if ((!isDeep || DeepClonerSafeTypes.IsTypeSafe(typeof(T), null))
+			if ((!isDeep || DeepClonerSafeTypes.CanNotCopyType(typeof(T), null))
 			    && objFrom.GetLength(0) == objTo.GetLength(0)
 			    && objFrom.GetLength(1) == objTo.GetLength(1))
 			{

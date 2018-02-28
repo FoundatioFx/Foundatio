@@ -22,7 +22,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			// we can receive an poco objects which is faster to copy in shallow way if possible
 			var type = obj.GetType();
 			// 200ms
-			if (DeepClonerSafeTypes.IsClassSafe(type)) 
+			if (DeepClonerSafeTypes.CanNotDeepCopyClass(type)) 
 				return ShallowObjectCloner.CloneObject(obj);
 			// 350ms
 			var cloner = (Func<object, DeepCloneState, object>)DeepClonerCache.GetOrAddClass(type, t => GenerateCloner(t, true));
@@ -111,7 +111,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			var l2 = obj.GetLength(1);
 			var outArray = new T[l1, l2];
 			state.AddKnownRef(obj, outArray);
-			if (DeepClonerSafeTypes.IsTypeSafe(typeof(T), null))
+			if (DeepClonerSafeTypes.CanNotCopyType(typeof(T), null))
 			{
 				Array.Copy(obj, outArray, obj.Length);
 				return outArray;
