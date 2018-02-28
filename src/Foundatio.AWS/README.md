@@ -33,6 +33,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
 - [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
+- [SshNet](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) - Storage
 
 ## Getting Started (Development)
 
@@ -273,8 +274,9 @@ We provide different file storage implementations that derive from the [`IFileSt
 2. [FolderFileStorage](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Storage/FolderFileStorage.cs): An file storage implementation that uses the hard drive for storage.
 3. [AzureFileStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs): An Azure Blob storage implementation.
 4. [S3FileStorage](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Storage/S3FileStorage.cs): An AWS S3 file storage implementation.
-5. [Minio](https://github.com/FoundatioFx/Foundatio.Minio/blob/master/src/Foundatio.Minio/Storage/MinioFileStorage.cs) An Minio file storage implementation.
+5. [MinioFileStorage](https://github.com/FoundatioFx/Foundatio.Minio/blob/master/src/Foundatio.Minio/Storage/MinioFileStorage.cs) An Minio file storage implementation.
 6. [AliyunFileStorage](https://github.com/FoundatioFx/Foundatio.Aliyun/blob/master/src/Foundatio.Aliyun/Storage/AliyunFileStorage.cs): An Aliyun file storage implementation.
+7. [SshNetFileStorage](https://github.com/FoundatioFx/Foundatio.Storage.SshNet/blob/master/src/Foundatio.Storage.SshNet/Storage/SshNetFileStorage.cs): An SFTP file storage implementation.
 
 We recommend using all of the `IFileStorage` implementations as singletons.
 
