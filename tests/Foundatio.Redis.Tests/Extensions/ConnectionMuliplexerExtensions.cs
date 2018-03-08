@@ -12,7 +12,9 @@ namespace Foundatio.Redis.Tests.Extensions {
             int database = muxer.GetDatabase().Database;
             foreach (var endpoint in endpoints) {
                 var server = muxer.GetServer(endpoint);
-                await server.FlushDatabaseAsync(database);
+                if (!server.IsSlave) {
+                    await server.FlushDatabaseAsync(database);
+                }
             }
         }
 

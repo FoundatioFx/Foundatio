@@ -59,10 +59,10 @@ namespace Foundatio.Storage {
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
             path = NormalizePath(path);
             try {
-                var tx = Database.CreateTransaction();
+                var database = Database;
                 using (var memory = new MemoryStream()) {
                     await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
-                    tx.HashSetAsync(_options.ContainerName, path, memory.ToArray());
+                    var saveFileTask = database.HashSetAsync(_options.ContainerName, path, memory.ToArray());
                     var fileSize = memory.Length;
                     memory.Seek(0, SeekOrigin.Begin);
                     memory.SetLength(0);
@@ -72,10 +72,11 @@ namespace Foundatio.Storage {
                         Modified = DateTime.UtcNow,
                         Size = fileSize
                     }, memory);
-                    tx.HashSetAsync(_fileSpecContainer, path, memory.ToArray());
+                    var saveSpecTask = database.HashSetAsync(_fileSpecContainer, path, memory.ToArray());
+                    await Run.WithRetriesAsync(() => Task.WhenAll(saveFileTask, saveSpecTask),
+                        cancellationToken: cancellationToken, logger: _logger).AnyContext();
+                    return true;
                 }
-                return await Run.WithRetriesAsync(() => tx.ExecuteAsync(),
-                    cancellationToken: cancellationToken, logger: _logger).AnyContext();
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
@@ -84,11 +85,10 @@ namespace Foundatio.Storage {
         }
 
         public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = new CancellationToken()) {
-            path = NormalizePath(path);
             try {
                 var fileStream = await GetFileStreamAsync(path, cancellationToken).AnyContext();
                 return await DeleteFileAsync(path, cancellationToken).AnyContext() &&
-                       await SaveFileAsync(NormalizePath(newPath), fileStream, cancellationToken).AnyContext();
+                       await SaveFileAsync(newPath, fileStream, cancellationToken).AnyContext();
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
@@ -98,9 +98,9 @@ namespace Foundatio.Storage {
 
         public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = new CancellationToken()) {
             try {
-                var file = await GetFileStreamAsync(NormalizePath(path), cancellationToken).AnyContext();
+                var file = await GetFileStreamAsync(path, cancellationToken).AnyContext();
                 if (file == null) return false;
-                await SaveFileAsync(NormalizePath(targetPath), file, cancellationToken).AnyContext();
+                await SaveFileAsync(targetPath, file, cancellationToken).AnyContext();
                 return true;
             }
             catch (Exception ex) {
@@ -111,11 +111,11 @@ namespace Foundatio.Storage {
 
         public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
             path = NormalizePath(path);
-            var tx = Database.CreateTransaction();
-            tx.AddCondition(Condition.HashExists(_fileSpecContainer, path));
-            tx.HashDeleteAsync(_fileSpecContainer, path);
-            tx.HashDeleteAsync(_options.ContainerName, path);
-            return (await Run.WithRetriesAsync(() => tx.ExecuteAsync(), cancellationToken: cancellationToken, logger: _logger).AnyContext());
+            var database = Database;
+            var deleteSpecTask = database.HashDeleteAsync(_fileSpecContainer, path);
+            var deleteFileTask = database.HashDeleteAsync(_options.ContainerName, path);
+            await Run.WithRetriesAsync(() => Task.WhenAll(deleteSpecTask, deleteFileTask), cancellationToken: cancellationToken, logger: _logger).AnyContext();
+            return true;
         }
 
         public async Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
