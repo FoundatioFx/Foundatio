@@ -5,7 +5,7 @@
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="7.0.1688-pre" />
-    <PackageReference Include="WindowsAzure.Storage" Version="9.0.0" />
+    <PackageReference Include="Foundatio" Version="7.0.1693-pre" />
+    <PackageReference Include="WindowsAzure.Storage" Version="9.1.0" />
   </ItemGroup>
 </Project>
