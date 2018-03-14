@@ -98,7 +98,11 @@ namespace Foundatio.Storage {
                     return true;
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to save file: {Path}", path);
+                const string errorMessage = "Error trying to save file: {Path}";
+                if (ex is TaskCanceledException taskCanceledException && taskCanceledException.Task?.Exception != null)
+                    _logger.LogError(taskCanceledException.Task.Exception, errorMessage, path);
+                else
+                    _logger.LogError(ex, errorMessage, path);
                 return false;
             }
         }
