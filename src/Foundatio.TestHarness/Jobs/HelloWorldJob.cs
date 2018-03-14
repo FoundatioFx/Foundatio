@@ -26,6 +26,25 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 
+    public class FailingJob : JobBase {
+        private readonly string _id;
+
+        public int RunCount { get; set; }
+
+        public FailingJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+            _id = Guid.NewGuid().ToString("N").Substring(0, 10);
+        }
+
+        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+            RunCount++;
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("FailingJob Running: instance={Id} runs={RunCount}", _id, RunCount);
+
+            return Task.FromResult(JobResult.FailedWithMessage("Test failure"));
+        }
+    }
+
     public class LongRunningJob : JobBase {
         private readonly string _id;
         private int _iterationCount;
