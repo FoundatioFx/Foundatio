@@ -138,6 +138,19 @@ namespace Foundatio.Tests.Jobs {
             }
         }
 
+        [Fact]
+        public async Task CanRunJobsWithIntervalBetweenFailingJob() {
+            var job = new FailingJob(Log);
+            var interval = TimeSpan.FromMilliseconds(50);
+       
+            var sw = Stopwatch.StartNew();
+
+            await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
+
+            Assert.Equal(2, job.RunCount);
+            Assert.True(interval.TotalMilliseconds <= sw.ElapsedMilliseconds);
+        }
+
         [Fact(Skip = "Meant to be run manually.")]
         public async Task JobLoopPerf() {
             const int iterations = 10000;
