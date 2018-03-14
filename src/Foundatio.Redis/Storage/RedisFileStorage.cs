@@ -89,8 +89,7 @@ namespace Foundatio.Storage {
                 var fileStream = await GetFileStreamAsync(path, cancellationToken).AnyContext();
                 return await DeleteFileAsync(path, cancellationToken).AnyContext() &&
                        await SaveFileAsync(newPath, fileStream, cancellationToken).AnyContext();
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to rename file {Path} to {NewPath}.", path, newPath);
                 return false;
             }
@@ -102,8 +101,7 @@ namespace Foundatio.Storage {
                 if (file == null) return false;
                 await SaveFileAsync(targetPath, file, cancellationToken).AnyContext();
                 return true;
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to copy file {Path} to {TargetPath}.", path, targetPath);
                 return false;
             }
