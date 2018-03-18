@@ -33,7 +33,7 @@ namespace Foundatio.Jobs {
                     logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
 
                 var sw = Stopwatch.StartNew();
-                while (true) {
+                while (!cancellationToken.IsCancellationRequested) {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     LogResult(result, logger, jobName);
                     iterations++;
