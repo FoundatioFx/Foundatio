@@ -31,7 +31,7 @@ namespace Foundatio.Utility {
         private TimeSpan _timeZoneOffset = DateTimeOffset.Now.Offset;
         private bool _fakeSleep = false;
 
-        public DateTime UtcNow() => _fixedUtc ?? DateTime.UtcNow.Add(_offset);
+        public DateTime UtcNow() => (_fixedUtc ?? DateTime.UtcNow).Add(_offset);
         public DateTime Now() => new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
         public DateTimeOffset OffsetNow() => new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
         public DateTimeOffset OffsetUtcNow() => new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);

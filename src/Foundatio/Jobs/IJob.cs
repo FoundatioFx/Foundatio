@@ -33,13 +33,13 @@ namespace Foundatio.Jobs {
                     logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
 
                 var sw = Stopwatch.StartNew();
-                while (!cancellationToken.IsCancellationRequested && (iterationLimit < 0 || iterations < iterationLimit)) {
+                while (true) {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     LogResult(result, logger, jobName);
                     iterations++;
 
-                    if (cancellationToken.IsCancellationRequested)
-                       continue;
+                    if (cancellationToken.IsCancellationRequested || (-1 < iterationLimit && iterationLimit <= iterations))
+                       break;
 
                     // Maybe look into yeilding threads. task scheduler queue is starving.
                     if (result.Error != null) {
@@ -52,7 +52,10 @@ namespace Foundatio.Jobs {
                         sw.Restart();
                     }
 
-                    if (continuationCallback == null || cancellationToken.IsCancellationRequested)
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+
+                    if (continuationCallback == null)
                         continue;
 
                     try {
