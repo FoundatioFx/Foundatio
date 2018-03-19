@@ -38,7 +38,7 @@ namespace Foundatio.Jobs {
                     LogResult(result, logger, jobName);
                     iterations++;
 
-                    if (cancellationToken.IsCancellationRequested || (-1 < iterationLimit && iterationLimit <= iterations))
+                    if (cancellationToken.IsCancellationRequested || (iterationLimit > -1 && iterationLimit <= iterations))
                        break;
 
                     // Maybe look into yeilding threads. task scheduler queue is starving.
