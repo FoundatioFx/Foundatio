@@ -139,16 +139,39 @@ namespace Foundatio.Tests.Jobs {
         }
 
         [Fact]
+        public async Task CanRunJobsWithInterval() {
+            using (TestSystemClock.Install()) {
+                var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+                SystemClock.Test.SetFixedTime(time);
+                SystemClock.Test.UseFakeSleep();
+
+                var job = new HelloWorldJob(Log);
+                var interval = TimeSpan.FromHours(.75);
+
+                await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
+
+                Assert.Equal(2, job.RunCount);
+                Assert.Equal(interval, (SystemClock.UtcNow - time));
+            }
+        }
+
+        [Fact]
         public async Task CanRunJobsWithIntervalBetweenFailingJob() {
-            var job = new FailingJob(Log);
-            var interval = TimeSpan.FromMilliseconds(50);
-       
-            var sw = Stopwatch.StartNew();
+            using (TestSystemClock.Install()) {
+                var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-            await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
+                SystemClock.Test.SetFixedTime(time);
+                SystemClock.Test.UseFakeSleep();
 
-            Assert.Equal(2, job.RunCount);
-            Assert.True(interval.TotalMilliseconds <= sw.ElapsedMilliseconds);
+                var job = new FailingJob(Log);
+                var interval = TimeSpan.FromHours(.75);
+                
+                await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
+
+                Assert.Equal(2, job.RunCount);
+                Assert.Equal(interval, (SystemClock.UtcNow - time));
+            }
         }
 
         [Fact(Skip = "Meant to be run manually.")]
