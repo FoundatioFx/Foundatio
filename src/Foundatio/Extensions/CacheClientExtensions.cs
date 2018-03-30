@@ -38,7 +38,15 @@ namespace Foundatio.Caching {
         public static Task<long> DecrementAsync(this ICacheClient client, string key, long amount, TimeSpan? expiresIn = null) {
             return client.IncrementAsync(key, -amount, expiresIn);
         }
-        
+
+        public static Task<long> DecrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc) {
+            return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        }
+
+        public static Task<double> DecrementAsync(this ICacheClient client, string key, double amount, DateTime? expiresAtUtc) {
+            return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        }
+
         public static Task<bool> AddAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
             return client.AddAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
