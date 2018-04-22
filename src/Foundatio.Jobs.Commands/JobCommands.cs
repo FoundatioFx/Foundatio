@@ -5,8 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Exceptionless.DateTimeExtensions;
 using Foundatio.Jobs.Commands.Extensions;
+using Foundatio.Utility;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -76,20 +76,11 @@ namespace Foundatio.Jobs.Commands {
             }
 
             foreach (var jobType in jobTypes) {
-                var jobAttribute = jobType.GetCustomAttribute<JobAttribute>() ?? new JobAttribute();
-                string jobName = jobAttribute.Name;
+                var jobOptions = JobOptions.GetDefaults(jobType, () => lazyServiceProvider.Value.GetService(jobType) as IJob);
 
-                if (String.IsNullOrEmpty(jobName)) {
-                    jobName = jobType.Name;
-                    if (jobName.EndsWith("Job"))
-                        jobName = jobName.Substring(0, jobName.Length - 3);
-
-                    jobName = jobName.ToLower();
-                }
-
-                app.Command(jobName, c => {
-                    if (!String.IsNullOrEmpty(jobAttribute.Description))
-                        c.Description = jobAttribute.Description;
+                app.Command(jobOptions.Name, c => {
+                    if (!String.IsNullOrEmpty(jobOptions.Description))
+                        c.Description = jobOptions.Description;
 
                     var configureMethod = jobType.GetMethod("Configure", BindingFlags.Static | BindingFlags.Public);
                     if (configureMethod != null) {
@@ -101,34 +92,28 @@ namespace Foundatio.Jobs.Commands {
                         var limitOption = c.Option("-l --iteration-limit <COUNT>", "The number of times the job should be run before exiting.", CommandOptionType.SingleValue);
 
                         c.OnExecute(() => {
-                            bool isContinuous = jobAttribute.IsContinuous;
-                            TimeSpan? interval = null;
-                            TimeSpan? delay = null;
-                            int limit = -1;
+                            bool isContinuous;
+                            TimeSpan? interval;
+                            TimeSpan? delay;
+                            int limit;
 
                             if (isContinuousOption.HasValue())
-                                Boolean.TryParse(isContinuousOption.Value(), out isContinuous);
-
-                            if (!String.IsNullOrEmpty(jobAttribute.Interval))
-                                TimeUnit.TryParse(jobAttribute.Interval, out interval);
+                                if (Boolean.TryParse(isContinuousOption.Value(), out isContinuous))
+                                    jobOptions.RunContinuous = isContinuous;
 
                             if (intervalOption.HasValue())
-                                TimeUnit.TryParse(intervalOption.Value(), out interval);
-
-                            if (!String.IsNullOrEmpty(jobAttribute.InitialDelay))
-                                TimeUnit.TryParse(jobAttribute.InitialDelay, out delay);
+                                if (TimeUnit.TryParse(intervalOption.Value(), out interval))
+                                    jobOptions.Interval = interval;
 
                             if (delayOption.HasValue())
-                                TimeUnit.TryParse(delayOption.Value(), out delay);
-
-                            if (jobAttribute.IterationLimit > 0)
-                                limit = jobAttribute.IterationLimit;
+                                if (TimeUnit.TryParse(delayOption.Value(), out delay))
+                                    jobOptions.InitialDelay = delay;
 
                             if (limitOption.HasValue())
-                                Int32.TryParse(limitOption.Value(), out limit);
+                                if (Int32.TryParse(limitOption.Value(), out limit))
+                                    jobOptions.IterationLimit = limit;
 
-                            var job = lazyServiceProvider.Value.GetService(jobType) as IJob;
-                            return new JobRunner(job, loggerFactory, runContinuous: isContinuous, interval: interval, initialDelay: delay, iterationLimit: limit).RunInConsoleAsync();
+                            return new JobRunner(jobOptions, loggerFactory).RunInConsoleAsync();
                         });
                     }
                     c.HelpOption("-?|-h|--help");

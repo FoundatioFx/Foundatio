@@ -9,5 +9,6 @@ namespace Foundatio.Jobs {
         public string Interval { get; set; }
         public string InitialDelay { get; set; }
         public int IterationLimit { get; set; } = -1;
+        public int InstanceCount { get; set; } = 1;
     }
 }
