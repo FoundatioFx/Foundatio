@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.0.1" />
     <PackageReference Include="ncrontab" Version="3.3.0" />
-    <PackageReference Include="SimpleInjector" Version="4.0.12" />
-    <PackageReference Include="Topshelf" Version="4.0.3" />
+    <PackageReference Include="SimpleInjector" Version="4.2.2" />
+    <PackageReference Include="Topshelf" Version="4.0.4" />
   </ItemGroup>
 </Project>
