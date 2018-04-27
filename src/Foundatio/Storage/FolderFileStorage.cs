@@ -233,7 +233,7 @@ namespace Foundatio.Storage {
                     continue;
 
                 list.Add(new FileSpec {
-                    Path = path.Replace(Folder, String.Empty),
+                    Path = info.FullName.Replace(Folder, String.Empty),
                     Created = info.CreationTimeUtc,
                     Modified = info.LastWriteTimeUtc,
                     Size = info.Length
