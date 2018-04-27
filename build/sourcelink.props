@@ -3,7 +3,7 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
-  <ItemGroup1>
+  <ItemGroup>
     <PackageReference Include="SourceLink.Embed.AllSourceFiles" Version="2.8.1" PrivateAssets="all" />
-  </ItemGroup1
+  </ItemGroup>
 </Project>
