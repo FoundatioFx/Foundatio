@@ -2,7 +2,7 @@
   "profiles": {
     "Foundatio.JobCommands": {
       "commandName": "Project",
-      "commandLineArgs": "sample1"
+      "commandLineArgs": "run-all"
     }
   }
 }

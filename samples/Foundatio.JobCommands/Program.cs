@@ -43,7 +43,7 @@ namespace Foundatio.CronJob {
         }
     }
 
-    [Job(Description = "Sample 2 job")]
+    [Job(Description = "Sample 2 job", Interval = "5s")]
     public class Sample2Job : IJob {
         private readonly ILogger _logger;
 

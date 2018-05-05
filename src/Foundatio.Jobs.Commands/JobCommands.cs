@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Commands.Extensions;
 using Foundatio.Utility;
 using Microsoft.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 
 namespace Foundatio.Jobs.Commands {
@@ -18,6 +20,7 @@ namespace Foundatio.Jobs.Commands {
         }
 
         public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<JobCommandsApplication> configure = null, ILoggerFactory loggerFactory = null) {
+            loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
             var logger = loggerFactory.CreateLogger("JobCommands");
             var lazyServiceProvider = new Lazy<IServiceProvider>(getServiceProvider);
 
@@ -119,6 +122,25 @@ namespace Foundatio.Jobs.Commands {
                     c.HelpOption("-?|-h|--help");
                 });
             }
+
+            app.Command("run-all", c => {
+                c.Description = "Run all jobs with their default configuration.";
+
+                c.OnExecute(() => {
+                    var jobTasks = new List<Task>();
+                    var cancellationToken = JobRunner.GetShutdownCancellationToken(logger);
+
+                    foreach (var jobType in jobTypes) {
+                        var jobOptions = JobOptions.GetDefaults(jobType, () => lazyServiceProvider.Value.GetService(jobType) as IJob);
+                        jobTasks.Add(new JobRunner(jobOptions, loggerFactory).RunAsync(cancellationToken));
+                    }
+
+                    Task.WaitAll(jobTasks.ToArray());
+                    return 0;
+                });
+
+                c.HelpOption("-?|-h|--help");
+            });
 
             app.Command("run", c => {
                 c.Description = "Runs a job using a fully qualified type name.";

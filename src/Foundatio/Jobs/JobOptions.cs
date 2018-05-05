@@ -51,8 +51,8 @@ namespace Foundatio.Jobs {
             return GetDefaults(typeof(T));
         }
 
-        public static JobOptions GetDefaults(Type jobType, IJob instance) {
-            var jobOptions = GetDefaults(jobType);
+        public static JobOptions GetDefaults(IJob instance) {
+            var jobOptions = GetDefaults(instance.GetType());
             jobOptions.JobFactory = () => instance;
             return jobOptions;
         }
