@@ -174,7 +174,7 @@ namespace Foundatio.Tests.Storage {
 
                 using (var stream = await storage.GetFileStreamAsync("README.md")) {
                     string result = await new StreamReader(stream).ReadToEndAsync();
-                    Assert.Equal(File.ReadAllText(readmeFile), result);
+                    Assert.Equal(await File.ReadAllTextAsync(readmeFile), result);
                 }
             }
         }

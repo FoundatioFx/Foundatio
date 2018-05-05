@@ -844,7 +844,7 @@ namespace Foundatio.Tests.Queue {
                         var l = await distributedLock.AcquireAsync("test");
                         Assert.NotNull(l);
                         _logger.LogInformation("Acquired distributed lock");
-                        SystemClock.Sleep(TimeSpan.FromMilliseconds(250));
+                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
                         await l.ReleaseAsync();
                         _logger.LogInformation("Released distributed lock");
 
@@ -901,7 +901,7 @@ namespace Foundatio.Tests.Queue {
                             Assert.NotNull(l);
                             if (_logger.IsEnabled(LogLevel.Information))
                                 _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
-                            SystemClock.Sleep(TimeSpan.FromMilliseconds(50));
+                            await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                             await l.ReleaseAsync();
                             if (_logger.IsEnabled(LogLevel.Information))
                                 _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);

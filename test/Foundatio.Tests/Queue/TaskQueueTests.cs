@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Queue {
                     throw new Exception("Exception in Queued Task");
                 });
 
-                queue.Enqueue(async () => {
+                queue.Enqueue(() => {
                     _logger.LogTrace("Running Task 2");
                     throw new Exception("Exception in Queued Task");
                 });

@@ -11,7 +11,7 @@ namespace Foundatio.SampleJob {
             var container = new Container();
 
             if (loggerFactory != null) {
-                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterInstance<ILoggerFactory>(loggerFactory);
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
