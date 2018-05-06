@@ -14,12 +14,12 @@ namespace Foundatio.SampleJob {
             var container = new Container();
 
             if (loggerFactory != null) {
-                container.RegisterSingleton<ILoggerFactory>(loggerFactory);
+                container.RegisterInstance<ILoggerFactory>(loggerFactory);
                 container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
             var muxer = ConnectionMultiplexer.Connect("localhost");
-            container.RegisterSingleton(muxer);
+            container.RegisterInstance(muxer);
             var behaviors = new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)), loggerFactory: loggerFactory) };
             container.RegisterSingleton<IQueue<PingRequest>>(() => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).Behaviors(behaviors).LoggerFactory(loggerFactory)));
             container.RegisterSingleton<ICacheClient>(() => new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)));
