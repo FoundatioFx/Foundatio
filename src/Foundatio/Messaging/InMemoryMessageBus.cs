@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {
-        private readonly ConcurrentDictionary<Type, long> _messageCounts = new ConcurrentDictionary<Type, long>();
+        private readonly ConcurrentDictionary<string, long> _messageCounts = new ConcurrentDictionary<string, long>();
         private long _messagesSent;
 
         public InMemoryMessageBus() : this(o => o) {}
@@ -21,11 +21,11 @@ namespace Foundatio.Messaging {
         public long MessagesSent => _messagesSent;
 
         public long GetMessagesSent(Type messageType) {
-            return _messageCounts.TryGetValue(messageType, out var count) ? count : 0;
+            return _messageCounts.TryGetValue(GetMappedMessageType(messageType), out var count) ? count : 0;
         }
 
         public long GetMessagesSent<T>() {
-            return _messageCounts.TryGetValue(typeof(T), out var count) ? count : 0;
+            return _messageCounts.TryGetValue(GetMappedMessageType(typeof(T)), out var count) ? count : 0;
         }
 
         public void ResetMessagesSent() {
@@ -33,9 +33,10 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
+            Type mappedType = GetMappedMessageType(messageType);
 
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
@@ -43,21 +44,21 @@ namespace Foundatio.Messaging {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
-                return AddDelayedMessageAsync(messageType, message, delay.Value);
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                return AddDelayedMessageAsync(mappedType, message, delay.Value);
             }
 
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType)).ToList();
             if (subscribers.Count == 0) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
+                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", mappedType.Name);
                 return Task.CompletedTask;
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
+                _logger.LogTrace("Message Publish: {MessageType}", mappedType.FullName);
 
-            SendMessageToSubscribers(subscribers, messageType, message.DeepClone());
+            SendMessageToSubscribers(subscribers, mappedType, message.DeepClone());
             return Task.CompletedTask;
         }
     }

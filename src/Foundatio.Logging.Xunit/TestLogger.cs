@@ -27,7 +27,7 @@ namespace Foundatio.Logging.Xunit {
                 EventId = eventId,
                 State = state,
                 Exception = exception,
-                Message = formatter(state, exception),
+                Formatter = (s, e) => formatter((TState)s, e),
                 CategoryName = _categoryName,
                 Scopes = scopes
             };
@@ -60,7 +60,7 @@ namespace Foundatio.Logging.Xunit {
         }
 
         public bool IsEnabled(LogLevel logLevel) {
-            return logLevel >= _loggerFactory.MinimumLevel;
+            return _loggerFactory.IsEnabled(_categoryName, logLevel);
         }
 
         public IDisposable BeginScope<TState>(TState state) {

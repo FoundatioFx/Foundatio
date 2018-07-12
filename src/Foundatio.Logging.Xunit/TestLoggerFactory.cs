@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -7,31 +8,38 @@ using Xunit.Abstractions;
 namespace Foundatio.Logging.Xunit {
     public class TestLoggerFactory : ILoggerFactory {
         private readonly Dictionary<string, LogLevel> _logLevels = new Dictionary<string, LogLevel>();
-        private readonly List<LogEntry> _logEntries = new List<LogEntry>();
-        private readonly ITestOutputHelper _testOutputHelper;
+        private readonly Queue<LogEntry> _logEntries = new Queue<LogEntry>();
+        private readonly Action<LogEntry> _writeLogEntryFunc;
 
-        public TestLoggerFactory(ITestOutputHelper output) {
-            _testOutputHelper = output;
+        public TestLoggerFactory(Action<LogEntry> writeLogEntryFunc) {
+            _writeLogEntryFunc = writeLogEntryFunc;
         }
 
+        public TestLoggerFactory(ITestOutputHelper output) : this(e => output.WriteLine(e.ToString(false))) {}
+
         public LogLevel MinimumLevel { get; set; } = LogLevel.Information;
-        public IReadOnlyList<LogEntry> LogEntries => _logEntries;
-        public int MaxLogEntries = 1000;
+        public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
+        public int MaxLogEntriesToStore = 1000;
+        public int MaxLogEntriesToWrite = 1000;
 
         internal void AddLogEntry(LogEntry logEntry) {
-            if (_logEntries.Count >= MaxLogEntries)
-                return;
+            lock (_logEntries) {
+                _logEntries.Enqueue(logEntry);
 
-            lock (_logEntries)
-                _logEntries.Add(logEntry);
-
-            if (!ShouldWriteToTestOutput)
+                if (_logEntries.Count > MaxLogEntriesToStore)
+                    _logEntries.Dequeue();
+            }
+            
+            if (!ShouldWriteToTestOutput || _logEntriesWritten >= MaxLogEntriesToWrite)
                 return;
 
             try {
-                _testOutputHelper.WriteLine(logEntry.ToString(false));
+                _writeLogEntryFunc(logEntry);
+                Interlocked.Increment(ref _logEntriesWritten);
             } catch (Exception) { }
         }
+
+        private int _logEntriesWritten = 0;
 
         public ILogger CreateLogger(string categoryName) {
             return new TestLogger(categoryName, this);
@@ -56,7 +64,6 @@ namespace Foundatio.Logging.Xunit {
             SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
         }
 
-        public void Dispose() {
-        }
+        public void Dispose() {}
     }
 }

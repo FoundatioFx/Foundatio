@@ -12,8 +12,10 @@ namespace Foundatio.Logging.Xunit
         public EventId EventId { get; set; }
         public object State { get; set; }
         public Exception Exception { get; set; }
-        public string Message { get; set; }
+        public Func<object, Exception, string> Formatter { get; set; }
         public IDictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
+
+        public string Message => Formatter(State, Exception);
 
         public override string ToString() {
             return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", CategoryName, " - ", Message);

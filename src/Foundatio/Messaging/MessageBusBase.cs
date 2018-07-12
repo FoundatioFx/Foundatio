@@ -15,7 +15,6 @@ namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : SharedMessageBusOptions {
         private readonly TaskQueue _queue;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
-        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
@@ -30,13 +29,41 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
+        protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
         public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
             if (messageType == null || message == null)
                 return;
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(messageType, message, delay, cancellationToken).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
+        }
+
+        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
+        protected string GetMappedMessageType(Type messageType) {
+            return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
+                var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
+                if (reversedMap.ContainsKey(type))
+                    return reversedMap[type];
+                
+                return String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name);
+            });
+        }
+
+        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
+        protected Type GetMappedMessageType(string messageType) {
+            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
+                if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
+                    return _options.MessageTypeMappings[type];
+
+                try {
+                    return Type.GetType(type);
+                } catch (Exception ex) {
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+
+                    return null;
+                }
+            });
         }
 
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -145,16 +172,7 @@ namespace Foundatio.Messaging {
             if (message?.Type == null)
                 return null;
 
-            return _knownMessageTypesCache.GetOrAdd(message.Type, type => {
-                try {
-                    return Type.GetType(type);
-                } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
-
-                    return null;
-                }
-            });
+            return GetMappedMessageType(message.Type);
         }
 
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
