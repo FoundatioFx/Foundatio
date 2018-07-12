@@ -7,4 +7,4 @@ build:
   stage: build
   script:
     - dotnet build -c Release
-    - dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj
+    - dotnet test ./test/Foundatio.Tests/Foundatio.Tests.csproj
