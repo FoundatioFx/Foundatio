@@ -10,7 +10,6 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NCrontab;
-using Topshelf;
 
 namespace Foundatio.CronJob {
     public class CronService {
@@ -34,31 +33,6 @@ namespace Foundatio.CronJob {
         public void Run() {
             var scheduler = new Scheduler(_jobs);
             scheduler.Start();
-        }
-
-        public void RunAsService() {
-            var cancellationTokenSource = new CancellationTokenSource();
-
-            HostFactory.Run(config => {
-                config.Service<Scheduler>(s => {
-                    s.ConstructUsing(name => new Scheduler(_jobs));
-                    s.WhenStarted((service, control) => {
-                        cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationTokenSource.Token, JobRunner.GetShutdownCancellationToken());
-                        service.Start(cancellationTokenSource.Token);
-                        return true;
-                    });
-                    s.WhenStopped((service, control) => {
-                        cancellationTokenSource.Cancel();
-                        service.Stop();
-                        return true;
-                    });
-                });
-
-                config.SetServiceName("CronJob");
-                config.SetDisplayName("Foundatio CronJob");
-                config.StartAutomatically();
-                config.RunAsNetworkService();
-            });
         }
     }
 
