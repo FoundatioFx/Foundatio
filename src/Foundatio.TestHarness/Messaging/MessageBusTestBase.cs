@@ -19,7 +19,7 @@ namespace Foundatio.Tests.Messaging {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
         }
 
-        protected virtual IMessageBus GetMessageBus() {
+        protected virtual IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             return null;
         }
 
@@ -96,6 +96,35 @@ namespace Foundatio.Tests.Messaging {
 
                 await SystemClock.SleepAsync(100);
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
+                    Data = "Hello"
+                });
+                _logger.LogTrace("Published one...");
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
+        public virtual async Task CanSendMappedMessageAsync() {
+            var messageBus = GetMessageBus(b => {
+                b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
+                return b;
+            });
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(1);
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    _logger.LogTrace("Got message");
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                    _logger.LogTrace("Set event");
+                });
+
+                await SystemClock.SleepAsync(100);
+                await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
                 _logger.LogTrace("Published one...");

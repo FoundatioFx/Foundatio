@@ -10,11 +10,17 @@ namespace Foundatio.Tests.Messaging {
 
         public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) {}
 
-        protected override IMessageBus GetMessageBus() {
+        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             if (_messageBus != null)
                 return _messageBus;
 
-            _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            _messageBus = new InMemoryMessageBus(o => {
+                o.LoggerFactory(Log);
+                if (config != null)
+                    config(o.Target);
+
+                return o;
+            });
             return _messageBus;
         }
 
@@ -46,6 +52,11 @@ namespace Foundatio.Tests.Messaging {
         [Fact]
         public override Task CanSendDerivedMessageAsync() {
             return base.CanSendDerivedMessageAsync();
+        }
+
+        [Fact]
+        public override Task CanSendMappedMessageAsync() {
+            return base.CanSendMappedMessageAsync();
         }
 
         [Fact]
