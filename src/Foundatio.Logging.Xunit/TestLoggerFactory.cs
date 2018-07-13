@@ -11,6 +11,10 @@ namespace Foundatio.Logging.Xunit {
         private readonly Queue<LogEntry> _logEntries = new Queue<LogEntry>();
         private readonly Action<LogEntry> _writeLogEntryFunc;
 
+        public TestLoggerFactory() {
+            _writeLogEntryFunc = e => {};
+        }
+
         public TestLoggerFactory(Action<LogEntry> writeLogEntryFunc) {
             _writeLogEntryFunc = writeLogEntryFunc;
         }
@@ -30,7 +34,7 @@ namespace Foundatio.Logging.Xunit {
                     _logEntries.Dequeue();
             }
             
-            if (!ShouldWriteToTestOutput || _logEntriesWritten >= MaxLogEntriesToWrite)
+            if (_writeLogEntryFunc == null || _logEntriesWritten >= MaxLogEntriesToWrite)
                 return;
 
             try {
@@ -46,8 +50,6 @@ namespace Foundatio.Logging.Xunit {
         }
 
         public void AddProvider(ILoggerProvider loggerProvider) {}
-
-        public bool ShouldWriteToTestOutput { get; set; } = true;
 
         public bool IsEnabled(string category, LogLevel logLevel) {
             if (_logLevels.TryGetValue(category, out LogLevel categoryLevel))
