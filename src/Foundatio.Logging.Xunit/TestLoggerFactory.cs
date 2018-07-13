@@ -23,7 +23,7 @@ namespace Foundatio.Logging.Xunit {
 
         public LogLevel MinimumLevel { get; set; } = LogLevel.Information;
         public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
-        public int MaxLogEntriesToStore = 1000;
+        public int MaxLogEntriesToStore = 100;
         public int MaxLogEntriesToWrite = 1000;
 
         internal void AddLogEntry(LogEntry logEntry) {
