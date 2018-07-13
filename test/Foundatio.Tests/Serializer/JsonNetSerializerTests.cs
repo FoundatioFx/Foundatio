@@ -23,7 +23,7 @@ namespace Foundatio.Tests.Serializer {
             base.CanRoundTripString();
         }
 
-        [Fact]
+        [Fact(Skip = "Skip benchmarks for now")]
         public virtual void Benchmark() {
             var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<JsonNetSerializerBenchmark>();
             _logger.LogInformation(summary.ToJson());
