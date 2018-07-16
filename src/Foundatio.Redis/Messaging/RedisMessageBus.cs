@@ -51,16 +51,17 @@ namespace Foundatio.Messaging {
             SendMessageToSubscribers(message, _serializer);
         }
 
-        protected override async Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+            var mappedType = GetMappedMessageType(messageType);
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
-                await AddDelayedMessageAsync(messageType, message, delay.Value).AnyContext();
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                await AddDelayedMessageAsync(mappedType, message, delay.Value).AnyContext();
                 return;
             }
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
             var data = _serializer.SerializeToBytes(new MessageBusData {
-                Type = String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name),
+                Type = messageType,
                 Data = _serializer.SerializeToBytes(message)
             });
 

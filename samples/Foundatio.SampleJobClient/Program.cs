@@ -2,150 +2,214 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Foundatio.Logging.Xunit;
 using StackExchange.Redis;
+using System.Linq;
 
-namespace Foundatio.SampleJobClient {
-    public class Program {
-        private static readonly object _writeLock = new object();
+namespace Foundatio.SampleJobClient
+{
+    public class Program
+    {
         private static IQueue<PingRequest> _queue;
+        private static IMessageBus _messageBus;
+        private static TestLoggerFactory _loggerFactory;
+        private static ILogger _logger;
+        private static bool _isRunning = true;
+        private static CancellationTokenSource _continuousEnqueueTokenSource = new CancellationTokenSource();
 
-        public static void Main(string[] args) {
-            var loggerFactory = new LoggerFactory().AddConsole();
-            var logger = loggerFactory.CreateLogger<Program>();
+        public static void Main(string[] args)
+        {
+            _loggerFactory = new TestLoggerFactory();
+            _loggerFactory.SetLogLevel<RedisMessageBus>(LogLevel.Trace);
+            _loggerFactory.MaxLogEntriesToStore = Console.WindowHeight - (OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT) - 1;
+            _logger = _loggerFactory.CreateLogger<Program>();
 
-            Console.CursorVisible = false;
-            //StartDisplayingLogMessages(loggerFactory);
+            var muxer = ConnectionMultiplexer.Connect("localhost");
+            _queue = new RedisQueue<PingRequest>(new RedisQueueOptions<PingRequest> { ConnectionMultiplexer = muxer });
+            _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).LoggerFactory(_loggerFactory).MapMessageTypeToClassName<EchoMessage>());
 
-            _queue = new RedisQueue<PingRequest>(new RedisQueueOptions<PingRequest> { ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost") });
-
-            var tokenSource = new CancellationTokenSource();
-            var token = tokenSource.Token;
-
-            WriteOptionsMenu();
-
-            while (true) {
-                Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 1);
-                var keyInfo = Console.ReadKey(true);
-
-                if (keyInfo.Key == ConsoleKey.D1) {
-                    EnqueuePing(1, logger);
-                } else if (keyInfo.Key == ConsoleKey.D2) {
-                    EnqueuePing(100, logger);
-                } else if (keyInfo.Key == ConsoleKey.D3) {
-                    if (tokenSource.IsCancellationRequested) {
-                        tokenSource = new CancellationTokenSource();
-                        token = tokenSource.Token;
-                    }
-
-                    Task.Run(() => EnqueueContinuousPings(25, logger, token), token);
-                } else if (keyInfo.Key == ConsoleKey.Q) {
-                    break;
-                } else if (keyInfo.Key == ConsoleKey.S) {
-                    tokenSource.Cancel();
-                    ClearOutputLines();
-                }
-            }
+            MonitorKeyPress();
+            DrawLoop();
         }
 
-        private static void EnqueuePing(int count, ILogger log) {
+        private static void EnqueuePing(int count)
+        {
             for (int i = 0; i < count; i++)
                 _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-            if (log.IsEnabled(LogLevel.Information))
-                log.LogInformation("Enqueued {Count} ping requests", count);
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Enqueued {Count} ping requests", count);
         }
 
-        private static void EnqueueContinuousPings(int count, ILogger log, CancellationToken token) {
-            do {
+        private static void EnqueueContinuousPings(int count, CancellationToken token)
+        {
+            do
+            {
                 for (int i = 0; i < count; i++)
                     _queue.EnqueueAsync(new PingRequest { Data = "b", PercentChanceOfException = 0 }).GetAwaiter().GetResult();
 
-                if (log.IsEnabled(LogLevel.Information))
-                    log.LogInformation("Enqueued {Count} ping requests", count);
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation("Enqueued {Count} ping requests", count);
             } while (!token.IsCancellationRequested);
         }
 
-        private const int OPTIONS_MENU_LINE_COUNT = 6;
-        private static void WriteOptionsMenu() {
-            lock (_writeLock) {
-                Console.SetCursorPosition(0, 0);
-                ClearConsoleLines(0, OPTIONS_MENU_LINE_COUNT - 1);
-                Console.WriteLine("1: Enqueue 1");
-                Console.WriteLine("2: Enqueue 100");
-                Console.WriteLine("3: Enqueue continuous");
-                Console.WriteLine();
-                Console.WriteLine("S: Stop");
-                Console.WriteLine("Q: Quit");
+        private static void HandleKey(ConsoleKey key) {
+            if (key == ConsoleKey.D1)
+            {
+                EnqueuePing(1);
+            }
+            else if (key == ConsoleKey.D2)
+            {
+                EnqueuePing(100);
+            }
+            else if (key == ConsoleKey.D3)
+            {
+                if (_continuousEnqueueTokenSource.IsCancellationRequested)
+                    _continuousEnqueueTokenSource = new CancellationTokenSource();
+
+                _logger.LogWarning("Starting continuous ping...");
+                Task.Run(() => EnqueueContinuousPings(25, _continuousEnqueueTokenSource.Token), _continuousEnqueueTokenSource.Token);
+            }
+            else if (key == ConsoleKey.M)
+            {
+                _messageBus.PublishAsync(new EchoMessage { Message = "Hello World!" }).GetAwaiter().GetResult();
+            }
+            else if (key == ConsoleKey.Q)
+            {
+                _isRunning = false;
+            }
+            else if (key == ConsoleKey.S)
+            {
+                _logger.LogWarning("Cancelling continuous ping.");
+                _continuousEnqueueTokenSource.Cancel();
             }
         }
 
-        private static void ClearOutputLines(int delay = 1000) {
+        private static void MonitorKeyPress() {
             Task.Run(() => {
-                SystemClock.Sleep(delay);
-                ClearConsoleLines(OPTIONS_MENU_LINE_COUNT, OPTIONS_MENU_LINE_COUNT + 4);
+                while (_isRunning)
+                {
+                    while (!Console.KeyAvailable) {
+                        SystemClock.Sleep(250);
+                    }
+                    var key = Console.ReadKey(true).Key;
+
+                    HandleKey(key);
+                }
             });
         }
 
-        //private const int LOG_LINE_COUNT = 10;
-        //private static void StartDisplayingLogMessages(ILoggerFactory loggerFactory) {
-        //    Task.Factory.StartNew(() => {
-        //        while (true) {
-        //            var logEntries = loggerFactory.GetLogEntries(LOG_LINE_COUNT);
-        //            lock (_writeLock) {
-        //                ClearConsoleLines(OPTIONS_MENU_LINE_COUNT + 5, OPTIONS_MENU_LINE_COUNT + 6 + LOG_LINE_COUNT);
-        //                Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 6);
-        //                foreach (var logEntry in logEntries) {
-        //                    var originalColor = Console.ForegroundColor;
-        //                    Console.ForegroundColor = GetColor(logEntry);
-        //                    Console.WriteLine(logEntry);
-        //                    Console.ForegroundColor = originalColor;
-        //                }
-        //            }
-        //            SystemClock.Sleep(250);
-        //        }
-        //    });
-        //}
+        private static void DrawLoop() {
+            Console.CursorVisible = false;
 
-        //private static ConsoleColor GetColor(LogEntry logEntry) {
-        //    switch (logEntry.LogLevel) {
-        //        case LogLevel.Debug:
-        //            return ConsoleColor.Gray;
-        //        case LogLevel.Error:
-        //            return ConsoleColor.Yellow;
-        //        case LogLevel.Information:
-        //            return ConsoleColor.White;
-        //        case LogLevel.Trace:
-        //            return ConsoleColor.DarkGray;
-        //        case LogLevel.Warning:
-        //            return ConsoleColor.Magenta;
-        //        case LogLevel.Critical:
-        //            return ConsoleColor.Red;
-        //    }
+            while (_isRunning) {
+                ClearConsoleLines(0, OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT + _loggerFactory.MaxLogEntriesToStore);
 
-        //    return ConsoleColor.White;
-        //}
+                DrawOptionsMenu();
+                DrawLogMessages();
 
+                Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 1);
+
+                SystemClock.Sleep(250);
+            }
+        }
+
+        private const int OPTIONS_MENU_LINE_COUNT = 5;
+        private const int SEPERATOR_LINE_COUNT = 2;
+        private static void DrawOptionsMenu()
+        {
+            Console.SetCursorPosition(0, 0);
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("1: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("Enqueue 1");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(" | ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("2: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("Enqueue 100");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(" | ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("3: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Enqueue continuous");
+            
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("M: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Send echo message");
+            
+            Console.WriteLine();
+            
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("S: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Stop");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("Q: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Quit");
+        }
+
+        private static void DrawLogMessages() {
+            Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT);
+            foreach (var logEntry in _loggerFactory.LogEntries.ToArray())
+            {
+                var originalColor = Console.ForegroundColor;
+                Console.ForegroundColor = GetColor(logEntry);
+                Console.WriteLine(logEntry);
+                Console.ForegroundColor = originalColor;
+            }
+        }
+        
         private static void ClearConsoleLines(int startLine = 0, int endLine = -1) {
             if (endLine < 0)
                 endLine = Console.WindowHeight - 2;
 
-            lock (_writeLock) {
-                int currentLine = Console.CursorTop;
-                int currentPosition = Console.CursorLeft;
+            int currentLine = Console.CursorTop;
+            int currentPosition = Console.CursorLeft;
 
-                for (int i = startLine; i <= endLine; i++) {
-                    Console.SetCursorPosition(0, i);
-                    Console.Write(new string(' ', Console.WindowWidth));
-                }
-
-                Console.SetCursorPosition(currentPosition, currentLine);
+            for (int i = startLine; i <= endLine; i++) {
+                Console.SetCursorPosition(0, i);
+                Console.Write(new string(' ', Console.WindowWidth));
             }
+
+            Console.SetCursorPosition(currentPosition, currentLine);
+        }
+        
+        private static ConsoleColor GetColor(LogEntry logEntry)
+        {
+            switch (logEntry.LogLevel)
+            {
+                case LogLevel.Debug:
+                    return ConsoleColor.Gray;
+                case LogLevel.Error:
+                    return ConsoleColor.Yellow;
+                case LogLevel.Information:
+                    return ConsoleColor.White;
+                case LogLevel.Trace:
+                    return ConsoleColor.DarkGray;
+                case LogLevel.Warning:
+                    return ConsoleColor.Magenta;
+                case LogLevel.Critical:
+                    return ConsoleColor.Red;
+            }
+
+            return ConsoleColor.White;
         }
     }
 
-    public class PingRequest {
+    public class EchoMessage {
+        public string Message { get; set; }
+    }
+
+    public class PingRequest
+    {
         public string Data { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public int PercentChanceOfException { get; set; } = 0;

@@ -19,8 +19,16 @@ namespace Foundatio.Redis.Tests.Messaging {
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override IMessageBus GetMessageBus() {
-            return new RedisMessageBus(o => o.Subscriber(SharedConnection.GetMuxer().GetSubscriber()).Topic("test-messages").LoggerFactory(Log));
+        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config) {
+            return new RedisMessageBus(o => {
+                o.Subscriber(SharedConnection.GetMuxer().GetSubscriber());
+                o.Topic("test-messages");
+                o.LoggerFactory(Log);
+                if (config != null)
+                    config(o.Target);
+                
+                return o;
+            });
         }
 
         [Fact]
@@ -36,6 +44,11 @@ namespace Foundatio.Redis.Tests.Messaging {
         [Fact]
         public override Task CanSendDerivedMessageAsync() {
             return base.CanSendDerivedMessageAsync();
+        }
+
+        [Fact]
+        public override Task CanSendMappedMessageAsync() {
+            return base.CanSendMappedMessageAsync();
         }
 
         [Fact]

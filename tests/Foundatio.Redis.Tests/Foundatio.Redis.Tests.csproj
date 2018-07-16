@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.0</TargetFrameworks>
+    <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
   </PropertyGroup>
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
@@ -11,7 +11,7 @@
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1706" />
+    <PackageReference Include="Foundatio.TestHarness" Version="7.0.1726-pre" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.7.0" />
     <PackageReference Include="xunit" Version="2.3.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.3.1" />

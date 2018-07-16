@@ -5,28 +5,29 @@ using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
-using SimpleInjector;
+using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 
 namespace Foundatio.SampleJob {
     public class SampleServiceProvider {
         public static IServiceProvider Create(ILoggerFactory loggerFactory) {
-            var container = new Container();
+            var container = new ServiceCollection();
 
             if (loggerFactory != null) {
-                container.RegisterInstance<ILoggerFactory>(loggerFactory);
-                container.RegisterSingleton(typeof(ILogger<>), typeof(Logger<>));
+                container.AddSingleton<ILoggerFactory>(loggerFactory);
+                container.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
             var muxer = ConnectionMultiplexer.Connect("localhost");
-            container.RegisterInstance(muxer);
+            container.AddSingleton(muxer);
             var behaviors = new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)), loggerFactory: loggerFactory) };
-            container.RegisterSingleton<IQueue<PingRequest>>(() => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).Behaviors(behaviors).LoggerFactory(loggerFactory)));
-            container.RegisterSingleton<ICacheClient>(() => new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)));
-            container.RegisterSingleton<IMessageBus>(() => new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).LoggerFactory(loggerFactory)));
-            container.RegisterSingleton<ILockProvider>(() => new CacheLockProvider(container.GetInstance<ICacheClient>(), container.GetInstance<IMessageBus>(), loggerFactory));
+            container.AddSingleton<IQueue<PingRequest>>(s => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).Behaviors(behaviors).LoggerFactory(loggerFactory)));
+            container.AddSingleton<ICacheClient>(s => new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)));
+            container.AddSingleton<IMessageBus>(s => new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).LoggerFactory(loggerFactory).MapMessageTypeToClassName<EchoMessage>()));
+            container.AddSingleton<ILockProvider>(s => new CacheLockProvider(s.GetRequiredService<ICacheClient>(), s.GetRequiredService<IMessageBus>(), loggerFactory));
+            container.AddTransient<PingQueueJob>();
 
-            return container;
+            return container.BuildServiceProvider();
         }
     }
 }

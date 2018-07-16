@@ -1,14 +1,36 @@
 ﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Jobs;
+using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.SampleJob {
     public class Program {
+        private static ILogger _logger;
+
         public static int Main() {
-            var loggerFactory = new LoggerFactory().AddConsole();
+            var loggerFactory = new LoggerFactory().AddConsole((source, level) => {
+                if (source.EndsWith("RedisMessageBus"))
+                    return true;
+                
+                return level >= LogLevel.Information;
+            });
+            _logger = loggerFactory.CreateLogger("MessageBus");
 
             var serviceProvider = SampleServiceProvider.Create(loggerFactory);
-            return TopshelfJob.Run<PingQueueJob>(() => serviceProvider.GetService<PingQueueJob>(), loggerFactory: loggerFactory);
+            var jobOptions = JobOptions.GetDefaults<PingQueueJob>(() => serviceProvider.GetRequiredService<PingQueueJob>());
+            var messageBus = serviceProvider.GetRequiredService<IMessageBus>();
+            messageBus.SubscribeAsync<EchoMessage>(m => HandleEchoMessage(m)).GetAwaiter().GetResult();
+            return new JobRunner(jobOptions).RunInConsoleAsync().GetAwaiter().GetResult();
         }
+
+        private static void HandleEchoMessage(EchoMessage m) {
+            _logger.LogInformation($"Got message: {m.Message}");
+        }
+    }
+
+    public class EchoMessage {
+        public string Message { get; set; }
     }
 }
