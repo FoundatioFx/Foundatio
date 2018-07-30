@@ -38,6 +38,11 @@ namespace Foundatio.Caching {
             set => _localCache.MaxItems = value;
         }
 
+        public bool ShouldCloneLocalValues {
+            get => _localCache.ShouldCloneValues;
+            set => _localCache.ShouldCloneValues = value;
+        }
+
         private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args) {
             if (!args.SendNotification)
                 return Task.CompletedTask;
