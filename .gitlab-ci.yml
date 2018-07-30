@@ -1,0 +1,10 @@
+image: microsoft/dotnet:2.1-sdk-alpine
+
+stages:
+  - build
+
+build:
+  stage: build
+  script:
+    - dotnet build -c Release
+    - dotnet test ./test/Foundatio.Tests/Foundatio.Tests.csproj

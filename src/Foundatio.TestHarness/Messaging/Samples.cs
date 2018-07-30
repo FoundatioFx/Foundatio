@@ -1,3 +1,4 @@
+using Foundatio.Tests.Messaging;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Messaging {
@@ -33,5 +34,17 @@ namespace Foundatio.Tests.Messaging {
 
     public interface ISimpleMessage {
         string Data { get; set; }
+    }
+}
+
+namespace Foundatio.Tests.MessagingAlt {
+    public class SimpleMessageA : ISimpleMessage {
+        public SimpleMessageA() {
+            Items = new DataDictionary();
+        }
+        public string Data { get; set; }
+        public int Count { get; set; }
+            
+        public DataDictionary Items { get; set; }
     }
 }

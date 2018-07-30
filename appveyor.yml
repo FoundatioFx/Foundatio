@@ -27,10 +27,10 @@ build_script:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
 test_script:
-  - ps: dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj -f netcoreapp2.0
+  - ps: dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj
 
 after_test:
-  - ps: dotnet pack -c Release  
+  - ps: dotnet pack -c Release
 
 artifacts:
   - path: artifacts\*.nupkg

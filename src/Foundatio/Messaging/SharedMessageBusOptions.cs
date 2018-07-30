@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Foundatio.Messaging {
     public class SharedMessageBusOptions : SharedOptions {
@@ -15,6 +16,11 @@ namespace Foundatio.Messaging {
         /// Controls the maximum number of threads that will process queued subscriber messages.
         /// </summary>
         public byte TaskQueueMaxDegreeOfParallelism { get; set; } = 4;
+
+        /// <summary>
+        /// Controls which types messages are mapped to.
+        /// </summary>
+        public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -34,6 +40,22 @@ namespace Foundatio.Messaging {
 
         public TBuilder TaskQueueMaxDegreeOfParallelism(byte maxDegree) {
             Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
+            return (TBuilder)this;
+        }
+
+        public TBuilder MapMessageType<T>(string name) {
+            if (Target.MessageTypeMappings == null)
+                Target.MessageTypeMappings = new Dictionary<string, Type>();
+            
+            Target.MessageTypeMappings[name] = typeof(T);
+            return (TBuilder)this;
+        }
+
+        public TBuilder MapMessageTypeToClassName<T>() {
+            if (Target.MessageTypeMappings == null)
+                Target.MessageTypeMappings = new Dictionary<string, Type>();
+            
+            Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
             return (TBuilder)this;
         }
     }

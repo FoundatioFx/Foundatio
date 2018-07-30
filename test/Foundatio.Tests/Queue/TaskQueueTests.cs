@@ -275,7 +275,7 @@ namespace Foundatio.Tests.Queue {
 
         //TODO: Can cancel slow tasks
 
-        [Fact]
+        [Fact(Skip = "Skip benchmarks for now")]
         public void Benchmark() {
             var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<TaskQueueBenchmark>();
             _logger.LogInformation(summary.ToJson());
