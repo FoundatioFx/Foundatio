@@ -39,6 +39,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Utf8Json", "src\F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AppMetrics", "src\Foundatio.AppMetrics\Foundatio.AppMetrics.csproj", "{D97811C5-186A-4ED3-8675-925A7ACD32F6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Jobs.Hosting", "src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -181,6 +183,18 @@ Global
 		{D97811C5-186A-4ED3-8675-925A7ACD32F6}.Release|x64.Build.0 = Release|Any CPU
 		{D97811C5-186A-4ED3-8675-925A7ACD32F6}.Release|x86.ActiveCfg = Release|Any CPU
 		{D97811C5-186A-4ED3-8675-925A7ACD32F6}.Release|x86.Build.0 = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|x64.Build.0 = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Debug|x86.Build.0 = Debug|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|x64.ActiveCfg = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|x64.Build.0 = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|x86.ActiveCfg = Release|Any CPU
+		{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
