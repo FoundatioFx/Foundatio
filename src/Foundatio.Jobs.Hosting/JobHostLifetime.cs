@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Foundatio.Jobs.Hosting {
@@ -14,36 +16,42 @@ namespace Foundatio.Jobs.Hosting {
         private readonly ManualResetEvent _shutdownBlock = new ManualResetEvent(false);
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
+        private readonly JobHostLifetimeOptions _options;
+        private readonly IHostingEnvironment _environment;
+        private readonly IApplicationLifetime _lifetime;
+        private readonly ILogger _logger;
+        private readonly bool _useConsoleOutput;
 
-        public JobHostLifetime(IOptions<JobHostLifetimeOptions> options, IHostingEnvironment environment,
-            IApplicationLifetime applicationLifetime) {
-            Options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-            Environment = environment ?? throw new ArgumentNullException(nameof(environment));
-            ApplicationLifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+        public JobHostLifetime(IOptions<JobHostLifetimeOptions> options, IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
+            _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+            _environment = environment ?? throw new ArgumentNullException(nameof(environment));
+            _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+            _logger = logger ?? NullLogger<JobHostLifetime>.Instance;
+            if (logger != NullLogger<JobHostLifetime>.Instance)
+                _useConsoleOutput = false;
         }
 
-        private JobHostLifetimeOptions Options { get; }
-
-        private IHostingEnvironment Environment { get; }
-
-        private IApplicationLifetime ApplicationLifetime { get; }
-
         public Task WaitForStartAsync(CancellationToken cancellationToken) {
-            ApplicationLifetime.ApplicationStarted.Register(() => {
+            _lifetime.ApplicationStarted.Register(() => {
                 _timer = new Timer(e => CheckForShutdown(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
-                if (!Options.SuppressStatusMessages) return;
 
-                Console.WriteLine("Application started. Press Ctrl+C to shut down.");
-                Console.WriteLine($"Hosting environment: {Environment.EnvironmentName}");
-                Console.WriteLine($"Content root path: {Environment.ContentRootPath}");
+                if (_useConsoleOutput) {
+                    Console.WriteLine("Application started. Press Ctrl+C to shut down.");
+                    Console.WriteLine($"Hosting environment: {_environment.EnvironmentName}");
+                    Console.WriteLine($"Content root path: {_environment.ContentRootPath}");
+                } else {
+                    _logger.LogInformation("Application started. Press Ctrl+C to shut down.");
+                    _logger.LogInformation($"Hosting environment: {_environment.EnvironmentName}");
+                    _logger.LogInformation($"Content root path: {_environment.ContentRootPath}");
+                }
             });
             AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) => {
-                ApplicationLifetime.StopApplication();
+                _lifetime.StopApplication();
                 _shutdownBlock.WaitOne();
             };
             Console.CancelKeyPress += (sender, e) => {
                 e.Cancel = true;
-                ApplicationLifetime.StopApplication();
+                _lifetime.StopApplication();
             };
 
             // Console applications start immediately.
@@ -64,8 +72,13 @@ namespace Foundatio.Jobs.Hosting {
             var runningJobCount = _jobs.Count(s => s.IsRunning);
             if (runningJobCount == 0) {
                 _timer?.Change(Timeout.Infinite, 0);
-                Console.WriteLine("Stopping host due to no running jobs.");
-                ApplicationLifetime.StopApplication();
+                
+                if (_useConsoleOutput)
+                    Console.WriteLine("Stopping host due to no running jobs.");
+                else
+                    _logger.LogInformation("Stopping host due to no running jobs.");
+
+                _lifetime.StopApplication();
             }
         }
 
