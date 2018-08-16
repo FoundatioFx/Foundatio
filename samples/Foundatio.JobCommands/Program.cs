@@ -9,6 +9,22 @@ using SimpleInjector;
 
 namespace Foundatio.CronJob {
     public class Program {
+//        public static async Task Main(string[] args)
+//        {
+//            var builder = new HostBuilder()
+//                .ConfigureServices((hostContext, services) =>
+//                {
+//                    services.AddJob<Sample1Job>();
+//                    services.AddJob<Sample2Job>();
+//                })
+//                .ConfigureLogging((hostingContext, logging) => {
+//                    logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
+//                    logging.AddConsole();
+//                });;
+//
+//            await builder.RunJobHostAsync();
+//        }
+
         public static int Main(string[] args) {
             var loggerFactory = new LoggerFactory().AddConsole();
 
