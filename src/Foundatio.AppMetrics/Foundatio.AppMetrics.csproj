@@ -11,7 +11,7 @@
     <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="App.Metrics.Abstractions" Version="2.1.0" />
+    <PackageReference Include="App.Metrics.Abstractions" Version="2.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
