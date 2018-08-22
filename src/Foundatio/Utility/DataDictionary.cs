@@ -31,7 +31,7 @@ namespace Foundatio.Utility {
             return GetValueOrDefault<T>(key);
         }
 
-        public T GetValueOrDefault<T>(string key, T defaultValue = default(T)) {
+        public T GetValueOrDefault<T>(string key, T defaultValue = default) {
             if (!ContainsKey(key))
                 return defaultValue;
 

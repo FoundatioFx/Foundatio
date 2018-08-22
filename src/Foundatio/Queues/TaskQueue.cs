@@ -46,7 +46,7 @@ namespace Foundatio.Queues {
             return true;
         }
 
-        public void Start(CancellationToken token = default(CancellationToken)) {
+        public void Start(CancellationToken token = default) {
             _workLoopCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token);
             StartWorking();
         }

@@ -194,7 +194,7 @@ namespace Foundatio.Metrics {
             }
         }
 
-        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default) {
             if (count <= 0)
                 return true;
 

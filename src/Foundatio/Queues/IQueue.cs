@@ -23,7 +23,7 @@ namespace Foundatio.Queues {
         Task RenewLockAsync(IQueueEntry<T> queueEntry);
         Task CompleteAsync(IQueueEntry<T> queueEntry);
         Task AbandonAsync(IQueueEntry<T> queueEntry);
-        Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken));
+        Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default);
         /// <summary>
         ///     Asynchronously dequeues entries in the background.
         /// </summary>
@@ -37,7 +37,7 @@ namespace Foundatio.Queues {
         /// <param name="cancellationToken">
         ///     The token used to cancel the background worker.
         /// </param>
-        Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken));
+        Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default);
     }
 
     public interface IQueue : IHaveSerializer, IDisposable {
@@ -47,7 +47,7 @@ namespace Foundatio.Queues {
     }
 
     public static class QueueExtensions {
-        public static Task StartWorkingAsync<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+        public static Task StartWorkingAsync<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default) where T : class
             => queue.StartWorkingAsync((entry, token) => handler(entry), autoComplete, cancellationToken);
     }
 

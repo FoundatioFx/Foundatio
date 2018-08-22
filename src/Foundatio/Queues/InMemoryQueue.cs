@@ -32,7 +32,7 @@ namespace Foundatio.Queues {
         public InMemoryQueue(Builder<InMemoryQueueOptionsBuilder<T>, InMemoryQueueOptions<T>> config)
             : this(config(new InMemoryQueueOptionsBuilder<T>()).Build()) { }
 
-        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) {
             return Task.CompletedTask;
         }
 

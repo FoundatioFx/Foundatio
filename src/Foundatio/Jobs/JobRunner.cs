@@ -74,7 +74,7 @@ namespace Foundatio.Jobs {
             return result;
         }
 
-        public void RunInBackground(CancellationToken cancellationToken = default(CancellationToken)) {
+        public void RunInBackground(CancellationToken cancellationToken = default) {
             if (_options.InstanceCount == 1) {
                 Task.Run(async () => {
                     try {
@@ -91,7 +91,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        public async Task<bool> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> RunAsync(CancellationToken cancellationToken = default) {
             if (_options.JobFactory == null) {
                 _logger.LogError("JobFactory must be specified.");
                 return false;

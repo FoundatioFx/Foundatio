@@ -37,7 +37,7 @@ namespace Foundatio.Jobs {
     }
 
     public interface IWorkItemHandler {
-        Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken));
+        Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default);
         Task HandleItemAsync(WorkItemContext context);
         bool AutoRenewLockOnProgress { get; set; }
         ILogger Log { get; set; }
@@ -53,7 +53,7 @@ namespace Foundatio.Jobs {
             Log = logger ?? NullLogger.Instance;
         }
 
-        public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default(CancellationToken)) {
+        public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default) {
             return Task.FromResult(Disposable.EmptyLock);
         }
 

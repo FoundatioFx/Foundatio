@@ -38,7 +38,7 @@ namespace Foundatio.Lock {
             return String.Concat(_keyPrefix, key);
         }
 
-        public Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
             return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(name), lockTimeout, cancellationToken);
         }
 

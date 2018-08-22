@@ -41,7 +41,7 @@ namespace Foundatio.Lock {
             }
         }
 
-        private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default(CancellationToken)) {
+        private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default) {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Got lock released message: {Name}", msg.Name);
             if (_autoResetEvents.TryGetValue(msg.Name, out var autoResetEvent))
                 autoResetEvent.Set();
@@ -49,7 +49,7 @@ namespace Foundatio.Lock {
             return Task.CompletedTask;
         }
 
-        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("AcquireAsync Name: {Name} WillWait: {WillWait}", name, !cancellationToken.IsCancellationRequested);

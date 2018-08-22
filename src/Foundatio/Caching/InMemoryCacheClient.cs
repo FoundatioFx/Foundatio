@@ -317,7 +317,7 @@ namespace Foundatio.Caching {
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
-                return default(long);
+                return default;
             }
 
             var items = new HashSet<T>(values);
@@ -366,7 +366,7 @@ namespace Foundatio.Caching {
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.Add(expiresIn.Value) : DateTime.MaxValue;
             if (expiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
-                return default(long);
+                return default;
             }
 
             var items = new HashSet<T>(values);
@@ -430,7 +430,7 @@ namespace Foundatio.Caching {
             foreach (var entry in values)
                 tasks.Add(SetAsync(entry.Key, entry.Value));
 
-            var results = await Task.WhenAll(tasks).AnyContext();
+            bool[] results = await Task.WhenAll(tasks).AnyContext();
             return results.Count(r => r);
         }
 
@@ -631,7 +631,7 @@ namespace Foundatio.Caching {
                     return (T)Convert.ChangeType(val, t);
 
                 if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
-                    return val == null ? default(T) : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t));
+                    return val == null ? default : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t));
 
                 return (T)val;
             }

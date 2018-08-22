@@ -16,7 +16,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
         ILogger IHaveLogger.Logger => _logger;
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             return RunInternalAsync(new JobContext(cancellationToken));
         }
 

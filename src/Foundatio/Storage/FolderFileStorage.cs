@@ -41,7 +41,7 @@ namespace Foundatio.Storage {
         public string Folder { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -82,7 +82,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(File.Exists(Path.Combine(Folder, path)));
         }
 
-        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -115,7 +115,7 @@ namespace Foundatio.Storage {
             return File.Create(filePath);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(newPath))
@@ -147,7 +147,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(targetPath))
@@ -171,7 +171,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -187,7 +187,7 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken)) {
+        public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 Directory.Delete(Folder, true);
                 return Task.CompletedTask;
@@ -214,7 +214,7 @@ namespace Foundatio.Storage {
             
         }
 
-        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
             if (limit.HasValue && limit.Value <= 0)
                 return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
 

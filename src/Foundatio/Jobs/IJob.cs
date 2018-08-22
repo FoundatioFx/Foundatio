@@ -9,11 +9,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs {
     public interface IJob {
-        Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken));
+        Task<JobResult> RunAsync(CancellationToken cancellationToken = default);
     }
 
     public static class JobExtensions {
-        public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default) {
             try {
                 return await job.RunAsync(cancellationToken).AnyContext();
             } catch (OperationCanceledException) {
@@ -23,7 +23,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default(CancellationToken), Func<Task<bool>> continuationCallback = null) {
+        public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
             string jobName = job.GetType().Name;
             var logger = job.GetLogger() ?? NullLogger.Instance;

@@ -27,7 +27,7 @@ namespace Foundatio.Jobs {
         IQueue<WorkItemData> IQueueJob<WorkItemData>.Queue => _queue;
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             IQueueEntry<WorkItemData> queueEntry;
 
             using (var timeoutCancellationTokenSource = new CancellationTokenSource(30000))

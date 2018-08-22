@@ -10,15 +10,15 @@ using Foundatio.Utility;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IHaveSerializer, IDisposable {
-        Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
+        Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
-        Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken));
-        Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken));
-        Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken));
-        Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken));
-        Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default(CancellationToken));
-        Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default);
+        Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default);
+        Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default);
+        Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
+        Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
+        Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default);
     }
 
     [DebuggerDisplay("Path = {Path}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
@@ -35,7 +35,7 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -43,7 +43,7 @@ namespace Foundatio.Storage {
             return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
-        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -52,7 +52,7 @@ namespace Foundatio.Storage {
                     return storage.Serializer.Deserialize<T>(stream);
             }
 
-            return default(T);
+            return default;
         }
 
         public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files) {

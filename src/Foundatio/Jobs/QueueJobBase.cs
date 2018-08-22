@@ -26,7 +26,7 @@ namespace Foundatio.Jobs {
         IQueue<T> IQueueJob<T>.Queue => _queue.Value;
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             IQueueEntry<T> queueEntry;
 
             using (var timeoutCancellationTokenSource = new CancellationTokenSource(30000))
@@ -102,7 +102,7 @@ namespace Foundatio.Jobs {
 
         protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);
 
-        protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default(CancellationToken)) {
+        protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default) {
             return Task.FromResult(Disposable.EmptyLock);
         }
     }

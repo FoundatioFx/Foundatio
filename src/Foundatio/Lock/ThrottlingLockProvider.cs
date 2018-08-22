@@ -25,7 +25,7 @@ namespace Foundatio.Lock {
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Name}", name);
 

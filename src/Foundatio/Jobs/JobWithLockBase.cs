@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             var lockValue = await GetLockAsync(cancellationToken).AnyContext();
             if (lockValue == null) {
                 _logger.LogTrace("Unable to acquire job lock.");
@@ -33,6 +33,6 @@ namespace Foundatio.Jobs {
 
         protected abstract Task<JobResult> RunInternalAsync(JobContext context);
 
-        protected abstract Task<ILock> GetLockAsync(CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract Task<ILock> GetLockAsync(CancellationToken cancellationToken = default);
     }
 }

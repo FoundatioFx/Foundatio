@@ -19,11 +19,11 @@ namespace Foundatio.Utility {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
 
-        public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {
+        public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
             return WithRetriesAsync(() => action().ContinueWith(t => Task.CompletedTask, TaskContinuationOptions.OnlyOnRanToCompletion), maxAttempts, retryInterval, cancellationToken, logger);
         }
 
-        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default(CancellationToken), ILogger logger = null) {
+        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
 

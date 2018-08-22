@@ -5,7 +5,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Lock {
     public interface ILockProvider {
-        Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default);
         Task<bool> IsLockedAsync(string name);
         Task ReleaseAsync(string name);
         Task RenewAsync(string name, TimeSpan? lockExtension = null);
@@ -23,7 +23,7 @@ namespace Foundatio.Lock {
             }
         }
 
-        public static async Task<bool> TryUsingAsync(this ILockProvider locker, string name, Func<CancellationToken, Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<bool> TryUsingAsync(this ILockProvider locker, string name, Func<CancellationToken, Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
             var l = await locker.AcquireAsync(name, lockTimeout, cancellationToken).AnyContext();
             if (l == null)
                 return false;
@@ -37,7 +37,7 @@ namespace Foundatio.Lock {
             return true;
         }
 
-        public static async Task<bool> TryUsingAsync(this ILockProvider locker, string name, Func<Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public static async Task<bool> TryUsingAsync(this ILockProvider locker, string name, Func<Task> work, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
             var l = await locker.AcquireAsync(name, lockTimeout, cancellationToken).AnyContext();
             if (l == null)
                 return false;

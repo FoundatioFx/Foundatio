@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Messaging {
     public interface IMessagePublisher {
-        Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken));
+        Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default);
     }
 
     public static class MessagePublisherExtensions {

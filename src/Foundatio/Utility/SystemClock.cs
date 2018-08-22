@@ -127,7 +127,7 @@ namespace Foundatio.Utility {
         public static TimeSpan TimeZoneOffset => Instance.TimeZoneOffset();
         public static void Sleep(TimeSpan time) => Instance.Sleep((int)time.TotalMilliseconds);
         public static void Sleep(int milliseconds) => Instance.Sleep(milliseconds);
-        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default(CancellationToken)) => Instance.SleepAsync((int)time.TotalMilliseconds, cancellationToken);
-        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default(CancellationToken)) => Instance.SleepAsync(milliseconds, cancellationToken);
+        public static Task SleepAsync(TimeSpan time, CancellationToken cancellationToken = default) => Instance.SleepAsync((int)time.TotalMilliseconds, cancellationToken);
+        public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default) => Instance.SleepAsync(milliseconds, cancellationToken);
     }
 }

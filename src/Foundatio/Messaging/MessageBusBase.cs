@@ -30,7 +30,7 @@ namespace Foundatio.Messaging {
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
 
@@ -88,7 +88,7 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default(CancellationToken)) where T : class {
+        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();

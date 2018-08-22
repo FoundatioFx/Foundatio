@@ -32,7 +32,7 @@ namespace Foundatio.Queues {
             behavior.Attach(this);
         }
 
-        protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken));
+        protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
         protected abstract Task<string> EnqueueImplAsync(T data);
         public async Task<string> EnqueueAsync(T data) {
@@ -61,7 +61,7 @@ namespace Foundatio.Queues {
         public abstract Task AbandonAsync(IQueueEntry<T> queueEntry);
 
         protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
-        public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default) {
             await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
             return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
         }
@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
         public abstract Task DeleteQueueAsync();
 
         protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
-        public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default) {
             await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
             StartWorkingImpl(handler, autoComplete, cancellationToken);
         }

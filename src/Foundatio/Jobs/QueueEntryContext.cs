@@ -6,7 +6,7 @@ using Foundatio.Queues;
 
 namespace Foundatio.Jobs {
     public class QueueEntryContext<T> : JobContext where T : class {
-        public QueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default(CancellationToken)) : base(cancellationToken, queueEntryLock) {
+        public QueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default) : base(cancellationToken, queueEntryLock) {
             QueueEntry = queueEntry;
         }
 
