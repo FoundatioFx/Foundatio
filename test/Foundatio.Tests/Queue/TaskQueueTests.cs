@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Attributes.Jobs;
 using Foundatio.Logging.Xunit;
 using Foundatio.Queues;
 using Foundatio.TestHarness.Utility;

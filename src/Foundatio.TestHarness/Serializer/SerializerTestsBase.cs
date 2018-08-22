@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Attributes.Jobs;
 using Foundatio.Logging.Xunit;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -29,7 +27,7 @@ namespace Foundatio.Tests.Serializer {
                 ObjectProperty = new SerializeModel { IntProperty = 1 }
             };
 
-            var bytes = serializer.SerializeToBytes(model);
+            byte[] bytes = serializer.SerializeToBytes(model);
             var actual = serializer.Deserialize<SerializeModel>(bytes);
             Assert.Equal(model.IntProperty, actual.IntProperty);
             Assert.Equal(model.StringProperty, actual.StringProperty);
@@ -100,7 +98,7 @@ namespace Foundatio.Tests.Serializer {
 
         [Benchmark]
         public SerializeModel RoundTrip() {
-            var serializedData = _serializer.SerializeToBytes(_data);
+            byte[] serializedData = _serializer.SerializeToBytes(_data);
             return _serializer.Deserialize<SerializeModel>(serializedData);
         }
     }
