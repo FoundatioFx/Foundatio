@@ -22,7 +22,7 @@ namespace Foundatio.Benchmarks {
 
     class BenchmarkConfig : ManualConfig {
         public BenchmarkConfig() {
-            Add(Job.Default.WithWarmupCount(1).WithTargetCount(1));
+            Add(Job.Default.WithWarmupCount(1).WithIterationCount(1));
         }
     }
 }
