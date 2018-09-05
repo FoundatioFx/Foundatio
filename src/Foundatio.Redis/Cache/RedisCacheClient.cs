@@ -117,7 +117,7 @@ namespace Foundatio.Caching {
         }
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var keyArray = keys.ToArray();
+            string[] keyArray = keys.ToArray();
             var values = await Database.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray()).AnyContext();
 
             var result = new Dictionary<string, CacheValue<T>>();
@@ -160,7 +160,7 @@ namespace Foundatio.Caching {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return default(long);
+                return default;
             }
 
             var redisValues = new List<RedisValue>();
@@ -185,7 +185,7 @@ namespace Foundatio.Caching {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
                 await this.RemoveAsync(key).AnyContext();
-                return default(long);
+                return default;
             }
 
             var redisValues = new List<RedisValue>();
@@ -279,7 +279,7 @@ namespace Foundatio.Caching {
             foreach (var pair in values)
                 tasks.Add(Database.StringSetAsync(pair.Key, pair.Value.ToRedisValue(_options.Serializer), expiresIn));
 
-            var results = await Task.WhenAll(tasks).AnyContext();
+            bool[] results = await Task.WhenAll(tasks).AnyContext();
             return results.Count(r => r);
         }
 
