@@ -7,4 +7,6 @@ build:
   stage: build
   script:
     - dotnet build -c Release
-    - dotnet test ./test/Foundatio.Tests/Foundatio.Tests.csproj
+    - dotnet test -c Release --no-build ./test/Foundatio.Tests/Foundatio.Tests.csproj
+    - dotnet pack -c Release --no-build
+    - dotnet nuget push ./artifacts/*.nupkg -k $MYGET_API_KEY -s https://www.myget.org/F/exceptionless/
