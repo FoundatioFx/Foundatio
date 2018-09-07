@@ -8,6 +8,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4E12E4C1-2EC6-4EC7-8956-AF2721DA4ECE}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
+		.gitlab-ci.yml = .gitlab-ci.yml
 		appveyor.yml = appveyor.yml
 		build\common.props = build\common.props
 		README.md = README.md
@@ -37,9 +38,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JsonNet", "src\Fo
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Utf8Json", "src\Foundatio.Utf8Json\Foundatio.Utf8Json.csproj", "{44A5A11C-4D9E-4219-9E56-46F07E37A3B0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AppMetrics", "src\Foundatio.AppMetrics\Foundatio.AppMetrics.csproj", "{D97811C5-186A-4ED3-8675-925A7ACD32F6}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.AppMetrics", "src\Foundatio.AppMetrics\Foundatio.AppMetrics.csproj", "{D97811C5-186A-4ED3-8675-925A7ACD32F6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Jobs.Hosting", "src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Hosting", "src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
