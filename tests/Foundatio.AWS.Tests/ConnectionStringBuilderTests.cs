@@ -13,7 +13,7 @@ namespace Foundatio.AWS.Tests {
         }
 
         public virtual void CanParseAccessKey() {
-            foreach (var key in new[] { "AccessKey", "AccessKeyId", "Access Key", "Access Key ID", "Id", "accessKey", "access key", "access key id", "id" }) {
+            foreach (string key in new[] { "AccessKey", "AccessKeyId", "Access Key", "Access Key ID", "Id", "accessKey", "access key", "access key id", "id" }) {
                 var connectionStringBuilder = CreateConnectionStringBuilder($"{key}=TestAccessKey;SecretKey=TestSecretKey;");
                 Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
                 Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
@@ -22,7 +22,7 @@ namespace Foundatio.AWS.Tests {
         }
 
         public virtual void CanParseSecretKey() {
-            foreach (var key in new[] { "SecretKey", "Secret Key", "Secret", "secretKey", "secret key", "secret" }) {
+            foreach (string key in new[] { "SecretKey", "Secret Key", "Secret", "secretKey", "secret key", "secret" }) {
                 var connectionStringBuilder = CreateConnectionStringBuilder($"AccessKey=TestAccessKey;{key}=TestSecretKey;");
                 Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
                 Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
@@ -31,7 +31,7 @@ namespace Foundatio.AWS.Tests {
         }
 
         public virtual void CanParseRegion() {
-            foreach (var key in new[] { "EndPoint", "End Point", "Region", "endPoint", "end point", "region" }) {
+            foreach (string key in new[] { "EndPoint", "End Point", "Region", "endPoint", "end point", "region" }) {
                 var connectionStringBuilder = CreateConnectionStringBuilder($"AccessKey=TestAccessKey;SecretKey=TestSecretKey;{key}=TestRegion;");
                 Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
                 Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
