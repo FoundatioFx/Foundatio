@@ -19,7 +19,7 @@ namespace Foundatio.Redis.Tests.Messaging {
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config) {
+        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             return new RedisMessageBus(o => {
                 o.Subscriber(SharedConnection.GetMuxer().GetSubscriber());
                 o.Topic("test-messages");

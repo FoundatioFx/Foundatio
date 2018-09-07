@@ -56,7 +56,7 @@ namespace Foundatio.Queues {
         public RedisQueue(Builder<RedisQueueOptionsBuilder<T>, RedisQueueOptions<T>> config)
             : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
 
-        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) => Task.CompletedTask;
+        protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null;
         private async Task EnsureMaintenanceRunningAsync() {

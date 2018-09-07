@@ -63,7 +63,7 @@ namespace Foundatio.Storage {
                 using (var memory = new MemoryStream()) {
                     await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
                     var saveFileTask = database.HashSetAsync(_options.ContainerName, path, memory.ToArray());
-                    var fileSize = memory.Length;
+                    long fileSize = memory.Length;
                     memory.Seek(0, SeekOrigin.Begin);
                     memory.SetLength(0);
                     Serializer.Serialize(new FileSpec {
@@ -136,7 +136,7 @@ namespace Foundatio.Storage {
                 prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
             }
             prefix = prefix ?? String.Empty;
-            var pageSize = limit ?? int.MaxValue;
+            int pageSize = limit ?? Int32.MaxValue;
             return Task.FromResult(Database.HashScan(_fileSpecContainer, prefix + "*")
                 .Select(entry => Serializer.Deserialize<FileSpec>((byte[])entry.Value))
                 .Where(fileSpec => patternRegex == null || patternRegex.IsMatch(fileSpec.Path))

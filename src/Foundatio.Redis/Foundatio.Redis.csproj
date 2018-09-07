@@ -10,7 +10,7 @@
     <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="7.0.1726-pre" />
+    <PackageReference Include="Foundatio" Version="7.0.1738" />
     <PackageReference Include="StackExchange.Redis" Version="2.0.495" />
   </ItemGroup>
 </Project>

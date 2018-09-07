@@ -10,12 +10,12 @@ namespace Foundatio.Redis {
 
         public static T ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer) {
             T value;
-            Type type = typeof(T);
+            var type = typeof(T);
 
             if (type == TypeHelper.BoolType || type == TypeHelper.StringType || type.IsNumeric())
                 value = (T)Convert.ChangeType(redisValue, type);
             else if (type == TypeHelper.NullableBoolType || type.IsNullableNumeric())
-                value = redisValue.IsNull ? default(T) : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type));
+                value = redisValue.IsNull ? default : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type));
             else
                 return serializer.Deserialize<T>((byte[])redisValue);
 
@@ -23,11 +23,11 @@ namespace Foundatio.Redis {
         }
 
         public static RedisValue ToRedisValue<T>(this T value, ISerializer serializer) {
-            RedisValue redisValue = _nullValue;
+            var redisValue = _nullValue;
             if (value == null)
                 return redisValue;
 
-            Type t = typeof(T);
+            var t = typeof(T);
             if (t == TypeHelper.StringType)
                 redisValue = value.ToString();
             else if (t == TypeHelper.BoolType)
