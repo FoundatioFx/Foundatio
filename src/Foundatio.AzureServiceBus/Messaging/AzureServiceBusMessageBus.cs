@@ -96,20 +96,20 @@ namespace Foundatio.Messaging {
             }
         }
 
-        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             var stream = new MemoryStream();
             _serializer.Serialize(new MessageBusData {
-                Type = String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name),
+                Type = messageType,
                 Data = _serializer.SerializeToBytes(message)
             }, stream);
 
             var brokeredMessage = new BrokeredMessage(stream, true);
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, delay.Value.TotalMilliseconds);
                 brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(delay.Value);
             } else {
-                _logger.LogTrace("Message Publish: {messageType}", messageType.FullName);
+                _logger.LogTrace("Message Publish: {messageType}", messageType);
             }
 
             return _topicClient.SendAsync(brokeredMessage);
