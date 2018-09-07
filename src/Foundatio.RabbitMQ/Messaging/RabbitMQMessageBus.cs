@@ -132,16 +132,17 @@ namespace Foundatio.Messaging {
         /// The rule of thumb is: avoid sharing channels across threads.
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
-        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var data = _serializer.SerializeToBytes(new MessageBusData {
-                Type = String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name),
+        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+            byte[] data = _serializer.SerializeToBytes(new MessageBusData {
+                Type = messageType,
                 Data = _serializer.SerializeToBytes(message)
             });
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
-                return AddDelayedMessageAsync(messageType, message, delay.Value);
+                var mappedType = GetMappedMessageType(messageType);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                return AddDelayedMessageAsync(mappedType, message, delay.Value);
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
@@ -155,9 +156,9 @@ namespace Foundatio.Messaging {
                 // and the data will be delivered immediately.
                 basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(delay.Value.TotalMilliseconds) } };
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType.FullName, delay.Value.TotalMilliseconds);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
             } else {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
             }
 
             // The publication occurs with mandatory=false

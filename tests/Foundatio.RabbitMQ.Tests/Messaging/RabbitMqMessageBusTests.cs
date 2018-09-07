@@ -8,9 +8,18 @@ using Xunit.Abstractions;
 namespace Foundatio.RabbitMQ.Tests.Messaging {
     public class RabbitMqMessageBusTests : MessageBusTestBase {
         public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
+        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
+            return new RabbitMQMessageBus(o => {
+                o.ConnectionString("amqp://localhost");
+                o.Topic("test-messages");
+                o.ExchangeName("FoundatioExchange");
+                o.LoggerFactory(Log);
 
-        protected override IMessageBus GetMessageBus() {
-            return new RabbitMQMessageBus(new RabbitMQMessageBusOptions { ConnectionString = "amqp://localhost", Topic = "test-messages", ExchangeName = "FoundatioExchange", LoggerFactory = Log });
+                if (config != null)
+                    config(o.Target);
+
+                return o;
+            });
         }
 
         [Fact]
