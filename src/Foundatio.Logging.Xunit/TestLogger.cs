@@ -20,7 +20,7 @@ namespace Foundatio.Logging.Xunit {
             if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
                 return;
 
-            var scopes = CurrentScopeStack.Reverse().ToArray();
+            object[] scopes = CurrentScopeStack.Reverse().ToArray();
             var logEntry = new LogEntry {
                 Date = SystemClock.UtcNow,
                 LogLevel = logLevel,
@@ -48,8 +48,7 @@ namespace Foundatio.Logging.Xunit {
             }
 
             foreach (object scope in scopes) {
-                var scopeData = scope as IDictionary<string, object>;
-                if (scopeData == null)
+                if (!(scope is IDictionary<string, object> scopeData))
                     continue;
 
                 foreach (var property in scopeData)

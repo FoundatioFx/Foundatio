@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+﻿using System;
 using Metrics;
 
 namespace Foundatio.Metrics {

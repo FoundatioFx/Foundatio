@@ -1,4 +1,5 @@
-﻿using App.Metrics;
+﻿using System;
+using App.Metrics;
 using App.Metrics.Counter;
 using App.Metrics.Gauge;
 using App.Metrics.Timer;
@@ -11,7 +12,6 @@ namespace Foundatio.Metrics {
             _metrics = metrics;
         }
 
-        public void Dispose() { }
 
         public void Counter(string name, int value = 1) {
             _metrics.Provider.Counter.Instance(new CounterOptions {Name = name}).Increment(value);
@@ -24,5 +24,6 @@ namespace Foundatio.Metrics {
         public void Timer(string name, int milliseconds) {
             _metrics.Provider.Timer.Instance(new TimerOptions {Name = name}).Record(milliseconds, TimeUnit.Milliseconds);
         }
+        public void Dispose() { }
     }
 }

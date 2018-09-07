@@ -52,7 +52,7 @@ namespace Foundatio.Jobs.Hosting {
                 _stoppingCts.Cancel();
             }
             finally {
-                Task task = await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
+                var task = await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
             }
         }
 

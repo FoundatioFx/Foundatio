@@ -52,7 +52,7 @@ namespace Foundatio.Logging.Xunit {
         public void AddProvider(ILoggerProvider loggerProvider) {}
 
         public bool IsEnabled(string category, LogLevel logLevel) {
-            if (_logLevels.TryGetValue(category, out LogLevel categoryLevel))
+            if (_logLevels.TryGetValue(category, out var categoryLevel))
                 return logLevel >= categoryLevel;
 
             return logLevel >= MinimumLevel;

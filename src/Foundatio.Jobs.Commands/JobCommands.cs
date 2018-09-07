@@ -94,25 +94,20 @@ namespace Foundatio.Jobs.Commands {
                         var limitOption = c.Option("-l --iteration-limit <COUNT>", "The number of times the job should be run before exiting.", CommandOptionType.SingleValue);
 
                         c.OnExecute(() => {
-                            bool isContinuous;
-                            TimeSpan? interval;
-                            TimeSpan? delay;
-                            int limit;
-
                             if (isContinuousOption.HasValue())
-                                if (Boolean.TryParse(isContinuousOption.Value(), out isContinuous))
+                                if (Boolean.TryParse(isContinuousOption.Value(), out bool isContinuous))
                                     jobOptions.RunContinuous = isContinuous;
 
                             if (intervalOption.HasValue())
-                                if (TimeUnit.TryParse(intervalOption.Value(), out interval))
+                                if (TimeUnit.TryParse(intervalOption.Value(), out var interval))
                                     jobOptions.Interval = interval;
 
                             if (delayOption.HasValue())
-                                if (TimeUnit.TryParse(delayOption.Value(), out delay))
+                                if (TimeUnit.TryParse(delayOption.Value(), out var delay))
                                     jobOptions.InitialDelay = delay;
 
                             if (limitOption.HasValue())
-                                if (Int32.TryParse(limitOption.Value(), out limit))
+                                if (Int32.TryParse(limitOption.Value(), out int limit))
                                     jobOptions.IterationLimit = limit;
 
                             return new JobRunner(jobOptions, loggerFactory).RunInConsoleAsync();

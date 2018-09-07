@@ -69,7 +69,7 @@ namespace Foundatio.Jobs.Hosting {
         }
 
         public void CheckForShutdown() {
-            var runningJobCount = _jobs.Count(s => s.IsRunning);
+            int runningJobCount = _jobs.Count(s => s.IsRunning);
             if (runningJobCount == 0) {
                 _timer?.Change(Timeout.Infinite, 0);
                 
