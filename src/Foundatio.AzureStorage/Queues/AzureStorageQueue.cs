@@ -40,7 +40,7 @@ namespace Foundatio.Queues {
         public AzureStorageQueue(Builder<AzureStorageQueueOptionsBuilder<T>, AzureStorageQueueOptions<T>> config)
             : this(config(new AzureStorageQueueOptionsBuilder<T>()).Build()) { }
 
-        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default(CancellationToken)) {
+        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) {
             if (_queueCreated)
                 return;
 
