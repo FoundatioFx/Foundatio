@@ -11,8 +11,8 @@ jobs:
             docker build --target testrunner -t foundatio:test .
             mkdir artifacts
             docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
-      - store_test_results:
-          path: TestResults
+      - store_artifacts:
+          path: artifacts
       - deploy:
           name: Push nuget packages
           command: |
