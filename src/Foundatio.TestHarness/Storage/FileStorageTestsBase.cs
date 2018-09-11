@@ -149,8 +149,8 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected virtual string GetReadmeFilePath() {
-            return Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\..\..\README.md"));
+        protected virtual string GetTestFilePath() {
+            return Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\Foundatio.Tests.csproj"));
         }
 
         public virtual async Task CanSaveFilesAsync() {
@@ -160,19 +160,19 @@ namespace Foundatio.Tests.Storage {
             if (storage == null)
                 return;
 
-            string readmeFile = GetReadmeFilePath();
+            string readmeFile = GetTestFilePath();
             using (storage) {
-                Assert.False(await storage.ExistsAsync("README.md"));
+                Assert.False(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
                 using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
-                    bool result = await storage.SaveFileAsync("README.md", stream);
+                    bool result = await storage.SaveFileAsync("Foundatio.Tests.csproj", stream);
                     Assert.True(result);
                 }
 
                 Assert.Single(await storage.GetFileListAsync());
-                Assert.True(await storage.ExistsAsync("README.md"));
+                Assert.True(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
-                using (var stream = await storage.GetFileStreamAsync("README.md")) {
+                using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj")) {
                     string result = await new StreamReader(stream).ReadToEndAsync();
                     Assert.Equal(File.ReadAllText(readmeFile), result);
                 }

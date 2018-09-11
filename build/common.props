@@ -1,16 +1,10 @@
 <Project ToolsVersion="15.0">
-  <Import Project="version.props" />
-
-  <PropertyGroup Label="Source Link">
-    <ProjectParentDirectory>$([System.IO.Path]::GetDirectoryName('$(MSBuildProjectDirectory)'))</ProjectParentDirectory>
-    <ProjectParentDirectoryName>$([System.IO.Path]::GetFileName('$(ProjectParentDirectory)'))</ProjectParentDirectoryName>
+  <PropertyGroup Label="Version">
+    <VersionPrefix>7.1</VersionPrefix>
+    <VersionSuffix>0-dev</VersionSuffix>
+    <Version>$(VersionPrefix).$(VersionSuffix)</Version>
+    <PackageVersion>$(VersionPrefix).$(VersionSuffix.Split('-')[0])</PackageVersion>
   </PropertyGroup>
-
-  <Import Project="sourcelink.props" Condition="'$(ProjectParentDirectoryName)' == 'src'" />
-
-  <ItemGroup>
-    <PackageReference Include="AsyncFixer" Version="1.1.6" PrivateAssets="All" />
-  </ItemGroup>
 
   <PropertyGroup>
     <Product>Foundatio</Product>
@@ -29,6 +23,17 @@
     <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/FoundatioFx/Foundatio</RepositoryUrl>
-    <VersionSuffix Condition="'$(VersionSuffix)'!='' AND '$(BuildNumber)' != ''">$(VersionSuffix)-$(BuildNumber)</VersionSuffix>
   </PropertyGroup>
+
+  <PropertyGroup Label="Source Link">
+    <ProjectParentDirectory>$([System.IO.Path]::GetDirectoryName('$(MSBuildProjectDirectory)'))</ProjectParentDirectory>
+    <ProjectParentDirectoryName>$([System.IO.Path]::GetFileName('$(ProjectParentDirectory)'))</ProjectParentDirectoryName>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SourceLink.Embed.AllSourceFiles" Version="2.8.1" PrivateAssets="all" />
+    <PackageReference Include="AsyncFixer" Version="1.1.6" PrivateAssets="All" />
+  </ItemGroup>
+
 </Project>

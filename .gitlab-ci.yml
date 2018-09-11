@@ -1,4 +1,7 @@
-image: microsoft/dotnet:2.1-sdk-alpine
+image: docker:latest
+
+services:
+  - docker:dind
 
 stages:
   - build
@@ -6,7 +9,8 @@ stages:
 build:
   stage: build
   script:
-    - dotnet build -c Release
-    - dotnet test -c Release --no-build ./test/Foundatio.Tests/Foundatio.Tests.csproj
-    - dotnet pack -c Release --no-build
-    - dotnet nuget push ./artifacts/*.nupkg -k $MYGET_API_KEY -s https://www.myget.org/F/exceptionless/
+    - docker build --target testrunner -t foundatio:test .
+    - mkdir artifacts
+    - docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
+    - docker build --target publish -t foundatio:publish .
+    - docker run --rm -it foundatio:publish

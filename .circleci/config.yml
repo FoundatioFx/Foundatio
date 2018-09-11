@@ -1,0 +1,20 @@
+version: 2
+jobs:
+  build:
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Run tests
+          command: | 
+            docker build --target testrunner -t foundatio:test .
+            mkdir artifacts
+            docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
+      - store_test_results:
+          path: TestResults
+      - deploy:
+          name: Push nuget packages
+          command: |
+            docker build --target publish -t foundatio:publish .
+            docker run --rm -it foundatio:publish
