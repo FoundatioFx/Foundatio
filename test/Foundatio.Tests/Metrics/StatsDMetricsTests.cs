@@ -16,112 +16,104 @@ namespace Foundatio.Tests.Metrics {
     public class StatsDMetricsTests : TestWithLoggingBase, IDisposable {
         private readonly int _port = new Random(12345).Next(10000, 15000);
         private readonly StatsDMetricsClient _client;
-        private readonly UdpListener _listener;
-        private Thread _listenerThread;
+        private readonly TestUdpListener _listener;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            _listener = new UdpListener("127.0.0.1", _port);
-            _client = new StatsDMetricsClient(o => o.Server("127.0.0.1", _port).Prefix("test"));
+            _listener = new TestUdpListener("224.0.0.1", _port);
+            _client = new StatsDMetricsClient(o => o.Server("224.0.0.1", _port).Prefix("test"));
         }
 
         [Fact]
         public void Counter() {
-            StartListening(1);
+            _listener.StartListening();
             _client.Counter("counter");
-            var messages = GetMessages();
-            Assert.Equal("test.counter:1|c", messages.FirstOrDefault());
+            _listener.StopListening(1);
+            var messages = _listener.GetMessages();
+            Assert.Single(messages);
+            Assert.Equal("test.counter:1|c", messages.First());
         }
 
         [Fact]
         public void CounterWithValue() {
-            StartListening(1);
+            _listener.StartListening();
 
             _client.Counter("counter", 5);
-            var messages = GetMessages();
-            Assert.Equal("test.counter:5|c", messages.FirstOrDefault());
+            _listener.StopListening(1);
+            var messages = _listener.GetMessages();
+            Assert.Single(messages);
+            Assert.Equal("test.counter:5|c", messages.First());
         }
 
         [Fact]
         public void Gauge() {
-            StartListening(1);
+            _listener.StartListening();
 
             _client.Gauge("gauge", 1.1);
-            var messages = GetMessages();
-            Assert.Equal("test.gauge:1.1|g", messages.FirstOrDefault());
+            _listener.StopListening(1);
+
+            var messages = _listener.GetMessages();
+            Assert.Single(messages);
+            Assert.Equal("test.gauge:1.1|g", messages.First());
         }
 
         [Fact]
         public void Timer() {
-            StartListening(1);
+            _listener.StartListening();
 
             _client.Timer("timer", 1);
-            var messages = GetMessages();
-            Assert.Equal("test.timer:1|ms", messages.FirstOrDefault());
+            _listener.StopListening(1);
+            var messages = _listener.GetMessages();
+            Assert.Single(messages);
+            Assert.Equal("test.timer:1|ms", messages.First());
         }
 
         [Fact]
         public void CanSendOffline() {
             _client.Counter("counter");
-            var messages = GetMessages();
+            var messages = _listener.GetMessages();
             Assert.Empty(messages);
         }
 
         [Fact]
         public void CanSendMultithreaded() {
             const int iterations = 100;
-            StartListening(iterations);
+            _listener.StartListening();
 
             Parallel.For(0, iterations, i => {
                 SystemClock.Sleep(50);
                 _client.Counter("counter");
             });
             
-            var messages = GetMessages();
-            Assert.Equal(iterations, messages.Count);
+            _listener.StopListening(iterations);
+            var messages = _listener.GetMessages();
+            Assert.Equal(iterations, messages.Length);
         }
 
         [Fact]
         public void CanSendMultiple() {
             const int iterations = 100000;
-            StartListening(iterations);
+            _listener.StartListening();
 
             var sw = Stopwatch.StartNew();
             for (int index = 0; index < iterations; index++) {
                 if (index % (iterations / 10) == 0)
-                    StopListening();
+                    _listener.StopListening();
 
                 _client.Counter("counter");
 
                 if (index % (iterations / 10) == 0)
-                    StartListening(iterations - index);
+                    _listener.StartListening();
             }
 
             sw.Stop();
-            // Require at least 10,000 operations/s
-            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 10000.0) * 1000);
+            // Require at least 1,000 operations/s
+            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 1000.0) * 1000);
 
-            SystemClock.Sleep(250);
-            var messages = GetMessages();
-            Assert.InRange(messages.Count, iterations - (iterations / 10), iterations);
+            _listener.StopListening(iterations);
+            var messages = _listener.GetMessages();
+            Assert.InRange(messages.Length, iterations * 0.9, iterations);
             foreach (string message in messages)
                 Assert.Equal("test.counter:1|c", message);
-        }
-
-        private List<string> GetMessages() {
-            while (_listenerThread != null && _listenerThread.IsAlive) {}
-
-            return _listener.GetMessages();
-        }
-
-        private void StartListening(int expectedMessageCount) {
-            _listenerThread = new Thread(_listener.StartListening) { IsBackground = true };
-            _listenerThread.Start(expectedMessageCount);
-
-            SystemClock.Sleep(75);
-        }
-
-        private void StopListening() {
-            _listener.StopListening();
         }
 
         public void Dispose() {
