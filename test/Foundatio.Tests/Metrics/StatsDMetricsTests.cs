@@ -80,7 +80,7 @@ namespace Foundatio.Tests.Metrics {
             _listener.StartListening();
 
             Parallel.For(0, iterations, i => {
-                SystemClock.Sleep(50);
+                SystemClock.Sleep(5);
                 _client.Counter("counter");
             });
             
