@@ -87,15 +87,15 @@ namespace Foundatio.Caching {
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             var items = keys?.ToArray();
             bool flushAll = items == null || items.Length == 0;
-            await _localCache.RemoveAllAsync(items).AnyContext();
             var removed =  await _distributedCache.RemoveAllAsync(items).AnyContext();
+            await _localCache.RemoveAllAsync(items).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
             return removed;
         }
 
         public async Task<int> RemoveByPrefixAsync(string prefix) {
-            await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
             var removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
+            await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { prefix + "*" } }).AnyContext();
             return removed;
         }
@@ -162,15 +162,15 @@ namespace Foundatio.Caching {
         }
 
         public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
-            await _localCache.RemoveAsync(key).AnyContext();
             double incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+            await _localCache.ReplaceAsync(key, incremented, expiresIn);
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             return incremented;
         }
 
         public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
-            await _localCache.RemoveAsync(key).AnyContext();
             long incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+            await _localCache.ReplaceAsync(key, incremented, expiresIn);
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             return incremented;
         }
