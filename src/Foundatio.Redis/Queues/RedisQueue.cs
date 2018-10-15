@@ -319,7 +319,17 @@ namespace Foundatio.Queues {
 
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
             try {
-                return await Run.WithRetriesAsync(() => Database.ListRightPopLeftPushAsync(QueueListName, WorkListName), 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
+                return await Run.WithRetriesAsync(async () => {
+                    var id = await Database.ListRightPopAsync(QueueListName).AnyContext();
+                    try {
+                        await Database.ListLeftPushAsync(WorkListName, id).AnyContext();
+                    }
+                    catch (Exception) {
+                        await Database.ListRightPushAsync(QueueListName, id).AnyContext();
+                        throw;
+                    }
+                    return id;
+                }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
             } catch (Exception) {
                 return RedisValue.Null;
             }
