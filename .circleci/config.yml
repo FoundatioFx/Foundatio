@@ -17,4 +17,4 @@ jobs:
           name: Push nuget packages
           command: |
             docker build --target publish -t foundatio:publish .
-            docker run --rm -it foundatio:publish
+            docker run --rm -it foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}

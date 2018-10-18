@@ -38,7 +38,6 @@ ARG build=0-dev
 
 RUN dotnet pack --version-suffix $build -c Release -o /app/artifacts
 ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
-CMD [ "--source", "${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}", "--api-key", "$NUGET_KEY" ]
 
 # docker build --target testrunner -t foundatio:testrunner --build-arg build=123-dev .
 # mkdir artifacts
