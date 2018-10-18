@@ -8,7 +8,7 @@ jobs:
       - run:
           name: Run tests
           command: | 
-            docker build --target testrunner -t foundatio:test .
+            docker build --target testrunner -t foundatio:test --build-arg build=${CIRCLE_BUILD_NUM}-dev .
             mkdir artifacts
             docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
       - store_artifacts:
@@ -16,5 +16,5 @@ jobs:
       - deploy:
           name: Push nuget packages
           command: |
-            docker build --target publish -t foundatio:publish .
+            docker build --target publish -t foundatio:publish --build-arg build=${CIRCLE_BUILD_NUM}-dev .
             docker run --rm -it foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}
