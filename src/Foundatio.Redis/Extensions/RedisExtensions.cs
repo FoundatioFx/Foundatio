@@ -67,5 +67,39 @@ namespace Foundatio.Redis {
 
             return redisValue;
         }
+        
+        public static bool IsCluster(this ConnectionMultiplexer muxer) {
+            var configuration = ConfigurationOptions.Parse(muxer.Configuration);
+            if (configuration.Proxy == Proxy.Twemproxy)
+                return true;
+
+            int standaloneCount = 0, clusterCount = 0, sentinelCount = 0;
+            foreach (var endPoint in muxer.GetEndPoints()) {
+                var server = muxer.GetServer(endPoint);
+                if (server.IsConnected) {
+                    // count the server types
+                    switch (server.ServerType) {
+                        case ServerType.Twemproxy:
+                        case ServerType.Standalone:
+                            standaloneCount++;
+                            break;
+                        case ServerType.Sentinel:
+                            sentinelCount++;
+                            break;
+                        case ServerType.Cluster:
+                            clusterCount++;
+                            break;
+                    }
+                }
+            }
+
+            if (clusterCount != 0)
+                return true;
+
+            if (standaloneCount == 0 && sentinelCount > 0)
+                return true;
+
+            return false;
+        }
     }
 }

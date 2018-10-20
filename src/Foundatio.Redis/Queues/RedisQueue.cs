@@ -8,6 +8,7 @@ using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.AsyncEx;
+using Foundatio.Redis;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -19,7 +20,6 @@ namespace Foundatio.Queues {
         private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
         private readonly ISubscriber _subscriber;
         private readonly RedisCacheClient _cache;
-        private readonly ServerType _redisServerType;
         private long _enqueuedCount;
         private long _dequeuedCount;
         private long _completedCount;
@@ -40,15 +40,13 @@ namespace Foundatio.Queues {
 
             _payloadTimeToLive = GetPayloadTtl();
             _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
-            _redisServerType = GetRedisServerType();
 
-            if (_redisServerType == ServerType.Cluster || _redisServerType == ServerType.Twemproxy) {
+            if (_options.ConnectionMultiplexer.IsCluster()) {
                 QueueListName = "{q:" + _options.Name + "}:in";
                 WorkListName = "{q:" + _options.Name + "}:work";
                 WaitListName = "{q:" + _options.Name + "}:wait";
                 DeadListName = "{q:" + _options.Name + "}:dead";
-            }
-            else {
+            } else {
                 QueueListName = "q:" + _options.Name + ":in";
                 WorkListName = "q:" + _options.Name + ":work";
                 WaitListName = "q:" + _options.Name + ":wait";
@@ -67,43 +65,6 @@ namespace Foundatio.Queues {
             : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
 
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        private ServerType GetRedisServerType() {
-            var configuration = ConfigurationOptions.Parse(_options.ConnectionMultiplexer.Configuration);
-            if (configuration.Proxy == Proxy.Twemproxy) {
-                return ServerType.Twemproxy;
-            }
-
-            int standaloneCount = 0, clusterCount = 0, sentinelCount = 0;
-            foreach (var endPoint in _options.ConnectionMultiplexer.GetEndPoints()) {
-                var server = _options.ConnectionMultiplexer.GetServer(endPoint);
-                if (server.IsConnected) {
-                    // count the server types
-                    switch (server.ServerType) {
-                        case ServerType.Twemproxy:
-                        case ServerType.Standalone:
-                            standaloneCount++;
-                            break;
-                        case ServerType.Sentinel:
-                            sentinelCount++;
-                            break;
-                        case ServerType.Cluster:
-                            clusterCount++;
-                            break;
-                    }
-                }
-            }
-
-            if (clusterCount != 0) {
-                return ServerType.Cluster;
-            }
-
-            if (standaloneCount == 0 && sentinelCount > 0) {
-                return ServerType.Sentinel;
-            }
-
-            return ServerType.Standalone;
-        }
 
         private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null;
         private async Task EnsureMaintenanceRunningAsync() {
@@ -367,23 +328,7 @@ namespace Foundatio.Queues {
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
             try {
                 return await Run.WithRetriesAsync(async () => {
-                    if (_redisServerType == ServerType.Standalone || _redisServerType == ServerType.Sentinel) {
-                        return await Database.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
-                    }
-
-                    var id = await Database.ListRightPopAsync(QueueListName).AnyContext();
-                    if (id.IsNull) {
-                        return id;
-                    }
-
-                    try {
-                        await Database.ListLeftPushAsync(WorkListName, id).AnyContext();
-                    }
-                    catch (Exception) {
-                        await Database.ListRightPushAsync(QueueListName, id).AnyContext();
-                        throw;
-                    }
-                    return id;
+                    return await Database.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
                 }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
             } catch (Exception) {
                 return RedisValue.Null;

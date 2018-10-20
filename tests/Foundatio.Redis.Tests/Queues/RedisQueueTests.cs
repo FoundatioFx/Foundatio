@@ -167,10 +167,11 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var muxer = SharedConnection.GetMuxer();
                 var db = muxer.GetDatabase();
+                string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
                 string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(1, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
+                Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.Equal(3, await muxer.CountAllKeysAsync());
 
@@ -178,8 +179,8 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var workItem = await queue.DequeueAsync();
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                Assert.Equal(1, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
@@ -192,8 +193,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
                 Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
                 Assert.Equal(0, await muxer.CountAllKeysAsync());
             }
         }
@@ -208,6 +209,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 using (queue) {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
+                    string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
                     string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
@@ -218,8 +220,8 @@ namespace Foundatio.Redis.Tests.Queues {
                     var workItem = await queue.DequeueAsync();
                     await workItem.AbandonAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -228,8 +230,8 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                    Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:work"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -240,8 +242,8 @@ namespace Foundatio.Redis.Tests.Queues {
                     SystemClock.Test.AddTime(TimeSpan.FromMilliseconds(250));
                     await queue.DoMaintenanceWorkAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -253,9 +255,9 @@ namespace Foundatio.Redis.Tests.Queues {
                     workItem = await queue.DequeueAsync();
                     await workItem.AbandonAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                    Assert.Equal(1, await db.ListLengthAsync("q:SimpleWorkItem:dead"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:dead"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -275,6 +277,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 using (queue) {
                     var muxer = SharedConnection.GetMuxer();
                     var db = muxer.GetDatabase();
+                    string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
                     string id = await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "blah",
@@ -283,9 +286,9 @@ namespace Foundatio.Redis.Tests.Queues {
                     var workItem = await queue.DequeueAsync();
                     await workItem.AbandonAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
-                    Assert.Equal(1, await db.ListLengthAsync("{q:SimpleWorkItem}:wait"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:wait"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -296,9 +299,9 @@ namespace Foundatio.Redis.Tests.Queues {
                     SystemClock.Test.AddTime(TimeSpan.FromSeconds(1));
                     await queue.DoMaintenanceWorkAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(1, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:wait"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:wait"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -308,8 +311,8 @@ namespace Foundatio.Redis.Tests.Queues {
 
                     workItem = await queue.DequeueAsync();
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                    Assert.Equal(1, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
@@ -320,8 +323,8 @@ namespace Foundatio.Redis.Tests.Queues {
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
                     Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:in"));
-                    Assert.Equal(0, await db.ListLengthAsync("{q:SimpleWorkItem}:work"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                    Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
                     Assert.InRange(await muxer.CountAllKeysAsync(), 0, 1);
                 }
             }
@@ -336,6 +339,7 @@ namespace Foundatio.Redis.Tests.Queues {
             using (queue) {
                 var muxer = SharedConnection.GetMuxer();
                 var db = muxer.GetDatabase();
+                string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
@@ -358,10 +362,10 @@ namespace Foundatio.Redis.Tests.Queues {
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 }
 
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:in"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:work"));
-                Assert.Equal(0, await db.ListLengthAsync("q:SimpleWorkItem:wait"));
-                Assert.Equal(3, await db.ListLengthAsync("q:SimpleWorkItem:dead"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
+                Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:wait"));
+                Assert.Equal(3, await db.ListLengthAsync($"{listPrefix}:dead"));
                 Assert.InRange(await muxer.CountAllKeysAsync(), 10, 11);
             }
         }
