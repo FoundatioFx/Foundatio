@@ -38,14 +38,22 @@ namespace Foundatio.Queues {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer });
 
-            QueueListName = "{q:" + _options.Name + "}:in";
-            WorkListName = "{q:" + _options.Name + "}:work";
-            WaitListName = "{q:" + _options.Name + "}:wait";
-            DeadListName = "{q:" + _options.Name + "}:dead";
-
             _payloadTimeToLive = GetPayloadTtl();
             _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
             _redisServerType = GetRedisServerType();
+
+            if (_redisServerType == ServerType.Cluster || _redisServerType == ServerType.Twemproxy) {
+                QueueListName = "{q:" + _options.Name + "}:in";
+                WorkListName = "{q:" + _options.Name + "}:work";
+                WaitListName = "{q:" + _options.Name + "}:wait";
+                DeadListName = "{q:" + _options.Name + "}:dead";
+            }
+            else {
+                QueueListName = "q:" + _options.Name + ":in";
+                WorkListName = "q:" + _options.Name + ":work";
+                WaitListName = "q:" + _options.Name + ":wait";
+                DeadListName = "q:" + _options.Name + ":dead";
+            }
 
             // min is 1 second, max is 1 minute
             var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
