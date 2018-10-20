@@ -38,10 +38,10 @@ namespace Foundatio.Queues {
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer });
 
-            QueueListName = "q:" + _options.Name + ":in";
-            WorkListName = "q:" + _options.Name + ":work";
-            WaitListName = "q:" + _options.Name + ":wait";
-            DeadListName = "q:" + _options.Name + ":dead";
+            QueueListName = "{q:" + _options.Name + "}:in";
+            WorkListName = "{q:" + _options.Name + "}:work";
+            WaitListName = "{q:" + _options.Name + "}:wait";
+            DeadListName = "{q:" + _options.Name + "}:dead";
 
             _payloadTimeToLive = GetPayloadTtl();
             _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
@@ -364,6 +364,10 @@ namespace Foundatio.Queues {
                     }
 
                     var id = await Database.ListRightPopAsync(QueueListName).AnyContext();
+                    if (id.IsNull) {
+                        return id;
+                    }
+
                     try {
                         await Database.ListLeftPushAsync(WorkListName, id).AnyContext();
                     }
