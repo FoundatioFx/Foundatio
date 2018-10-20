@@ -41,17 +41,11 @@ namespace Foundatio.Queues {
             _payloadTimeToLive = GetPayloadTtl();
             _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
 
-            if (_options.ConnectionMultiplexer.IsCluster()) {
-                QueueListName = "{q:" + _options.Name + "}:in";
-                WorkListName = "{q:" + _options.Name + "}:work";
-                WaitListName = "{q:" + _options.Name + "}:wait";
-                DeadListName = "{q:" + _options.Name + "}:dead";
-            } else {
-                QueueListName = "q:" + _options.Name + ":in";
-                WorkListName = "q:" + _options.Name + ":work";
-                WaitListName = "q:" + _options.Name + ":wait";
-                DeadListName = "q:" + _options.Name + ":dead";
-            }
+            string listPrefix = _options.ConnectionMultiplexer.IsCluster() ? "{q:" + _options.Name + "}" : "q:" + _options.Name;
+            _queueListName = $"{listPrefix}:in";
+            _workListName = $"{listPrefix}:work";
+            _waitListName = $"{listPrefix}:wait";
+            _deadListName = $"{listPrefix}:dead";
 
             // min is 1 second, max is 1 minute
             var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
@@ -98,10 +92,10 @@ namespace Foundatio.Queues {
         }
 
         protected override Task<QueueStats> GetQueueStatsImplAsync() {
-            var queued = Database.ListLengthAsync(QueueListName);
-            var wait = Database.ListLengthAsync(WaitListName);
-            var working = Database.ListLengthAsync(WorkListName);
-            var deadLetter = Database.ListLengthAsync(DeadListName);
+            var queued = Database.ListLengthAsync(_queueListName);
+            var wait = Database.ListLengthAsync(_waitListName);
+            var working = Database.ListLengthAsync(_workListName);
+            var deadLetter = Database.ListLengthAsync(_deadListName);
 
             return Task.WhenAll(queued, wait, working, deadLetter)
                 .ContinueWith(t => new QueueStats {
@@ -117,10 +111,10 @@ namespace Foundatio.Queues {
                 }, TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
-        private string QueueListName { get; set; }
-        private string WorkListName { get; set; }
-        private string WaitListName { get; set; }
-        private string DeadListName { get; set; }
+        private readonly string _queueListName;
+        private readonly string _workListName;
+        private readonly string _waitListName;
+        private readonly string _deadListName;
 
         private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
@@ -190,7 +184,7 @@ namespace Foundatio.Queues {
 
             await Run.WithRetriesAsync(() => Task.WhenAll(
                 _cache.SetAsync(GetEnqueuedTimeKey(id), now.Ticks, _payloadTimeToLive),
-                Database.ListLeftPushAsync(QueueListName, id)
+                Database.ListLeftPushAsync(_queueListName, id)
             ), logger: _logger).AnyContext();
 
             try {
@@ -315,7 +309,7 @@ namespace Foundatio.Queues {
             var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<T>(GetPayloadKey(workId)), logger: _logger).AnyContext();
             if (payload.IsNull) {
                 if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError("Error getting queue payload: {WorkId}", workId);
-                await Database.ListRemoveAsync(WorkListName, workId).AnyContext();
+                await Database.ListRemoveAsync(_workListName, workId).AnyContext();
                 return null;
             }
 
@@ -328,7 +322,7 @@ namespace Foundatio.Queues {
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
             try {
                 return await Run.WithRetriesAsync(async () => {
-                    return await Database.ListRightPopLeftPushAsync(QueueListName, WorkListName).AnyContext();
+                    return await Database.ListRightPopLeftPushAsync(_queueListName, _workListName).AnyContext();
                 }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
             } catch (Exception) {
                 return RedisValue.Null;
@@ -340,7 +334,7 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            long result = await Run.WithRetriesAsync(() => Database.ListRemoveAsync(WorkListName, entry.Id), logger: _logger).AnyContext();
+            long result = await Run.WithRetriesAsync(() => Database.ListRemoveAsync(_workListName, entry.Id), logger: _logger).AnyContext();
             if (result == 0)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
@@ -379,8 +373,8 @@ namespace Foundatio.Queues {
 
                 var tx = Database.CreateTransaction();
                 tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-                tx.ListRemoveAsync(WorkListName, entry.Id);
-                tx.ListLeftPushAsync(DeadListName, entry.Id);
+                tx.ListRemoveAsync(_workListName, entry.Id);
+                tx.ListLeftPushAsync(_deadListName, entry.Id);
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
@@ -402,8 +396,8 @@ namespace Foundatio.Queues {
 
                 var tx = Database.CreateTransaction();
                 tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-                tx.ListRemoveAsync(WorkListName, entry.Id);
-                tx.ListLeftPushAsync(WaitListName, entry.Id);
+                tx.ListRemoveAsync(_workListName, entry.Id);
+                tx.ListLeftPushAsync(_waitListName, entry.Id);
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync()).AnyContext();
                 if (!success)
@@ -417,8 +411,8 @@ namespace Foundatio.Queues {
 
                 var tx = Database.CreateTransaction();
                 tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-                tx.ListRemoveAsync(WorkListName, entry.Id);
-                tx.ListLeftPushAsync(QueueListName, entry.Id);
+                tx.ListRemoveAsync(_workListName, entry.Id);
+                tx.ListLeftPushAsync(_queueListName, entry.Id);
                 tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
                 bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
                 if (!success)
@@ -453,10 +447,10 @@ namespace Foundatio.Queues {
         public override async Task DeleteQueueAsync() {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Deleting queue: {Name}", _options.Name);
             await Task.WhenAll(
-                DeleteListAsync(QueueListName),
-                DeleteListAsync(WorkListName),
-                DeleteListAsync(WaitListName),
-                DeleteListAsync(DeadListName)
+                DeleteListAsync(_queueListName),
+                DeleteListAsync(_workListName),
+                DeleteListAsync(_waitListName),
+                DeleteListAsync(_deadListName)
             ).AnyContext();
 
             _enqueuedCount = 0;
@@ -485,7 +479,7 @@ namespace Foundatio.Queues {
         }
 
         private async Task TrimDeadletterItemsAsync(int maxItems) {
-            var itemIds = (await Database.ListRangeAsync(DeadListName).AnyContext()).Skip(maxItems);
+            var itemIds = (await Database.ListRangeAsync(_deadListName).AnyContext()).Skip(maxItems);
             var tasks = new List<Task>();
             foreach (var id in itemIds) {
                 tasks.AddRange(new Task[] { 
@@ -495,10 +489,10 @@ namespace Foundatio.Queues {
                     Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
                     Database.KeyDeleteAsync(GetRenewedTimeKey(id)),
                     Database.KeyDeleteAsync(GetWaitTimeKey(id)),
-                    Database.ListRemoveAsync(QueueListName, id),
-                    Database.ListRemoveAsync(WorkListName, id),
-                    Database.ListRemoveAsync(WaitListName, id),
-                    Database.ListRemoveAsync(DeadListName, id)
+                    Database.ListRemoveAsync(_queueListName, id),
+                    Database.ListRemoveAsync(_workListName, id),
+                    Database.ListRemoveAsync(_waitListName, id),
+                    Database.ListRemoveAsync(_deadListName, id)
                 });
             }
 
@@ -521,7 +515,7 @@ namespace Foundatio.Queues {
             var utcNow = SystemClock.UtcNow;
 
             try {
-                var workIds = await Database.ListRangeAsync(WorkListName).AnyContext();
+                var workIds = await Database.ListRangeAsync(_workListName).AnyContext();
                 foreach (var workId in workIds) {
                     var renewedTimeTicks = await _cache.GetAsync<long>(GetRenewedTimeKey(workId)).AnyContext();
                     if (!renewedTimeTicks.HasValue)
@@ -547,7 +541,7 @@ namespace Foundatio.Queues {
             }
 
             try {
-                var waitIds = await Database.ListRangeAsync(WaitListName).AnyContext();
+                var waitIds = await Database.ListRangeAsync(_waitListName).AnyContext();
                 foreach (var waitId in waitIds) {
                     var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId)).AnyContext();
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Wait time: {0}", waitTimeTicks);
@@ -559,8 +553,8 @@ namespace Foundatio.Queues {
                     if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Adding item back to queue for retry: {WaitId}", waitId);
 
                     var tx = Database.CreateTransaction();
-                    tx.ListRemoveAsync(WaitListName, waitId);
-                    tx.ListLeftPushAsync(QueueListName, waitId);
+                    tx.ListRemoveAsync(_waitListName, waitId);
+                    tx.ListLeftPushAsync(_queueListName, waitId);
                     bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
                     if (!success)
                         throw new Exception("Unable to move item to queue list.");

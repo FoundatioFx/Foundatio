@@ -34,7 +34,7 @@ namespace Foundatio.Caching {
 
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null) {
-                var endpoints = _options.ConnectionMultiplexer.GetEndPoints(true);
+                var endpoints = _options.ConnectionMultiplexer.GetEndPoints();
                 if (endpoints.Length == 0)
                     return 0;
 
@@ -42,12 +42,12 @@ namespace Foundatio.Caching {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
 
                     try {
-                        await server.FlushDatabaseAsync(Database.Database).AnyContext();
+                        await server.FlushDatabaseAsync().AnyContext();
                         continue;
                     } catch (Exception) {}
 
                     try {
-                        var redisKeys = server.Keys(Database.Database).ToArray();
+                        var redisKeys = server.Keys().ToArray();
                         if (redisKeys.Length > 0)
                             await Database.KeyDeleteAsync(redisKeys).AnyContext();
                     } catch (Exception) {}
@@ -329,7 +329,7 @@ namespace Foundatio.Caching {
         public Task<bool> ExistsAsync(string key) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
-
+            
             return Database.KeyExistsAsync(key);
         }
 

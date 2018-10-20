@@ -5,29 +5,27 @@ using StackExchange.Redis;
 namespace Foundatio.Redis.Tests.Extensions {
     public static class ConnectionMuliplexerExtensions {
         public static async Task FlushAllAsync(this ConnectionMultiplexer muxer) {
-            var endpoints = muxer.GetEndPoints(true);
+            var endpoints = muxer.GetEndPoints();
             if (endpoints.Length == 0)
                 return;
 
-            int database = muxer.GetDatabase().Database;
             foreach (var endpoint in endpoints) {
                 var server = muxer.GetServer(endpoint);
                 if (!server.IsSlave) {
-                    await server.FlushDatabaseAsync(database);
+                    await server.FlushAllDatabasesAsync();
                 }
             }
         }
 
         public static async Task<long> CountAllKeysAsync(this ConnectionMultiplexer muxer) {
-            var endpoints = muxer.GetEndPoints(true);
+            var endpoints = muxer.GetEndPoints();
             if (endpoints.Length == 0)
                 return 0;
 
-            int database = muxer.GetDatabase().Database;
             long count = 0;
             foreach (var endpoint in endpoints) {
                 var server = muxer.GetServer(endpoint);
-                count += await server.DatabaseSizeAsync(database);
+                count += await server.DatabaseSizeAsync();
             }
 
             return count;
