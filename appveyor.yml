@@ -16,9 +16,6 @@ init:
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
   - ps: 'Write-Output "GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
 
-#on_failure:
-#  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
-
 test_script:
   - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
   - mkdir artifacts
@@ -29,10 +26,8 @@ after_test:
   - docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
-  - path: artifacts\*.nupkg
+  - path: artifacts/**/*
     name: NuGet
-  - path: test\Foundatio.Tests\bin\Release\netcoreapp2.0\BenchmarkDotNet.Artifacts\**\*
-    name: Benchmarks
 
 deploy:
   - provider: Environment
