@@ -14,7 +14,7 @@ init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
-  - ps: 'Write-Output "Version: $BUILD_VERSION"'
+  - ps: 'Write-Output "GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
 
 #on_failure:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
@@ -22,7 +22,7 @@ init:
 test_script:
   - docker build --target testrunner -t foundatio:test --build-arg build=${APPVEYOR_BUILD_VERSION}-dev .
   - mkdir artifacts
-  - docker run -env APPVEYOR_API_URL=$APPVEYOR_API_URL -v $(pwd)/artifacts:/app/artifacts foundatio:test
+  - docker run -e APPVEYOR_API_URL -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
   - docker build --target publish -t foundatio:publish --build-arg build=${CIRCLE_BUILD_NUM}-dev .
