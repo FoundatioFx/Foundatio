@@ -10,14 +10,17 @@ environment:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
 init:
+  - set -x
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
   - ps: 'Write-Output "Folder: $env:APPVEYOR_BUILD_FOLDER GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
 
+build_script:
+  - dotnet build --version-suffix $BUILD_VERSION -c Release
+
 test_script:
   - mkdir artifacts
-  - dotnet build --version-suffix $BUILD_VERSION -c Release
   - cd test/Foundatio.Tests
   - dotnet test --verbosity minimal --logger:trx;LogFileName=$APPVEYOR_BUILD_FOLDER/artifacts/test-results.trx
   - cd ../..
