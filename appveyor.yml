@@ -11,25 +11,30 @@ environment:
 
 init:
   - git config --global core.autocrlf input
-  - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
-  - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
-  - ps: 'Write-Output "Folder: $env:APPVEYOR_BUILD_FOLDER GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
+  - ps: |
+      $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
+      If ("$env:APPVEYOR_REPO_TAG" -ne "true") {
+        $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre"
+      } Else {
+        $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION"
+      }
+      Write-Output "Folder: $env:APPVEYOR_BUILD_FOLDER GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"
 
-build_script:
-  - dotnet build --version-suffix $BUILD_VERSION -c Release
+#build_script:
+#  - dotnet build --version-suffix $BUILD_VERSION -c Release
 
 test_script:
   - mkdir artifacts
-  - cd test/Foundatio.Tests
-  - dotnet test --verbosity minimal --results-directory $APPVEYOR_BUILD_FOLDER/artifacts --logger trx
-  #- docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
-  #- docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
+  #- cd test/Foundatio.Tests
+  #- dotnet test --verbosity minimal --results-directory $APPVEYOR_BUILD_FOLDER/artifacts --logger trx
+  - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
+  - docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
-  - cd $APPVEYOR_BUILD_FOLDER
-  - dotnet pack --version-suffix $BUILD_VERSION -c Release -o $APPVEYOR_BUILD_FOLDER/artifacts
-  #- docker build --target publish -t foundatio:publish --build-arg build=${BUILD_VERSION} .
-  #- docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
+  #- cd $APPVEYOR_BUILD_FOLDER
+  #- dotnet pack --version-suffix $BUILD_VERSION -c Release -o $APPVEYOR_BUILD_FOLDER/artifacts
+  - docker build --target publish -t foundatio:publish --build-arg build=${BUILD_VERSION} .
+  - docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
   - path: artifacts/*.nupkg
