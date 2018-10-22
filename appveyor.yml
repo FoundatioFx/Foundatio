@@ -9,7 +9,7 @@ pull_requests:
 environment:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  
+
 init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
@@ -22,7 +22,7 @@ init:
 test_script:
   - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
   - mkdir artifacts
-  - docker run -e APPVEYOR_API_URL -v $(pwd)/artifacts:/app/artifacts foundatio:test
+  - docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
   - docker build --target publish -t foundatio:publish --build-arg build=${BUILD_VERSION} .
