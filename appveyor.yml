@@ -13,7 +13,7 @@ init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
   - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
-  - ps: 'Write-Output "GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
+  - ps: 'Write-Output "Folder: $env:APPVEYOR_BUILD_FOLDER GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"'
 
 test_script:
   - mkdir artifacts
@@ -30,8 +30,10 @@ after_test:
   #- docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
-  - path: artifacts
+  - path: artifacts/*.nupkg
     name: NuGet
+  - path: artifacts/test-results.trx
+    name: Test Results
 
 deploy:
   - provider: Environment
