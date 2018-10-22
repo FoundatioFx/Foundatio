@@ -1,5 +1,5 @@
-version: 7.0.{build}
-os: Visual Studio 2017
+version: 7.1.{build}
+image: Ubuntu1804
 clone_depth: 2
 configuration: Release
 
@@ -13,24 +13,20 @@ environment:
 init:
   - git config --global core.autocrlf input
   - ps: $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
-  - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:VERSION_SUFFIX="pre" }
-  - ps: 'Write-Output "Version: $($env:APPVEYOR_BUILD_VERSION)-$($env:VERSION_SUFFIX)"'
-
-before_build:
-  - ps: .\build\Set-BuildVersion -Version $env:APPVEYOR_BUILD_VERSION -Suffix $env:VERSION_SUFFIX
-  - appveyor-retry dotnet restore -v Minimal
-
-build_script:
-  - ps: dotnet build -c Release
+  - ps: If ("$env:APPVEYOR_REPO_TAG" -ne "true") { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre" } Else { $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION" }
+  - ps: 'Write-Output "Version: $BUILD_VERSION"'
 
 #on_failure:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
 test_script:
-  - ps: dotnet test .\test\Foundatio.Tests\Foundatio.Tests.csproj
+  - docker build --target testrunner -t foundatio:test --build-arg build=${APPVEYOR_BUILD_VERSION}-dev .
+  - mkdir artifacts
+  - docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
-  - ps: dotnet pack -c Release
+  - docker build --target publish -t foundatio:publish --build-arg build=${CIRCLE_BUILD_NUM}-dev .
+  - docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
   - path: artifacts\*.nupkg

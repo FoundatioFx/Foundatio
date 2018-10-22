@@ -17,4 +17,6 @@ jobs:
           name: Push nuget packages
           command: |
             docker build --target publish -t foundatio:publish --build-arg build=${CIRCLE_BUILD_NUM}-dev .
-            docker run --rm -it foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}
+            docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}
+      - store_artifacts:
+          path: artifacts

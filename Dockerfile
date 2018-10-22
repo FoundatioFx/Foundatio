@@ -29,6 +29,15 @@ FROM build AS testrunner
 WORKDIR /app/test/Foundatio.Tests
 ENTRYPOINT [ "dotnet", "test", "--verbosity", "minimal", "--logger:trx;LogFileName=/app/artifacts/test-results.trx" ]
 
+# pack
+
+FROM build AS pack
+WORKDIR /app/
+
+ARG build=0-dev
+
+ENTRYPOINT [ "dotnet", "pack", "--version-suffix", "$build", "-c", "Release", "-o" "/app/artifacts" ]
+
 # publish
 
 FROM build AS publish
