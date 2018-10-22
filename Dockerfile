@@ -55,4 +55,4 @@ ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
 # docker build --target publish -t foundatio:publish --build-arg build=123-dev .
 # export NUGET_SOURCE=https://api.nuget.org/v3/index.json
 # export NUGET_KEY=MY_SECRET_NUGET_KEY
-# docker run -it foundatio:publish
+# docker run -it foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}
