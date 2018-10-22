@@ -26,7 +26,7 @@ after_test:
   - docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
-  - path: artifacts/**/*
+  - path: artifacts
     name: NuGet
 
 deploy:
