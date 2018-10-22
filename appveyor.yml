@@ -21,7 +21,7 @@ build_script:
 test_script:
   - mkdir artifacts
   - cd test/Foundatio.Tests
-  - dotnet test --verbosity minimal --logger:trx;LogFileName=test-results.trx --results-directory $APPVEYOR_BUILD_FOLDER/artifacts
+  - dotnet test --verbosity minimal --results-directory $APPVEYOR_BUILD_FOLDER/artifacts --logger trx
   #- docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
   #- docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
@@ -34,7 +34,7 @@ after_test:
 artifacts:
   - path: artifacts/*.nupkg
     name: NuGet
-  - path: artifacts/test-results.trx
+  - path: artifacts/*.trx
     name: Test Results
 
 deploy:
