@@ -20,12 +20,12 @@ init:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
 test_script:
-  - docker build --target testrunner -t foundatio:test --build-arg build=${APPVEYOR_BUILD_VERSION}-dev .
+  - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
   - mkdir artifacts
   - docker run -e APPVEYOR_API_URL -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
-  - docker build --target publish -t foundatio:publish --build-arg build=${CIRCLE_BUILD_NUM}-dev .
+  - docker build --target publish -t foundatio:publish --build-arg build=${BUILD_VERSION} .
   - docker run --rm -it -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
