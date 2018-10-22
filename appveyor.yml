@@ -1,4 +1,4 @@
-version: {build}
+version: '{build}'
 image: Ubuntu1804
 clone_depth: 2
 configuration: Release
