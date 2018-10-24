@@ -59,6 +59,9 @@ namespace Foundatio.Tests.Utility {
 
                 try {
                     var result = _listener.Receive(ref _senderIpEndPoint);
+                    if (result.Length == 0)
+                        continue;
+                    
                     var message = Encoding.UTF8.GetString(result, 0, result.Length);
                     _logger.LogInformation($"Message: {message}");
                     _messages.Add(message);
