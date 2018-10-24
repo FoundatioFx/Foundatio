@@ -270,7 +270,7 @@ namespace Foundatio.Tests.Queue {
                 sw.Stop();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 Assert.Null(workItem);
-                Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(100));
+                Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(5000));
 
                 Task.Run(async () => {
                     await SystemClock.SleepAsync(500);

@@ -19,7 +19,7 @@ namespace Foundatio.Tests.Metrics {
         private readonly TestUdpListener _listener;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
-            _listener = new TestUdpListener("224.0.0.1", _port);
+            _listener = new TestUdpListener("224.0.0.1", _port, Log);
             _client = new StatsDMetricsClient(o => o.Server("224.0.0.1", _port).Prefix("test"));
         }
 
@@ -69,9 +69,22 @@ namespace Foundatio.Tests.Metrics {
 
         [Fact]
         public void CanSendOffline() {
+            _listener.StartListening();
             _client.Counter("counter");
+            _listener.StopListening(1);
             var messages = _listener.GetMessages();
-            Assert.Empty(messages);
+            Assert.Single(messages);
+
+            _client.Counter("counter");
+            messages = _listener.GetMessages();
+            Assert.Single(messages);
+            SystemClock.Sleep(1000);
+
+            _listener.StartListening();
+            _client.Counter("counter");
+            _listener.StopListening(2);
+            messages = _listener.GetMessages();
+            Assert.Equal(2, messages.Length);
         }
 
         [Fact]
@@ -87,33 +100,6 @@ namespace Foundatio.Tests.Metrics {
             _listener.StopListening(iterations);
             var messages = _listener.GetMessages();
             Assert.InRange(messages.Length, iterations * 0.9, iterations);
-        }
-
-        [Fact]
-        public void CanSendMultiple() {
-            const int iterations = 100000;
-            _listener.StartListening();
-
-            var sw = Stopwatch.StartNew();
-            for (int index = 0; index < iterations; index++) {
-                if (index % (iterations / 10) == 0)
-                    _listener.StopListening();
-
-                _client.Counter("counter");
-
-                if (index % (iterations / 10) == 0)
-                    _listener.StartListening();
-            }
-
-            sw.Stop();
-            // Require at least 1,000 operations/s
-            Assert.InRange(sw.ElapsedMilliseconds, 0, (iterations / 1000.0) * 1000);
-
-            _listener.StopListening(iterations);
-            var messages = _listener.GetMessages();
-            Assert.InRange(messages.Length, iterations * 0.9, iterations);
-            foreach (string message in messages)
-                Assert.Equal("test.counter:1|c", message);
         }
 
         public void Dispose() {

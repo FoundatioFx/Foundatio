@@ -5,22 +5,23 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Utility {
     public class TestUdpListener : IDisposable {
         private readonly List<string> _messages = new List<string>();
-        private readonly UdpClient _listener;
-        private readonly IPAddress _multicastAddress;
+        private UdpClient _listener;
+        private IPEndPoint _localIpEndPoint;
+        private IPEndPoint _senderIpEndPoint;
+        private readonly ILogger _logger;
         private Task _receiveTask;
         private CancellationTokenSource _cancellationTokenSource;
+        private object _lock = new object();
 
-        public TestUdpListener(string server, int port) {
-            _listener = new UdpClient();
-            _listener.ExclusiveAddressUse = false;
-            _listener.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _listener.Client.ReceiveTimeout = 2000;
-            _listener.Client.Bind(new IPEndPoint(IPAddress.Any, port));
-            _multicastAddress = IPAddress.Parse(server);
+        public TestUdpListener(string server, int port, ILoggerFactory loggerFactory) {
+            _logger = loggerFactory.CreateLogger<TestUdpListener>();
+            _localIpEndPoint = new IPEndPoint(IPAddress.Parse(server), port);
+            _senderIpEndPoint = new IPEndPoint(IPAddress.Any, 0);
         }
 
         public string[] GetMessages() {
@@ -28,38 +29,59 @@ namespace Foundatio.Tests.Utility {
         }
 
         public void ResetMessages() {
+            _logger.LogInformation("ResetMessages");
             _messages.Clear();
         }
 
         public void StartListening() {
-            _listener.JoinMulticastGroup(_multicastAddress);
-            _cancellationTokenSource = new CancellationTokenSource();
-            _receiveTask = Task.Run(() => ProcessMessages(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            lock (_lock) {
+                if (_listener != null) {
+                    _logger.LogInformation("StartListening: Already listening");
+                    return;
+                }
+
+                _logger.LogInformation("StartListening");
+                _cancellationTokenSource = new CancellationTokenSource();
+                _listener = new UdpClient(_localIpEndPoint);
+                _listener.Client.ReceiveTimeout = 1000;
+                _receiveTask = Task.Factory.StartNew(() => ProcessMessages(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            }
         }
 
-        private async Task ProcessMessages(CancellationToken cancellationToken) {
+        private void ProcessMessages(CancellationToken cancellationToken) {
             while (true) {
-                if (cancellationToken.IsCancellationRequested)
+                if (cancellationToken.IsCancellationRequested) {
+                    _logger.LogInformation("Stopped ProcessMessages due to CancellationToken.IsCancellationRequested");
+                    _cancellationTokenSource = null;
+                    StopListening();
                     return;
-
-                var result = await _listener.ReceiveAsync();
-                if (result == null || result.Buffer == null || result.Buffer.Length == 0)
-                    continue;
+                }
 
                 try {
-                    var message = Encoding.ASCII.GetString(result.Buffer);
+                    var result = _listener.Receive(ref _senderIpEndPoint);
+                    var message = Encoding.UTF8.GetString(result, 0, result.Length);
+                    _logger.LogInformation($"Message: {message}");
                     _messages.Add(message);
-                } catch {}
+                } catch (Exception ex) {
+                    _logger.LogError(ex, $"Error during ProcessMessages: {ex.Message}");
+                }
             }
         }
 
         public void StopListening() {
             try {
-                _listener.DropMulticastGroup(_multicastAddress);
-                _cancellationTokenSource?.Cancel();
-                _receiveTask?.Wait(1000);
-                _receiveTask = null;
-            } catch {}
+                lock (_lock) {
+                    _logger.LogInformation("StopListening");
+                    _listener?.Close();
+                    _listener?.Dispose();
+                    _listener = null;
+                    _cancellationTokenSource?.Cancel();
+                    _receiveTask?.Wait(1000);
+                    _receiveTask = null;
+                }
+            } catch (Exception ex) {
+                _logger.LogError(ex, $"Error during StopListening: {ex.Message}");
+            }
         }
         
         public void StopListening(int expectedMessageCount) {
@@ -68,20 +90,25 @@ namespace Foundatio.Tests.Utility {
 
         public void StopListening(int expectedMessageCount, CancellationToken cancellationToken) {
             while (_messages.Count < expectedMessageCount) {
-                if (cancellationToken.IsCancellationRequested)
+                if (cancellationToken.IsCancellationRequested) {
+                    _logger.LogInformation("Stopped listening due to CancellationToken.IsCancellationRequested");
                     break;
-                if (_cancellationTokenSource.Token.IsCancellationRequested)
+                }
+                if (_cancellationTokenSource.Token.IsCancellationRequested) {
+                    _logger.LogInformation("Stopped listening due to CancellationTokenSource.IsCancellationRequested");
                     break;
+                }
                 
                 Thread.Sleep(100);
             }
             
+            _logger.LogInformation($"StopListening Count={_messages.Count}");
             StopListening();
         }
 
         public void Dispose() {
+            _logger.LogInformation("Dispose");
             StopListening();
-            _listener?.Dispose();
         }
     }
 }
