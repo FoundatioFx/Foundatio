@@ -48,15 +48,20 @@ namespace Foundatio.Tests.Jobs {
             using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
 
-                var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem {
+                var enqueueTask = Run.InParallelAsync(workItemCount, index => {
+                    _logger.LogInformation($"Enqueue #{index}");
+                    return queue.EnqueueAsync(new SampleQueueWorkItem {
                         Created = SystemClock.UtcNow,
                         Path = "somepath" + index
-                    }));
+                    });  
+                });
 
                 var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
                 await SystemClock.SleepAsync(10);
+                _logger.LogInformation("Starting RunUntilEmptyAsync");
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
+                _logger.LogInformation("Done RunUntilEmptyAsync");
 
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Queued);
