@@ -13,6 +13,8 @@ using Xunit.Abstractions;
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
         protected LockTestBase(ITestOutputHelper output) : base(output) {
+            TestSystemClock.Install();
+            SystemClock.Test.UseFakeSleep();
         }
 
         protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period) {
@@ -175,7 +177,7 @@ namespace Foundatio.Tests.Locks {
             
             const int allowedLocks = 25;
 
-            var period = TimeSpan.FromSeconds(2);
+            var period = TimeSpan.FromMinutes(15);
             var locker = GetThrottlingLockProvider(allowedLocks, period);
             if (locker == null)
                 return;
@@ -183,8 +185,8 @@ namespace Foundatio.Tests.Locks {
             string lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            var utcNow = SystemClock.UtcNow;
-            await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
+            var utcNow = SystemClock.UtcNow.Floor(period);
+            SystemClock.Test.SetTime(utcNow);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
                 _logger.LogInformation("Allowed Locks: {Id}", i);
@@ -197,11 +199,12 @@ namespace Foundatio.Tests.Locks {
             Assert.True(sw.Elapsed.TotalSeconds < 1);
 
             sw.Restart();
-            var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(350));
+            var result = await locker.AcquireAsync(lockName, cancellationToken: new CancellationToken(true));
             sw.Stop();
             _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
             Assert.Null(result);
 
+            await SystemClock.SleepAsync(TimeSpan.FromHours(1));
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.5));
             sw.Stop();
