@@ -1,4 +1,5 @@
 <Project ToolsVersion="15.0">
+
   <PropertyGroup Label="Version">
     <VersionPrefix>7.1</VersionPrefix>
     <VersionSuffix>0-dev</VersionSuffix>
@@ -8,6 +9,9 @@
   <PropertyGroup>
     <Product>Foundatio</Product>
     <Description>Pluggable foundation blocks for building distributed apps.</Description>
+    <PackageProjectUrl>https://github.com/FoundatioFx/Foundatio</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/FoundatioFx/Foundatio/releases</PackageReleaseNotes>
+    
     <Copyright>Copyright (c) 2018 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
@@ -15,13 +19,9 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
-
-    <PackageReleaseNotes>https://github.com/FoundatioFx/Foundatio/releases</PackageReleaseNotes>
     <PackageIconUrl>https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-icon.png</PackageIconUrl>
-    <PackageProjectUrl>https://github.com/FoundatioFx/Foundatio</PackageProjectUrl>
     <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
-    <RepositoryUrl>https://github.com/FoundatioFx/Foundatio</RepositoryUrl>
-
+    <RepositoryUrl>$(PackageProjectUrl)</RepositoryUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
