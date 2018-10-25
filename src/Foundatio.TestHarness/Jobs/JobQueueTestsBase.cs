@@ -45,6 +45,8 @@ namespace Foundatio.Tests.Jobs {
         public virtual async Task CanRunQueueJobWithLockFailAsync() {
             const int workItemCount = 10;
             const int allowedLockCount = 5;
+            Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
+            
             using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero)) {
                 await queue.DeleteQueueAsync();
 
