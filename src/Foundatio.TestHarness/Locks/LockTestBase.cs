@@ -182,7 +182,7 @@ namespace Foundatio.Tests.Locks {
             string lockName = Guid.NewGuid().ToString("N").Substring(10);
 
             // sleep until start of throttling period
-            var utcNow = SystemClock.UtcNow.Floor(period);
+            var utcNow = SystemClock.UtcNow;
             await SystemClock.SleepAsync(utcNow.Ceiling(period) - utcNow);
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
@@ -201,7 +201,6 @@ namespace Foundatio.Tests.Locks {
             _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
             Assert.Null(result);
 
-            await SystemClock.SleepAsync(TimeSpan.FromHours(1));
             sw.Restart();
             result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.5));
             sw.Stop();
