@@ -1,6 +1,7 @@
 FROM microsoft/dotnet:2.1.403-sdk AS build  
 WORKDIR /app
 ARG build=0-dev
+ENV build=$build
 
 COPY ./*.sln ./NuGet.config ./
 COPY ./build/*.props ./build/
@@ -27,7 +28,7 @@ RUN dotnet build --version-suffix $build -c Release
 
 FROM build AS testrunner
 WORKDIR /app/test/Foundatio.Tests
-ENTRYPOINT [ "dotnet", "test", "--verbosity", "minimal", "--logger:trx;LogFileName=/app/artifacts/test-results.trx" ]
+ENTRYPOINT dotnet test --verbosity minimal --logger:trx;LogFileName=/app/artifacts/test-results.trx
 
 # pack
 
@@ -35,8 +36,9 @@ FROM build AS pack
 WORKDIR /app/
 
 ARG build=0-dev
+ENV build=$build
 
-ENTRYPOINT [ "dotnet", "pack", "--version-suffix", "$build", "-c", "Release", "-o" "/app/artifacts" ]
+ENTRYPOINT dotnet pack --version-suffix $build -c Release -o /app/artifacts
 
 # publish
 
@@ -44,6 +46,7 @@ FROM build AS publish
 WORKDIR /app/
 
 ARG build=0-dev
+ENV build=$build
 
 RUN dotnet pack --version-suffix $build -c Release -o /app/artifacts
 ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
