@@ -20,7 +20,6 @@ init:
     echo "Build: $BUILD_NUMBER"
 
 test_script:
-  - mkdir artifacts
   - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_NUMBER} .
   - docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 

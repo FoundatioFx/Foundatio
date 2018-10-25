@@ -28,7 +28,7 @@ RUN dotnet build --version-suffix $build -c Release
 
 FROM build AS testrunner
 WORKDIR /app/test/Foundatio.Tests
-ENTRYPOINT dotnet test --verbosity minimal --logger:trx;LogFileName=/app/artifacts/test-results.trx
+ENTRYPOINT dotnet test --results-directory /app/artifacts --logger:trx
 
 # pack
 
@@ -48,7 +48,6 @@ WORKDIR /app/
 ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
 
 # docker build --target testrunner -t foundatio:testrunner --build-arg build=123-dev .
-# mkdir artifacts
 # docker run -it -v $(pwd)/artifacts:/app/artifacts foundatio:testrunner
 
 # docker build --target publish -t foundatio:publish --build-arg build=123-dev .
