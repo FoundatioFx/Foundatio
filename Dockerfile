@@ -42,13 +42,9 @@ ENTRYPOINT dotnet pack --version-suffix $build -c Release -o /app/artifacts
 
 # publish
 
-FROM build AS publish
+FROM pack AS publish
 WORKDIR /app/
 
-ARG build=0-dev
-ENV build=$build
-
-RUN dotnet pack --version-suffix $build -c Release -o /app/artifacts
 ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
 
 # docker build --target testrunner -t foundatio:testrunner --build-arg build=123-dev .
