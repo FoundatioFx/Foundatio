@@ -33,7 +33,7 @@ test_script:
 after_test:
   #- cd $APPVEYOR_BUILD_FOLDER
   #- dotnet pack --version-suffix $BUILD_VERSION -c Release -o $APPVEYOR_BUILD_FOLDER/artifacts
-  - docker build --target publish -t foundatio:publish --build-arg build=${BUILD_VERSION} .
+  - docker build --target pack -t foundatio:pack --build-arg build=${BUILD_VERSION} .
   - docker run --rm -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
