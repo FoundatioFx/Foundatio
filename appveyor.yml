@@ -11,29 +11,21 @@ environment:
 
 init:
   - git config --global core.autocrlf input
-  - ps: |
-      $env:GIT_HASH=$env:APPVEYOR_REPO_COMMIT.Substring(0, 10)
-      If ("$env:APPVEYOR_REPO_TAG" -ne "true") {
-        $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION-pre"
-      } Else {
-        $env:BUILD_VERSION="$env:APPVEYOR_BUILD_VERSION"
-      }
-      Write-Output "Folder: $env:APPVEYOR_BUILD_FOLDER GitHash: $env:GIT_HASH Build: $env:APPVEYOR_BUILD_VERSION Version: $env:BUILD_VERSION"
-
-#build_script:
-#  - dotnet build --version-suffix $BUILD_VERSION -c Release
+  - |
+    if [ $APPVEYOR_REPO_TAG != "true" ]; then
+      BUILD_NUMBER="$APPVEYOR_BUILD_NUMBER-pre"
+    else
+      BUILD_NUMBER=$APPVEYOR_BUILD_NUMBER
+    fi
+    echo "Build: $BUILD_NUMBER"
 
 test_script:
   - mkdir artifacts
-  #- cd test/Foundatio.Tests
-  #- dotnet test --verbosity minimal --results-directory $APPVEYOR_BUILD_FOLDER/artifacts --logger trx
-  - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_VERSION} .
+  - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_NUMBER} .
   - docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_test:
-  #- cd $APPVEYOR_BUILD_FOLDER
-  #- dotnet pack --version-suffix $BUILD_VERSION -c Release -o $APPVEYOR_BUILD_FOLDER/artifacts
-  - docker build --target pack -t foundatio:pack --build-arg build=${BUILD_VERSION} .
+  - docker build --target pack -t foundatio:pack --build-arg build=${BUILD_NUMBER} .
   - docker run --rm -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
@@ -45,6 +37,8 @@ artifacts:
 deploy:
   - provider: Environment
     name: MyGet
+    on:
+      appveyor_repo_tag: false
   - provider: Environment
     name: NuGet
     on:
