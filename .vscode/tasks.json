@@ -11,7 +11,7 @@
             },
             "args": [
                 "build",
-                "${workspaceFolder}/test/Foundatio.Tests/Foundatio.Tests.csproj",
+                "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
                 "/p:GenerateFullPaths=true"
             ],
             "problemMatcher": "$msCompile"
@@ -26,7 +26,7 @@
           },
           "args": [
               "test",
-              "${workspaceFolder}/test/Foundatio.Tests/Foundatio.Tests.csproj",
+              "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
               "/p:GenerateFullPaths=true"
           ],
           "problemMatcher": "$msCompile"

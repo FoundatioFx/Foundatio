@@ -15,8 +15,8 @@ COPY samples/*/*.csproj ./
 RUN for file in $(ls *.csproj); do mkdir -p samples/${file%.*}/ && mv $file samples/${file%.*}/; done
 
 # Copy the test project files
-COPY test/*/*.csproj ./
-RUN for file in $(ls *.csproj); do mkdir -p test/${file%.*}/ && mv $file test/${file%.*}/; done
+COPY tests/*/*.csproj ./
+RUN for file in $(ls *.csproj); do mkdir -p tests/${file%.*}/ && mv $file tests/${file%.*}/; done
 
 RUN dotnet restore
 
@@ -27,7 +27,7 @@ RUN dotnet build --version-suffix $build -c Release
 # testrunner
 
 FROM build AS testrunner
-WORKDIR /app/test/Foundatio.Tests
+WORKDIR /app/tests/Foundatio.Tests
 ENTRYPOINT dotnet test --results-directory /app/artifacts --logger:trx
 
 # pack
