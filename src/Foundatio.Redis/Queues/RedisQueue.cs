@@ -509,7 +509,7 @@ namespace Foundatio.Queues {
             _autoResetEvent.Set();
         }
 
-        internal async Task DoMaintenanceWorkAsync() {
+        public async Task DoMaintenanceWorkAsync() {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("DoMaintenance: Name: {Name} Id: {Id}", _options.Name, QueueId);
             var utcNow = SystemClock.UtcNow;

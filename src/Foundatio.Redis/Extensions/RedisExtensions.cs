@@ -67,7 +67,9 @@ namespace Foundatio.Redis {
 
             return redisValue;
         }
-        
+    }
+
+    public static class RedisExtensions {
         public static bool IsCluster(this ConnectionMultiplexer muxer) {
             var configuration = ConfigurationOptions.Parse(muxer.Configuration);
             if (configuration.Proxy == Proxy.Twemproxy)
