@@ -1,14 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <PackageTags>AppMetrics;Logging;Log</PackageTags>
-    <NoWarn>NU1701;CS1591</NoWarn>
-  </PropertyGroup>
-  <PropertyGroup Label="Signing">
-    <SignAssembly>true</SignAssembly>
-    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
+    <PackageTags>$(PackageTags);AppMetrics;Logging;Log</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="App.Metrics.Abstractions" Version="2.0.0" />

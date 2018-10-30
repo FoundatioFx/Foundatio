@@ -1,35 +1,55 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "build",
-            "command": "dotnet",
-            "type": "process",
-            "group": {
-              "kind": "build",
-              "isDefault": true
-            },
-            "args": [
-                "build",
-                "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
-                "/p:GenerateFullPaths=true"
-            ],
-            "problemMatcher": "$msCompile"
-        },
-        {
-          "label": "test",
-          "command": "dotnet",
-          "type": "process",
-          "group": {
-            "kind": "test",
-            "isDefault": true
-          },
-          "args": [
-              "test",
-              "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
-              "/p:GenerateFullPaths=true"
-          ],
-          "problemMatcher": "$msCompile"
-      }
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "args": [
+        "build",
+        "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
+        "/p:GenerateFullPaths=true"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test",
+      "command": "dotnet",
+      "type": "process",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "args": [
+        "test",
+        "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
+        "/p:GenerateFullPaths=true"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "pack", 
+      "command": "dotnet pack -c Release -o ${workspaceFolder}/artifacts",
+      "type": "shell",
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: build",
+      "command": "docker build --target build -t foundatio:build . && docker run -v $(pwd)/artifacts:/app/artifacts foundatio:build",
+      "type": "shell",
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "docker: test",
+      "command": "docker build --target testrunner -t foundatio:test . && docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test",
+      "type": "shell",
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    }
   ]
 }

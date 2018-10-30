@@ -4,11 +4,6 @@
     <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
-  <PropertyGroup Label="Signing">
-    <SignAssembly>true</SignAssembly>
-    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
-  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.11.1" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.1.47" />
