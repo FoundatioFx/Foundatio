@@ -1,16 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
-  <PropertyGroup>
-    <TargetFrameworks>netstandard2.0</TargetFrameworks>
-    <PackageTags>Queue;Messaging;Message;Bus;MessageBus;Locking;Lock;Distributed;File;Storage;Metrics;Stats;Redis;broker;NETSTANDARD;Core</PackageTags>
-  </PropertyGroup>
-  <PropertyGroup Label="Signing">
-    <SignAssembly>true</SignAssembly>
-    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\Exceptionless.snk</AssemblyOriginatorKeyFile>
-  </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="7.0.1738" />
+    <PackageReference Include="Foundatio" Version="7.0.1818" />
     <PackageReference Include="StackExchange.Redis" Version="2.0.513" />
   </ItemGroup>
 </Project>
