@@ -10,10 +10,11 @@ init:
   - |
     if [ $APPVEYOR_REPO_TAG != "true" ]; then
       BUILD_NUMBER="$APPVEYOR_BUILD_NUMBER-pre"
+      echo "Build: $BUILD_NUMBER Tag: $APPVEYOR_REPO_TAG_NAME"
     else
       BUILD_NUMBER=$APPVEYOR_BUILD_NUMBER
+      echo "Build: $BUILD_NUMBER"
     fi
-    echo "Build: $BUILD_NUMBER"
 
 build_script:
   - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_NUMBER} .
@@ -33,17 +34,17 @@ deploy:
   - provider: Environment
     name: MyGet
     on:
-      appveyor_repo_tag: false
+      APPVEYOR_REPO_TAG: false
   - provider: Environment
     name: NuGet
     on:
-      appveyor_repo_tag: true
+      APPVEYOR_REPO_TAG: true
   - provider: GitHub
     auth_token:
       secure: 0s81q7bweVLTFSOKxnIhan7el6bIFiN8HJ1kYJzOkeFXX7wgGSq9bs/rV53X9qpf
     draft: true
     on:
-      appveyor_repo_tag: true
+      APPVEYOR_REPO_TAG: true
 
 notifications:
   - provider: Slack
