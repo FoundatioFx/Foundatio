@@ -150,7 +150,17 @@ namespace Foundatio.Tests.Storage {
         }
 
         protected virtual string GetTestFilePath() {
-            return Path.GetFullPath(PathHelper.ExpandPath(@"|DataDirectory|\..\..\..\Foundatio.Tests.csproj"));
+            var currentDirectory = new DirectoryInfo(PathHelper.ExpandPath(@"|DataDirectory|\"));
+            var currentFilePath = Path.Combine(currentDirectory.FullName, "README.md");
+            while (!File.Exists(currentFilePath) && currentDirectory.Parent != null) {
+                currentDirectory = currentDirectory.Parent;
+                currentFilePath = Path.Combine(currentDirectory.FullName, "README.md");
+            }
+
+            if (File.Exists(currentFilePath))
+                return currentFilePath;
+
+            throw new ApplicationException("Unable to find test README.md file in path hierarchy.");
         }
 
         public virtual async Task CanSaveFilesAsync() {
