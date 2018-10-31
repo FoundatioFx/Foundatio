@@ -110,7 +110,7 @@ var lock = await locker.AcquireAsync("test");
 // ...
 await lock.ReleaseAsync();
 
-ILockProvider throttledLocker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
+ILockProvider throttledLocker = new ThrottlingLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
 var throttledLock = await throttledLocker.AcquireAsync("test");
 // ...
 await throttledLock.ReleaseAsync();
