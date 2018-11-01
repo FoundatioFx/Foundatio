@@ -2,8 +2,6 @@ Dockerfile*
 docker-compose*
 .dockerignore
 .gitignore
-README.md
-LICENSE.txt
 .vscode
 .circleci
 **/bin/
