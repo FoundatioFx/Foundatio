@@ -4,6 +4,7 @@
     <VersionPrefix>7.0</VersionPrefix>
     <VersionSuffix>0-dev</VersionSuffix>
     <Version>$(VersionPrefix).$(VersionSuffix)</Version>
+    <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
   </PropertyGroup>
 
   <PropertyGroup>
