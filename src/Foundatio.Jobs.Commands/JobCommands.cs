@@ -224,7 +224,7 @@ namespace Foundatio.Jobs.Commands {
         public ICollection<string> Assemblies { get; set; }
 
         /// <summary>
-        /// List of exlusion patterns that will be applied to the jobs discovered in the specified assemblies.
+        /// List of exclusion patterns that will be applied to the jobs discovered in the specified assemblies.
         /// </summary>
         public ICollection<string> Exclusions { get; set; }
     }
