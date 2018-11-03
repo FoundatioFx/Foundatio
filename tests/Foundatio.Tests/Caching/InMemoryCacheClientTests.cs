@@ -70,6 +70,11 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanSetMinMaxExpirationAsync() {
+            return base.CanSetMinMaxExpirationAsync();
+        }
+
+        [Fact]
         public override Task CanIncrementAsync() {
             return base.CanIncrementAsync();
         }

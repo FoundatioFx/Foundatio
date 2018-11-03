@@ -85,11 +85,11 @@ namespace Foundatio.Lock {
                     break;
                 }
 
-                var keyExpiration = SystemClock.UtcNow.Add(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.Zero);
+                var keyExpiration = SystemClock.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(name).AnyContext() ?? TimeSpan.Zero);
                 var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow).Max(TimeSpan.FromMilliseconds(50));
 
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Delay amount: {Delay} Delay until: {DelayUntil}", delayAmount, SystemClock.UtcNow.Add(delayAmount).ToString("mm:ss.fff"));
+                    _logger.LogTrace("Delay amount: {Delay} Delay until: {DelayUntil}", delayAmount, SystemClock.UtcNow.SafeAdd(delayAmount).ToString("mm:ss.fff"));
 
                 using (var delayCancellationTokenSource = new CancellationTokenSource(delayAmount))
                 using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, delayCancellationTokenSource.Token)) {

@@ -25,5 +25,15 @@ namespace Foundatio.Utility {
         public static DateTime FromUnixTimeSeconds(this long timestamp) {
             return DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
         }
+        
+        public static DateTime SafeAdd(this DateTime date, TimeSpan value) {
+            if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
+                return DateTime.MinValue;
+
+            if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+                return DateTime.MaxValue;
+
+            return date.Add(value);
+        }
     }
 }

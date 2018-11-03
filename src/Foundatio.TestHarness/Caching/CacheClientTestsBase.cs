@@ -368,6 +368,36 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
+        public virtual async Task CanSetMinMaxExpirationAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                using (TestSystemClock.Install()) {
+                    var now = DateTime.UtcNow;
+                    SystemClock.Test.SetFixedTime(now);
+
+                    var expires = DateTime.MaxValue - now.AddDays(1);
+                    Assert.True(await cache.SetAsync("test1", 1, expires));
+                    Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
+                    Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
+                    Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
+                    
+                    Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
+                    Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
+
+                    Assert.False(await cache.ExistsAsync("test2"));
+                    Assert.Equal(1, (await cache.GetAsync<int>("test3")).Value);
+                    Assert.False((await cache.GetExpirationAsync("test3")).HasValue);
+                    Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
+                    Assert.False((await cache.GetExpirationAsync("test4")).HasValue);
+                }
+            }
+        }
+
         public virtual async Task CanIncrementAsync() {
             var cache = GetCacheClient();
             if (cache == null)

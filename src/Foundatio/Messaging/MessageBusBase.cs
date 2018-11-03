@@ -179,7 +179,7 @@ namespace Foundatio.Messaging {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
 
-            var sendTime = SystemClock.UtcNow.Add(delay);
+            var sendTime = SystemClock.UtcNow.SafeAdd(delay);
             _delayedMessages.TryAdd(Guid.NewGuid(), new DelayedMessage {
                 Message = message,
                 MessageType = messageType,
