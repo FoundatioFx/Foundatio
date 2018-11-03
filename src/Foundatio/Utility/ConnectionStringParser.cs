@@ -28,70 +28,61 @@ namespace Foundatio.Utility {
             + "[\\s;]*[\u0000\\s]*"                                     // trailing whitespace/semicolons (DataSourceLocator), embedded nulls are allowed only in the end
         ;
 
-        private static readonly Regex _connectionStringRegex = new Regex(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled);
-        private const string ConnectionStringValidKeyPattern = "^(?![;\\s])[^\\p{Cc}]+(?<!\\s)$"; // key not allowed to start with semi-colon or space or contain non-visible characters or end with space
-        private static readonly Regex _connectionStringValidKeyRegex = new Regex(ConnectionStringValidKeyPattern, RegexOptions.Compiled);
+        private static readonly Regex _connectionStringRegex = new Regex(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
 
-        private static Dictionary<string, string> SplitConnectionString(string connectionString, IDictionary<string, string> synonyms) {
-            var parsetable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            Regex parser = _connectionStringRegex;
+        private static Dictionary<string, string> Parse(string connectionString, IDictionary<string, string> synonyms) {
+            var parseTable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            const int KeyIndex = 1, ValueIndex = 2;
-            Debug.Assert(KeyIndex == parser.GroupNumberFromName("key"), "wrong key index");
-            Debug.Assert(ValueIndex == parser.GroupNumberFromName("value"), "wrong value index");
+            const int keyIndex = 1, valueIndex = 2;
+            Debug.Assert(keyIndex == _connectionStringRegex.GroupNumberFromName("key"), "wrong key index");
+            Debug.Assert(valueIndex == _connectionStringRegex.GroupNumberFromName("value"), "wrong value index");
 
-            if (null != connectionString) {
-                Match match = parser.Match(connectionString);
-                if (!match.Success || (match.Length != connectionString.Length))
-                    throw new ArgumentException($"Format of the initialization string does not conform to specification starting at index {match.Length}.");
+            if (null == connectionString)
+                return parseTable;
+            
+            var match = _connectionStringRegex.Match(connectionString);
+            if (!match.Success || (match.Length != connectionString.Length))
+                throw new ArgumentException($"Format of the initialization string does not conform to specification starting at index {match.Length}.");
 
-                int indexValue = 0;
-                CaptureCollection keyvalues = match.Groups[ValueIndex].Captures;
-                foreach (Capture keypair in match.Groups[KeyIndex].Captures) {
-                    string keyname = keypair.Value.Replace("==", "=");
-                    string keyvalue = keyvalues[indexValue++].Value;
-                    if (0 < keyvalue.Length) {
-                        switch (keyvalue[0]) {
-                            case '\"':
-                                keyvalue = keyvalue.Substring(1, keyvalue.Length - 2).Replace("\"\"", "\"");
-                                break;
-                            case '\'':
-                                keyvalue = keyvalue.Substring(1, keyvalue.Length - 2).Replace("\'\'", "\'");
-                                break;
-                            default:
-                                break;
-                        }
-                    } else {
-                        keyvalue = null;
+            int indexValue = 0;
+            var keyValues = match.Groups[valueIndex].Captures;
+            foreach (Capture keyPair in match.Groups[keyIndex].Captures) {
+                string keyName = keyPair.Value.Replace("==", "=");
+                string keyValue = keyValues[indexValue++].Value;
+                if (0 < keyValue.Length) {
+                    switch (keyValue[0]) {
+                        case '\"':
+                            keyValue = keyValue.Substring(1, keyValue.Length - 2).Replace("\"\"", "\"");
+                            break;
+                        case '\'':
+                            keyValue = keyValue.Substring(1, keyValue.Length - 2).Replace("\'\'", "\'");
+                            break;
                     }
-
-                    string synonym;
-                    string realkeyname = null != synonyms ? (synonyms.TryGetValue(keyname, out synonym) ? synonym : null) : keyname;
-
-                    if (!IsKeyNameValid(realkeyname))
-                        throw new ArgumentException($"Keyword not supported: '{keyname}'.");
-                    
-                    if (!parsetable.ContainsKey(realkeyname))
-                        parsetable[realkeyname] = keyvalue; // last key-value pair wins (or first)
+                } else {
+                    keyValue = null;
                 }
+
+                string realKeyName = synonyms != null ? (synonyms.TryGetValue(keyName, out string synonym) ? synonym : null) : keyName;
+
+                if (!IsKeyNameValid(realKeyName))
+                    throw new ArgumentException($"Keyword not supported: '{keyName}'.");
+                    
+                if (!parseTable.ContainsKey(realKeyName))
+                    parseTable[realKeyName] = keyValue; // last key-value pair wins (or first)
             }
 
-            return parsetable;
+            return parseTable;
         }
 
-        private static bool IsKeyNameValid(string keyname) {
-            if (null != keyname) {
-#if DEBUG
-                bool compValue = _connectionStringValidKeyRegex.IsMatch(keyname);
-                Debug.Assert(((0 < keyname.Length) && (';' != keyname[0]) && !Char.IsWhiteSpace(keyname[0]) && (-1 == keyname.IndexOf('\u0000'))) == compValue, "IsValueValid mismatch with regex");
-#endif
-                return ((0 < keyname.Length) && (';' != keyname[0]) && !Char.IsWhiteSpace(keyname[0]) && (-1 == keyname.IndexOf('\u0000')));
-            }
-            return false;
+        private static bool IsKeyNameValid(string keyName) {
+            if (String.IsNullOrEmpty(keyName))
+                return false;
+            
+            return keyName[0] != ';' && !Char.IsWhiteSpace(keyName[0]) && keyName.IndexOf('\u0000') == -1;
         }
 
         public static Dictionary<string, string> ParseConnectionString(this string connectionString, IDictionary<string, string> synonyms = null) {
-            return SplitConnectionString(connectionString, synonyms);
+            return Parse(connectionString, synonyms);
         }
 
         public static string BuildConnectionString(this IDictionary<string, string> options, IEnumerable<string> excludedKeys = null) {
