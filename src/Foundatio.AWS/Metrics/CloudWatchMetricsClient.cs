@@ -64,14 +64,14 @@ namespace Foundatio.Metrics {
         private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedCounterMetric> counters) {
             foreach (var counter in counters) {
                 yield return new MetricDatum {
-                    Timestamp = counter.Key.StartTimeUtc,
+                    TimestampUtc = counter.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
                     Value = counter.Value
                 };
 
                 yield return new MetricDatum {
                     Dimensions = _dimensions,
-                    Timestamp = counter.Key.StartTimeUtc,
+                    TimestampUtc = counter.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Counter, counter.Key.Name),
                     Value = counter.Value
                 };
@@ -81,7 +81,7 @@ namespace Foundatio.Metrics {
         private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedGaugeMetric> gauges) {
             foreach (var gauge in gauges) {
                 yield return new MetricDatum {
-                    Timestamp = gauge.Key.StartTimeUtc,
+                    TimestampUtc = gauge.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
                     StatisticValues = new StatisticSet {
                         SampleCount = gauge.Count,
@@ -93,7 +93,7 @@ namespace Foundatio.Metrics {
 
                 yield return new MetricDatum {
                     Dimensions = _dimensions,
-                    Timestamp = gauge.Key.StartTimeUtc,
+                    TimestampUtc = gauge.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Gauge, gauge.Key.Name),
                     StatisticValues = new StatisticSet {
                         SampleCount = gauge.Count,
@@ -108,7 +108,7 @@ namespace Foundatio.Metrics {
         private IEnumerable<MetricDatum> ConvertToDatums(ICollection<AggregatedTimingMetric> timings) {
             foreach (var timing in timings) {
                 yield return new MetricDatum {
-                    Timestamp = timing.Key.StartTimeUtc,
+                    TimestampUtc = timing.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
                     StatisticValues = new StatisticSet {
                         SampleCount = timing.Count,
@@ -121,7 +121,7 @@ namespace Foundatio.Metrics {
 
                 yield return new MetricDatum {
                     Dimensions = _dimensions,
-                    Timestamp = timing.Key.StartTimeUtc,
+                    TimestampUtc = timing.Key.StartTimeUtc,
                     MetricName = GetMetricName(MetricType.Timing, timing.Key.Name),
                     StatisticValues = new StatisticSet {
                         SampleCount = timing.Count,
@@ -160,8 +160,8 @@ namespace Foundatio.Metrics {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
-                StartTime = start.Value,
-                EndTime = end.Value,
+                StartTimeUtc = start.Value,
+                EndTimeUtc = end.Value,
                 Statistics = new List<string> { "Sum" }
             };
 
@@ -190,8 +190,8 @@ namespace Foundatio.Metrics {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
-                StartTime = start.Value,
-                EndTime = end.Value,
+                StartTimeUtc = start.Value,
+                EndTimeUtc = end.Value,
                 Statistics = new List<string> { "Sum", "Minimum", "Maximum", "SampleCount", "Average" }
             };
 
@@ -224,8 +224,8 @@ namespace Foundatio.Metrics {
                 Namespace = _namespace,
                 MetricName = GetMetricName(MetricType.Counter, name),
                 Period = GetStatsPeriod(start.Value, end.Value),
-                StartTime = start.Value,
-                EndTime = end.Value,
+                StartTimeUtc = start.Value,
+                EndTimeUtc = end.Value,
                 Unit = StandardUnit.Milliseconds,
                 Statistics = new List<string> { "Sum", "Minimum", "Maximum", "SampleCount" }
             };

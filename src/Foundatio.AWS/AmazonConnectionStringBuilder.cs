@@ -14,8 +14,9 @@ namespace Foundatio {
         protected AmazonConnectionStringBuilder() { }
 
         protected AmazonConnectionStringBuilder(string connectionString) {
-            if(String.IsNullOrEmpty(connectionString))
+            if (String.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
+            
             Parse(connectionString);
         }
 
