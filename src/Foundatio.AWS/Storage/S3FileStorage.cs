@@ -183,13 +183,13 @@ namespace Foundatio.Storage {
             var criteria = GetRequestCriteria(searchPattern);
 
             using (var client = CreateClient()) {
-                var listRequest = new ListObjectsRequest { BucketName = _bucket, Prefix = criteria.Prefix };
+                var listRequest = new ListObjectsV2Request { BucketName = _bucket, Prefix = criteria.Prefix };
                 var deleteRequest = new DeleteObjectsRequest { BucketName = _bucket };
 
                 do {
-                    var listResponse = await client.ListObjectsAsync(listRequest, cancellationToken).AnyContext();
+                    var listResponse = await client.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
                     if (listResponse.IsTruncated)
-                        listRequest.Marker = listResponse.NextMarker;
+                        listRequest.ContinuationToken = listResponse.ContinuationToken;
                     else
                         listRequest = null;
 
@@ -204,9 +204,7 @@ namespace Foundatio.Storage {
 
                             deleteRequest.Objects.Clear();
                         }
-
                     }
-
                 } while (listRequest != null);
 
                 if (deleteRequest.Objects.Count > 0) {
@@ -225,21 +223,17 @@ namespace Foundatio.Storage {
 
             var objects = new List<S3Object>();
             using (var client = CreateClient()) {
-                var req = new ListObjectsRequest {
+                var req = new ListObjectsV2Request {
                     BucketName = _bucket,
                     Prefix = criteria.Prefix
                 };
 
+                ListObjectsV2Response res;
                 do {
-                    var res = await client.ListObjectsAsync(req, cancellationToken).AnyContext();
-                    if (res.IsTruncated)
-                        req.Marker = res.NextMarker;
-                    else
-                        req = null;
-
-                    // TODO: Implement paging
+                    res = await client.ListObjectsV2Async(req, cancellationToken).AnyContext();
                     objects.AddRange(res.S3Objects.MatchesPattern(criteria.Pattern));
-                } while (req != null && objects.Count < limit.GetValueOrDefault(int.MaxValue));
+                    req.ContinuationToken = res.NextContinuationToken;
+                } while (res.IsTruncated && objects.Count < limit.GetValueOrDefault(int.MaxValue));
 
                 if (limit.HasValue)
                     objects = objects.Take(limit.Value).ToList();
