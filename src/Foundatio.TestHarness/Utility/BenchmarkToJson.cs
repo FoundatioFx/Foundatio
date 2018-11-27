@@ -22,6 +22,8 @@ namespace Foundatio.TestHarness.Utility {
         public override string ToString() {
             return _buffer.ToString();
         }
+
+        public void Flush() {}
     }
 
     public static class BenchmarkSummaryExtensions {
