@@ -200,18 +200,12 @@ namespace Foundatio.Storage {
             if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith(Path.DirectorySeparatorChar + "*")) {
                 string directory = Path.GetDirectoryName(path);
                 if (Directory.Exists(directory)) {
-                    foreach (string file in Directory.EnumerateFiles(directory, "*,*", SearchOption.AllDirectories)) {
-                        File.Delete(file);
-                        count++;
-                    }
+                    count += Directory.EnumerateFiles(directory, "*,*", SearchOption.AllDirectories).Count();
                     Directory.Delete(directory, true);
                     return Task.FromResult(count);
                 }
             } else if (Directory.Exists(path)) {
-                foreach (string file in Directory.EnumerateFiles(path, "*,*", SearchOption.AllDirectories)) {
-                    File.Delete(file);
-                    count++;
-                }
+                count += Directory.EnumerateFiles(path, "*,*", SearchOption.AllDirectories).Count();
                 Directory.Delete(path, true);
                 return Task.FromResult(count);
             }
