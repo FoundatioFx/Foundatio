@@ -187,30 +187,41 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
+        public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 Directory.Delete(Folder, true);
-                return Task.CompletedTask;
+                return Task.FromResult(0);
             }
 
             searchPattern = searchPattern.NormalizePath();
+            int count = 0;
 
             string path = Path.Combine(Folder, searchPattern);
             if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith(Path.DirectorySeparatorChar + "*")) {
                 string directory = Path.GetDirectoryName(path);
                 if (Directory.Exists(directory)) {
+                    foreach (string file in Directory.EnumerateFiles(directory, "*,*", SearchOption.AllDirectories)) {
+                        File.Delete(file);
+                        count++;
+                    }
                     Directory.Delete(directory, true);
-                    return Task.CompletedTask;
+                    return Task.FromResult(count);
                 }
             } else if (Directory.Exists(path)) {
+                foreach (string file in Directory.EnumerateFiles(path, "*,*", SearchOption.AllDirectories)) {
+                    File.Delete(file);
+                    count++;
+                }
                 Directory.Delete(path, true);
-                return Task.CompletedTask;
+                return Task.FromResult(count);
             }
 
-            foreach (string file in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories))
+            foreach (string file in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories)) {
                 File.Delete(file);
+                count++;
+            }
 
-            return Task.CompletedTask;
+            return Task.FromResult(count);
             
         }
 

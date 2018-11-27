@@ -152,15 +152,16 @@ namespace Foundatio.Storage {
             return Task.FromResult(true);
         }
 
-        public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
+        public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 lock(_lock)
                     _storage.Clear();
 
-                return Task.CompletedTask;
+                return Task.FromResult(0);
             }
 
             searchPattern = searchPattern.NormalizePath();
+            int count = 0;
 
             if (searchPattern[searchPattern.Length - 1] == Path.DirectorySeparatorChar) 
                 searchPattern = $"{searchPattern}*";
@@ -170,11 +171,13 @@ namespace Foundatio.Storage {
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
             lock (_lock) {
                 var keys = _storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).ToList();
-                foreach (var key in keys)
+                foreach (var key in keys) {
                     _storage.Remove(key.Path);
+                    count++;
+                }
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(count);
         }
 
         public async Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {

@@ -18,7 +18,7 @@ namespace Foundatio.Storage {
         Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default);
         Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default);
         Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
-        Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
+        Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
         Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default);
     }
 
