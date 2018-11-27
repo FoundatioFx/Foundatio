@@ -1,4 +1,4 @@
-FROM microsoft/dotnet:2.1.403-sdk AS build  
+FROM microsoft/dotnet:2.1.500-sdk AS build  
 WORKDIR /app
 ARG build=0-dev
 ENV build=$build
