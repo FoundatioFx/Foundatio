@@ -86,15 +86,22 @@ namespace Foundatio.Storage {
             return UnscopedStorage.DeleteFilesAsync(String.Concat(_pathPrefix, searchPattern), cancellation);
         }
 
-        public async Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
-            if (String.IsNullOrEmpty(searchPattern))
-                searchPattern = "*";
+        public async Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
+            if (limit.HasValue && limit.Value <= 0)
+                return FileListResult.Empty;
 
-            var files = (await UnscopedStorage.GetFileListAsync(String.Concat(_pathPrefix, searchPattern), limit, skip, cancellationToken).AnyContext()).ToList();
-            foreach (var file in files)
+            var unscopedResult = await UnscopedStorage.GetFileListAsync(String.Concat(_pathPrefix, searchPattern), limit, cancellationToken).AnyContext();
+            foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return files;
+            return new FileListResult(unscopedResult.Files, unscopedResult.HasMore, () => NextPage(unscopedResult));
+        }
+
+        private async Task<NextPageResult> NextPage(FileListResult result) {
+            var success = await result.NextPageAsync().AnyContext();
+            foreach (var file in result.Files)
+                file.Path = file.Path.Substring(_pathPrefix.Length);
+            return new NextPageResult { Success = success, HasMore = result.HasMore, Files = result.Files, NextPageFunc = () => NextPage(result) };
         }
 
         public void Dispose() { }
