@@ -82,7 +82,7 @@ namespace Foundatio.Storage {
             return UnscopedStorage.DeleteFileAsync(String.Concat(_pathPrefix, path), cancellationToken);
         }
 
-        public Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
+        public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             return UnscopedStorage.DeleteFilesAsync(String.Concat(_pathPrefix, searchPattern), cancellation);
         }
 
