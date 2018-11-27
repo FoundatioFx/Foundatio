@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -18,7 +19,61 @@ namespace Foundatio.Storage {
         Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default);
         Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
         Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
-        Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default);
+        Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default);
+    }
+
+    public interface IHasNextPageFunc {
+        Func<Task<NextPageResult>> NextPageFunc { get; set; }
+    }
+
+    public class NextPageResult {
+        public bool Success { get; set; }
+        public bool HasMore { get; set; }
+        public IReadOnlyCollection<FileSpec> Files { get; set; }
+        public Func<Task<NextPageResult>> NextPageFunc { get; set; }
+    }
+
+    public class FileListResult : IHasNextPageFunc {
+        private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(new FileSpec[0]);
+        public static FileListResult Empty = new FileListResult(_empty);
+
+        public FileListResult(IReadOnlyCollection<FileSpec> files) {
+            Files = files;
+            HasMore = false;
+            ((IHasNextPageFunc)this).NextPageFunc = null;
+        }
+        
+        public FileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<Task<NextPageResult>> nextPageFunc) {
+            Files = files;
+            HasMore = hasMore;
+            ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
+        }
+
+        public FileListResult(Func<Task<NextPageResult>> nextPageFunc) {
+            ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
+        }
+
+        public IReadOnlyCollection<FileSpec> Files { get; private set; }
+        public bool HasMore { get; private set; }
+        Func<Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
+
+        public async Task<bool> NextPageAsync() {
+            if (((IHasNextPageFunc)this).NextPageFunc == null)
+                return false;
+            
+            var result = await ((IHasNextPageFunc)this).NextPageFunc().AnyContext();
+            if (result.Success) {
+                Files = result.Files;
+                HasMore = result.HasMore;
+                ((IHasNextPageFunc)this).NextPageFunc = result.NextPageFunc;
+            } else {
+                Files = _empty;
+                HasMore = false;
+                ((IHasNextPageFunc)this).NextPageFunc = null;
+            }
+
+            return result.Success;
+        }
     }
 
     [DebuggerDisplay("Path = {Path}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]

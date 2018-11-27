@@ -214,9 +214,9 @@ namespace Foundatio.Storage {
             
         }
 
-        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
+        public async Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
             if (limit.HasValue && limit.Value <= 0)
-                return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
+                return FileListResult.Empty;
 
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern))
                 searchPattern = "*";
@@ -225,9 +225,21 @@ namespace Foundatio.Storage {
 
             var list = new List<FileSpec>();
             if (!Directory.Exists(Path.GetDirectoryName(Path.Combine(Folder, searchPattern))))
-                return Task.FromResult<IEnumerable<FileSpec>>(list);
+                return FileListResult.Empty;
 
-            foreach (string path in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip ?? 0).Take(limit ?? Int32.MaxValue)) {
+            var result = new FileListResult(() => Task.FromResult(GetFiles(searchPattern, 1, limit)));
+            await result.NextPageAsync().AnyContext();
+            return result;
+        }
+
+        private NextPageResult GetFiles(string searchPattern, int page, int? limit) {
+            var list = new List<FileSpec>();
+            int pagingLimit = limit ?? Int32.MaxValue;
+            int skip = (page - 1) * pagingLimit;
+            if (pagingLimit < Int32.MaxValue)
+                pagingLimit = pagingLimit + 1;
+
+            foreach (string path in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip).Take(pagingLimit)) {
                 var info = new FileInfo(path);
                 if (!info.Exists)
                     continue;
@@ -239,8 +251,14 @@ namespace Foundatio.Storage {
                     Size = info.Length
                 });
             }
-
-            return Task.FromResult<IEnumerable<FileSpec>>(list);
+            
+            bool hasMore = false;
+            if (limit.HasValue && list.Count == pagingLimit) {
+                hasMore = true;
+                list.RemoveAt(limit.Value);
+            }
+            
+            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = () => Task.FromResult(GetFiles(searchPattern, page + 1, limit)) };
         }
 
         public void Dispose() { }
