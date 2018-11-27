@@ -180,23 +180,23 @@ namespace Foundatio.Storage {
             return Task.FromResult(count);
         }
 
-        public async Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
-            if (limit.HasValue && limit.Value <= 0)
-                return FileListResult.Empty;
+        public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
+            if (pageSize <= 0)
+                return PagedFileListResult.Empty;
 
             if (searchPattern == null)
                 searchPattern = "*";
 
             searchPattern = searchPattern.NormalizePath();
 
-            var result = new FileListResult(() => Task.FromResult(GetFiles(searchPattern, 1, limit)));
+            var result = new PagedFileListResult(() => Task.FromResult(GetFiles(searchPattern, 1, pageSize)));
             await result.NextPageAsync().AnyContext();
             return result;
         }
 
-        private NextPageResult GetFiles(string searchPattern, int page, int? limit) {
+        private NextPageResult GetFiles(string searchPattern, int page, int pageSize) {
             var list = new List<FileSpec>();
-            int pagingLimit = limit ?? Int32.MaxValue;
+            int pagingLimit = pageSize;
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
                 pagingLimit = pagingLimit + 1;
@@ -207,12 +207,12 @@ namespace Foundatio.Storage {
                 list.AddRange(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip).Take(pagingLimit).ToList());
             
             bool hasMore = false;
-            if (limit.HasValue && list.Count == pagingLimit) {
+            if (list.Count == pagingLimit) {
                 hasMore = true;
-                list.RemoveAt(limit.Value);
+                list.RemoveAt(pagingLimit);
             }
             
-            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = () => Task.FromResult(GetFiles(searchPattern, page + 1, limit)) };
+            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = () => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
         }
 
         public void Dispose() {

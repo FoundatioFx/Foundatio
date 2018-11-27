@@ -19,7 +19,7 @@ namespace Foundatio.Storage {
         Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default);
         Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
         Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
-        Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default);
+        Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default);
     }
 
     public interface IHasNextPageFunc {
@@ -33,23 +33,23 @@ namespace Foundatio.Storage {
         public Func<Task<NextPageResult>> NextPageFunc { get; set; }
     }
 
-    public class FileListResult : IHasNextPageFunc {
+    public class PagedFileListResult : IHasNextPageFunc {
         private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(new FileSpec[0]);
-        public static FileListResult Empty = new FileListResult(_empty);
+        public static PagedFileListResult Empty = new PagedFileListResult(_empty);
 
-        public FileListResult(IReadOnlyCollection<FileSpec> files) {
+        public PagedFileListResult(IReadOnlyCollection<FileSpec> files) {
             Files = files;
             HasMore = false;
             ((IHasNextPageFunc)this).NextPageFunc = null;
         }
         
-        public FileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<Task<NextPageResult>> nextPageFunc) {
             Files = files;
             HasMore = hasMore;
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
-        public FileListResult(Func<Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(Func<Task<NextPageResult>> nextPageFunc) {
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
@@ -155,6 +155,20 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
+        }
+
+        public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
+            var files = new List<FileSpec>();
+            var result = await storage.GetPagedFileListAsync(100, searchPattern, cancellationToken).AnyContext();
+            do {
+                foreach (var file in result.Files) {
+                    files.Add(file);
+                    if (limit.HasValue && limit.Value == files.Count)
+                        return files;
+                }
+            } while (result.HasMore && await result.NextPageAsync().AnyContext());
+            
+            return files;
         }
     }
 }

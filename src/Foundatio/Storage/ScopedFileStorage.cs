@@ -86,18 +86,18 @@ namespace Foundatio.Storage {
             return UnscopedStorage.DeleteFilesAsync(String.Concat(_pathPrefix, searchPattern), cancellation);
         }
 
-        public async Task<FileListResult> GetFileListAsync(string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
-            if (limit.HasValue && limit.Value <= 0)
-                return FileListResult.Empty;
+        public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
+            if (pageSize <= 0)
+                return PagedFileListResult.Empty;
 
-            var unscopedResult = await UnscopedStorage.GetFileListAsync(String.Concat(_pathPrefix, searchPattern), limit, cancellationToken).AnyContext();
+            var unscopedResult = await UnscopedStorage.GetPagedFileListAsync(pageSize, String.Concat(_pathPrefix, searchPattern), cancellationToken).AnyContext();
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return new FileListResult(unscopedResult.Files, unscopedResult.HasMore, () => NextPage(unscopedResult));
+            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, () => NextPage(unscopedResult));
         }
 
-        private async Task<NextPageResult> NextPage(FileListResult result) {
+        private async Task<NextPageResult> NextPage(PagedFileListResult result) {
             var success = await result.NextPageAsync().AnyContext();
             foreach (var file in result.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
