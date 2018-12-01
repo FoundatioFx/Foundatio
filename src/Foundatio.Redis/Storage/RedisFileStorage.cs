@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -128,7 +128,7 @@ namespace Foundatio.Storage {
             return count;
         }
 
-        public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
+        private Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
             CancellationToken cancellationToken = new CancellationToken()) {
             if (limit.HasValue && limit.Value <= 0)
                 return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
@@ -147,6 +147,49 @@ namespace Foundatio.Storage {
                 .Select(entry => Serializer.Deserialize<FileSpec>((byte[])entry.Value))
                 .Where(fileSpec => patternRegex == null || patternRegex.IsMatch(fileSpec.Path))
                 .Take(pageSize));
+        }
+
+        public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
+            if (pageSize <= 0)
+                return PagedFileListResult.Empty;
+            
+            searchPattern = NormalizePath(searchPattern);
+
+            var result = new PagedFileListResult(() => Task.FromResult(GetFiles(searchPattern, 1, pageSize)));
+            await result.NextPageAsync().AnyContext();
+            return result;
+        }
+
+        private NextPageResult GetFiles(string searchPattern, int page, int pageSize) {
+            int pagingLimit = pageSize;
+            int skip = (page - 1) * pagingLimit;
+            if (pagingLimit < Int32.MaxValue)
+                pagingLimit = pagingLimit + 1;
+            
+            string prefix = searchPattern;
+            Regex patternRegex = null;
+            int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
+            if (searchPattern != null && wildcardPos >= 0) {
+                patternRegex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
+                int slashPos = searchPattern.LastIndexOf('/');
+                prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
+            }
+            prefix = prefix ?? String.Empty;
+
+            var list = Database.HashScan(_fileSpecContainer, prefix + "*")
+                .Select(entry => Serializer.Deserialize<FileSpec>((byte[])entry.Value))
+                .Where(fileSpec => patternRegex == null || patternRegex.IsMatch(fileSpec.Path))
+                .Skip(skip)
+                .Take(pagingLimit)
+                .ToList();
+            
+            bool hasMore = false;
+            if (list.Count == pagingLimit) {
+                hasMore = true;
+                list.RemoveAt(pagingLimit);
+            }
+            
+            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = () => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
         }
 
         private string NormalizePath(string path) {
