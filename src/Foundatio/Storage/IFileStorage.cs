@@ -49,7 +49,7 @@ namespace Foundatio.Storage {
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
-        public PagedFileListResult(Func<object, Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
