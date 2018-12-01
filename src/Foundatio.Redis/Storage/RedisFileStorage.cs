@@ -116,10 +116,16 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
             var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
-            foreach (var file in files)
+            int count = 0;
+            
+            foreach (var file in files) {
                 await DeleteFileAsync(file.Path, cancellationToken).AnyContext();
+                count++;
+            }
+
+            return count;
         }
 
         public Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
