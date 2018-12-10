@@ -5,7 +5,7 @@ using Foundatio.Tests.Utility;
 using Xunit;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.ServiceBus;
+using Microsoft.Azure.ServiceBus;
 using Xunit.Abstractions;
 
 namespace Foundatio.AzureServiceBus.Tests.Queue {

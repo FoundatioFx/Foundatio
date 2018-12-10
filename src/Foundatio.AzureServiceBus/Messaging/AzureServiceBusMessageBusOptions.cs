@@ -1,6 +1,6 @@
 ﻿using System;
-using Microsoft.ServiceBus;
-using Microsoft.ServiceBus.Messaging;
+using Microsoft.Azure.ServiceBus;
+using Microsoft.Azure.ServiceBus.Management;
 
 namespace Foundatio.Messaging {
     public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions {

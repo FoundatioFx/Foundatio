@@ -1,11 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFrameworks>net462</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Distributed;Azure;broker;NETSTANDARD;Core</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Foundatio" Version="7.0.1738" />
-    <PackageReference Include="WindowsAzure.ServiceBus" Version="5.0.0" />
+    <PackageReference Include="Microsoft.Azure.Management.ServiceBus" Version="2.0.1" />
+    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="3.2.0" />
   </ItemGroup>
 </Project>

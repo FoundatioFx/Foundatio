@@ -8,13 +8,13 @@ using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Microsoft.ServiceBus;
-using Microsoft.ServiceBus.Messaging;
+using Microsoft.Azure.ServiceBus;
+using Microsoft.Azure.ServiceBus.Management;
 
 namespace Foundatio.Messaging {
     public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBusOptions> {
         private readonly AsyncLock _lock = new AsyncLock();
-        private readonly NamespaceManager _namespaceManager;
+        private readonly ManagementClient _managementClient;
         private TopicClient _topicClient;
         private SubscriptionClient _subscriptionClient;
         private readonly string _subscriptionName;
@@ -23,7 +23,7 @@ namespace Foundatio.Messaging {
             if (String.IsNullOrEmpty(options.ConnectionString))
                 throw new ArgumentException("ConnectionString is required.");
 
-            _namespaceManager = NamespaceManager.CreateFromConnectionString(options.ConnectionString);
+            _managementClient = new ManagementClient(options.ConnectionString);
             _subscriptionName = _options.SubscriptionName ?? MessageBusId;
         }
 
@@ -43,36 +43,39 @@ namespace Foundatio.Messaging {
 
                 var sw = Stopwatch.StartNew();
                 try {
-                    await _namespaceManager.CreateSubscriptionAsync(CreateSubscriptionDescription()).AnyContext();
+                    await _managementClient.CreateSubscriptionAsync(CreateSubscriptionDescription()).AnyContext();
                 } catch (MessagingEntityAlreadyExistsException) { }
 
                 // Look into message factory with multiple recievers so more than one connection is made and managed....
-                _subscriptionClient = SubscriptionClient.CreateFromConnectionString(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete);
-                _subscriptionClient.OnMessageAsync(OnMessageAsync, new OnMessageOptions { /* AutoComplete = true, // Don't run with recieve and delete */ MaxConcurrentCalls = 6 /* calculate this based on the the thread count. */ });
-                if (_options.SubscriptionRetryPolicy != null)
-                    _subscriptionClient.RetryPolicy = _options.SubscriptionRetryPolicy;
+                _subscriptionClient = new SubscriptionClient(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete, _options.SubscriptionRetryPolicy);
+                _subscriptionClient.RegisterMessageHandler(OnMessageAsync, new MessageHandlerOptions((e) => MessageHandlerException(e)) { AutoComplete = false, MaxConcurrentCalls = 1 });
                 if (_options.PrefetchCount.HasValue)
                     _subscriptionClient.PrefetchCount = _options.PrefetchCount.Value;
-
                 sw.Stop();
                 _logger.LogTrace("Ensure topic subscription exists took {0}ms.", sw.ElapsedMilliseconds);
             }
         }
 
-        private Task OnMessageAsync(BrokeredMessage brokeredMessage) {
+        private async Task OnMessageAsync(Message brokeredMessage, CancellationToken cancellationToken) {
             if (_subscribers.IsEmpty)
-                return Task.CompletedTask;
+                return;
 
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             MessageBusData message;
             try {
-                message = _serializer.Deserialize<MessageBusData>(brokeredMessage.GetBody<Stream>());
-            } catch (Exception ex) {
+                message = _serializer.Deserialize<MessageBusData>(brokeredMessage.Body);
+            }
+            catch (Exception ex) {
                 _logger.LogWarning(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
-                return brokeredMessage.DeadLetterAsync("Deserialization error", ex.Message);
+                await _subscriptionClient.DeadLetterAsync(brokeredMessage.SystemProperties.LockToken, "Deserialization error", ex.Message);
+                return;
             }
 
             SendMessageToSubscribers(message, _serializer);
+        }
+
+        private Task MessageHandlerException(ExceptionReceivedEventArgs e) {
+            _logger.LogWarning("Exception: \"{0}\" {0}", e.Exception.Message, e.ExceptionReceivedContext.EntityPath);
             return Task.CompletedTask;
         }
 
@@ -87,10 +90,10 @@ namespace Foundatio.Messaging {
 
                 var sw = Stopwatch.StartNew();
                 try {
-                    await _namespaceManager.CreateTopicAsync(CreateTopicDescription()).AnyContext();
+                    await _managementClient.CreateTopicAsync(CreateTopicDescription()).AnyContext();
                 } catch (MessagingEntityAlreadyExistsException) { }
 
-                _topicClient = TopicClient.CreateFromConnectionString(_options.ConnectionString, _options.Topic);
+                _topicClient = new TopicClient(_options.ConnectionString, _options.Topic);
                 sw.Stop();
                 _logger.LogTrace("Ensure topic exists took {0}ms.", sw.ElapsedMilliseconds);
             }
@@ -103,7 +106,7 @@ namespace Foundatio.Messaging {
                 Data = _serializer.SerializeToBytes(message)
             }, stream);
 
-            var brokeredMessage = new BrokeredMessage(stream, true);
+            var brokeredMessage = new Message(stream.ToArray());
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, delay.Value.TotalMilliseconds);
@@ -125,7 +128,7 @@ namespace Foundatio.Messaging {
                 td.DefaultMessageTimeToLive = _options.TopicDefaultMessageTimeToLive.Value;
 
             if (_options.TopicMaxSizeInMegabytes.HasValue)
-                td.MaxSizeInMegabytes = _options.TopicMaxSizeInMegabytes.Value;
+                td.MaxSizeInMB = _options.TopicMaxSizeInMegabytes.Value;
 
             if (_options.TopicRequiresDuplicateDetection.HasValue)
                 td.RequiresDuplicateDetection = _options.TopicRequiresDuplicateDetection.Value;
@@ -136,12 +139,6 @@ namespace Foundatio.Messaging {
             if (_options.TopicEnableBatchedOperations.HasValue)
                 td.EnableBatchedOperations = _options.TopicEnableBatchedOperations.Value;
 
-            if (_options.TopicEnableFilteringMessagesBeforePublishing.HasValue)
-                td.EnableFilteringMessagesBeforePublishing = _options.TopicEnableFilteringMessagesBeforePublishing.Value;
-
-            if (_options.TopicIsAnonymousAccessible.HasValue)
-                td.IsAnonymousAccessible = _options.TopicIsAnonymousAccessible.Value;
-
             if (_options.TopicStatus.HasValue)
                 td.Status = _options.TopicStatus.Value;
 
@@ -151,11 +148,18 @@ namespace Foundatio.Messaging {
             if (_options.TopicEnablePartitioning.HasValue)
                 td.EnablePartitioning = _options.TopicEnablePartitioning.Value;
 
-            if (_options.TopicEnableExpress.HasValue)
-                td.EnableExpress = _options.TopicEnableExpress.Value;
-
             if (!String.IsNullOrEmpty(_options.TopicUserMetadata))
                 td.UserMetadata = _options.TopicUserMetadata;
+
+            //Unfound properties in the new TopicDescription Class
+            //if (_options.TopicEnableFilteringMessagesBeforePublishing.HasValue)
+            //    td.EnableFilteringMessagesBeforePublishing = _options.TopicEnableFilteringMessagesBeforePublishing.Value;
+
+            //if (_options.TopicIsAnonymousAccessible.HasValue)
+            //    td.IsAnonymousAccessible = _options.TopicIsAnonymousAccessible.Value;
+
+            //if (_options.TopicEnableExpress.HasValue)
+            //    td.EnableExpress = _options.TopicEnableExpress.Value;
 
             return td;
         }
@@ -206,6 +210,7 @@ namespace Foundatio.Messaging {
             base.Dispose();
             CloseTopicClient();
             CloseSubscriptionClient();
+            _managementClient?.CloseAsync();
         }
 
         private void CloseTopicClient() {
@@ -216,7 +221,7 @@ namespace Foundatio.Messaging {
                 if (_topicClient == null)
                     return;
 
-                _topicClient?.Close();
+                _topicClient?.CloseAsync();
                 _topicClient = null;
             }
         }
@@ -229,7 +234,7 @@ namespace Foundatio.Messaging {
                 if (_subscriptionClient == null)
                     return;
 
-                _subscriptionClient?.Close();
+                _subscriptionClient?.CloseAsync();
                 _subscriptionClient = null;
             }
         }
