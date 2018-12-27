@@ -1,4 +1,4 @@
-FROM microsoft/dotnet:2.1.500-sdk AS build  
+FROM microsoft/dotnet:2.2.100-sdk AS build  
 WORKDIR /app
 
 ARG VERSION_SUFFIX=0-dev
