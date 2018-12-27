@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -39,7 +39,7 @@ namespace Foundatio.Storage {
             _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         }
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
             var fileContent = await Run.WithRetriesAsync(() => Database.HashGetAsync(_options.ContainerName, NormalizePath(path)),
                 cancellationToken: cancellationToken, logger: _logger).AnyContext();
             if (fileContent.IsNull) return null;
@@ -56,7 +56,7 @@ namespace Foundatio.Storage {
             return Run.WithRetriesAsync(() => Database.HashExistsAsync(_fileSpecContainer, NormalizePath(path)), logger: _logger);
         }
 
-        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default) {
             path = NormalizePath(path);
             try {
                 var database = Database;
@@ -84,7 +84,7 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default) {
             try {
                 var fileStream = await GetFileStreamAsync(path, cancellationToken).AnyContext();
                 return await DeleteFileAsync(path, cancellationToken).AnyContext() &&
@@ -95,7 +95,7 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default) {
             try {
                 var file = await GetFileStreamAsync(path, cancellationToken).AnyContext();
                 if (file == null) return false;
@@ -107,7 +107,7 @@ namespace Foundatio.Storage {
             }
         }
 
-        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default) {
             path = NormalizePath(path);
             var database = Database;
             var deleteSpecTask = database.HashDeleteAsync(_fileSpecContainer, path);
@@ -116,7 +116,7 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default) {
             var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
             int count = 0;
             
@@ -128,8 +128,7 @@ namespace Foundatio.Storage {
             return count;
         }
 
-        private Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null,
-            CancellationToken cancellationToken = new CancellationToken()) {
+        private Task<IEnumerable<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
             if (limit.HasValue && limit.Value <= 0)
                 return Task.FromResult<IEnumerable<FileSpec>>(new List<FileSpec>());
             searchPattern = NormalizePath(searchPattern);
@@ -188,7 +187,7 @@ namespace Foundatio.Storage {
                 hasMore = true;
                 list.RemoveAt(pagingLimit);
             }
-            
+
             return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = r => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
         }
 
