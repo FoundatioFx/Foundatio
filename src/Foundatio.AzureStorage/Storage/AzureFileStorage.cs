@@ -147,7 +147,7 @@ namespace Foundatio.Storage {
             if (pagingLimit < Int32.MaxValue)
                 pagingLimit = pagingLimit + 1;
 
-            var list = (await GetFileListAsync(searchPattern, page, skip, cancellationToken).AnyContext()).ToList();
+            var list = (await GetFileListAsync(searchPattern, pagingLimit, skip, cancellationToken).AnyContext()).ToList();
             bool hasMore = false;
             if (list.Count == pagingLimit) {
                 hasMore = true;
