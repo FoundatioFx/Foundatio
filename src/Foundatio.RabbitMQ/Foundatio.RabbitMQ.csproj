@@ -4,13 +4,8 @@
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>Queue;Messaging;Message;Bus;MessageBus;Distributed;broker</PackageTags>
   </PropertyGroup>
-  <PropertyGroup Label="Signing">
-    <SignAssembly>true</SignAssembly>
-    <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
-    <AssemblyOriginatorKeyFile>..\..\Foundatio.snk</AssemblyOriginatorKeyFile>
-  </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="7.0.1738" />
+    <PackageReference Include="Foundatio" Version="7.2.1869-pre" />
     <PackageReference Include="RabbitMQ.Client" Version="5.1.0" />
   </ItemGroup>
 </Project>
