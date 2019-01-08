@@ -10,14 +10,14 @@ namespace Foundatio.Metrics {
     public class StatsDMetricsClient : IMetricsClient {
         private readonly object _lock = new object();
         private Socket _socket;
-        private readonly IPEndPoint _endPoint;
+        private readonly DnsEndPoint  _endPoint;
         private readonly StatsDMetricsClientOptions _options;
         private readonly ILogger _logger;
 
         public StatsDMetricsClient(StatsDMetricsClientOptions options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger<StatsDMetricsClient>() ?? NullLogger<StatsDMetricsClient>.Instance;
-            _endPoint = new IPEndPoint(IPAddress.Parse(options.ServerName), options.Port);
+            _endPoint = new DnsEndPoint(options.ServerName, options.Port);
 
             if (!String.IsNullOrEmpty(options.Prefix))
                 options.Prefix = options.Prefix.EndsWith(".") ? options.Prefix : String.Concat(options.Prefix, ".");
