@@ -40,6 +40,8 @@ namespace Foundatio.Caching {
 
                 foreach (var endpoint in endpoints) {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
+                    if (server.IsSlave)
+                        continue;
 
                     try {
                         await server.FlushDatabaseAsync().AnyContext();
@@ -367,6 +369,9 @@ namespace Foundatio.Caching {
 
                 foreach (var endpoint in _options.ConnectionMultiplexer.GetEndPoints()) {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
+                    if (server.IsSlave)
+                        continue;
+                    
                     _setIfHigherScript = await setIfHigher.LoadAsync(server).AnyContext();
                     _setIfLowerScript = await setIfLower.LoadAsync(server).AnyContext();
                     _incrByAndExpireScript = await incrByAndExpire.LoadAsync(server).AnyContext();
