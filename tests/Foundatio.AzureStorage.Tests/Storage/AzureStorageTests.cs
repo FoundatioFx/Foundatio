@@ -7,7 +7,6 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Storage {
-    [Collection("AzureStorageIntegrationTests")]
     public class AzureStorageTests : FileStorageTestsBase {
         public AzureStorageTests(ITestOutputHelper output) : base(output) {}
 
