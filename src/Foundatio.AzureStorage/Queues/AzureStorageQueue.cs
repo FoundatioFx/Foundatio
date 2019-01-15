@@ -75,8 +75,9 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null).AnyContext();
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Attempting to get message");
+            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null).AnyContext();
             if (isTraceLogLevelEnabled) _logger.LogTrace("Initial message id: {Id}", message?.Id ?? "<null>");
 
             while (message == null && !linkedCancellationToken.IsCancellationRequested) {
@@ -95,8 +96,10 @@ namespace Foundatio.Queues {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Message id: {Id}", message?.Id ?? "<null>");
             }
 
-            if (message == null)
+            if (message == null) {
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Message was null");
                 return null;
+            }
 
             Interlocked.Increment(ref _dequeuedCount);
             var data = _serializer.Deserialize<T>(message.AsBytes);
@@ -154,6 +157,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats.");
             var sw = Stopwatch.StartNew();
             await Task.WhenAll(
                 _queueReference.FetchAttributesAsync(),
