@@ -60,6 +60,7 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
             }
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             try {
                 LogProcessingQueueEntry(queueEntry);
                 var result = await ProcessQueueEntryAsync(new QueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
@@ -71,6 +72,8 @@ namespace Foundatio.Jobs {
                     await queueEntry.CompleteAsync().AnyContext();
                     LogAutoCompletedQueueEntry(queueEntry);
                 } else {
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
                     await queueEntry.AbandonAsync().AnyContext();
                     if (_logger.IsEnabled(LogLevel.Warning))
                         _logger.LogWarning("Auto abandoned {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
@@ -86,7 +89,11 @@ namespace Foundatio.Jobs {
 
                 throw;
             } finally {
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Releasing Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
                 await lockValue.ReleaseAsync().AnyContext();
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Released Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
             }
         }
 
@@ -103,6 +110,9 @@ namespace Foundatio.Jobs {
         protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);
 
         protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default) {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Returning Empty Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            
             return Task.FromResult(Disposable.EmptyLock);
         }
     }
