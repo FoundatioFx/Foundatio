@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +13,7 @@ namespace Foundatio.Jobs.Hosting {
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
 
-        public HostedJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory,
-            IHostLifetime lifetime) {
+        public HostedJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory, IHostLifetime lifetime) {
             _serviceProvider = serviceProvider;
             _loggerFactory = loggerFactory;
             _logger = loggerFactory.CreateLogger<T>();
@@ -29,8 +28,7 @@ namespace Foundatio.Jobs.Hosting {
             return jobTask.ContinueWith(t => {
                 try {
                     _stoppingCts.Cancel();
-                }
-                finally {
+                } finally {
                     _logger.LogInformation("JobDone, calling token cancel.");
                 }
             }, stoppingToken);
@@ -50,8 +48,7 @@ namespace Foundatio.Jobs.Hosting {
 
             try {
                 _stoppingCts.Cancel();
-            }
-            finally {
+            } finally {
                 var task = await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
             }
         }

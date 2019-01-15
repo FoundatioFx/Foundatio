@@ -2,6 +2,7 @@
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Foundatio.Jobs.Hosting {
     public static class JobHostExtensions {
@@ -12,9 +13,16 @@ namespace Foundatio.Jobs.Hosting {
             return services;
         }
 
+        public static IServiceCollection AddJobLifetime(this IServiceCollection services) {
+            return services.AddSingleton<IHostLifetime, JobHostLifetime>();
+        }
+
         public static IHostBuilder UseJobLifetime(this IHostBuilder hostBuilder) {
-            return hostBuilder.ConfigureServices((hostContext, services) =>
-                services.AddSingleton<IHostLifetime, JobHostLifetime>());
+            return hostBuilder.ConfigureServices((hostContext, services) => services.AddJobLifetime());
+        }
+
+        public static IWebHostBuilder UseJobLifetime(this IWebHostBuilder hostBuilder) {
+            return hostBuilder.ConfigureServices((hostContext, services) => services.AddJobLifetime());
         }
 
         public static Task RunJobHostAsync(this IHostBuilder hostBuilder, CancellationToken cancellationToken = default) {
