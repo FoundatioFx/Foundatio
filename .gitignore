@@ -6,6 +6,7 @@
 [Bb]in/
 [Oo]bj/
 artifacts
+.vs/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/

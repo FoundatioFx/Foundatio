@@ -29,9 +29,7 @@ namespace Foundatio.Jobs.Hosting {
             _logger = logger ?? NullLogger<JobHostLifetime>.Instance;
             if (logger != NullLogger<JobHostLifetime>.Instance)
                 _useConsoleOutput = false;
-        }
-
-        public Task WaitForStartAsync(CancellationToken cancellationToken) {
+            
             _lifetime.ApplicationStarted.Register(() => {
                 _timer = new Timer(e => CheckForShutdown(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
 
@@ -45,6 +43,9 @@ namespace Foundatio.Jobs.Hosting {
                     _logger.LogInformation($"Content root path: {_environment.ContentRootPath}");
                 }
             });
+        }
+
+        public Task WaitForStartAsync(CancellationToken cancellationToken) {
             AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) => {
                 _lifetime.StopApplication();
                 _shutdownBlock.WaitOne();
