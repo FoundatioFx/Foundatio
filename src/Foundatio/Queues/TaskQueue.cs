@@ -37,7 +37,7 @@ namespace Foundatio.Queues {
                 throw new ArgumentNullException(nameof(task));
 
             if (_queue.Count >= _maxItems) {
-                _logger.LogError("Ignoring queued task: Queue is full");
+                _logger.LogError("Background worker task queue is full, task has been discarded.");
                 return false;
             }
 
@@ -53,7 +53,7 @@ namespace Foundatio.Queues {
 
         private void StartWorking() {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Starting worker loop.");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Starting task background worker loop.");
             Task.Run(async () => {
                 while (!_workLoopCancellationTokenSource.Token.IsCancellationRequested) {
                     try {
@@ -63,7 +63,7 @@ namespace Foundatio.Queues {
                                 _semaphore.Release();
 
                             if (_queue.IsEmpty) {
-                                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue task.");
+                                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue background worker task.");
                                 try {
                                     using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
                                     using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_workLoopCancellationTokenSource.Token, timeoutCancellationTokenSource.Token)) {
@@ -76,7 +76,7 @@ namespace Foundatio.Queues {
                         }
 
                         Interlocked.Increment(ref _working);
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Running dequeued task");
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Running dequeued background worker task");
                         // TODO: Cancel after x amount of time.
                         var unawaited = Task.Run(() => task(), _workLoopCancellationTokenSource.Token)
                             .ContinueWith(t => {
@@ -85,34 +85,34 @@ namespace Foundatio.Queues {
 
                                 if (t.IsFaulted) {
                                     var ex = t.Exception.InnerException;
-                                    _logger.LogError(ex, "Error running dequeue task: {Message}", ex?.Message);
+                                    _logger.LogError(ex, "Error running dequeue background worker task: {Message}", ex?.Message);
                                 } else if (t.IsCanceled) {
-                                    _logger.LogWarning("Dequeue task was cancelled.");
+                                    _logger.LogWarning("Dequeue background worker task was cancelled.");
                                 } else if (isTraceLogLevelEnabled) {
-                                    _logger.LogTrace("Finished running dequeued task.");
+                                    _logger.LogTrace("Finished running dequeued background worker task.");
                                 }
 
                                 if (_queueEmptyAction != null && _working == 0 && _queue.IsEmpty && _queue.Count == 0) {
-                                    if (isTraceLogLevelEnabled) _logger.LogTrace("Running completed action..");
+                                    if (isTraceLogLevelEnabled) _logger.LogTrace("Running completed background worker action.");
                                     // NOTE: There could be a race here where an a semaphore was taken but the queue was empty.
                                     _queueEmptyAction();
                                 }
                             });
                     } catch (OperationCanceledException ex) {
-                        _logger.LogWarning(ex, "Worker loop was cancelled.");
+                        _logger.LogWarning(ex, "Background worker loop was cancelled.");
                     } catch (Exception ex) {
-                        _logger.LogError(ex, "Error running worker loop: {Message}", ex.Message);
+                        _logger.LogError(ex, "Error running background worker loop: {Message}", ex.Message);
                     }
                 }
             }, _workLoopCancellationTokenSource.Token)
                 .ContinueWith(t => {
                     if (t.IsFaulted) { 
                         var ex = t.Exception.InnerException; 
-                        _logger.LogError(ex, "Worker loop exiting: {Message}", ex.Message);
+                        _logger.LogError(ex, "Background worker loop exiting: {Message}", ex.Message);
                     } else if (t.IsCanceled || _workLoopCancellationTokenSource.Token.IsCancellationRequested) { 
-                        _logger.LogTrace("Worker loop was cancelled."); 
+                        _logger.LogTrace("Background worker loop was cancelled."); 
                     } else { 
-                        _logger.LogCritical("Worker loop finished prematurely.");
+                        _logger.LogCritical("Background worker loop finished prematurely.");
                     }
 
                     if (!_workLoopCancellationTokenSource.Token.IsCancellationRequested)
@@ -121,7 +121,7 @@ namespace Foundatio.Queues {
         }
 
         public void Dispose() {
-            _logger.LogTrace("Disposing");
+            _logger.LogTrace("Background task worker disposing");
             _workLoopCancellationTokenSource?.Cancel();
             _queue.Clear();
         }
