@@ -75,32 +75,36 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Attempting to get message");
             var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null).AnyContext();
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Initial message id: {Id}", message?.Id ?? "<null>");
-
-            while (message == null && !linkedCancellationToken.IsCancellationRequested) {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Waiting to dequeue item...");
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            
+            if (message == null) {
                 var sw = Stopwatch.StartNew();
+                var lastReport = DateTime.Now;
+                if (isTraceLogLevelEnabled) _logger.LogTrace("No message available to dequeue, waiting...");
 
-                try {
-                    if (!linkedCancellationToken.IsCancellationRequested)
-                        await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) { }
+                while (message == null && !linkedCancellationToken.IsCancellationRequested) {
+                    if (isTraceLogLevelEnabled && DateTime.Now.Subtract(lastReport) > TimeSpan.FromSeconds(10))
+                         _logger.LogTrace("Still waiting for message to dequeue: {Elapsed:g}", sw.Elapsed);
+
+                    try {
+                        if (!linkedCancellationToken.IsCancellationRequested)
+                            await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                    } catch (OperationCanceledException) { }
+
+                    message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout,  null, null).AnyContext();
+                }
 
                 sw.Stop();
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited for dequeue: {Elapsed:g}", sw.Elapsed);
-
-                message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout,  null, null).AnyContext();
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Message id: {Id}", message?.Id ?? "<null>");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Waited to dequeue message: {Elapsed:g}", sw.Elapsed);
             }
 
             if (message == null) {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Message was null");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("No message was dequeued.");
                 return null;
             }
 
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeued message {Id}", message.Id);
             Interlocked.Increment(ref _dequeuedCount);
             var data = _serializer.Deserialize<T>(message.AsBytes);
             var entry = new AzureStorageQueueEntry<T>(message, data, this);
