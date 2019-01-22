@@ -1,9 +1,9 @@
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
 
-namespace Exceptionless.Web {
+namespace Foundatio.JobCommands {
     [Job(Description = "Sample 1 job", Interval = "10s", IterationLimit = 10)]
     public class Sample1Job : IJob {
         private readonly Microsoft.Extensions.Logging.ILogger _logger;
