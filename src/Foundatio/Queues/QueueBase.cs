@@ -130,8 +130,14 @@ namespace Foundatio.Queues {
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
         protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
-            if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
-                metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
+            var now = SystemClock.UtcNow;
+            if (entry is QueueEntry<T> metadata) {
+                if (metadata.EnqueuedTimeUtc > DateTime.MinValue)
+                    metadata.TotalTime = now.Subtract(metadata.EnqueuedTimeUtc);
+
+                if (metadata.DequeuedTimeUtc > DateTime.MinValue)
+                    metadata.ProcessingTime = now.Subtract(metadata.DequeuedTimeUtc);
+            }
 
             var completed = Completed;
             if (completed == null)

@@ -95,6 +95,12 @@ namespace Foundatio.Queues {
             if (!String.IsNullOrEmpty(subMetricName))
                 _metricsClient.Timer(GetFullMetricName(subMetricName, "processtime"), time);
             _metricsClient.Timer(GetFullMetricName("processtime"), time);
+
+            int totalTime = (int)metadata.TotalTime.TotalMilliseconds;
+            if (!String.IsNullOrEmpty(subMetricName))
+                _metricsClient.Timer(GetFullMetricName(subMetricName, "totaltime"), totalTime);
+            _metricsClient.Timer(GetFullMetricName("totaltime"), totalTime);
+            
             return Task.CompletedTask;
         }
 
