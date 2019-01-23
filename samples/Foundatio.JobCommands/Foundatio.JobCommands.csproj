@@ -6,7 +6,6 @@
     <IsPackable>False</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foundatio.Jobs.Commands\Foundatio.Jobs.Commands.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>

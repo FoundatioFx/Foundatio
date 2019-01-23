@@ -1,8 +1,11 @@
-﻿using System.Threading;
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Foundatio.Jobs.Hosting {
     public static class JobHostExtensions {
@@ -28,5 +31,13 @@ namespace Foundatio.Jobs.Hosting {
         public static Task RunJobHostAsync(this IHostBuilder hostBuilder, CancellationToken cancellationToken = default) {
             return hostBuilder.UseJobLifetime().Build().RunAsync(cancellationToken);
         }
+
+        public static IHealthChecksBuilder AddJobCheck<T>(this IHealthChecksBuilder builder, IEnumerable<string> tags = null) where T : class, IHealthCheck {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+
+            return builder.Add(new HealthCheckRegistration(nameof(T), ActivatorUtilities.GetServiceOrCreateInstance<T>, HealthStatus.Unhealthy, tags));
+        }
+
     }
 }

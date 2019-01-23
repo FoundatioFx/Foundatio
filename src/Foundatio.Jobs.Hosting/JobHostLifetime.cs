@@ -17,14 +17,13 @@ namespace Foundatio.Jobs.Hosting {
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
         private readonly JobHostLifetimeOptions _options;
-        private readonly IHostingEnvironment _environment;
         private readonly IApplicationLifetime _lifetime;
         private readonly ILogger _logger;
         private readonly bool _useConsoleOutput;
 
         public JobHostLifetime(IOptions<JobHostLifetimeOptions> options, IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
             _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-            _environment = environment ?? throw new ArgumentNullException(nameof(environment));
+            var environment1 = environment ?? throw new ArgumentNullException(nameof(environment));
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
             _logger = logger ?? NullLogger<JobHostLifetime>.Instance;
             if (logger != NullLogger<JobHostLifetime>.Instance)
@@ -35,12 +34,12 @@ namespace Foundatio.Jobs.Hosting {
 
                 if (_useConsoleOutput) {
                     Console.WriteLine("Application started. Press Ctrl+C to shut down.");
-                    Console.WriteLine($"Hosting environment: {_environment.EnvironmentName}");
-                    Console.WriteLine($"Content root path: {_environment.ContentRootPath}");
+                    Console.WriteLine($"Hosting environment: {environment1.EnvironmentName}");
+                    Console.WriteLine($"Content root path: {environment1.ContentRootPath}");
                 } else {
                     _logger.LogInformation("Application started. Press Ctrl+C to shut down.");
-                    _logger.LogInformation($"Hosting environment: {_environment.EnvironmentName}");
-                    _logger.LogInformation($"Content root path: {_environment.ContentRootPath}");
+                    _logger.LogInformation($"Hosting environment: {environment1.EnvironmentName}");
+                    _logger.LogInformation($"Content root path: {environment1.ContentRootPath}");
                 }
             });
         }
