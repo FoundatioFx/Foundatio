@@ -2,13 +2,13 @@
   <Import Project="..\..\build\common.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
+    <TargetFrameworks>netcoreapp2.2</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <IsPackable>False</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Foundatio.Logging.Xunit" Version="7.2.1867-pre" />
+    <PackageReference Include="Foundatio.Logging.Xunit" Version="7.2.1887-pre" />
   </ItemGroup>
 
   <ItemGroup>
