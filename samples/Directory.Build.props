@@ -1,0 +1,8 @@
+<Project>
+  <Import Project="..\build\common.props" />
+  <PropertyGroup>
+    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>False</IsPackable>
+  </PropertyGroup>
+</Project>

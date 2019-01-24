@@ -5,7 +5,7 @@ ARG VERSION_SUFFIX=0-dev
 ENV VERSION_SUFFIX=$VERSION_SUFFIX
 
 COPY ./*.sln ./NuGet.config ./
-COPY ./build/*.props ./build/
+COPY ./*/*.props ./
 
 # Copy the main source project files
 COPY src/*/*.csproj ./
