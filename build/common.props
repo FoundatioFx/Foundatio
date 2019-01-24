@@ -24,7 +24,6 @@
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
     <PackageIconUrl>https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-icon.png</PackageIconUrl>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
     <RepositoryUrl>$(PackageProjectUrl)</RepositoryUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
