@@ -135,15 +135,14 @@ namespace Foundatio.Queues {
 
                     if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.CompleteAsync().AnyContext();
-                }
-                catch (Exception ex) {
+                } catch (Exception ex) {
                     Interlocked.Increment(ref _workerErrorCount);
                     _logger.LogWarning(ex, "Error sending work item to worker: {0}", ex.Message);
 
                     if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                         await queueEntry.AbandonAsync().AnyContext();
                 }
-            }, new MessageHandlerOptions((e) => LogMessageHandlerException(e)));
+            }, new MessageHandlerOptions(LogMessageHandlerException));
         }
 
         private Task LogMessageHandlerException(ExceptionReceivedEventArgs e) {
@@ -253,18 +252,7 @@ namespace Foundatio.Queues {
 
             if (!String.IsNullOrEmpty(_options.UserMetadata))
                 qd.UserMetadata = _options.UserMetadata;
-
-            //Unfound properties in the new QueueDescription Class
-            //if (_options.EnableExpress.HasValue)
-            //    qd.EnableExpress = _options.EnableExpress.Value;
-
-            //if (_options.IsAnonymousAccessible.HasValue)
-            //    qd.IsAnonymousAccessible = _options.IsAnonymousAccessible.Value;
-
-            //if (_options.SupportOrdering.HasValue)
-            //    qd.SupportOrdering = _options.SupportOrdering.Value;
-
-
+            
             return qd;
         }
 

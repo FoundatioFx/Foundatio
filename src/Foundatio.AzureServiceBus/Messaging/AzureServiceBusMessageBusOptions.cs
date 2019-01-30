@@ -147,6 +147,12 @@ namespace Foundatio.Messaging {
 
     public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<
         AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder> {
+        
+        public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString) {
+            Target.ConnectionString = connectionString;
+            return this;
+        }
+        
         public AzureServiceBusMessageBusOptionsBuilder PrefetchCount(int prefetchCount) {
             Target.PrefetchCount = prefetchCount;
             return this;

@@ -48,7 +48,8 @@ namespace Foundatio.Messaging {
 
                 // Look into message factory with multiple recievers so more than one connection is made and managed....
                 _subscriptionClient = new SubscriptionClient(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete, _options.SubscriptionRetryPolicy);
-                _subscriptionClient.RegisterMessageHandler(OnMessageAsync, new MessageHandlerOptions((e) => MessageHandlerException(e)) { AutoComplete = false, MaxConcurrentCalls = 1 });
+                _subscriptionClient.RegisterMessageHandler(OnMessageAsync, new MessageHandlerOptions(MessageHandlerException) {
+                    /* AutoComplete = true, // Don't run with receive and delete */ MaxConcurrentCalls = 6 /* calculate this based on the the thread count. */ });
                 if (_options.PrefetchCount.HasValue)
                     _subscriptionClient.PrefetchCount = _options.PrefetchCount.Value;
                 sw.Stop();
@@ -56,9 +57,9 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private async Task OnMessageAsync(Message brokeredMessage, CancellationToken cancellationToken) {
+        private Task OnMessageAsync(Message brokeredMessage, CancellationToken cancellationToken) {
             if (_subscribers.IsEmpty)
-                return;
+                return Task.CompletedTask;
 
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             MessageBusData message;
@@ -67,11 +68,11 @@ namespace Foundatio.Messaging {
             }
             catch (Exception ex) {
                 _logger.LogWarning(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
-                await _subscriptionClient.DeadLetterAsync(brokeredMessage.SystemProperties.LockToken, "Deserialization error", ex.Message);
-                return;
+                return _subscriptionClient.DeadLetterAsync(brokeredMessage.SystemProperties.LockToken, "Deserialization error", ex.Message);
             }
 
             SendMessageToSubscribers(message, _serializer);
+            return Task.CompletedTask;
         }
 
         private Task MessageHandlerException(ExceptionReceivedEventArgs e) {
@@ -150,17 +151,7 @@ namespace Foundatio.Messaging {
 
             if (!String.IsNullOrEmpty(_options.TopicUserMetadata))
                 td.UserMetadata = _options.TopicUserMetadata;
-
-            //Unfound properties in the new TopicDescription Class
-            //if (_options.TopicEnableFilteringMessagesBeforePublishing.HasValue)
-            //    td.EnableFilteringMessagesBeforePublishing = _options.TopicEnableFilteringMessagesBeforePublishing.Value;
-
-            //if (_options.TopicIsAnonymousAccessible.HasValue)
-            //    td.IsAnonymousAccessible = _options.TopicIsAnonymousAccessible.Value;
-
-            //if (_options.TopicEnableExpress.HasValue)
-            //    td.EnableExpress = _options.TopicEnableExpress.Value;
-
+            
             return td;
         }
 

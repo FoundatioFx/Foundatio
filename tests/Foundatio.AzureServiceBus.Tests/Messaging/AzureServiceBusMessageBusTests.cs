@@ -11,24 +11,29 @@ namespace Foundatio.AzureServiceBus.Tests.Messaging {
     public class AzureServiceBusMessageBusTests : MessageBusTestBase {
         public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) {}
 
-        protected override IMessageBus GetMessageBus() {
+        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
+            
+            return new AzureServiceBusMessageBus(o => {
+                o.ConnectionString(connectionString);
+                o.Topic("test-messages");
+                o.TopicEnableBatchedOperations(true);
+                o.TopicEnableExpress(true);
+                o.TopicEnablePartitioning(true);
+                o.TopicSupportOrdering(false);
+                o.TopicRequiresDuplicateDetection(false);
+                o.SubscriptionAutoDeleteOnIdle(TimeSpan.FromMinutes(5));
+                o.SubscriptionEnableBatchedOperations(true);
+                o.SubscriptionMaxDeliveryCount(Int32.MaxValue);
+                o.PrefetchCount(500);
+                o.LoggerFactory(Log);
+                
+                if (config != null)
+                config(o.Target);
 
-            return new AzureServiceBusMessageBus(new AzureServiceBusMessageBusOptions {
-                ConnectionString = connectionString,
-                Topic = "test-messages",
-                TopicEnableBatchedOperations = true,
-                TopicEnableExpress = true,
-                TopicEnablePartitioning = true,
-                TopicSupportOrdering = false,
-                TopicRequiresDuplicateDetection = false,
-                SubscriptionAutoDeleteOnIdle = TimeSpan.FromMinutes(5),
-                SubscriptionEnableBatchedOperations = true,
-                SubscriptionMaxDeliveryCount = Int32.MaxValue,
-                PrefetchCount = 500,
-                LoggerFactory = Log
+                return o;
             });
         }
 
