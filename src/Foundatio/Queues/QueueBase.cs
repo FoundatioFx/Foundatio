@@ -37,6 +37,8 @@ namespace Foundatio.Queues {
         protected abstract Task<string> EnqueueImplAsync(T data);
         public async Task<string> EnqueueAsync(T data) {
             await EnsureQueueCreatedAsync().AnyContext();
+            
+            LastEnqueueActivity = SystemClock.UtcNow;
             return await EnqueueImplAsync(data).AnyContext();
         }
 
@@ -44,6 +46,8 @@ namespace Foundatio.Queues {
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
             using (var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken)) {
                 await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+                
+                LastDequeueActivity = SystemClock.UtcNow;
                 return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
             }
         }
@@ -97,6 +101,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
         protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry) {
+            LastEnqueueActivity = SystemClock.UtcNow;
+            
             var enqueued = Enqueued;
             if (enqueued == null)
                 return Task.CompletedTask;
@@ -108,6 +114,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             var dequeued = Dequeued;
             if (dequeued == null)
                 return Task.CompletedTask;
@@ -119,6 +127,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
 
         protected virtual Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             var lockRenewed = LockRenewed;
             if (lockRenewed == null)
                 return Task.CompletedTask;
@@ -131,6 +141,8 @@ namespace Foundatio.Queues {
 
         protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
             var now = SystemClock.UtcNow;
+            LastDequeueActivity = now;
+            
             if (entry is QueueEntry<T> metadata) {
                 if (metadata.EnqueuedTimeUtc > DateTime.MinValue)
                     metadata.TotalTime = now.Subtract(metadata.EnqueuedTimeUtc);
@@ -150,6 +162,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual Task OnAbandonedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
@@ -162,6 +176,9 @@ namespace Foundatio.Queues {
         }
 
         public string QueueId { get; protected set; }
+        
+        public DateTime? LastEnqueueActivity { get; protected set; }
+        public DateTime? LastDequeueActivity { get; protected set; }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
