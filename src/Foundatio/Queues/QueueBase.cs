@@ -8,7 +8,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : SharedQueueOptions<T> {
+    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
@@ -176,8 +176,9 @@ namespace Foundatio.Queues {
         }
 
         public string QueueId { get; protected set; }
-        
+
         public DateTime? LastEnqueueActivity { get; protected set; }
+        
         public DateTime? LastDequeueActivity { get; protected set; }
 
         ISerializer IHaveSerializer.Serializer => _serializer;

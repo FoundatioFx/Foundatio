@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Foundatio.Utility;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
@@ -19,7 +20,7 @@ namespace Foundatio.JobCommands {
         public string CustomArg { get; set; }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
-            _lastRun = DateTime.Now;
+            _lastRun = SystemClock.UtcNow;
             Interlocked.Increment(ref _iterationCount);
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation("Sample2Job Run #{IterationCount} CustomArg={CustomArg} Thread={ManagedThreadId}", _iterationCount, CustomArg, Thread.CurrentThread.ManagedThreadId);
@@ -30,7 +31,7 @@ namespace Foundatio.JobCommands {
             if (!_lastRun.HasValue)
                 return Task.FromResult(HealthCheckResult.Healthy("Job has not been run yet."));
 
-            if (DateTime.Now.Subtract(_lastRun.Value) > TimeSpan.FromSeconds(5))
+            if (SystemClock.UtcNow.Subtract(_lastRun.Value) > TimeSpan.FromSeconds(5))
                 return Task.FromResult(HealthCheckResult.Unhealthy("Job has not run in the last 5 seconds."));
 
             return Task.FromResult(HealthCheckResult.Healthy("Job has run in the last 5 seconds."));
