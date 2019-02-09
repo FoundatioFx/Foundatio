@@ -3,6 +3,7 @@ docker-compose*
 .dockerignore
 .vscode
 .idea
+.vs
 **/artifacts/
 **/bin/
 **/obj/
