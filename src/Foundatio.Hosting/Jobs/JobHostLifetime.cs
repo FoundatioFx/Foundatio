@@ -3,11 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Foundatio.Hosting.Jobs {
     /// <summary>
@@ -17,13 +15,11 @@ namespace Foundatio.Hosting.Jobs {
         private readonly ManualResetEvent _shutdownBlock = new ManualResetEvent(false);
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
-        private readonly JobHostLifetimeOptions _options;
         private readonly IApplicationLifetime _lifetime;
         private readonly ILogger _logger;
         private readonly bool _useConsoleOutput;
 
-        public JobHostLifetime(IOptions<JobHostLifetimeOptions> options, IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
-            _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        public JobHostLifetime(IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
             if (environment == null)
                 throw new ArgumentNullException(nameof(environment));
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Hosting;
@@ -24,7 +23,7 @@ namespace Foundatio.Hosting.Jobs {
             return hostBuilder.ConfigureServices((hostContext, services) => services.AddJobLifetime());
         }
 
-        public static void RunJobHost(this IWebHostBuilder hostBuilder, CancellationToken cancellationToken = default) {
+        public static void RunJobHost(this IWebHostBuilder hostBuilder) {
             hostBuilder.UseJobLifetime().Build().Run();
         }
 

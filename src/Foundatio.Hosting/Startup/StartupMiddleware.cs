@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -15,7 +16,7 @@ namespace Foundatio.Hosting.Startup {
         }
 
         public async Task Invoke(HttpContext httpContext) {
-            if (_context.IsStartupComplete)  {
+            if (_context.IsStartupComplete) {
                 await _next(httpContext);
             } else {
                 httpContext.Response.StatusCode = _options.FailureResponseCode;
