@@ -6,14 +6,13 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Foundatio.Jobs;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Hosting.Jobs {
     public static class JobHostExtensions {
-        public static IServiceCollection AddJob<T>(this IServiceCollection services) where T : class, IJob {
+        public static IServiceCollection AddJob<T>(this IServiceCollection services, bool waitForStartupActions = false) where T : class, IJob {
             services.AddTransient<T>();
-            services.AddHostedService<HostedJobService<T>>();
-
-            return services;
+            return services.AddTransient<IHostedService>(s => new HostedJobService<T>(s, waitForStartupActions, s.GetService<ILoggerFactory>()));
         }
 
         public static IServiceCollection AddJobLifetime(this IServiceCollection services) {

@@ -46,7 +46,7 @@ namespace Foundatio.JobCommands {
                         .Add(new HealthCheckRegistration("Startup", p => p.GetRequiredService<StartupHealthCheck>(), null, new[] { "Core" }));
 
                     if (sample1)
-                        s.AddJob<Sample1Job>();
+                        s.AddJob<Sample1Job>(true);
 
                     if (sample2) {
                         healthCheckBuilder.AddJobCheck<Sample2Job>();
@@ -54,10 +54,23 @@ namespace Foundatio.JobCommands {
                     }
 
                     s.AddStartupAction(async () => {
-                        Log.Logger.Information("Running startup action.");
-                        await Task.Delay(10000);
-                        Log.Logger.Information("Done running startup action.");
-                    });
+                        Log.Logger.Information("Running startup 1 action.");
+                        for (int i = 0; i < 10; i++) {
+                            await Task.Delay(1000);
+                            Log.Logger.Information("Running startup 1 action...");
+                        }
+
+                        Log.Logger.Information("Done running startup 1 action.");
+                    }, 1);
+
+                    s.AddStartupAction(async () => {
+                        Log.Logger.Information("Running startup 2 action.");
+                        for (int i = 0; i < 10; i++) {
+                            await Task.Delay(1000);
+                            Log.Logger.Information("Running startup 2 action...");
+                        }
+                        Log.Logger.Information("Done running startup 2 action.");
+                    }, 1);
 
                     s.AddStartupTaskService();
                 })

@@ -14,8 +14,9 @@ namespace Foundatio.Hosting.Jobs {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
+        private readonly bool _waitForStartupActions;
 
-        public HostedJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory) {
+        public HostedJobService(IServiceProvider serviceProvider, bool waitForStartupActions, ILoggerFactory loggerFactory) {
             _serviceProvider = serviceProvider;
             _loggerFactory = loggerFactory; 
             _logger = loggerFactory.CreateLogger<T>();
@@ -24,12 +25,14 @@ namespace Foundatio.Hosting.Jobs {
                 throw new InvalidOperationException("You must call UseJobLifetime when registering jobs.");
 
             lifetime.RegisterHostedJobInstance(this);
+            _waitForStartupActions = waitForStartupActions;
         }
 
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
-            var startupContext = _serviceProvider.GetService<StartupContext>();
-            if (startupContext != null)
+            if (_waitForStartupActions) {
+                var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
                 await startupContext.WaitForStartupAsync(stoppingToken);
+            }
 
             var jobOptions = JobOptions.GetDefaults<T>(() => _serviceProvider.GetRequiredService<T>());
             var runner = new JobRunner(jobOptions, _loggerFactory);
