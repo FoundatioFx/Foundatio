@@ -24,6 +24,7 @@ namespace Foundatio.Queues {
         public DateTime DequeuedTimeUtc { get; set; }
         public int Attempts { get; set; }
         public TimeSpan ProcessingTime { get; set; }
+        public TimeSpan TotalTime { get; set; }
         public DataDictionary Data { get; } = new DataDictionary();
 
         void IQueueEntry<T>.MarkCompleted() {
@@ -61,6 +62,7 @@ namespace Foundatio.Queues {
         DateTime DequeuedTimeUtc { get; }
         int Attempts { get; }
         TimeSpan ProcessingTime { get; }
+        TimeSpan TotalTime { get; }
         DataDictionary Data { get; }
     }
 }

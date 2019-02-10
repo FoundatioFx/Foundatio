@@ -50,3 +50,4 @@ _NCrunch_*
 **/.idea/**/*.iml
 **/.idea/**/contentModel.xml
 **/.idea/**/modules.xml
+\.vs/Foundatio/v15/Server/sqlite3/

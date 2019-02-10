@@ -4,7 +4,7 @@ using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.JobCommands {
-    [Job(Description = "Sample 1 job", Interval = "10s", IterationLimit = 10)]
+    [Job(Description = "Sample 1 job", Interval = "5s", IterationLimit = 10)]
     public class Sample1Job : IJob {
         private readonly Microsoft.Extensions.Logging.ILogger _logger;
         private int _iterationCount = 0;

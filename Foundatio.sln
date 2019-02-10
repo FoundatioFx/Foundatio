@@ -26,7 +26,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.CronJob", "sample
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Commands", "src\Foundatio.Jobs.Commands\Foundatio.Jobs.Commands.csproj", "{46D368FC-E974-4551-9360-1482E9C0B6B8}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JobCommands", "samples\Foundatio.JobCommands\Foundatio.JobCommands.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JobCommands", "samples\Foundatio.HostingSample\Foundatio.HostingSample.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "src\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
 EndProject
@@ -40,7 +40,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Utf8Json", "src\F
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.AppMetrics", "src\Foundatio.AppMetrics\Foundatio.AppMetrics.csproj", "{D97811C5-186A-4ED3-8675-925A7ACD32F6}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Hosting", "src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Hosting", "src\Foundatio.Hosting\Foundatio.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

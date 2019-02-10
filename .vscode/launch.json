@@ -5,14 +5,14 @@
    "version": "0.2.0",
    "configurations": [
         {
-            "name": ".NET Core Launch (console)",
+            "name": "Launch Hosting Sample",
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
             // If you have changed target frameworks, make sure to update the program path.
-            "program": "${workspaceFolder}/samples/Foundatio.JobCommands/bin/Debug/netcoreapp2.2/Foundatio.JobCommands.dll",
-            "args": [ "Sample2" ],
-            "cwd": "${workspaceFolder}/samples/Foundatio.JobCommands",
+            "program": "${workspaceFolder}/samples/Foundatio.HostingSample/bin/Debug/netcoreapp2.2/Foundatio.HostingSample.dll",
+            "args": [ ],
+            "cwd": "${workspaceFolder}/samples/Foundatio.HostingSample",
             // For more information about the 'console' field, see https://github.com/OmniSharp/omnisharp-vscode/blob/master/debugger-launchjson.md#console-terminal-window
             "console": "integratedTerminal",
             "stopAtEntry": false,

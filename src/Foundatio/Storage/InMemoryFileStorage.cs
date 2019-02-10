@@ -189,7 +189,7 @@ namespace Foundatio.Storage {
 
             searchPattern = searchPattern.NormalizePath();
 
-            var result = new PagedFileListResult(() => Task.FromResult(GetFiles(searchPattern, 1, pageSize)));
+            var result = new PagedFileListResult(s => Task.FromResult(GetFiles(searchPattern, 1, pageSize)));
             await result.NextPageAsync().AnyContext();
             return result;
         }
@@ -212,7 +212,7 @@ namespace Foundatio.Storage {
                 list.RemoveAt(pagingLimit);
             }
             
-            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = () => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
+            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
         }
 
         public void Dispose() {

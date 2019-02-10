@@ -23,14 +23,14 @@ namespace Foundatio.Storage {
     }
 
     public interface IHasNextPageFunc {
-        Func<Task<NextPageResult>> NextPageFunc { get; set; }
+        Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
     }
 
     public class NextPageResult {
         public bool Success { get; set; }
         public bool HasMore { get; set; }
         public IReadOnlyCollection<FileSpec> Files { get; set; }
-        public Func<Task<NextPageResult>> NextPageFunc { get; set; }
+        public Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
     }
 
     public class PagedFileListResult : IHasNextPageFunc {
@@ -43,25 +43,26 @@ namespace Foundatio.Storage {
             ((IHasNextPageFunc)this).NextPageFunc = null;
         }
         
-        public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
             Files = files;
             HasMore = hasMore;
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
-        public PagedFileListResult(Func<Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
         public IReadOnlyCollection<FileSpec> Files { get; private set; }
         public bool HasMore { get; private set; }
-        Func<Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
+        protected DataDictionary Data { get; } = new DataDictionary();
+        Func<PagedFileListResult, Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
 
         public async Task<bool> NextPageAsync() {
             if (((IHasNextPageFunc)this).NextPageFunc == null)
                 return false;
             
-            var result = await ((IHasNextPageFunc)this).NextPageFunc().AnyContext();
+            var result = await ((IHasNextPageFunc)this).NextPageFunc(this).AnyContext();
             if (result.Success) {
                 Files = result.Files;
                 HasMore = result.HasMore;

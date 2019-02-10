@@ -94,14 +94,14 @@ namespace Foundatio.Storage {
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, () => NextPage(unscopedResult));
+            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, s => NextPage(unscopedResult));
         }
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {
             var success = await result.NextPageAsync().AnyContext();
             foreach (var file in result.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
-            return new NextPageResult { Success = success, HasMore = result.HasMore, Files = result.Files, NextPageFunc = () => NextPage(result) };
+            return new NextPageResult { Success = success, HasMore = result.HasMore, Files = result.Files, NextPageFunc = s => NextPage(result) };
         }
 
         public void Dispose() { }

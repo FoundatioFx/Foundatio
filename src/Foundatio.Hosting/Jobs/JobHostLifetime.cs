@@ -3,16 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Foundatio.Jobs.Hosting {
+namespace Foundatio.Hosting.Jobs {
     /// <summary>
     /// Listens for Ctrl+C or SIGTERM or for all hosted jobs to stop running and initiates shutdown.
     /// </summary>
-    public class JobHostLifetime : IHostLifetime, IDisposable {
+    public class JobHostLifetime : Microsoft.Extensions.Hosting.IHostedService, IDisposable {
         private readonly ManualResetEvent _shutdownBlock = new ManualResetEvent(false);
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
@@ -23,7 +24,8 @@ namespace Foundatio.Jobs.Hosting {
 
         public JobHostLifetime(IOptions<JobHostLifetimeOptions> options, IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
             _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-            var environment1 = environment ?? throw new ArgumentNullException(nameof(environment));
+            if (environment == null)
+                throw new ArgumentNullException(nameof(environment));
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
             _logger = logger ?? NullLogger<JobHostLifetime>.Instance;
             if (logger != NullLogger<JobHostLifetime>.Instance)
@@ -34,17 +36,17 @@ namespace Foundatio.Jobs.Hosting {
 
                 if (_useConsoleOutput) {
                     Console.WriteLine("Application started. Press Ctrl+C to shut down.");
-                    Console.WriteLine($"Hosting environment: {environment1.EnvironmentName}");
-                    Console.WriteLine($"Content root path: {environment1.ContentRootPath}");
+                    Console.WriteLine($"Hosting environment: {environment.EnvironmentName}");
+                    Console.WriteLine($"Content root path: {environment.ContentRootPath}");
                 } else {
                     _logger.LogInformation("Application started. Press Ctrl+C to shut down.");
-                    _logger.LogInformation($"Hosting environment: {environment1.EnvironmentName}");
-                    _logger.LogInformation($"Content root path: {environment1.ContentRootPath}");
+                    _logger.LogInformation($"Hosting environment: {environment.EnvironmentName}");
+                    _logger.LogInformation($"Content root path: {environment.ContentRootPath}");
                 }
             });
         }
 
-        public Task WaitForStartAsync(CancellationToken cancellationToken) {
+        public Task StartAsync(CancellationToken cancellationToken) {
             AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) => {
                 _lifetime.StopApplication();
                 _shutdownBlock.WaitOne();

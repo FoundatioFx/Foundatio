@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "Foundatio.JobCommands": {
+      "commandName": "Project"
+    }
+  }
+}
