@@ -4,6 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Internal;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -19,7 +22,7 @@ namespace Foundatio.Hosting.Jobs {
         private readonly ILogger _logger;
         private readonly bool _useConsoleOutput;
 
-        public JobHostLifetime(IHostingEnvironment environment, IApplicationLifetime applicationLifetime, ILogger<JobHostLifetime> logger) {
+        public JobHostLifetime(IHostingEnvironment environment, IApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<JobHostLifetime> logger) {
             if (environment == null)
                 throw new ArgumentNullException(nameof(environment));
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
@@ -30,14 +33,23 @@ namespace Foundatio.Hosting.Jobs {
             _lifetime.ApplicationStarted.Register(() => {
                 _timer = new Timer(e => CheckForShutdown(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
 
+                var addresses = serviceProvider.GetService<IServerAddressesFeature>()?.Addresses;
                 if (_useConsoleOutput) {
                     Console.WriteLine("Application started. Press Ctrl+C to shut down.");
                     Console.WriteLine($"Hosting environment: {environment.EnvironmentName}");
                     Console.WriteLine($"Content root path: {environment.ContentRootPath}");
+                    if (addresses != null) {
+                        foreach (string address in addresses)
+                            Console.WriteLine($"Now listening on: {address}");
+                    }
                 } else {
                     _logger.LogInformation("Application started. Press Ctrl+C to shut down.");
                     _logger.LogInformation($"Hosting environment: {environment.EnvironmentName}");
                     _logger.LogInformation($"Content root path: {environment.ContentRootPath}");
+                    if (addresses != null) {
+                        foreach (string address in addresses)
+                            _logger.LogInformation("Now listening on: {Address}", address);
+                    }
                 }
             });
         }
