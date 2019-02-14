@@ -50,7 +50,7 @@ namespace Foundatio.JobCommands {
 
                     if (sample2) {
                         healthCheckBuilder.AddJobCheck<Sample2Job>();
-                        s.AddJob<Sample2Job>();
+                        s.AddJob<Sample2Job>(true);
                     }
 
                     s.AddStartupAction(async () => {

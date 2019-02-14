@@ -31,7 +31,9 @@ namespace Foundatio.Hosting.Jobs {
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
             if (_waitForStartupActions) {
                 var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
-                await startupContext.WaitForStartupAsync(stoppingToken);
+                bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
+                if (!success)
+                    throw new ApplicationException("Failed to wait for startup actions to complete.");
             }
 
             var jobOptions = JobOptions.GetDefaults<T>(() => _serviceProvider.GetRequiredService<T>());

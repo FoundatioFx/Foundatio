@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Hosting;
@@ -27,12 +28,15 @@ namespace Foundatio.Hosting.Jobs {
             hostBuilder.UseJobLifetime().Build().Run();
         }
 
+        public static Task RunJobHostAsync(this IWebHostBuilder hostBuilder) {
+            return hostBuilder.UseJobLifetime().Build().RunAsync();
+        }
+
         public static IHealthChecksBuilder AddJobCheck<T>(this IHealthChecksBuilder builder, IEnumerable<string> tags = null) where T : class, IHealthCheck {
             if (builder == null)
                 throw new ArgumentNullException(nameof(builder));
 
             return builder.Add(new HealthCheckRegistration(nameof(T), ActivatorUtilities.GetServiceOrCreateInstance<T>, HealthStatus.Unhealthy, tags));
         }
-
     }
 }
