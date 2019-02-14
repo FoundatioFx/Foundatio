@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="7.2.1887-pre" />
+    <PackageReference Include="Foundatio" Version="7.2.1905-pre" />
     <PackageReference Include="Microsoft.Azure.Management.ServiceBus" Version="2.0.1" />
     <PackageReference Include="Microsoft.Azure.ServiceBus" Version="3.3.0" />
   </ItemGroup>
