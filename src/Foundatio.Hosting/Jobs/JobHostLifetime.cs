@@ -46,8 +46,8 @@ namespace Foundatio.Hosting.Jobs {
                     }
                 } else {
                     _logger.LogInformation("Application started. Press Ctrl+C to shut down.");
-                    _logger.LogInformation($"Hosting environment: {environment.EnvironmentName}");
-                    _logger.LogInformation($"Content root path: {environment.ContentRootPath}");
+                    _logger.LogInformation("Hosting environment: {EnvironmentName}", environment.EnvironmentName);
+                    _logger.LogInformation("Content root path: {ContentRoot}", environment.ContentRootPath);
                     if (addresses != null) {
                         foreach (string address in addresses)
                             _logger.LogInformation("Now listening on: {Address}", address);

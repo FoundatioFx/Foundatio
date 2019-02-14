@@ -39,7 +39,7 @@ namespace Foundatio.JobCommands {
 
             var builder = WebHost.CreateDefaultBuilder(args)
                 .UseSerilog(Log.Logger)
-                .SuppressStatusMessages(false)
+                .SuppressStatusMessages(true)
                 .ConfigureServices(s => {
                     s.AddSingleton<StartupHealthCheck>();
                     var healthCheckBuilder = s.AddHealthChecks()
