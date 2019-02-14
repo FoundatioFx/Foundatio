@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Internal;
+using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,8 @@ namespace Foundatio.Hosting.Jobs {
             _lifetime.ApplicationStarted.Register(() => {
                 _timer = new Timer(e => CheckForShutdown(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
 
-                var addresses = serviceProvider.GetService<IServerAddressesFeature>()?.Addresses;
+                var server = serviceProvider.GetService<IServer>();
+                var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
                 if (_useConsoleOutput) {
                     Console.WriteLine("Application started. Press Ctrl+C to shut down.");
                     Console.WriteLine($"Hosting environment: {environment.EnvironmentName}");
