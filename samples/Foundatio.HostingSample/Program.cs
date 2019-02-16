@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog.AspNetCore;
 using Serilog;
+using System.Diagnostics;
 
 namespace Foundatio.HostingSample {
     public class Program {
@@ -26,6 +27,8 @@ namespace Foundatio.HostingSample {
                 return 1;
             } finally {
                 Log.CloseAndFlush();
+                if (Debugger.IsAttached)
+                    Console.ReadKey();
             }
         }
                 
@@ -48,7 +51,7 @@ namespace Foundatio.HostingSample {
                     // will shutdown the host if no jobs are running
                     s.AddJobLifetimeService();
 
-                    // insert a startup action that does not complete until the critical health checks are healthy
+                    // inserts a startup action that does not complete until the critical health checks are healthy
                     // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
                     s.AddStartupActionToWaitForHealthChecks();
 
@@ -59,10 +62,10 @@ namespace Foundatio.HostingSample {
                     s.AddHealthChecks().AddCheckForStartupActionsComplete();
 
                     if (sample1)
-                        s.AddJob<Sample1Job>(true);
+                        s.AddJob<Sample1Job>(o => o.ApplyDefaults().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(5)));
 
                     if (sample2) {
-                        s.AddHealthChecks().AddJobCheck<Sample2Job>();
+                        s.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
                         s.AddJob<Sample2Job>(true);
                     }
 

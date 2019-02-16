@@ -14,10 +14,10 @@ namespace Foundatio.Hosting.Jobs {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
-        private readonly bool _waitForStartupActions;
+        private readonly HostedJobOptions _jobOptions;
         private bool _hasStarted = false;
 
-        public HostedJobService(IServiceProvider serviceProvider, bool waitForStartupActions, ILoggerFactory loggerFactory) {
+        public HostedJobService(IServiceProvider serviceProvider, HostedJobOptions jobOptions, ILoggerFactory loggerFactory) {
             _serviceProvider = serviceProvider;
             _loggerFactory = loggerFactory; 
             _logger = loggerFactory.CreateLogger<T>();
@@ -26,19 +26,18 @@ namespace Foundatio.Hosting.Jobs {
                 throw new InvalidOperationException("You must call UseJobLifetime when registering jobs.");
 
             lifetime.RegisterHostedJobInstance(this);
-            _waitForStartupActions = waitForStartupActions;
+            _jobOptions = jobOptions;
         }
 
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
-            if (_waitForStartupActions) {
+            if (_jobOptions.WaitForStartupActions) {
                 var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
                 bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
                 if (!success)
                     throw new ApplicationException("Failed to wait for startup actions to complete.");
             }
 
-            var jobOptions = JobOptions.GetDefaults<T>(() => _serviceProvider.GetRequiredService<T>());
-            var runner = new JobRunner(jobOptions, _loggerFactory);
+            var runner = new JobRunner(_jobOptions, _loggerFactory);
 
             try {
                 await runner.RunAsync(stoppingToken);
