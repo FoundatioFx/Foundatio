@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Foundatio.JobCommands": {
+    "Foundatio.HostingSample": {
       "commandName": "Project"
     }
   }

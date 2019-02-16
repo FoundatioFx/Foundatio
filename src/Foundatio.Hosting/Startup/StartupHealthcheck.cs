@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -12,10 +12,7 @@ namespace Foundatio.Hosting.Startup {
         }
 
         public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default) {
-            if (_context.IsStartupComplete)
-                return Task.FromResult(HealthCheckResult.Healthy("All startup actions completed"));
-
-            return Task.FromResult(HealthCheckResult.Unhealthy("Startup actions have not completed"));
+            return Task.FromResult(_context.IsStartupComplete ? HealthCheckResult.Healthy("All startup actions completed") : HealthCheckResult.Unhealthy("Startup actions have not completed"));
         }
     }
 }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Internal;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,9 +11,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Hosting.Jobs {
-    /// <summary>
-    /// Listens for Ctrl+C or SIGTERM or for all hosted jobs to stop running and initiates shutdown.
-    /// </summary>
     public class JobHostLifetime : Microsoft.Extensions.Hosting.IHostedService, IDisposable {
         private readonly ManualResetEvent _shutdownBlock = new ManualResetEvent(false);
         private Timer _timer;

@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 
-namespace Foundatio.Startup {
+namespace Foundatio.Hosting.Startup {
     public class StartupPriorityAttribute : Attribute {
         public StartupPriorityAttribute(int priority) {
             Priority = priority;

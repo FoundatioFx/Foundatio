@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
@@ -15,21 +13,8 @@ namespace Foundatio.Hosting.Jobs {
             return services.AddTransient<IHostedService>(s => new HostedJobService<T>(s, waitForStartupActions, s.GetService<ILoggerFactory>()));
         }
 
-        public static IServiceCollection AddJobLifetime(this IServiceCollection services) {
-            services.AddSingleton<JobHostLifetime>();
-            return services.AddSingleton<IHostedService>(s => s.GetService<JobHostLifetime>());
-        }
-
-        public static IWebHostBuilder UseJobLifetime(this IWebHostBuilder hostBuilder) {
-            return hostBuilder.ConfigureServices((hostContext, services) => services.AddJobLifetime());
-        }
-
-        public static void RunJobHost(this IWebHostBuilder hostBuilder) {
-            hostBuilder.UseJobLifetime().Build().Run();
-        }
-
-        public static Task RunJobHostAsync(this IWebHostBuilder hostBuilder) {
-            return hostBuilder.UseJobLifetime().Build().RunAsync();
+        public static IServiceCollection AddJobLifetimeService(this IServiceCollection services) {
+            return services.AddSingleton<ShutdownHostIfNoJobsRunningService>();
         }
 
         public static IHealthChecksBuilder AddJobCheck<T>(this IHealthChecksBuilder builder, IEnumerable<string> tags = null) where T : class, IHealthCheck {

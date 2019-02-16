@@ -1,30 +1,28 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Hosting;
 using Foundatio.Hosting.Jobs;
 using Foundatio.Hosting.Startup;
-using Foundatio.Startup;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
+using Serilog.Extensions.Logging;
 
-namespace Foundatio.JobCommands {
+namespace Foundatio.HostingSample {
     public class Program {
         public static int Main(string[] args) {
             try {
-                CreateWebHostBuilder(args).RunJobHost();
+                CreateWebHostBuilder(args).Build().Run(Log.Logger.ToExtensionsLogger());
                 return 0;
             } catch (Exception ex) {
                 Log.Fatal(ex, "Job host terminated unexpectedly");
                 return 1;
             } finally {
                 Log.CloseAndFlush();
-                if (Debugger.IsAttached)
-                    Console.ReadKey();
             }
         }
                 
@@ -41,15 +39,22 @@ namespace Foundatio.JobCommands {
                 .UseSerilog(Log.Logger)
                 .SuppressStatusMessages(true)
                 .ConfigureServices(s => {
-                    s.AddSingleton<StartupHealthCheck>();
-                    var healthCheckBuilder = s.AddHealthChecks()
-                        .Add(new HealthCheckRegistration("Startup", p => p.GetRequiredService<StartupHealthCheck>(), null, new[] { "Core" }));
+                    // will shutdown the host if no jobs are running
+                    s.AddJobLifetimeService();
+
+                    // insert a startup action that does not complete until the critical health checks are healthy
+                    s.AddStartupActionToWaitForHealthChecks();
+
+                    s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "Critical" });
+
+                    // add health check that does not return healthy until the startup actions have completed
+                    s.AddHealthChecks().AddCheckForStartupActionsComplete();
 
                     if (sample1)
                         s.AddJob<Sample1Job>(true);
 
                     if (sample2) {
-                        healthCheckBuilder.AddJobCheck<Sample2Job>();
+                        s.AddHealthChecks().AddJobCheck<Sample2Job>();
                         s.AddJob<Sample2Job>(true);
                     }
 
@@ -65,18 +70,21 @@ namespace Foundatio.JobCommands {
 
                     s.AddStartupAction(async () => {
                         Log.Logger.Information("Running startup 2 action.");
-                        for (int i = 0; i < 10; i++) {
-                            await Task.Delay(1000);
+                        for (int i = 0; i < 5; i++) {
+                            await Task.Delay(1500);
                             Log.Logger.Information("Running startup 2 action...");
                         }
                         Log.Logger.Information("Done running startup 2 action.");
                     }, 1);
-
-                    s.AddStartupTaskService();
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
-                    app.UseStartupMiddleware();
+                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase) });
+
+                    // this middleware will return Service Unavailable until the startup actions have completed
+                    app.UseWaitForStartupActionsBeforeServingRequests();
+
+                    // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
                 });
 
             return builder;

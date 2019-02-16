@@ -1,11 +1,10 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Foundatio.Startup {
+namespace Foundatio.Hosting.Startup {
     public class StartupActionRegistration {
         private readonly Func<IServiceProvider, CancellationToken, Task> _action;
         private readonly Type _actionType;
@@ -34,9 +33,9 @@ namespace Foundatio.Startup {
         public async Task RunAsync(IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
             if (_actionType != null) {
                 if (serviceProvider.GetRequiredService(_actionType) is IStartupAction startup)
-                    await startup.RunAsync(shutdownToken).AnyContext();
+                    await startup.RunAsync(shutdownToken).ConfigureAwait(false);
             } else {
-                await _action(serviceProvider, shutdownToken).AnyContext();
+                await _action(serviceProvider, shutdownToken).ConfigureAwait(false);
             }
         }
     }

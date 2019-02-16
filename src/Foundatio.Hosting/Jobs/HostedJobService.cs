@@ -20,7 +20,7 @@ namespace Foundatio.Hosting.Jobs {
             _serviceProvider = serviceProvider;
             _loggerFactory = loggerFactory; 
             _logger = loggerFactory.CreateLogger<T>();
-            var lifetime = serviceProvider.GetService<JobHostLifetime>();
+            var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
             if (lifetime == null)
                 throw new InvalidOperationException("You must call UseJobLifetime when registering jobs.");
 
@@ -49,10 +49,7 @@ namespace Foundatio.Hosting.Jobs {
 
         public Task StartAsync(CancellationToken cancellationToken) {
             _executingTask = ExecuteAsync(_stoppingCts.Token);
-            if (_executingTask.IsCompleted)
-                return _executingTask;
-
-            return Task.CompletedTask;
+            return _executingTask.IsCompleted ? _executingTask : Task.CompletedTask;
         }
 
         public async Task StopAsync(CancellationToken cancellationToken) {
@@ -62,7 +59,7 @@ namespace Foundatio.Hosting.Jobs {
             try {
                 _stoppingCts.Cancel();
             } finally {
-                var task = await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
+                await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
             }
         }
 

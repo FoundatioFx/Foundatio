@@ -6,8 +6,8 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.JobCommands {
-    [Job(Description = "Sample 2 job", Interval = "2s", IterationLimit = 30)]
+namespace Foundatio.HostingSample {
+    [Job(Description = "Sample 2 job", Interval = "2s", IterationLimit = 10)]
     public class Sample2Job : IJob, IHealthCheck {
         private readonly ILogger _logger;
         private int _iterationCount = 0;
