@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.HostingSample {
     [Job(Description = "Sample 1 job", Interval = "5s", IterationLimit = 5)]
     public class Sample1Job : IJob {
-        private readonly Microsoft.Extensions.Logging.ILogger _logger;
+        private readonly ILogger _logger;
         private int _iterationCount = 0;
 
         public Sample1Job(ILoggerFactory loggerFactory) {
@@ -16,7 +16,7 @@ namespace Foundatio.HostingSample {
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             Interlocked.Increment(ref _iterationCount);
             if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
+                _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
     }

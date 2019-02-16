@@ -17,13 +17,11 @@ namespace Foundatio.HostingSample {
             _logger = loggerFactory.CreateLogger<Sample2Job>();
         }
 
-        public string CustomArg { get; set; }
-
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             _lastRun = SystemClock.UtcNow;
             Interlocked.Increment(ref _iterationCount);
             if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Sample2Job Run #{IterationCount} CustomArg={CustomArg} Thread={ManagedThreadId}", _iterationCount, CustomArg, Thread.CurrentThread.ManagedThreadId);
+                _logger.LogTrace("Sample2Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
             return Task.FromResult(JobResult.Success);
         }
 

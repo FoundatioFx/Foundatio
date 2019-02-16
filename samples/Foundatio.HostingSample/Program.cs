@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
-using Serilog.Extensions.Logging;
 
 namespace Foundatio.HostingSample {
     public class Program {
@@ -43,11 +42,13 @@ namespace Foundatio.HostingSample {
                     s.AddJobLifetimeService();
 
                     // insert a startup action that does not complete until the critical health checks are healthy
+                    // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
                     s.AddStartupActionToWaitForHealthChecks();
 
                     s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "Critical" });
 
                     // add health check that does not return healthy until the startup actions have completed
+                    // useful for readiness checks
                     s.AddHealthChecks().AddCheckForStartupActionsComplete();
 
                     if (sample1)
@@ -58,28 +59,33 @@ namespace Foundatio.HostingSample {
                         s.AddJob<Sample2Job>(true);
                     }
 
+                    // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
                     s.AddStartupAction(async () => {
-                        Log.Logger.Information("Running startup 1 action.");
+                        Log.Logger.Verbose("Running startup 1 action.");
                         for (int i = 0; i < 10; i++) {
                             await Task.Delay(1000);
-                            Log.Logger.Information("Running startup 1 action...");
+                            Log.Logger.Verbose("Running startup 1 action...");
                         }
 
-                        Log.Logger.Information("Done running startup 1 action.");
-                    }, 1);
+                        Log.Logger.Verbose("Done running startup 1 action.");
+                    });
 
                     s.AddStartupAction(async () => {
-                        Log.Logger.Information("Running startup 2 action.");
+                        Log.Logger.Verbose("Running startup 2 action.");
                         for (int i = 0; i < 5; i++) {
                             await Task.Delay(1500);
-                            Log.Logger.Information("Running startup 2 action...");
+                            Log.Logger.Verbose("Running startup 2 action...");
                         }
-                        Log.Logger.Information("Done running startup 2 action.");
-                    }, 1);
+                        Log.Logger.Verbose("Done running startup 2 action.");
+                    });
+
+                    // then these startup actions will run concurrently since they both have the same priority
+                    s.AddStartupAction<MyStartupAction>(priority: 100);
+                    s.AddStartupAction<OtherStartupAction>(priority: 100);
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
-                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase) });
+                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase) || c.GetType() == typeof(StartupHealthCheck) });
 
                     // this middleware will return Service Unavailable until the startup actions have completed
                     app.UseWaitForStartupActionsBeforeServingRequests();

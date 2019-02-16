@@ -9,7 +9,7 @@ namespace Foundatio.HostingSample {
 
         public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = new CancellationToken()) {
             return DateTime.Now.Subtract(_startTime) > TimeSpan.FromSeconds(10) ?
-                Task.FromResult(HealthCheckResult.Healthy())
+                Task.FromResult(HealthCheckResult.Healthy("Critical resource is available."))
                 : Task.FromResult(HealthCheckResult.Unhealthy("Critical resource not available."));
         }
     }

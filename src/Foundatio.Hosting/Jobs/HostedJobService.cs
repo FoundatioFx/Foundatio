@@ -15,6 +15,7 @@ namespace Foundatio.Hosting.Jobs {
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
         private readonly bool _waitForStartupActions;
+        private bool _hasStarted = false;
 
         public HostedJobService(IServiceProvider serviceProvider, bool waitForStartupActions, ILoggerFactory loggerFactory) {
             _serviceProvider = serviceProvider;
@@ -49,6 +50,7 @@ namespace Foundatio.Hosting.Jobs {
 
         public Task StartAsync(CancellationToken cancellationToken) {
             _executingTask = ExecuteAsync(_stoppingCts.Token);
+            _hasStarted = true;
             return _executingTask.IsCompleted ? _executingTask : Task.CompletedTask;
         }
 
@@ -67,7 +69,7 @@ namespace Foundatio.Hosting.Jobs {
             _stoppingCts.Cancel();
         }
 
-        public bool IsRunning => _executingTask != null && !_executingTask.IsCompleted;
+        public bool IsRunning => _hasStarted == false || (_executingTask != null && !_executingTask.IsCompleted);
     }
 
     public interface IJobStatus {

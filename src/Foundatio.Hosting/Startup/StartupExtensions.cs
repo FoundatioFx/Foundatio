@@ -13,12 +13,23 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Hosting.Startup {
     public static partial class StartupExtensions {
         public static async Task RunStartupActionsAsync(this IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
-            foreach (var startupAction in serviceProvider.GetServices<StartupActionRegistration>().GroupBy(s => s.Priority).OrderBy(s => s.Key))
-                await Task.WhenAll(startupAction.Select(a => a.RunAsync(serviceProvider, shutdownToken))).ConfigureAwait(false);
+            var startupActionPriorityGroups = serviceProvider.GetServices<StartupActionRegistration>().GroupBy(s => s.Priority).OrderBy(s => s.Key).ToList();
+            foreach (var startupActions in startupActionPriorityGroups) {
+                try {
+                    await Task.WhenAll(startupActions.Select(a => a.RunAsync(serviceProvider, shutdownToken))).ConfigureAwait(false);
+                } catch (Exception ex) {
+                    var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions");
+                    logger?.LogError(ex, "Error running startup actions: {Message}", ex.Message);
+                    throw;
+                }
+            }
         }
 
-        public static void AddStartupAction<T>(this IServiceCollection container, int? priority = null) where T : IStartupAction {
-            container.AddTransient(s => new StartupActionRegistration(typeof(T), priority));
+        public static void AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction {
+            services.TryAddSingleton<StartupContext>();
+            services.TryAddSingleton<IHostedService, RunStartupActionsService>();
+            services.TryAddTransient(typeof(T));
+            services.AddTransient(s => new StartupActionRegistration(typeof(T), priority));
         }
 
         public static void AddStartupAction(this IServiceCollection services, Action action, int? priority = null) {
