@@ -7,8 +7,8 @@ namespace Foundatio.HostingSample {
     public class MyStartupAction : IStartupAction {
         private readonly ILogger _logger;
 
-        public MyStartupAction(ILoggerFactory loggerFactory) {
-            _logger = loggerFactory.CreateLogger<MyStartupAction>();
+        public MyStartupAction(ILogger<MyStartupAction> logger) {
+            _logger = logger;
         }
 
         public async Task RunAsync(CancellationToken cancellationToken = default) {

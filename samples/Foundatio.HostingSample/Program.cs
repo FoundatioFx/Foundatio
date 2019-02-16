@@ -8,17 +8,21 @@ using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog.AspNetCore;
 using Serilog;
 
 namespace Foundatio.HostingSample {
     public class Program {
+        private static Microsoft.Extensions.Logging.ILogger _logger;
+
         public static int Main(string[] args) {
             try {
-                CreateWebHostBuilder(args).Build().Run(Log.Logger.ToExtensionsLogger());
+                CreateWebHostBuilder(args).Build().Run(_logger);
                 return 0;
             } catch (Exception ex) {
-                Log.Fatal(ex, "Job host terminated unexpectedly");
+                _logger.LogError(ex, "Job host terminated unexpectedly");
                 return 1;
             } finally {
                 Log.CloseAndFlush();
@@ -29,15 +33,18 @@ namespace Foundatio.HostingSample {
             bool sample1 = args.Length == 0 || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
             bool sample2 = args.Length == 0 || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
 
-            Log.Logger = new LoggerConfiguration()
+            var loggerFactory = new SerilogLoggerFactory(new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Console()
-                .CreateLogger();
+                .CreateLogger());
+
+            _logger = loggerFactory.CreateLogger<Program>();
 
             var builder = WebHost.CreateDefaultBuilder(args)
-                .UseSerilog(Log.Logger)
                 .SuppressStatusMessages(true)
                 .ConfigureServices(s => {
+                    s.AddSingleton<ILoggerFactory>(loggerFactory);
+
                     // will shutdown the host if no jobs are running
                     s.AddJobLifetimeService();
 
@@ -61,22 +68,22 @@ namespace Foundatio.HostingSample {
 
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
                     s.AddStartupAction(async () => {
-                        Log.Logger.Verbose("Running startup 1 action.");
+                        _logger.LogTrace("Running startup 1 action.");
                         for (int i = 0; i < 10; i++) {
                             await Task.Delay(1000);
                             Log.Logger.Verbose("Running startup 1 action...");
                         }
 
-                        Log.Logger.Verbose("Done running startup 1 action.");
+                        _logger.LogTrace("Done running startup 1 action.");
                     });
 
                     s.AddStartupAction(async () => {
-                        Log.Logger.Verbose("Running startup 2 action.");
+                        _logger.LogTrace("Running startup 2 action.");
                         for (int i = 0; i < 5; i++) {
                             await Task.Delay(1500);
-                            Log.Logger.Verbose("Running startup 2 action...");
+                            _logger.LogTrace("Running startup 2 action...");
                         }
-                        Log.Logger.Verbose("Done running startup 2 action.");
+                        _logger.LogTrace("Done running startup 2 action.");
                     });
 
                     // then these startup actions will run concurrently since they both have the same priority
