@@ -67,7 +67,7 @@ namespace Foundatio.HostingSample {
                         s.AddCronJob<EveryMinuteJob>("* * * * *");
 
                     if (evenMinutes)
-                        s.AddCronJob<EvenMinuteJob>("*/2 * * * *");
+                        s.AddCronJob<EvenMinutesJob>("*/2 * * * *");
 
                     if (sample1)
                         s.AddJob<Sample1Job>(o => o.ApplyDefaults().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(5)));

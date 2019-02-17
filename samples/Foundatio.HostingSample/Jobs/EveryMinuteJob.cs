@@ -13,7 +13,7 @@ namespace Foundatio.HostingSample {
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("EveryMinuteJob Run {ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+                _logger.LogInformation("EveryMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
 
             return Task.FromResult(JobResult.Success);
         }
