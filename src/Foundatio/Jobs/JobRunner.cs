@@ -132,7 +132,7 @@ namespace Foundatio.Jobs {
                     await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
                 } else {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                    JobExtensions.LogResult(result, _logger, _jobName);
+                    _logger.LogJobResult(result, _jobName);
 
                     return result.IsSuccess;
                 }

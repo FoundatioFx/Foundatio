@@ -35,6 +35,8 @@ namespace Foundatio.HostingSample {
         public static IWebHostBuilder CreateWebHostBuilder(string[] args) {
             bool sample1 = args.Length == 0 || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
             bool sample2 = args.Length == 0 || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
+            bool everyMinute = args.Length == 0 || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
+            bool evenMinutes = args.Length == 0 || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
 
             var loggerFactory = new SerilogLoggerFactory(new LoggerConfiguration()
                 .MinimumLevel.Verbose()
@@ -61,6 +63,12 @@ namespace Foundatio.HostingSample {
                     // useful for readiness checks
                     s.AddHealthChecks().AddCheckForStartupActionsComplete();
 
+                    if (everyMinute)
+                        s.AddCronJob<EveryMinuteJob>("* * * * *");
+
+                    if (evenMinutes)
+                        s.AddCronJob<EvenMinuteJob>("*/2 * * * *");
+
                     if (sample1)
                         s.AddJob<Sample1Job>(o => o.ApplyDefaults().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(5)));
 
@@ -72,9 +80,9 @@ namespace Foundatio.HostingSample {
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
                     s.AddStartupAction(async () => {
                         _logger.LogTrace("Running startup 1 action.");
-                        for (int i = 0; i < 10; i++) {
+                        for (int i = 0; i < 3; i++) {
                             await Task.Delay(1000);
-                            Log.Logger.Verbose("Running startup 1 action...");
+                            _logger.LogTrace("Running startup 1 action...");
                         }
 
                         _logger.LogTrace("Done running startup 1 action.");
@@ -82,7 +90,7 @@ namespace Foundatio.HostingSample {
 
                     s.AddStartupAction(async () => {
                         _logger.LogTrace("Running startup 2 action.");
-                        for (int i = 0; i < 5; i++) {
+                        for (int i = 0; i < 2; i++) {
                             await Task.Delay(1500);
                             _logger.LogTrace("Running startup 2 action...");
                         }

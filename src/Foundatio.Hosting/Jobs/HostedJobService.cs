@@ -21,12 +21,11 @@ namespace Foundatio.Hosting.Jobs {
             _serviceProvider = serviceProvider;
             _loggerFactory = loggerFactory; 
             _logger = loggerFactory.CreateLogger<T>();
-            var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
-            if (lifetime == null)
-                throw new InvalidOperationException("You must call UseJobLifetime when registering jobs.");
-
-            lifetime.RegisterHostedJobInstance(this);
             _jobOptions = jobOptions;
+
+            var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
+            if (lifetime != null)
+                lifetime.RegisterHostedJobInstance(this);
         }
 
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
@@ -43,7 +42,7 @@ namespace Foundatio.Hosting.Jobs {
                 await runner.RunAsync(stoppingToken);
                 _stoppingCts.Cancel();
             } finally {
-                _logger.LogInformation("JobDone, calling token cancel.");
+                _logger.LogInformation("{JobName} job completed.", _jobOptions.Name);
             }
         }
 

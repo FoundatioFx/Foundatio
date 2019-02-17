@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -35,7 +35,7 @@ namespace Foundatio.Jobs {
                 var sw = Stopwatch.StartNew();
                 while (!cancellationToken.IsCancellationRequested) {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                    LogResult(result, logger, jobName);
+                    logger.LogJobResult(result, jobName);
                     iterations++;
 
                     if (cancellationToken.IsCancellationRequested || (iterationLimit > -1 && iterationLimit <= iterations))
@@ -73,21 +73,6 @@ namespace Foundatio.Jobs {
 
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Stopping continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
-            }
-        }
-
-        internal static void LogResult(JobResult result, ILogger logger, string jobName) {
-            if (result != null) {
-                if (result.IsCancelled)
-                    logger.LogWarning(result.Error, "Job run {JobName} cancelled: {Message}", jobName, result.Message);
-                else if (!result.IsSuccess)
-                    logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
-                else if (!String.IsNullOrEmpty(result.Message))
-                    logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
-                else if (logger.IsEnabled(LogLevel.Debug))
-                    logger.LogDebug("Job run {JobName} succeeded.", jobName);
-            } else if (logger.IsEnabled(LogLevel.Error)) {
-                logger.LogError("Null job run result for {JobName}.", jobName);
             }
         }
     }

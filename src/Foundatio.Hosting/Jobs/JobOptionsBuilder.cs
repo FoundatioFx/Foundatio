@@ -34,6 +34,11 @@ namespace Foundatio.Hosting.Jobs {
             return this;
         }
 
+        public HostedJobOptionsBuilder<T> CronSchedule(string value) {
+            Target.CronSchedule = value;
+            return this;
+        }
+
         public HostedJobOptionsBuilder<T> Interval(TimeSpan? value) {
             Target.Interval = value;
             return this;
