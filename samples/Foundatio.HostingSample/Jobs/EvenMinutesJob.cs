@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
@@ -11,11 +12,13 @@ namespace Foundatio.HostingSample {
             _logger = loggerFactory.CreateLogger<EvenMinutesJob>();
         }
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
 
-            return Task.FromResult(JobResult.Success);
+            await Task.Delay(TimeSpan.FromSeconds(5));
+
+            return JobResult.Success;
         }
     }
 }

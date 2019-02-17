@@ -15,7 +15,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Hosting.Jobs {
-    // https://github.com/kdcllc/CronScheduler.AspNetCore/blob/master/src/CronScheduler/SchedulerHostedService.cs
     public class ScheduledJobService : BackgroundService, IJobStatus {
         private readonly List<ScheduledJobRunner> _jobs;
         private readonly ICacheClient _cacheClient;
@@ -36,6 +35,7 @@ namespace Foundatio.Hosting.Jobs {
         public bool IsRunning => true;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
+            // TODO: Add more logging throughout
             var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
             if (startupContext != null) {
                 bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
@@ -47,7 +47,7 @@ namespace Foundatio.Hosting.Jobs {
                 var jobsToRun = _jobs.Where(j => j.ShouldRun()).ToList();
 
                 foreach (var jobToRun in jobsToRun)
-                    await jobToRun.StartAsync();
+                    await jobToRun.StartAsync(stoppingToken);
 
                 // run jobs every minute, right after the minute changes
                 await Task.Delay(TimeSpan.FromSeconds(10));
@@ -106,14 +106,18 @@ namespace Foundatio.Hosting.Jobs {
             }
 
             public async Task<bool> StartAsync(CancellationToken cancellationToken = default) {
+                // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
+                // TODO: provide ability to run cron jobs on a per host isolated schedule
                 return await _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t => {
                     // start running the job in a thread
                     RunTask = Task.Factory.StartNew(async () => {
                         var job = _jobFactory();
+                        // TODO: Don't calculate job name every time
                         string jobName = job.GetType().Name;
                         var result = await _jobFactory().TryRunAsync(cancellationToken).ConfigureAwait(false);
+                        // TODO: Should we only set last run on success? Seems like that could be bad.
                         _logger.LogJobResult(result, jobName);
-                    }, cancellationToken);
+                    }, cancellationToken).Unwrap();
 
                     LastRun = NextRun;
                     NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
@@ -131,15 +135,5 @@ namespace Foundatio.Hosting.Jobs {
                 return _cacheKeyPrefix + minute;
             }
         }
-    }
-
-    public class ScheduledJobRegistration {
-        public ScheduledJobRegistration(Func<IJob> jobFactory, string schedule) {
-            JobFactory = jobFactory;
-            Schedule = schedule;
-        }
-
-        public Func<IJob> JobFactory { get; }
-        public string Schedule { get; }
     }
 }
