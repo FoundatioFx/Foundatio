@@ -49,8 +49,11 @@ namespace Foundatio.Hosting.Jobs {
                 foreach (var jobToRun in jobsToRun)
                     await jobToRun.StartAsync(stoppingToken);
 
-                // run jobs every minute, right after the minute changes
-                await Task.Delay(TimeSpan.FromSeconds(10));
+                // run jobs every minute since that is the lowest resolution of the cron schedule
+                var now = SystemClock.Now;
+                var nextMinute = now.AddTicks(TimeSpan.FromMinutes(1).Ticks - (now.Ticks % TimeSpan.FromMinutes(1).Ticks));
+                var timeUntilNextMinute = nextMinute.Subtract(SystemClock.Now).Add(TimeSpan.FromMilliseconds(1));
+                await Task.Delay(timeUntilNextMinute);
             }
         }
 
