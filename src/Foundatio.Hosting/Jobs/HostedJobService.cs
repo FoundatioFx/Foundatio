@@ -24,14 +24,13 @@ namespace Foundatio.Hosting.Jobs {
             _jobOptions = jobOptions;
 
             var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
-            if (lifetime != null)
-                lifetime.RegisterHostedJobInstance(this);
+            lifetime?.RegisterHostedJobInstance(this);
         }
 
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
             if (_jobOptions.WaitForStartupActions) {
                 var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
-                bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
+                bool success = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
                 if (!success)
                     throw new ApplicationException("Failed to wait for startup actions to complete.");
             }
@@ -39,7 +38,7 @@ namespace Foundatio.Hosting.Jobs {
             var runner = new JobRunner(_jobOptions, _loggerFactory);
 
             try {
-                await runner.RunAsync(stoppingToken);
+                await runner.RunAsync(stoppingToken).AnyContext();
                 _stoppingCts.Cancel();
             } finally {
                 _logger.LogInformation("{JobName} job completed.", _jobOptions.Name);
@@ -59,7 +58,7 @@ namespace Foundatio.Hosting.Jobs {
             try {
                 _stoppingCts.Cancel();
             } finally {
-                await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken));
+                await Task.WhenAny(_executingTask, Task.Delay(-1, cancellationToken)).AnyContext();
             }
         }
 

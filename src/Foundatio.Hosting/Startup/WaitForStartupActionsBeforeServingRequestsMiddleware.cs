@@ -16,13 +16,13 @@ namespace Foundatio.Hosting.Startup {
 
         public async Task Invoke(HttpContext httpContext) {
             if (_context.IsStartupComplete) {
-                await _next(httpContext);
-            } if (_context.StartupActionsFailed) {
+                await _next(httpContext).AnyContext();
+            } else if (_context.StartupActionsFailed) {
                 _applicationLifetime.StopApplication();
             } else {
                 httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 httpContext.Response.Headers["Retry-After"] = "10";
-                await httpContext.Response.WriteAsync("Service Unavailable").ConfigureAwait(false);
+                await httpContext.Response.WriteAsync("Service Unavailable").AnyContext();
             }
         }
     }

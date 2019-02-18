@@ -14,7 +14,7 @@ namespace Foundatio.Hosting.Startup {
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
-            var success = await _serviceProvider.RunStartupActionsAsync(stoppingToken).ConfigureAwait(false);
+            var success = await _serviceProvider.RunStartupActionsAsync(stoppingToken).AnyContext();
             if (success)
                 _startupContext.MarkStartupComplete();
             else

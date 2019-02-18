@@ -38,7 +38,7 @@ namespace Foundatio.Hosting.Jobs {
             // TODO: Add more logging throughout
             var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
             if (startupContext != null) {
-                bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
+                bool success = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
                 if (!success) {
                     IsRunning = false;
                     throw new ApplicationException("Failed to wait for startup actions to complete.");
@@ -49,13 +49,13 @@ namespace Foundatio.Hosting.Jobs {
                 var jobsToRun = _jobs.Where(j => j.ShouldRun()).ToArray();
 
                 foreach (var jobToRun in jobsToRun)
-                    await jobToRun.StartAsync(stoppingToken);
+                    await jobToRun.StartAsync(stoppingToken).AnyContext();
 
                 // run jobs every minute since that is the lowest resolution of the cron schedule
                 var now = SystemClock.Now;
                 var nextMinute = now.AddTicks(TimeSpan.FromMinutes(1).Ticks - (now.Ticks % TimeSpan.FromMinutes(1).Ticks));
                 var timeUntilNextMinute = nextMinute.Subtract(SystemClock.Now).Add(TimeSpan.FromMilliseconds(1));
-                await Task.Delay(timeUntilNextMinute);
+                await Task.Delay(timeUntilNextMinute, stoppingToken).AnyContext();
             }
         }
 
@@ -119,7 +119,7 @@ namespace Foundatio.Hosting.Jobs {
                         var job = _jobFactory();
                         // TODO: Don't calculate job name every time
                         string jobName = job.GetType().Name;
-                        var result = await _jobFactory().TryRunAsync(cancellationToken).ConfigureAwait(false);
+                        var result = await _jobFactory().TryRunAsync(cancellationToken).AnyContext();
                         // TODO: Should we only set last run on success? Seems like that could be bad.
                         _logger.LogJobResult(result, jobName);
                     }, cancellationToken).Unwrap();
@@ -128,7 +128,7 @@ namespace Foundatio.Hosting.Jobs {
                     NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
 
                     return Task.CompletedTask;
-                }, TimeSpan.Zero, TimeSpan.Zero);
+                }, TimeSpan.Zero, TimeSpan.Zero).AnyContext();
             }
 
             private string GetLockKey(DateTime date) {

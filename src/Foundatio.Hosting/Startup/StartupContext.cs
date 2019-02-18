@@ -41,7 +41,7 @@ namespace Foundatio.Hosting.Startup {
                     _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", SystemClock.UtcNow.Subtract(startTime));
                 }
 
-                await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(1000, cancellationToken).AnyContext();
             }
 
             if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))

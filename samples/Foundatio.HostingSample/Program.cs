@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Hosting;
@@ -18,15 +18,16 @@ namespace Foundatio.HostingSample {
     public class Program {
         private static Microsoft.Extensions.Logging.ILogger _logger;
 
-        public static int Main(string[] args) {
+        public static async Task<int> Main(string[] args) {
             try {
-                CreateWebHostBuilder(args).Build().Run(_logger);
+                await CreateWebHostBuilder(args).Build().RunAsync(_logger);
                 return 0;
             } catch (Exception ex) {
                 _logger.LogError(ex, "Job host terminated unexpectedly");
                 return 1;
             } finally {
                 Log.CloseAndFlush();
+                
                 if (Debugger.IsAttached)
                     Console.ReadKey();
             }

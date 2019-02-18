@@ -32,7 +32,7 @@ namespace Foundatio.Hosting {
                 AttachCtrlcSigtermShutdown(cts, done, logger, shutdownMessage: String.Empty);
 
                 try {
-                    await host.WaitForTokenShutdownAsync(cts.Token);
+                    await host.WaitForTokenShutdownAsync(cts.Token).AnyContext();
                 } finally {
                     done.Set();
                 }
@@ -57,7 +57,7 @@ namespace Foundatio.Hosting {
         public static async Task RunAsync(this IWebHost host, ILogger logger, CancellationToken token = default) {
             // Wait for token shutdown if it can be canceled
             if (token.CanBeCanceled) {
-                await host.RunAsync(logger, token, shutdownMessage: null);
+                await host.RunAsync(logger, token, shutdownMessage: null).AnyContext();
                 return;
             }
 
@@ -67,7 +67,7 @@ namespace Foundatio.Hosting {
                 AttachCtrlcSigtermShutdown(cts, done, logger, shutdownMessage: "Application is shutting down...");
 
                 try {
-                    await host.RunAsync(logger, cts.Token, "Application started. Press Ctrl+C to shut down.");
+                    await host.RunAsync(logger, cts.Token, "Application started. Press Ctrl+C to shut down.").AnyContext();
                 } finally {
                     done.Set();
                 }
@@ -91,7 +91,7 @@ namespace Foundatio.Hosting {
                 if (!string.IsNullOrEmpty(shutdownMessage))
                     logger.LogInformation(shutdownMessage);
 
-                await host.WaitForTokenShutdownAsync(token);
+                await host.WaitForTokenShutdownAsync(token).AnyContext();
             }
         }
 
@@ -132,10 +132,10 @@ namespace Foundatio.Hosting {
                 tcs.TrySetResult(null);
             }, waitForStop);
 
-            await waitForStop.Task;
+            await waitForStop.Task.AnyContext();
 
             // WebHost will use its default ShutdownTimeout if none is specified.
-            await host.StopAsync();
+            await host.StopAsync().AnyContext();
         }
     }
 }
