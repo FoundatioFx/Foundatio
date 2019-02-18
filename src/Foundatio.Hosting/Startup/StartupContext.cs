@@ -27,7 +27,7 @@ namespace Foundatio.Hosting.Startup {
         public async Task<bool> WaitForStartupAsync(CancellationToken cancellationToken) {
             bool isFirstWaiter = Interlocked.Increment(ref _waitCount) == 1;
             var startTime = SystemClock.UtcNow;
-            var lastStatus = DateTime.UtcNow;
+            var lastStatus = SystemClock.UtcNow;
 
             while (!cancellationToken.IsCancellationRequested) {
                 if (IsStartupComplete)

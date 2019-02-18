@@ -93,9 +93,9 @@ namespace Foundatio.Hosting.Startup {
             services.AddStartupAction(async (sp, t) => {
                 var healthCheckService = sp.GetService<HealthCheckService>();
                 var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
-                var lastStatus = DateTime.Now;
                 var result = await healthCheckService.CheckHealthAsync(c => c.GetType() != typeof(StartupHealthCheck) && shouldWaitForHealthCheck(c), t).AnyContext();
-                while (result.Status != HealthStatus.Healthy) {
+                while (result.Status == HealthStatus.Unhealthy) {
+                    logger.LogDebug("Last health check was unhealthy. Waiting 1s until next health check.");
                     await Task.Delay(1000, t).AnyContext();
                     result = await healthCheckService.CheckHealthAsync(c => c.GetType() != typeof(StartupHealthCheck) && shouldWaitForHealthCheck(c), t).AnyContext();
                 }
