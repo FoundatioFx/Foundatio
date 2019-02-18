@@ -94,6 +94,7 @@ namespace Foundatio.HostingSample {
                             await Task.Delay(1500);
                             _logger.LogTrace("Running startup 2 action...");
                         }
+                        throw new ApplicationException("Boom goes the startup.");
                         _logger.LogTrace("Done running startup 2 action.");
                     });
 

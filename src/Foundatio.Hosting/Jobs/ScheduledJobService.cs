@@ -32,19 +32,21 @@ namespace Foundatio.Hosting.Jobs {
                 lifetime.RegisterHostedJobInstance(this);
         }
 
-        public bool IsRunning => true;
+        public bool IsRunning { get; private set; } = true;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
             // TODO: Add more logging throughout
             var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
             if (startupContext != null) {
                 bool success = await startupContext.WaitForStartupAsync(stoppingToken).ConfigureAwait(false);
-                if (!success)
+                if (!success) {
+                    IsRunning = false;
                     throw new ApplicationException("Failed to wait for startup actions to complete.");
+                }
             }
 
             while (!stoppingToken.IsCancellationRequested) {
-                var jobsToRun = _jobs.Where(j => j.ShouldRun()).ToList();
+                var jobsToRun = _jobs.Where(j => j.ShouldRun()).ToArray();
 
                 foreach (var jobToRun in jobsToRun)
                     await jobToRun.StartAsync(stoppingToken);

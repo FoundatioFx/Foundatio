@@ -12,17 +12,23 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Hosting.Startup {
     public static partial class StartupExtensions {
-        public static async Task RunStartupActionsAsync(this IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
-            var startupActionPriorityGroups = serviceProvider.GetServices<StartupActionRegistration>().GroupBy(s => s.Priority).OrderBy(s => s.Key).ToList();
-            foreach (var startupActions in startupActionPriorityGroups) {
+        public static async Task<bool> RunStartupActionsAsync(this IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
+            var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
+            var startupActions = serviceProvider.GetServices<StartupActionRegistration>().ToArray();
+            logger.LogInformation("Found {StartupActions} registered startup actions.", startupActions.Length);
+            var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
+            foreach (var startupActionGroup in startupActionPriorityGroups) {
                 try {
-                    await Task.WhenAll(startupActions.Select(a => a.RunAsync(serviceProvider, shutdownToken))).ConfigureAwait(false);
+                    logger.LogInformation("Running {StartupActions} priority {Priority} startup actions...", startupActionGroup.Count(), startupActionGroup.Key);
+                    await Task.WhenAll(startupActionGroup.Select(a => a.RunAsync(serviceProvider, shutdownToken))).ConfigureAwait(false);
+                    logger.LogInformation("Completed {StartupActions} priority {Priority} startup actions.", startupActionGroup.Count(), startupActionGroup.Key);
                 } catch (Exception ex) {
-                    var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions");
-                    logger?.LogError(ex, "Error running startup actions: {Message}", ex.Message);
-                    throw;
+                    logger.LogError(ex, "Error running {StartupActions} priority {Priority} startup actions: {Message}", startupActionGroup.Count(), startupActionGroup.Key, ex.Message);
+                    return false;
                 }
             }
+            logger.LogInformation("Completed all {StartupActions} startup actions.", startupActions.Length);
+            return true;
         }
 
         public static void AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction {
