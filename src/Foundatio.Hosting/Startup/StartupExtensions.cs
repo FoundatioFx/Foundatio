@@ -33,7 +33,8 @@ namespace Foundatio.Hosting.Startup {
 
         public static void AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction {
             services.TryAddSingleton<StartupContext>();
-            services.TryAddSingleton<IHostedService, RunStartupActionsService>();
+            if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
+                services.AddSingleton<IHostedService, RunStartupActionsService>();
             services.TryAddTransient(typeof(T));
             services.AddTransient(s => new StartupActionRegistration(typeof(T), priority));
         }
@@ -63,7 +64,8 @@ namespace Foundatio.Hosting.Startup {
 
         public static void AddStartupAction(this IServiceCollection services, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null) {
             services.TryAddSingleton<StartupContext>();
-            services.TryAddSingleton<IHostedService, RunStartupActionsService>();
+            if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
+                services.AddSingleton<IHostedService, RunStartupActionsService>();
             services.AddTransient(s => new StartupActionRegistration(action, priority));
         }
 
