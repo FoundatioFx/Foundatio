@@ -94,7 +94,7 @@ namespace Foundatio.Storage {
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, s => NextPage(unscopedResult));
+            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, unscopedResult.HasMore ? s => NextPage(unscopedResult) : (Func<PagedFileListResult, Task<NextPageResult>>)null);
         }
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {

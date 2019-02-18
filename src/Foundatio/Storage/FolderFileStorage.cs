@@ -262,12 +262,13 @@ namespace Foundatio.Storage {
                 hasMore = true;
                 list.RemoveAt(pagingLimit - 1);
             }
-            
-            var result = new NextPageResult { Success = true, HasMore = hasMore, Files = list };
-            if (result.HasMore)
-                result.NextPageFunc = s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize));
 
-            return result;
+            return new NextPageResult {
+                Success = true, 
+                HasMore = hasMore, 
+                Files = list,
+                NextPageFunc = hasMore ? s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : (Func<PagedFileListResult, Task<NextPageResult>>)null 
+            };
         }
 
         public void Dispose() { }
