@@ -119,7 +119,7 @@ namespace Foundatio.Storage {
         public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default) {
             var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
             int count = 0;
-            
+
             foreach (var file in files) {
                 await DeleteFileAsync(file.Path, cancellationToken).AnyContext();
                 count++;
@@ -151,7 +151,7 @@ namespace Foundatio.Storage {
         public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
             if (pageSize <= 0)
                 return PagedFileListResult.Empty;
-            
+
             searchPattern = NormalizePath(searchPattern);
 
             var result = new PagedFileListResult(r => Task.FromResult(GetFiles(searchPattern, 1, pageSize)));
@@ -164,7 +164,7 @@ namespace Foundatio.Storage {
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
                 pagingLimit = pagingLimit + 1;
-            
+
             string prefix = searchPattern;
             Regex patternRegex = null;
             int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
@@ -181,14 +181,19 @@ namespace Foundatio.Storage {
                 .Skip(skip)
                 .Take(pagingLimit)
                 .ToList();
-            
+
             bool hasMore = false;
             if (list.Count == pagingLimit) {
                 hasMore = true;
-                list.RemoveAt(pagingLimit);
+                list.RemoveAt(pagingLimit - 1);
             }
 
-            return new NextPageResult { Success = true, HasMore = hasMore, Files = list, NextPageFunc = r => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) };
+            return new NextPageResult {
+                Success = true,
+                HasMore = hasMore,
+                Files = list,
+                NextPageFunc = hasMore ? r => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : (Func<PagedFileListResult, Task<NextPageResult>>)null
+            };
         }
 
         private string NormalizePath(string path) {
