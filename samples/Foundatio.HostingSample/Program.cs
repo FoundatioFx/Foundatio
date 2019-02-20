@@ -56,9 +56,9 @@ namespace Foundatio.HostingSample {
 
                     // inserts a startup action that does not complete until the critical health checks are healthy
                     // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
-                    s.AddStartupActionToWaitForHealthChecks();
+                    s.AddStartupActionToWaitForHealthChecks(c => c.Tags.Contains("CustomCritical"));
 
-                    s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "Critical" });
+                    s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "CustomCritical" });
 
                     // add health check that does not return healthy until the startup actions have completed
                     // useful for readiness checks
@@ -105,7 +105,7 @@ namespace Foundatio.HostingSample {
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
-                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase) || c.GetType() == typeof(StartupHealthCheck) });
+                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("CustomCritical", StringComparer.OrdinalIgnoreCase) || c.GetType() == typeof(StartupHealthCheck) });
 
                     // this middleware will return Service Unavailable until the startup actions have completed
                     app.UseWaitForStartupActionsBeforeServingRequests();
