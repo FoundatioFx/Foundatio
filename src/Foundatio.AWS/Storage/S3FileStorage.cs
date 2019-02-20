@@ -211,7 +211,7 @@ namespace Foundatio.Storage {
                 return PagedFileListResult.Empty;
 
             var criteria = GetRequestCriteria(searchPattern);
-            
+
             var result = new PagedFileListResult(r => GetFiles(criteria, cancellationToken));
             await result.NextPageAsync();
 
@@ -224,17 +224,17 @@ namespace Foundatio.Storage {
                 Prefix = criteria.Prefix,
                 ContinuationToken = continuationToken
             };
-            
+
             var res = await _client.ListObjectsV2Async(req, cancellationToken).AnyContext();
             return new NextPageResult {
                 Success = res.HttpStatusCode.IsSuccessful(),
                 HasMore = res.IsTruncated,
                 Files = res.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
-                NextPageFunc = r => GetFiles(criteria, cancellationToken, res.ContinuationToken)
+                NextPageFunc = res.IsTruncated ? r => GetFiles(criteria, cancellationToken, res.ContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
             };
-        }
+    }
 
-        private class SearchCriteria {
+    private class SearchCriteria {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
         }
