@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Hosting;
@@ -79,7 +79,7 @@ namespace Foundatio.HostingSample {
                     }
 
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
-                    s.AddStartupAction(async () => {
+                    s.AddStartupAction("Test1", async () => {
                         _logger.LogTrace("Running startup 1 action.");
                         for (int i = 0; i < 3; i++) {
                             await Task.Delay(1000);
@@ -89,19 +89,19 @@ namespace Foundatio.HostingSample {
                         _logger.LogTrace("Done running startup 1 action.");
                     });
 
-                    s.AddStartupAction(async () => {
+                    // then these startup actions will run concurrently since they both have the same priority
+                    s.AddStartupAction<MyStartupAction>(priority: 100);
+                    s.AddStartupAction<OtherStartupAction>(priority: 100);
+
+                    s.AddStartupAction("Test2", async () => {
                         _logger.LogTrace("Running startup 2 action.");
                         for (int i = 0; i < 2; i++) {
                             await Task.Delay(1500);
                             _logger.LogTrace("Running startup 2 action...");
                         }
-                        throw new ApplicationException("Boom goes the startup.");
+                        //throw new ApplicationException("Boom goes the startup.");
                         _logger.LogTrace("Done running startup 2 action.");
                     });
-
-                    // then these startup actions will run concurrently since they both have the same priority
-                    s.AddStartupAction<MyStartupAction>(priority: 100);
-                    s.AddStartupAction<OtherStartupAction>(priority: 100);
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");

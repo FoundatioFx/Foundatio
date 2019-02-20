@@ -17,26 +17,40 @@ namespace Foundatio.Hosting.Startup {
             var sw = Stopwatch.StartNew();
             var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
             var startupActions = serviceProvider.GetServices<StartupActionRegistration>().ToArray();
-            logger.LogInformation("Found {StartupActions} registered startup actions.", startupActions.Length);
+            logger.LogInformation("Found {StartupActions} registered startup action(s).", startupActions.Length);
             
             var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
             foreach (var startupActionGroup in startupActionPriorityGroups) {
                 int startupActionsCount = startupActionGroup.Count();
+                string[] startupActionsNames = startupActionGroup.Select(a => a.Name).ToArray();
                 var swGroup = Stopwatch.StartNew();
                 try {
-                    logger.LogInformation("Running {StartupActions} priority {Priority} startup actions...", startupActionsCount, startupActionGroup.Key);
-                    await Task.WhenAll(startupActionGroup.Select(a => a.RunAsync(serviceProvider, shutdownToken))).AnyContext();
+                    if (startupActionsCount == 1)
+                        logger.LogInformation("Running {StartupActions} (priority {Priority}) startup action...", startupActionsNames, startupActionGroup.Key);
+                    else
+                        logger.LogInformation("Running {StartupActions} (priority {Priority}) startup actions in parallel...", startupActionsNames, startupActionGroup.Key);
+
+                    await Task.WhenAll(startupActionGroup.Select(async a => {
+                        try {
+                            await a.RunAsync(serviceProvider, shutdownToken).AnyContext();
+                        } catch (Exception ex) {
+                            logger.LogError(ex, "Error running {StartupAction} startup action: {Message}", a.Name, ex.Message);
+                            throw;
+                        }
+                    })).AnyContext();
                     swGroup.Stop();
-                    logger.LogInformation("Completed {StartupActions} priority {Priority} startup actions in {Duration:g}.", startupActionsCount, startupActionGroup.Key, swGroup.Elapsed);
-                } catch (Exception ex) {
-                    swGroup.Stop();
-                    logger.LogError(ex, "Error running {StartupActions} priority {Priority} startup actions after {Duration:g}: {Message}", startupActionsCount, startupActionGroup.Key, swGroup.Elapsed, ex.Message);
+
+                    if (startupActionsCount == 1)
+                        logger.LogInformation("Completed {StartupActions} startup action in {Duration:mm\\:ss}.", startupActionsNames, swGroup.Elapsed);
+                    else
+                        logger.LogInformation("Completed {StartupActions} startup actions in {Duration:mm\\:ss}.", startupActionsNames, swGroup.Elapsed);
+                } catch {
                     return false;
                 }
             }
             
             sw.Stop();
-            logger.LogInformation("Completed all {StartupActions} startup actions in {Duration:g}.", startupActions.Length, sw.Elapsed);
+            logger.LogInformation("Completed all {StartupActions} startup action(s) in {Duration:mm\\:ss}.", startupActions.Length, sw.Elapsed);
             return true;
         }
 
@@ -45,37 +59,45 @@ namespace Foundatio.Hosting.Startup {
             if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
                 services.AddSingleton<IHostedService, RunStartupActionsService>();
             services.TryAddTransient(typeof(T));
-            services.AddTransient(s => new StartupActionRegistration(typeof(T), priority));
+            services.AddTransient(s => new StartupActionRegistration(typeof(T).Name, typeof(T), priority));
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Action action, int? priority = null) {
-            AddStartupAction(services, ct => action(), priority);
+        public static void AddStartupAction<T>(this IServiceCollection services, string name, int? priority = null) where T : IStartupAction {
+            services.TryAddSingleton<StartupContext>();
+            if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
+                services.AddSingleton<IHostedService, RunStartupActionsService>();
+            services.TryAddTransient(typeof(T));
+            services.AddTransient(s => new StartupActionRegistration(name, typeof(T), priority));
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Action<IServiceProvider> action, int? priority = null) {
-            AddStartupAction(services, (sp, ct) => action(sp), priority);
+        public static void AddStartupAction(this IServiceCollection services, string name, Action action, int? priority = null) {
+            services.AddStartupAction(name, ct => action(), priority);
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Action<IServiceProvider, CancellationToken> action, int? priority = null) {
-            services.AddTransient(s => new StartupActionRegistration((sp, ct) => {
+        public static void AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider> action, int? priority = null) {
+            services.AddStartupAction(name, (sp, ct) => action(sp), priority);
+        }
+
+        public static void AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider, CancellationToken> action, int? priority = null) {
+            services.AddTransient(s => new StartupActionRegistration(name, (sp, ct) => {
                 action(sp, ct);
                 return Task.CompletedTask;
             }, priority));
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Func<Task> action, int? priority = null) {
-            services.AddStartupAction((sp, ct) => action(), priority);
+        public static void AddStartupAction(this IServiceCollection services, string name, Func<Task> action, int? priority = null) {
+            services.AddStartupAction(name, (sp, ct) => action(), priority);
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Func<IServiceProvider, Task> action, int? priority = null) {
-            services.AddStartupAction((sp, ct) => action(sp), priority);
+        public static void AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, Task> action, int? priority = null) {
+            services.AddStartupAction(name, (sp, ct) => action(sp), priority);
         }
 
-        public static void AddStartupAction(this IServiceCollection services, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null) {
+        public static void AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null) {
             services.TryAddSingleton<StartupContext>();
             if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
                 services.AddSingleton<IHostedService, RunStartupActionsService>();
-            services.AddTransient(s => new StartupActionRegistration(action, priority));
+            services.AddTransient(s => new StartupActionRegistration(name, action, priority));
         }
 
         public static IHealthChecksBuilder AddCheckForStartupActionsComplete(this IHealthChecksBuilder builder) {
@@ -90,7 +112,7 @@ namespace Foundatio.Hosting.Startup {
             if (shouldWaitForHealthCheck == null)
                 shouldWaitForHealthCheck = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase);
 
-            services.AddStartupAction(async (sp, t) => {
+            services.AddStartupAction("WaitForHealthChecks", async (sp, t) => {
                 var healthCheckService = sp.GetService<HealthCheckService>();
                 var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
                 var result = await healthCheckService.CheckHealthAsync(c => c.GetType() != typeof(StartupHealthCheck) && shouldWaitForHealthCheck(c), t).AnyContext();

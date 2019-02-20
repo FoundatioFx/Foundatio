@@ -10,7 +10,8 @@ namespace Foundatio.Hosting.Startup {
         private readonly Type _actionType;
         private static int _currentAutoPriority;
 
-        public StartupActionRegistration(Type startupType, int? priority = null) {
+        public StartupActionRegistration(string name, Type startupType, int? priority = null) {
+            Name = name;
             _actionType = startupType;
             if (!priority.HasValue) {
                 var priorityAttribute = _actionType.GetCustomAttributes(typeof(StartupPriorityAttribute), true).FirstOrDefault() as StartupPriorityAttribute;
@@ -20,13 +21,16 @@ namespace Foundatio.Hosting.Startup {
             }
         }
 
-        public StartupActionRegistration(Func<IServiceProvider, CancellationToken, Task> action, int? priority = null) {
+        public StartupActionRegistration(string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null) {
+            Name = name;
             _action = action;
             if (!priority.HasValue)
                 priority = Interlocked.Increment(ref _currentAutoPriority);
 
             Priority = priority.Value;
         }
+
+        public string Name { get; private set; }
 
         public int Priority { get; private set; }
 
