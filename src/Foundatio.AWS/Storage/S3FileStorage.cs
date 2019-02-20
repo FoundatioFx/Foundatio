@@ -226,12 +226,12 @@ namespace Foundatio.Storage {
                 ContinuationToken = continuationToken
             };
 
-            var res = await _client.ListObjectsV2Async(req, cancellationToken).AnyContext();
+            var response = await _client.ListObjectsV2Async(req, cancellationToken).AnyContext();
             return new NextPageResult {
-                Success = res.HttpStatusCode.IsSuccessful(),
-                HasMore = res.IsTruncated,
-                Files = res.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
-                NextPageFunc = res.IsTruncated ? r => GetFiles(criteria, pageSize, cancellationToken, res.ContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
+                Success = response.HttpStatusCode.IsSuccessful(),
+                HasMore = response.IsTruncated,
+                Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
+                NextPageFunc = response.IsTruncated ? r => GetFiles(criteria, pageSize, cancellationToken, response.NextContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
             };
     }
 
