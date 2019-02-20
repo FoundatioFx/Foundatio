@@ -212,15 +212,16 @@ namespace Foundatio.Storage {
 
             var criteria = GetRequestCriteria(searchPattern);
 
-            var result = new PagedFileListResult(r => GetFiles(criteria, cancellationToken));
-            await result.NextPageAsync();
+            var result = new PagedFileListResult(r => GetFiles(criteria, pageSize, cancellationToken));
+            await result.NextPageAsync().AnyContext();
 
             return result;
         }
 
-        private async Task<NextPageResult> GetFiles(SearchCriteria criteria, CancellationToken cancellationToken, string continuationToken = null) {
+        private async Task<NextPageResult> GetFiles(SearchCriteria criteria, int pageSize, CancellationToken cancellationToken, string continuationToken = null) {
             var req = new ListObjectsV2Request {
                 BucketName = _bucket,
+                MaxKeys = pageSize,
                 Prefix = criteria.Prefix,
                 ContinuationToken = continuationToken
             };
@@ -230,7 +231,7 @@ namespace Foundatio.Storage {
                 Success = res.HttpStatusCode.IsSuccessful(),
                 HasMore = res.IsTruncated,
                 Files = res.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
-                NextPageFunc = res.IsTruncated ? r => GetFiles(criteria, cancellationToken, res.ContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
+                NextPageFunc = res.IsTruncated ? r => GetFiles(criteria, pageSize, cancellationToken, res.ContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
             };
     }
 
