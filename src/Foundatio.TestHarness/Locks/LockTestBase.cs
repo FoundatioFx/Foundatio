@@ -94,7 +94,8 @@ namespace Foundatio.Tests.Locks {
         }
 
         public virtual async Task LockWillTimeoutAsync() {
-            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Information);
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
 
             var locker = GetLockProvider();
             if (locker == null)
@@ -114,7 +115,7 @@ namespace Foundatio.Tests.Locks {
             Assert.Null(testLock);
 
             _logger.LogInformation("Acquiring lock #3");
-            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(300));
+            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1.5));
             _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
             Assert.NotNull(testLock);
         }
