@@ -166,7 +166,7 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Elapsed}ms", numConcurrentMessages - countdown.CurrentCount, sw.ElapsedMilliseconds);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
             } finally {

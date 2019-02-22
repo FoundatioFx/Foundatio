@@ -28,7 +28,6 @@ namespace Foundatio.Tests.Locks {
                 return;
 
             await locker.ReleaseAsync("test");
-
             var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), lockTimeout: TimeSpan.FromSeconds(1));
 
             try {
@@ -45,23 +44,30 @@ namespace Foundatio.Tests.Locks {
 
             int counter = 0;
 
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             await Run.InParallelAsync(25, async i => {
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: starting to acquire lock.", i);
                 var sw = Stopwatch.StartNew();
                 var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1));
                 sw.Stop();
 
                 try {
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Lock {Id}: start", i);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: start", i);
                     string message = lock2 != null ? "Acquired" : "Unable to acquire";
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Lock {Id}: {Message} in {ms}ms", i, message, sw.ElapsedMilliseconds);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: {Message} in {Duration:g}", i, message, sw.Elapsed);
 
                     Assert.NotNull(lock2);
-                    Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked");
+                    Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked.");
                     Interlocked.Increment(ref counter);
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Lock {Id}: end", i);
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: end", i);
+                } catch (Exception ex) {
+                    _logger.LogCritical(ex, "Error checking if lock {Id} is acquired: {Message}", i, ex.Message);
+                    throw;
                 } finally {
-                    if (lock2 != null)
+                    if (lock2 != null) {
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Releasing Lock {Id}", i);
                         await lock2.ReleaseAsync();
+                    }
                 }
             });
 
