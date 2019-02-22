@@ -75,7 +75,7 @@ namespace Foundatio.Lock {
                     if (errors >= 3)
                         break;
 
-                    await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
+                    await SystemClock.SleepSafeAsync(50, cancellationToken).AnyContext();
                 }
             } while (!cancellationToken.IsCancellationRequested);
 

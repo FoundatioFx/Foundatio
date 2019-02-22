@@ -46,9 +46,7 @@ namespace Foundatio.Utility {
                     if (logger != null && logger.IsEnabled(LogLevel.Error))
                         logger.LogError(ex, "Retry error: {Message}", ex.Message);
 
-                    try {
-                        await SystemClock.SleepAsync(currentBackoffTime, cancellationToken).AnyContext();
-                    } catch (OperationCanceledException) {}
+                    await SystemClock.SleepSafeAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 
                 if (retryInterval == null)
