@@ -41,11 +41,15 @@ namespace Foundatio.Jobs {
                     if (cancellationToken.IsCancellationRequested || (iterationLimit > -1 && iterationLimit <= iterations))
                        break;
 
-                    // Maybe look into yeilding threads. task scheduler queue is starving.
+                    // Maybe look into yeilding threads. Task scheduler queue is starving.
                     if (result.Error != null) {
-                        await SystemClock.SleepAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100)).AnyContext();
+                        try {
+                            await SystemClock.SleepAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100), cancellationToken).AnyContext();
+                        } catch (OperationCanceledException) {}
                     } else if (interval.HasValue && interval.Value > TimeSpan.Zero) {
-                        await SystemClock.SleepAsync(interval.Value).AnyContext();
+                        try {
+                            await SystemClock.SleepAsync(interval.Value, cancellationToken).AnyContext();
+                        } catch (OperationCanceledException) {}
                     } else if (sw.ElapsedMilliseconds > 5000) {
                         // allow for cancellation token to get set
                         Thread.Yield();

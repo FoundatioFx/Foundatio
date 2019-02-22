@@ -92,17 +92,14 @@ namespace Foundatio.Lock {
                     var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow).Max(TimeSpan.FromMilliseconds(50)).Min(TimeSpan.FromSeconds(3));
                     
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Will wait {Delay} before retrying to acquire cache lock {Name}.", delayAmount, name);
+                        _logger.LogTrace("Will wait {Delay:g} before retrying to acquire cache lock {Name}.", delayAmount, name);
 
                     // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                     using (var maxWaitCancellationTokenSource = new CancellationTokenSource(delayAmount))
                     using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, maxWaitCancellationTokenSource.Token)) {
                         try {
                             await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
-                        } catch (OperationCanceledException) {
-                            if (maxWaitCancellationTokenSource.IsCancellationRequested)
-                                continue;
-                        }
+                        } catch (OperationCanceledException) {}
                     }
                 } while (!cancellationToken.IsCancellationRequested);
             } finally {
