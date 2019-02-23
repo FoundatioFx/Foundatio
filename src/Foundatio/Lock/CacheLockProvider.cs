@@ -60,16 +60,16 @@ namespace Foundatio.Lock {
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
 
-            if (timeUntilExpires.Value < TimeSpan.FromMinutes(1))
-                timeUntilExpires = TimeSpan.FromMinutes(1);
-
             bool gotLock = false;
             string lockId = Guid.NewGuid().ToString("N");
             var sw = Stopwatch.StartNew();
             try {
                 do {
                     try {
-                        gotLock = await _cacheClient.AddAsync(resource, lockId, timeUntilExpires.Value).AnyContext();
+                        if (timeUntilExpires.Value == TimeSpan.Zero) // no lock timeout
+                            gotLock = await _cacheClient.AddAsync(resource, lockId).AnyContext();
+                        else
+                            gotLock = await _cacheClient.AddAsync(resource, lockId, timeUntilExpires).AnyContext();
                     } catch { }
 
                     if (gotLock)
