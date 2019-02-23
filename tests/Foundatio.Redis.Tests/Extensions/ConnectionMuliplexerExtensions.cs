@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using StackExchange.Redis;
 
 namespace Foundatio.Redis.Tests.Extensions {
-    public static class ConnectionMuliplexerExtensions {
+    public static class ConnectionMultiplexerExtensions {
         public static async Task FlushAllAsync(this ConnectionMultiplexer muxer) {
             var endpoints = muxer.GetEndPoints();
             if (endpoints.Length == 0)

@@ -88,6 +88,16 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanRemoveIfEqual() {
+            return base.CanRemoveIfEqual();
+        }
+
+        [Fact]
+        public override Task CanReplaceIfEqual() {
+            return base.CanReplaceIfEqual();
+        }
+
+        [Fact]
         public override Task CanRoundTripLargeNumbersAsync() {
             return base.CanRoundTripLargeNumbersAsync();
         }
