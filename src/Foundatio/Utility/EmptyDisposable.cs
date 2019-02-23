@@ -8,6 +8,16 @@ namespace Foundatio.Utility {
     }
 
     public class EmptyLock : ILock {
+        public string LockId => String.Empty;
+
+        public string Resource => String.Empty;
+
+        public DateTime AcquiredTimeUtc => DateTime.MinValue;
+
+        public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public int RenewalCount => 0;
+
         public Task DisposeAsync() {
             return Task.CompletedTask;
         }

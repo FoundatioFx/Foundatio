@@ -7,43 +7,53 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Lock {
     internal class DisposableLock : ILock {
         private readonly ILockProvider _lockProvider;
-        private readonly string _name;
         private readonly ILogger _logger;
         private bool _isReleased;
+        private int _renewalCount;
         private readonly object _lock = new object();
         private readonly Stopwatch _duration;
 
-        public DisposableLock(string name, ILockProvider lockProvider, ILogger logger) {
+        public DisposableLock(string resource, string lockId, TimeSpan timeWaitedForLock, ILockProvider lockProvider, ILogger logger) {
+            Resource = resource;
+            LockId = lockId;
+            TimeWaitedForLock = timeWaitedForLock;
+            AcquiredTimeUtc = SystemClock.UtcNow;
             _duration = Stopwatch.StartNew();
             _logger = logger;
-            _name = name;
             _lockProvider = lockProvider;
         }
+
+        public string LockId { get; }
+        public string Resource { get; }
+        public DateTime AcquiredTimeUtc { get; }
+        public TimeSpan TimeWaitedForLock { get; }
+        public int RenewalCount => _renewalCount;
 
         public async Task DisposeAsync() {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Disposing lock {Name}", _name);
+                _logger.LogTrace("Disposing lock {Resource}", Resource);
 
             try {
                 await ReleaseAsync().AnyContext();
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Unable to release lock {Name}", _name);
+                    _logger.LogError(ex, "Unable to release lock {Resource}", Resource);
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Disposed lock {Name}", _name);
+                _logger.LogTrace("Disposed lock {Resource}", Resource);
         }
 
         public async Task RenewAsync(TimeSpan? lockExtension = null) {
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Renewing lock {Name}", _name);
+                _logger.LogTrace("Renewing lock {Resource}", Resource);
 
-            await _lockProvider.RenewAsync(_name, lockExtension).AnyContext();
+            await _lockProvider.RenewAsync(this, lockExtension).AnyContext();
+            _renewalCount++;
 
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Renewed lock {Name}", _name);
+                _logger.LogDebug("Renewed lock {Resource}", Resource);
         }
 
         public Task ReleaseAsync() {
@@ -58,9 +68,9 @@ namespace Foundatio.Lock {
                 _duration.Stop();
 
                 if (_logger.IsEnabled(LogLevel.Debug))
-                    _logger.LogDebug("Releasing lock {Name} after {Duration:g}", _name, _duration.Elapsed);
+                    _logger.LogDebug("Releasing lock {Resource} after {Duration:g}", Resource, _duration.Elapsed);
 
-                return _lockProvider.ReleaseAsync(_name);
+                return _lockProvider.ReleaseAsync(this);
             }
         }
     }

@@ -54,6 +54,25 @@ namespace Foundatio.Caching {
             }
         }
 
+        public Task<bool> RemoveAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
+            return Task.FromResult(_memory.TryRemove(key, out _));
+        }
+
+        public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            bool success = _memory.TryRemove(key, out _);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+            
+            return Task.FromResult(success);
+        }
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null) {
                 int count = _memory.Count;
@@ -442,6 +461,38 @@ namespace Foundatio.Caching {
                 return Task.FromResult(false);
 
             return SetAsync(key, value, expiresIn);
+        }
+
+        public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            bool wasExpectedValue = false;
+            bool success = _memory.TryUpdate(key, (k, e) => {
+                var currentValue = e.GetValue<T>();
+                if (currentValue.Equals(expected)) {
+                    e.Value = value;
+                    wasExpectedValue = true;
+                }
+                
+                return e;
+            });
+
+            success = success && wasExpectedValue;
+
+            if (expiresIn.HasValue)
+                ScheduleNextMaintenance(expiresAt);
+
+            await CleanupAsync().AnyContext();
+            
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+
+            return success;
         }
 
         public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {

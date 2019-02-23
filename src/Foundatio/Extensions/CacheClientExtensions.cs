@@ -15,10 +15,6 @@ namespace Foundatio.Caching {
             return client.GetAllAsync<T>(keys.ToArray());
         }
 
-        public static async Task<bool> RemoveAsync(this ICacheClient client, string key) {
-            return await client.RemoveAllAsync(new[] { key }).AnyContext() == 1;
-        }
-
         public static Task<long> IncrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc) {
             return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
@@ -57,6 +53,10 @@ namespace Foundatio.Caching {
 
         public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc) {
             return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        }
+
+        public static Task<bool> ReplaceIfEqualAsync<T>(this ICacheClient client, string key, T value, T expected, DateTime? expiresAtUtc) {
+            return client.ReplaceIfEqualAsync(key, value, expected, expiresAtUtc?.Subtract(SystemClock.UtcNow));
         }
 
         public static Task<int> SetAllAsync(this ICacheClient client, IDictionary<string, object> values, DateTime? expiresAtUtc) {

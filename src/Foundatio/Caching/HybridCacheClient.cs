@@ -84,6 +84,20 @@ namespace Foundatio.Caching {
             return Task.CompletedTask;
         }
 
+        public async Task<bool> RemoveAsync(string key) {
+            var removed =  await _distributedCache.RemoveAsync(key).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            return removed;
+        }
+
+        public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+            var removed =  await _distributedCache.RemoveAsync(key).AnyContext();
+            await _localCache.RemoveAsync(key).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            return removed;
+        }
+
         public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             var items = keys?.ToArray();
             bool flushAll = items == null || items.Length == 0;
@@ -155,6 +169,13 @@ namespace Foundatio.Caching {
         }
 
         public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+            bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+            return replaced;
+        }
+
+        public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
             await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
             bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
