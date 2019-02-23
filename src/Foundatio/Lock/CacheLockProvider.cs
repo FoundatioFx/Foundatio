@@ -90,7 +90,15 @@ namespace Foundatio.Lock {
                         await EnsureTopicSubscriptionAsync().AnyContext();
 
                     var keyExpiration = SystemClock.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
-                    var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow).Max(TimeSpan.FromMilliseconds(50)).Min(TimeSpan.FromSeconds(3));
+                    var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow);
+                    
+                    // delay a minimum of 50ms
+                    if (delayAmount < TimeSpan.FromMilliseconds(50))
+                        delayAmount = TimeSpan.FromMilliseconds(50);
+                    
+                    // delay a maximum of 3 seconds
+                    if (delayAmount > TimeSpan.FromSeconds(3))
+                        delayAmount = TimeSpan.FromSeconds(3);
                     
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Will wait {Delay:g} before retrying to acquire cache lock {Resource}.", delayAmount, resource);
@@ -102,8 +110,6 @@ namespace Foundatio.Lock {
                             await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
                         } catch (OperationCanceledException) {}
                     }
-
-                    await Task.Yield();
                 } while (!cancellationToken.IsCancellationRequested);
             } finally {
                 bool shouldRemove = false;
