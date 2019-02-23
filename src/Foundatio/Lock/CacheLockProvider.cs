@@ -110,6 +110,8 @@ namespace Foundatio.Lock {
                             await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
                         } catch (OperationCanceledException) {}
                     }
+                    
+                    Thread.Yield();
                 } while (!cancellationToken.IsCancellationRequested);
             } finally {
                 bool shouldRemove = false;
