@@ -85,6 +85,16 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanReplaceIfEqual() {
+            return base.CanReplaceIfEqual();
+        }
+
+        [Fact]
+        public override Task CanRemoveIfEqual() {
+            return base.CanRemoveIfEqual();
+        }
+
+        [Fact]
         public override Task CanGetAndSetDateTimeAsync() {
             return base.CanGetAndSetDateTimeAsync();
         }

@@ -62,15 +62,32 @@ namespace Foundatio.Caching {
             return Task.FromResult(_memory.TryRemove(key, out _));
         }
 
-        public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+        public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            bool success = _memory.TryRemove(key, out _);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+
+            bool wasExpectedValue = false;
+            bool success = _memory.TryUpdate(key, (k, e) => {
+                var currentValue = e.GetValue<T>();
+                if (currentValue.Equals(expected)) {
+                    e.ExpiresAt = DateTime.MinValue;
+                    wasExpectedValue = true;
+                }
+                
+                return e;
+            });
+            
+            success = success && wasExpectedValue;
+
+            await CleanupAsync().AnyContext();
+            
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-            
-            return Task.FromResult(success);
+
+            return success;
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
