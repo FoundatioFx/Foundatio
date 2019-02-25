@@ -6,26 +6,24 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus where TOptions : SharedMessageBusOptions {
-        private readonly TaskQueue _queue;
+    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
-        private readonly ConcurrentDictionary<Guid, DelayedMessage> _delayedMessages = new ConcurrentDictionary<Guid, DelayedMessage>();
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
+        protected readonly ILogger _logger;
 
-        public MessageBusBase(TOptions options) : base(options?.LoggerFactory) {
+        public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+            _logger = loggerFactory.CreateLogger(GetType());
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
-            _queue = new TaskQueue(options.TaskQueueMaxItems, options.TaskQueueMaxDegreeOfParallelism, loggerFactory: options.LoggerFactory);
-
-            InitializeMaintenance();
         }
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -142,7 +140,7 @@ namespace Foundatio.Messaging {
                     continue;
                 }
 
-                _queue.Enqueue(async () => {
+                Task.Factory.StartNew(async () => {
                     if (subscriber.CancellationToken.IsCancellationRequested) {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
@@ -175,60 +173,24 @@ namespace Foundatio.Messaging {
             return GetMappedMessageType(message.Type);
         }
 
-        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
+        protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
 
             var sendTime = SystemClock.UtcNow.SafeAdd(delay);
-            _delayedMessages.TryAdd(Guid.NewGuid(), new DelayedMessage {
-                Message = message,
-                MessageType = messageType,
-                SendTime = sendTime
+            Task.Factory.StartNew(async () => {
+                await SystemClock.SleepAsync(delay).AnyContext();
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Sending delayed message scheduled for {SendTime} for type {MessageType}", sendTime.ToString("o"), messageType);
+
+                await PublishAsync(messageType, message).AnyContext();
             });
-
-            ScheduleNextMaintenance(sendTime);
-            return Task.CompletedTask;
-        }
-
-        protected override async Task<DateTime?> DoMaintenanceAsync() {
-            if (_delayedMessages == null || _delayedMessages.Count == 0)
-                return DateTime.MaxValue;
-
-            var nextMessageSendTime = DateTime.MaxValue;
-            var messagesToSend = new List<Guid>();
-
-            // Add 50ms to the current time so we can batch up any other messages that will
-            // happen very shortly. Also the timer may run earilier than requested.
-            var sendTime = SystemClock.UtcNow.AddMilliseconds(50);
-            foreach (var pair in _delayedMessages) {
-                if (pair.Value.SendTime <= sendTime)
-                    messagesToSend.Add(pair.Key);
-                else if (pair.Value.SendTime < nextMessageSendTime)
-                    nextMessageSendTime = pair.Value.SendTime;
-            }
-
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            foreach (var messageId in messagesToSend) {
-                if (!_delayedMessages.TryRemove(messageId, out var message))
-                    continue;
-
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Sending delayed message scheduled for {SendTime} for type {MessageType}", message.SendTime.ToString("o"), message.MessageType);
-                await PublishAsync(message.MessageType, message.Message).AnyContext();
-            }
-
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("DoMaintenance next message send time: {SendTime}", nextMessageSendTime.ToString("o"));
-            return nextMessageSendTime;
         }
 
         public string MessageBusId { get; protected set; }
 
-        public override void Dispose() {
+        public void Dispose() {
             _logger.LogTrace("Disposing");
-            _queue.Dispose();
-            base.Dispose();
-            _delayedMessages?.Clear();
             _subscribers?.Clear();
         }
 
