@@ -88,7 +88,7 @@ namespace Foundatio.Jobs.Commands {
                     if (configureMethod != null) {
                         configureMethod.Invoke(null, new[] { new JobCommandContext(c, jobType, lazyServiceProvider, loggerFactory) });
                     } else {
-                        var isContinuousOption = c.Option("-c --continuous <BOOL>", "Wether the job should be run continuously.", CommandOptionType.SingleValue);
+                        var isContinuousOption = c.Option("-c --continuous <BOOL>", "Whether the job should be run continuously.", CommandOptionType.SingleValue);
                         var intervalOption = c.Option("-i --interval <INTERVAL>", "The amount of time to delay between job runs when running continuously.", CommandOptionType.SingleValue);
                         var delayOption = c.Option("-d --delay <TIME>", "The amount of time to delay before the initial job run.", CommandOptionType.SingleValue);
                         var limitOption = c.Option("-l --iteration-limit <COUNT>", "The number of times the job should be run before exiting.", CommandOptionType.SingleValue);
@@ -141,7 +141,7 @@ namespace Foundatio.Jobs.Commands {
                 c.HelpOption("-?|-h|--help");
 
                 var jobArgument = c.Argument("job", "The job name or fully qualified type to run.");
-                var isContinuousOption = c.Option("-c --continuous <BOOL>", "Wether the job should be run continuously.", CommandOptionType.SingleValue);
+                var isContinuousOption = c.Option("-c --continuous <BOOL>", "Whether the job should be run continuously.", CommandOptionType.SingleValue);
                 var intervalOption = c.Option("-i --interval <NAME>", "The amount of time to delay between job runs when running continuously.", CommandOptionType.SingleValue);
 
                 c.OnExecute(() => {

@@ -110,7 +110,7 @@ namespace Foundatio.Messaging {
                 body = serializer.Deserialize(message.Data, messageType);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning(ex, "Error deserializing messsage body: {Message}", ex.Message);
+                    _logger.LogWarning(ex, "Error deserializing message body: {Message}", ex.Message);
                 return;
             }
 
