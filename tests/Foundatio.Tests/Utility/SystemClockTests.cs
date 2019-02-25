@@ -52,7 +52,7 @@ namespace Foundatio.Tests.Utility {
                 await SystemClock.SleepAsync(250);
                 sw.Stop();
 
-                Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
+                Assert.InRange(sw.ElapsedMilliseconds, 225, 3000);
 
                 SystemClock.Test.UseFakeSleep();
 
@@ -64,7 +64,7 @@ namespace Foundatio.Tests.Utility {
 
                 Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
                 Assert.True(afterSleepNow > now);
-                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 1100);
+                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 5000);
             }
         }
 

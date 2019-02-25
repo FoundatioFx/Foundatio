@@ -186,7 +186,7 @@ namespace Foundatio.Tests.Locks {
 
             // sleep until start of throttling period
             while (SystemClock.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
-                Thread.Sleep(1);
+                Thread.Sleep(10);
             
             var sw = Stopwatch.StartNew();
             for (int i = 1; i <= allowedLocks; i++) {
