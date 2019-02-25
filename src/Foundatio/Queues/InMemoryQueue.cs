@@ -77,7 +77,7 @@ namespace Foundatio.Queues {
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} start working", _options.Name);
-            var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken);
+            var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);

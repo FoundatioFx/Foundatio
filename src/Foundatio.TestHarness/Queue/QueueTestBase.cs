@@ -39,12 +39,10 @@ namespace Foundatio.Tests.Queue {
 
             try {
                 await queue.DeleteQueueAsync();
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error cleaning up queue");
-            }
-            finally {
+            } finally {
                 queue.Dispose();
             }
         }

@@ -13,6 +13,7 @@ namespace Foundatio.Queues {
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
+        private bool _isDisposed;
 
         protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -44,7 +45,7 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using (var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken)) {
+            using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
                 await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
                 
                 LastDequeueActivity = SystemClock.UtcNow;
@@ -183,12 +184,18 @@ namespace Foundatio.Queues {
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        protected CancellationTokenSource GetLinkedDisposableCanncellationTokenSource(CancellationToken cancellationToken) {
+        protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken) {
             return CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken);
         }
 
         public override void Dispose() {
-            _logger.LogTrace("Queue {0} dispose", _options.Name);
+            if (_isDisposed) {
+                _logger.LogWarning("Queue {Name} ({Id})  dispose was already called.", _options.Name, QueueId);
+                return;
+            }
+            
+            _isDisposed = true;
+            _logger.LogTrace("Queue {Name} ({Id}) dispose", _options.Name, QueueId);
             _queueDisposedCancellationTokenSource?.Cancel();
             _queueDisposedCancellationTokenSource?.Dispose();
             base.Dispose();

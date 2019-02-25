@@ -17,6 +17,7 @@ namespace Foundatio.Messaging {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
+        private bool _isDisposed;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -201,7 +202,14 @@ namespace Foundatio.Messaging {
         public string MessageBusId { get; protected set; }
 
         public void Dispose() {
-            _logger.LogTrace("Disposing");
+            if (_isDisposed) {
+                _logger.LogWarning("MessageBus {0} dispose was already called.", MessageBusId);
+                return;
+            }
+            
+            _isDisposed = true;
+            
+            _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
             _subscribers?.Clear();
             _messageBusDisposedCancellationTokenSource?.Cancel();
             _messageBusDisposedCancellationTokenSource?.Dispose();
