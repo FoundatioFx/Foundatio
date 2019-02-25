@@ -13,17 +13,17 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+        private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         protected readonly TOptions _options;
-        protected readonly ISerializer _serializer;
         protected readonly ILogger _logger;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            _serializer = options.Serializer ?? DefaultSerializer.Instance;
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
+            _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -176,12 +176,23 @@ namespace Foundatio.Messaging {
         protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
+            
+            if (delay <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(delay));
 
             var sendTime = SystemClock.UtcNow.SafeAdd(delay);
             Task.Factory.StartNew(async () => {
-                await SystemClock.SleepAsync(delay).AnyContext();
-                if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("Sending delayed message scheduled for {SendTime} for type {MessageType}", sendTime.ToString("o"), messageType);
+                await SystemClock.SleepSafeAsync(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
+
+                bool isTraceLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+                if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
+                    if (isTraceLevelEnabled)
+                        _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
+                    return;
+                }
+                
+                if (isTraceLevelEnabled)
+                    _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
 
                 await PublishAsync(messageType, message).AnyContext();
             });
@@ -192,6 +203,7 @@ namespace Foundatio.Messaging {
         public void Dispose() {
             _logger.LogTrace("Disposing");
             _subscribers?.Clear();
+            _messageBusDisposedCancellationTokenSource?.Cancel();
         }
 
         [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
