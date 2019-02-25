@@ -47,29 +47,11 @@ namespace Foundatio.Tests.Locks {
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             await Run.InParallelAsync(25, async i => {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: starting to acquire lock.", i);
-                var sw = Stopwatch.StartNew();
-                var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(1));
-                sw.Stop();
-
-                try {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: start", i);
-                    string message = lock2 != null ? "Acquired" : "Unable to acquire";
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: {Message} in {Duration:g}", i, message, sw.Elapsed);
-
-                    Assert.NotNull(lock2);
-                    Assert.True(await locker.IsLockedAsync("test"), $"Lock {i}: was acquired but is not locked.");
+                bool success = await locker.TryUsingAsync("test", () => {
                     Interlocked.Increment(ref counter);
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Lock {Id}: end", i);
-                } catch (Exception ex) {
-                    _logger.LogCritical(ex, "Error checking if lock {Id} is acquired: {Message}", i, ex.Message);
-                    throw;
-                } finally {
-                    if (lock2 != null) {
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Releasing Lock {Id}", i);
-                        await lock2.ReleaseAsync();
-                    }
-                }
+                }, acquireTimeout: TimeSpan.FromSeconds(10));
+
+                Assert.True(success);
             });
 
             Assert.Equal(25, counter);
