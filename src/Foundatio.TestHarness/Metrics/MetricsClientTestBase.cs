@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
@@ -145,35 +146,39 @@ namespace Foundatio.Tests.Metrics {
                     metrics.Counter(CounterName);
                 });
 
+                var sw = Stopwatch.StartNew();
                 var task = metrics.WaitForCounterAsync(CounterName, 1, TimeSpan.FromMilliseconds(500));
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
-                Assert.True(await task, "Expected at least 1 count within 500 ms");
+                Assert.True(await task, $"Expected at least 1 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 Task.Run(async () => {
                     await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                     metrics.Counter(CounterName);
                 });
 
+                sw.Restart();
                 task = metrics.WaitForCounterAsync(CounterName, timeout: TimeSpan.FromMilliseconds(500));
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
-                Assert.True(await task, "Expected at least 2 count within 500 ms");
+                Assert.True(await task, $"Expected at least 2 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 Task.Run(async () => {
                     await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                     metrics.Counter(CounterName, 2);
                 });
 
+                sw.Restart();
                 task = metrics.WaitForCounterAsync(CounterName, 2, TimeSpan.FromMilliseconds(500));
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
-                Assert.True(await task, "Expected at least 4 count within 500 ms");
+                Assert.True(await task, $"Expected at least 4 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 using(var timeoutCancellationTokenSource = new CancellationTokenSource(500)){
+                    sw.Restart();
                     task = metrics.WaitForCounterAsync(CounterName, () => {
                         metrics.Counter(CounterName);
                         return Task.CompletedTask;
                     }, cancellationToken: timeoutCancellationTokenSource.Token);
                     await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
-                    Assert.True(await task, "Expected at least 5 count within 500 ms");
+                    Assert.True(await task, $"Expected at least 5 count within 500 ms... Took: {sw.Elapsed:g}");
                 }
 
                 if (_logger.IsEnabled(LogLevel.Information))
