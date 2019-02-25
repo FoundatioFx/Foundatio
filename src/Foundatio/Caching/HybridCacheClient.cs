@@ -67,7 +67,7 @@ namespace Foundatio.Caching {
                 var keysToRemove = new List<string>(message.Keys.Length);
                 foreach (string key in message.Keys) {
                     if (message.Expired)
-                        tasks.Add(_localCache.RemoveExpiredKeyAsync(key, false));
+                        _localCache.RemoveExpiredKey(key, false);
                     else if (key.EndsWith("*"))
                         tasks.Add(_localCache.RemoveByPrefixAsync(key.Substring(0, key.Length - 1)));
                     else
