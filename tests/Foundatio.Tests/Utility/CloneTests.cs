@@ -19,11 +19,12 @@ namespace Foundatio.Tests.Utility {
                 ListProperty = new List<int> { 1 },
                 ObjectProperty = new CloneModel { IntProperty =  1 }
             };
-
+            
             var cloned = model.DeepClone();
             Assert.Equal(model.IntProperty, cloned.IntProperty);
             Assert.Equal(model.StringProperty, cloned.StringProperty);
             Assert.Equal(model.ListProperty, cloned.ListProperty);
+            Assert.Equal(model.EmptyStringList, cloned.EmptyStringList);
             Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, ((CloneModel)model.ObjectProperty).IntProperty);
         }
 
@@ -84,6 +85,7 @@ namespace Foundatio.Tests.Utility {
         public int IntProperty { get; set; }
         public string StringProperty { get; set; }
         public List<int> ListProperty { get; set; }
+        public IList<string> EmptyStringList { get; } = new List<string>();
         public object ObjectProperty { get; set; }
     }
 }

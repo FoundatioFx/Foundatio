@@ -203,7 +203,7 @@ namespace Foundatio.Messaging {
 
         public void Dispose() {
             if (_isDisposed) {
-                _logger.LogWarning("MessageBus {0} dispose was already called.", MessageBusId);
+                _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;
             }
             

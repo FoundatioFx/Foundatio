@@ -25,18 +25,22 @@ namespace Foundatio.Force.DeepCloner.Helpers
 						{
 							typeof(byte), typeof(short), typeof(ushort), typeof(int), typeof(uint), typeof(long), typeof(ulong),
 							typeof(float), typeof(double), typeof(decimal), typeof(char), typeof(string), typeof(bool), typeof(DateTime),
-							typeof(IntPtr), typeof(UIntPtr),
+							typeof(IntPtr), typeof(UIntPtr), typeof(Guid),
 							// do not clone such native type
 							Type.GetType("System.RuntimeType"),
-							Type.GetType("System.RuntimeTypeHandle")
+							Type.GetType("System.RuntimeTypeHandle"),
+#if !NETCORE
+							typeof(DBNull)
+#endif
 						}) KnownTypes.TryAdd(x, true);
 		}
 
-		internal static bool CanNotCopyType(Type type, HashSet<Type> processingTypes)
+		private static bool CanReturnSameType(Type type, HashSet<Type> processingTypes)
 		{
 			bool isSafe;
-			if (KnownTypes.TryGetValue(type, out isSafe)) return isSafe;
-
+			if (KnownTypes.TryGetValue(type, out isSafe))
+				return isSafe;
+			
 			// enums are safe
 			// pointers (e.g. int*) are unsafe, but we cannot do anything with it except blind copy
 			if (type.IsEnum() || type.IsPointer)
@@ -81,6 +85,25 @@ namespace Foundatio.Force.DeepCloner.Helpers
 				return true;
 			}
 #else
+			// do not copy db null
+			if (type.FullName.StartsWith("System.DBNull"))
+			{
+				KnownTypes.TryAdd(type, true);
+				return true;
+			}
+
+			if (type.FullName.StartsWith("System.RuntimeType"))
+			{
+				KnownTypes.TryAdd(type, true);
+				return true;
+			}
+			
+			if (type.FullName.StartsWith("System.Reflection.") && Equals(type.GetTypeInfo().Assembly, typeof(PropertyInfo).GetTypeInfo().Assembly))
+			{
+				KnownTypes.TryAdd(type, true);
+				return true;
+			}
+
 			if (type.IsSubclassOfTypeByName("CriticalFinalizerObject"))
 			{
 				KnownTypes.TryAdd(type, true);
@@ -131,7 +154,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 					continue;
 
 				// not safe and not not safe. we need to go deeper
-				if (!CanNotCopyType(fieldType, processingTypes))
+				if (!CanReturnSameType(fieldType, processingTypes))
 				{
 					KnownTypes.TryAdd(type, false);
 					return false;
@@ -142,19 +165,15 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			return true;
 		}
 
-		/// <summary>
+		// not used anymore
+		/*/// <summary>
 		/// Classes with only safe fields are safe for ShallowClone (if they root objects for copying)
 		/// </summary>
-		internal static bool CanNotDeepCopyClass(Type type)
+		private static bool CanCopyClassInShallow(Type type)
 		{
-			bool isSafe;
-			if (KnownClasses.TryGetValue(type, out isSafe)) return isSafe;
-
-			// enums are safe
-			// pointers (e.g. int*) are unsafe, but we cannot do anything with it except blind copy
+			// do not do this anything for struct and arrays
 			if (!type.IsClass() || type.IsArray)
 			{
-				KnownClasses.TryAdd(type, false);
 				return false;
 			}
 
@@ -167,14 +186,17 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			}
 			while (tp != null);
 
-			if (fi.Any(fieldInfo => !CanNotCopyType(fieldInfo.FieldType, null)))
+			if (fi.Any(fieldInfo => !CanReturnSameType(fieldInfo.FieldType, null)))
 			{
-				KnownClasses.TryAdd(type, false);
 				return false;
 			}
 
-			KnownClasses.TryAdd(type, true);
 			return true;
+		}*/
+
+		public static bool CanReturnSameObject(Type type)
+		{
+			return CanReturnSameType(type, null);
 		}
 	}
 }

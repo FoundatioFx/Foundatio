@@ -190,7 +190,7 @@ namespace Foundatio.Queues {
 
         public override void Dispose() {
             if (_isDisposed) {
-                _logger.LogWarning("Queue {Name} ({Id})  dispose was already called.", _options.Name, QueueId);
+                _logger.LogTrace("Queue {Name} ({Id})  dispose was already called.", _options.Name, QueueId);
                 return;
             }
             
