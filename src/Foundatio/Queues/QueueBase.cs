@@ -190,6 +190,7 @@ namespace Foundatio.Queues {
         public override void Dispose() {
             _logger.LogTrace("Queue {0} dispose", _options.Name);
             _queueDisposedCancellationTokenSource?.Cancel();
+            _queueDisposedCancellationTokenSource?.Dispose();
             base.Dispose();
 
             Abandoned?.Dispose();

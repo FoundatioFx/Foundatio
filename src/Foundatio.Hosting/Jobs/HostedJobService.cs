@@ -64,6 +64,7 @@ namespace Foundatio.Hosting.Jobs {
 
         public void Dispose() {
             _stoppingCts.Cancel();
+            _stoppingCts.Dispose();
         }
 
         public bool IsRunning => _hasStarted == false || (_executingTask != null && !_executingTask.IsCompleted);

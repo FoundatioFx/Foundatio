@@ -204,6 +204,7 @@ namespace Foundatio.Messaging {
             _logger.LogTrace("Disposing");
             _subscribers?.Clear();
             _messageBusDisposedCancellationTokenSource?.Cancel();
+            _messageBusDisposedCancellationTokenSource?.Dispose();
         }
 
         [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
