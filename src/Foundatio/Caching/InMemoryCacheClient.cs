@@ -419,8 +419,6 @@ namespace Foundatio.Caching {
                         if (existingEntry != null)
                             RemoveExpiredKey(key);
                         _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
-
-                        return Task.FromResult(true);
                     } else {
                         return Task.FromResult(false);
                     }
@@ -432,7 +430,7 @@ namespace Foundatio.Caching {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set cache key: {Key}", key);
             }
 
-            StartMaintenance();
+            StartMaintenance(true);
 
             return Task.FromResult(true);
         }
@@ -598,8 +596,11 @@ namespace Foundatio.Caching {
 
         private DateTimeOffset _lastMaintenance;
 
-        private void StartMaintenance() {
+        private void StartMaintenance(bool compactImmediately = false) {
             var now = SystemClock.UtcNow;
+            if (compactImmediately)
+                Compact();
+
             if (TimeSpan.FromMilliseconds(100) < now - _lastMaintenance) {
                 _lastMaintenance = now;
                 Task.Factory.StartNew(state => DoMaintenance(), this,
@@ -611,41 +612,35 @@ namespace Foundatio.Caching {
             if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
                 return;
 
-            string oldest = _memory.ToArray()
-                                   .OrderBy(kvp => kvp.Value.LastAccessTicks)
-                                   .ThenBy(kvp => kvp.Value.InstanceNumber)
-                                   .First()
-                                   .Key;
+            (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
+            foreach (var kvp in _memory) {
+                if (kvp.Value.LastAccessTicks < oldest.LastAccessTicks
+                    || (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
+                    oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+            }
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
-            _memory.TryRemove(oldest, out var cacheEntry);
+            _memory.TryRemove(oldest.Key, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
-                OnItemExpiredAsync(oldest);
+                OnItemExpiredAsync(oldest.Key);
 
             return;
         }
 
         private void DoMaintenance() {
             _logger.LogTrace("DoMaintenance");
-            var expiredKeys = new List<string>();
 
             var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
-            var minExpiration = DateTime.MaxValue;
 
             try {
-                foreach (var kvp in _memory) {
+                foreach (var kvp in _memory.ToArray()) {
                     var expiresAt = kvp.Value.ExpiresAt;
                     if (expiresAt <= utcNow)
-                        expiredKeys.Add(kvp.Key);
-                    else if (expiresAt < minExpiration)
-                        minExpiration = expiresAt;
+                        RemoveExpiredKey(kvp.Key);
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to find expired cache items.");
             }
-
-            foreach (string key in expiredKeys)
-                RemoveExpiredKey(key);
 
             Compact();
         }

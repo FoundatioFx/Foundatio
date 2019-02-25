@@ -132,10 +132,8 @@ namespace Foundatio.Tests.Caching {
                         await cache.SetAsync("test" + i, i);
 
                     _logger.LogTrace(String.Join(",", cache.Keys));
-                    await Task.Delay(100);
                     Assert.Equal(10, cache.Count);
                     await cache.SetAsync("next", 1);
-                    await Task.Delay(100);
                     _logger.LogTrace(String.Join(",", cache.Keys));
                     Assert.Equal(10, cache.Count);
                     Assert.False((await cache.GetAsync<int>("test0")).HasValue);
@@ -144,7 +142,6 @@ namespace Foundatio.Tests.Caching {
                     Assert.NotNull(await cache.GetAsync<int?>("test1"));
                     Assert.Equal(1, cache.Hits);
                     await cache.SetAsync("next2", 2);
-                    await Task.Delay(100);
                     _logger.LogTrace(String.Join(",", cache.Keys));
                     Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                     Assert.Equal(2, cache.Misses);
