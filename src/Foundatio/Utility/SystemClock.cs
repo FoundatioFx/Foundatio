@@ -104,10 +104,16 @@ namespace Foundatio.Utility {
     }
 
     public static class SystemClock {
-        private static ISystemClock _instance = DefaultSystemClock.Instance;
+        private static AsyncLocal<ISystemClock> _instance;
+        
         public static ISystemClock Instance {
-            get => _instance ?? DefaultSystemClock.Instance;
-            set => _instance = value;
+            get => _instance?.Value ?? DefaultSystemClock.Instance;
+            set {
+                if (_instance == null)
+                    _instance = new AsyncLocal<ISystemClock>();
+                
+                _instance.Value = value;
+            }
         }
         
         public static TestSystemClock Test {
