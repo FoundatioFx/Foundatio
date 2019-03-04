@@ -149,7 +149,7 @@ namespace Foundatio.Caching {
                 return Task.FromResult(CacheValue<T>.NoValue);
             }
 
-            if (cacheEntry.ExpiresAt < SystemClock.UtcNow) {
+            if (cacheEntry.ExpiresAt < Time.UtcNow) {
                 RemoveExpiredKey(key);
                 Interlocked.Increment(ref _misses);
                 return Task.FromResult(CacheValue<T>.NoValue);
@@ -181,7 +181,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
         }
 
@@ -189,7 +189,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
         }
 
@@ -203,7 +203,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 double? currentValue = null;
                 try {
@@ -239,7 +239,7 @@ namespace Foundatio.Caching {
             }
 
             long difference = value;
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -275,7 +275,7 @@ namespace Foundatio.Caching {
             }
 
             double difference = value;
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 double? currentValue = null;
                 try {
@@ -311,7 +311,7 @@ namespace Foundatio.Caching {
             }
 
             long difference = value;
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -344,8 +344,8 @@ namespace Foundatio.Caching {
             if (values == null)
                 return Task.FromException<long>(new ArgumentNullException(nameof(values)));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < SystemClock.UtcNow) {
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < Time.UtcNow) {
                 RemoveExpiredKey(key);
                 return Task.FromResult<long>(default);
             }
@@ -374,8 +374,8 @@ namespace Foundatio.Caching {
             if (values == null)
                 return Task.FromException<long>(new ArgumentNullException(nameof(values)));
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            if (expiresAt < SystemClock.UtcNow) {
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            if (expiresAt < Time.UtcNow) {
                 RemoveExpiredKey(key);
                 return Task.FromResult<long>(default);
             }
@@ -408,14 +408,14 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty."));
 
-            if (entry.ExpiresAt < SystemClock.UtcNow) {
+            if (entry.ExpiresAt < Time.UtcNow) {
                 RemoveExpiredKey(key);
                 return Task.FromResult(false);
             }
 
             if (addOnly) {
                 if (!_memory.TryAdd(key, entry)) {
-                    if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt < SystemClock.UtcNow) {
+                    if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt < Time.UtcNow) {
                         if (existingEntry != null)
                             RemoveExpiredKey(key);
                         _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
@@ -464,7 +464,7 @@ namespace Foundatio.Caching {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             bool wasExpectedValue = false;
             bool success = _memory.TryUpdate(key, (k, e) => {
                 var currentValue = e.GetValue<T>();
@@ -495,7 +495,7 @@ namespace Foundatio.Caching {
                 return Task.FromResult<double>(-1);
             }
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 double? currentValue = null;
                 try {
@@ -529,7 +529,7 @@ namespace Foundatio.Caching {
                 return Task.FromResult<long>(-1);
             }
 
-            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            var expiresAt = expiresIn.HasValue ? Time.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
                 long? currentValue = null;
                 try {
@@ -568,8 +568,8 @@ namespace Foundatio.Caching {
             if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue)
                 return Task.FromResult<TimeSpan?>(null);
 
-            if (value.ExpiresAt >= SystemClock.UtcNow)
-                return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(SystemClock.UtcNow));
+            if (value.ExpiresAt >= Time.UtcNow)
+                return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(Time.UtcNow));
 
             RemoveExpiredKey(key);
 
@@ -580,8 +580,8 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-            var expiresAt = SystemClock.UtcNow.SafeAdd(expiresIn);
-            if (expiresAt < SystemClock.UtcNow) {
+            var expiresAt = Time.UtcNow.SafeAdd(expiresIn);
+            if (expiresAt < Time.UtcNow) {
                 RemoveExpiredKey(key);
                 return Task.CompletedTask;
             }
@@ -597,7 +597,7 @@ namespace Foundatio.Caching {
         private DateTimeOffset _lastMaintenance;
 
         private void StartMaintenance(bool compactImmediately = false) {
-            var now = SystemClock.UtcNow;
+            var now = Time.UtcNow;
             if (compactImmediately)
                 Compact();
 
@@ -621,7 +621,7 @@ namespace Foundatio.Caching {
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
+            if (cacheEntry != null && cacheEntry.ExpiresAt < Time.UtcNow)
                 OnItemExpiredAsync(oldest.Key);
 
             return;
@@ -630,7 +630,7 @@ namespace Foundatio.Caching {
         private void DoMaintenance() {
             _logger.LogTrace("DoMaintenance");
 
-            var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
+            var utcNow = Time.UtcNow.AddMilliseconds(50);
 
             try {
                 foreach (var kvp in _memory.ToArray()) {
@@ -662,7 +662,7 @@ namespace Foundatio.Caching {
                 _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
                 Value = value;
                 ExpiresAt = expiresAt;
-                LastModifiedTicks = SystemClock.UtcNow.Ticks;
+                LastModifiedTicks = Time.UtcNow.Ticks;
                 InstanceNumber = Interlocked.Increment(ref _instanceCount);
             }
 
@@ -676,7 +676,7 @@ namespace Foundatio.Caching {
 
             internal object Value {
                 get {
-                    LastAccessTicks = SystemClock.UtcNow.Ticks;
+                    LastAccessTicks = Time.UtcNow.Ticks;
 #if DEBUG
                     Interlocked.Increment(ref _usageCount);
 #endif
@@ -684,8 +684,8 @@ namespace Foundatio.Caching {
                 }
                 set {
                     _cacheValue = _shouldClone ? value.DeepClone() : value;
-                    LastAccessTicks = SystemClock.UtcNow.Ticks;
-                    LastModifiedTicks = SystemClock.UtcNow.Ticks;
+                    LastAccessTicks = Time.UtcNow.Ticks;
+                    LastModifiedTicks = Time.UtcNow.Ticks;
                 }
             }
 

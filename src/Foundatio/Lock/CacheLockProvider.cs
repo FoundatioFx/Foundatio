@@ -89,8 +89,8 @@ namespace Foundatio.Lock {
                     if (!_isSubscribed)
                         await EnsureTopicSubscriptionAsync().AnyContext();
 
-                    var keyExpiration = SystemClock.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
-                    var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow);
+                    var keyExpiration = Time.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
+                    var delayAmount = keyExpiration.Subtract(Time.UtcNow);
                     
                     // delay a minimum of 50ms
                     if (delayAmount < TimeSpan.FromMilliseconds(50))

@@ -17,7 +17,7 @@ namespace Foundatio.Lock {
             Resource = resource;
             LockId = lockId;
             TimeWaitedForLock = timeWaitedForLock;
-            AcquiredTimeUtc = SystemClock.UtcNow;
+            AcquiredTimeUtc = Time.UtcNow;
             _duration = Stopwatch.StartNew();
             _logger = logger;
             _lockProvider = lockProvider;

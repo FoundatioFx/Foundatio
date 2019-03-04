@@ -46,7 +46,7 @@ namespace Foundatio.Queues {
         }
 
         protected override Task OnEnqueued(object sender, EnqueuedEventArgs<T> enqueuedEventArgs) {
-            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
+            _timer.ScheduleNext(Time.UtcNow.Add(_reportInterval));
 
             string subMetricName = GetSubMetricName(enqueuedEventArgs.Entry.Value);
             if (!String.IsNullOrEmpty(subMetricName))
@@ -57,7 +57,7 @@ namespace Foundatio.Queues {
         }
 
         protected override Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
-            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
+            _timer.ScheduleNext(Time.UtcNow.Add(_reportInterval));
 
             var metadata = dequeuedEventArgs.Entry as IQueueEntryMetadata;
             string subMetricName = GetSubMetricName(dequeuedEventArgs.Entry.Value);
@@ -81,7 +81,7 @@ namespace Foundatio.Queues {
         }
 
         protected override Task OnCompleted(object sender, CompletedEventArgs<T> completedEventArgs) {
-            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
+            _timer.ScheduleNext(Time.UtcNow.Add(_reportInterval));
 
             if (!(completedEventArgs.Entry is IQueueEntryMetadata metadata))
                 return Task.CompletedTask;
@@ -105,7 +105,7 @@ namespace Foundatio.Queues {
         }
 
         protected override Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs) {
-            _timer.ScheduleNext(SystemClock.UtcNow.Add(_reportInterval));
+            _timer.ScheduleNext(Time.UtcNow.Add(_reportInterval));
 
             if (!(abandonedEventArgs.Entry is IQueueEntryMetadata metadata))
                 return Task.CompletedTask;

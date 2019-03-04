@@ -52,9 +52,9 @@ namespace Foundatio.Hosting.Jobs {
                     await jobToRun.StartAsync(stoppingToken).AnyContext();
 
                 // run jobs every minute since that is the lowest resolution of the cron schedule
-                var now = SystemClock.Now;
+                var now = Time.Now;
                 var nextMinute = now.AddTicks(TimeSpan.FromMinutes(1).Ticks - (now.Ticks % TimeSpan.FromMinutes(1).Ticks));
-                var timeUntilNextMinute = nextMinute.Subtract(SystemClock.Now).Add(TimeSpan.FromMilliseconds(1));
+                var timeUntilNextMinute = nextMinute.Subtract(Time.Now).Add(TimeSpan.FromMilliseconds(1));
                 await Task.Delay(timeUntilNextMinute, stoppingToken).AnyContext();
             }
         }
@@ -78,7 +78,7 @@ namespace Foundatio.Hosting.Jobs {
 
                 var interval = TimeSpan.FromDays(1);
 
-                var nextOccurrence = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+                var nextOccurrence = _cronSchedule.GetNextOccurrence(Time.UtcNow);
                 if (nextOccurrence.HasValue) {
                     var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
                     if (nextNextOccurrence.HasValue)
@@ -87,7 +87,7 @@ namespace Foundatio.Hosting.Jobs {
 
                 _lockProvider = new ThrottlingLockProvider(cacheClient, 1, interval.Add(interval));
 
-                NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+                NextRun = _cronSchedule.GetNextOccurrence(Time.UtcNow);
             }
 
             public string Schedule { get; private set; }
@@ -100,7 +100,7 @@ namespace Foundatio.Hosting.Jobs {
                     return false;
 
                 // not time yet
-                if (NextRun > SystemClock.UtcNow)
+                if (NextRun > Time.UtcNow)
                     return false;
 
                 // check if already run
@@ -125,7 +125,7 @@ namespace Foundatio.Hosting.Jobs {
                     }, cancellationToken).Unwrap();
 
                     LastRun = NextRun;
-                    NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+                    NextRun = _cronSchedule.GetNextOccurrence(Time.UtcNow);
 
                     return Task.CompletedTask;
                 }, TimeSpan.Zero, TimeSpan.Zero).AnyContext();

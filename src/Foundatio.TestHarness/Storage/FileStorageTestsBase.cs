@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Storage {
                 var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
                 Assert.Null(fileInfo);
 
-                var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
+                var startTime = Time.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
                 fileInfo = await storage.GetFileInfoAsync(path);
@@ -464,7 +464,7 @@ namespace Foundatio.Tests.Storage {
                         return;
 
                     if (RandomData.GetBool()) {
-                        await storage.CompleteEventPostAsync(path, eventPost.ProjectId, SystemClock.UtcNow, true, _logger);
+                        await storage.CompleteEventPostAsync(path, eventPost.ProjectId, Time.UtcNow, true, _logger);
                     } else
                         await storage.SetNotActiveAsync(path, _logger);
                 });

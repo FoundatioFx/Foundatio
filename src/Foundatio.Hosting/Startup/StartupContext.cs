@@ -26,8 +26,8 @@ namespace Foundatio.Hosting.Startup {
 
         public async Task<bool> WaitForStartupAsync(CancellationToken cancellationToken) {
             bool isFirstWaiter = Interlocked.Increment(ref _waitCount) == 1;
-            var startTime = SystemClock.UtcNow;
-            var lastStatus = SystemClock.UtcNow;
+            var startTime = Time.UtcNow;
+            var lastStatus = Time.UtcNow;
 
             while (!cancellationToken.IsCancellationRequested) {
                 if (IsStartupComplete)
@@ -36,16 +36,16 @@ namespace Foundatio.Hosting.Startup {
                 if (StartupActionsFailed)
                     return false;
 
-                if (isFirstWaiter && SystemClock.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information)) {
-                    lastStatus = SystemClock.UtcNow;
-                    _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", SystemClock.UtcNow.Subtract(startTime));
+                if (isFirstWaiter && Time.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information)) {
+                    lastStatus = Time.UtcNow;
+                    _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", Time.UtcNow.Subtract(startTime));
                 }
 
                 await Task.Delay(1000, cancellationToken).AnyContext();
             }
 
             if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))
-                _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", SystemClock.UtcNow.Subtract(startTime));
+                _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", Time.UtcNow.Subtract(startTime));
 
             return false;
         }

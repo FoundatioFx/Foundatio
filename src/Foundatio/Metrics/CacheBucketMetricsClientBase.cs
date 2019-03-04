@@ -86,10 +86,10 @@ namespace Foundatio.Metrics {
 
         public async Task<CounterStatSummary> GetCounterStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = SystemClock.UtcNow.AddHours(-4);
+                start = Time.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = SystemClock.UtcNow;
+                end = Time.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 180 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -116,10 +116,10 @@ namespace Foundatio.Metrics {
 
         public async Task<GaugeStatSummary> GetGaugeStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = SystemClock.UtcNow.AddHours(-4);
+                start = Time.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = SystemClock.UtcNow;
+                end = Time.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 180 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -169,10 +169,10 @@ namespace Foundatio.Metrics {
 
         public Task<TimingStatSummary> GetTimerStatsAsync(string name, DateTime? start = null, DateTime? end = null, int dataPoints = 20) {
             if (!start.HasValue)
-                start = SystemClock.UtcNow.AddHours(-4);
+                start = Time.UtcNow.AddHours(-4);
 
             if (!end.HasValue)
-                end = SystemClock.UtcNow;
+                end = Time.UtcNow;
 
             var interval = end.Value.Subtract(start.Value).TotalMinutes > 180 ? TimeSpan.FromHours(1) : TimeSpan.FromMinutes(5);
 
@@ -221,7 +221,7 @@ namespace Foundatio.Metrics {
                 interval = _timeBuckets[0].Size;
 
             if (dateTime == null)
-                dateTime = SystemClock.UtcNow;
+                dateTime = Time.UtcNow;
 
             dateTime = dateTime.Value.Floor(interval.Value);
 

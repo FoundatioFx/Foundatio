@@ -109,7 +109,7 @@ namespace Foundatio.Jobs {
                     _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
 
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                    await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
+                    await Time.DelayAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
                 if (_options.RunContinuous && _options.InstanceCount > 1) {
                     var tasks = new List<Task>(_options.InstanceCount);

@@ -11,7 +11,7 @@ namespace Foundatio.Utility {
                 if (delay.Ticks <= 0)
                     return action();
 
-                return SystemClock.SleepAsync(delay).ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
+                return Time.DelayAsync(delay).ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
             });
         }
 
@@ -28,14 +28,14 @@ namespace Foundatio.Utility {
                 throw new ArgumentNullException(nameof(action));
 
             int attempts = 1;
-            var startTime = SystemClock.UtcNow;
+            var startTime = Time.UtcNow;
             int currentBackoffTime = _defaultBackoffIntervals[0];
             if (retryInterval != null)
                 currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
 
             do {
                 if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
-                    logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
+                    logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), Time.UtcNow.Subtract(startTime));
 
                 try {
                     return await action().AnyContext();
@@ -46,7 +46,7 @@ namespace Foundatio.Utility {
                     if (logger != null && logger.IsEnabled(LogLevel.Error))
                         logger.LogError(ex, "Retry error: {Message}", ex.Message);
 
-                    await SystemClock.SleepSafeAsync(currentBackoffTime, cancellationToken).AnyContext();
+                    await Time.SafeDelayAsync(currentBackoffTime, cancellationToken).AnyContext();
                 }
 
                 if (retryInterval == null)

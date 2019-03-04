@@ -43,9 +43,9 @@ namespace Foundatio.Jobs {
 
                     // Maybe look into yielding threads. Task scheduler queue is starving.
                     if (result.Error != null) {
-                        await SystemClock.SleepSafeAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100), cancellationToken).AnyContext();
+                        await Time.SafeDelayAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100), cancellationToken).AnyContext();
                     } else if (interval.HasValue && interval.Value > TimeSpan.Zero) {
-                        await SystemClock.SleepSafeAsync(interval.Value, cancellationToken).AnyContext();
+                        await Time.SafeDelayAsync(interval.Value, cancellationToken).AnyContext();
                     } else if (sw.ElapsedMilliseconds > 5000) {
                         // allow for cancellation token to get set
                         Thread.Yield();

@@ -78,7 +78,7 @@ namespace Foundatio.Tests.Metrics {
             _client.Counter("counter");
             messages = _listener.GetMessages();
             Assert.Single(messages);
-            SystemClock.Sleep(1000);
+            Time.Delay(1000);
 
             _listener.StartListening();
             _client.Counter("counter");
@@ -93,7 +93,7 @@ namespace Foundatio.Tests.Metrics {
             _listener.StartListening();
 
             Parallel.For(0, iterations, i => {
-                SystemClock.Sleep(5);
+                Time.Delay(5);
                 _client.Counter("counter");
             });
             

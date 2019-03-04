@@ -18,7 +18,7 @@ namespace Foundatio.HostingSample {
         }
 
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
-            _lastRun = SystemClock.UtcNow;
+            _lastRun = Time.UtcNow;
             Interlocked.Increment(ref _iterationCount);
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogTrace("Sample2Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
@@ -30,7 +30,7 @@ namespace Foundatio.HostingSample {
             if (!_lastRun.HasValue)
                 return Task.FromResult(HealthCheckResult.Healthy("Job has not been run yet."));
 
-            if (SystemClock.UtcNow.Subtract(_lastRun.Value) > TimeSpan.FromSeconds(5))
+            if (Time.UtcNow.Subtract(_lastRun.Value) > TimeSpan.FromSeconds(5))
                 return Task.FromResult(HealthCheckResult.Unhealthy("Job has not run in the last 5 seconds."));
 
             return Task.FromResult(HealthCheckResult.Healthy("Job has run in the last 5 seconds."));

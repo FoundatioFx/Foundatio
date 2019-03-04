@@ -138,7 +138,7 @@ namespace Foundatio.Tests.Caching {
                     Assert.Equal(10, cache.Count);
                     Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                     Assert.Equal(1, cache.Misses);
-                    await SystemClock.SleepAsync(50); // keep the last access ticks from being the same for all items
+                    await Time.DelayAsync(50); // keep the last access ticks from being the same for all items
                     Assert.NotNull(await cache.GetAsync<int?>("test1"));
                     Assert.Equal(1, cache.Hits);
                     await cache.SetAsync("next2", 2);

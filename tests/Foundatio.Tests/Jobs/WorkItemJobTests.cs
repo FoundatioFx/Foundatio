@@ -33,7 +33,7 @@ namespace Foundatio.Tests.Jobs {
                         Assert.Equal("Test", jobData.SomeData);
 
                         for (int i = 0; i < 10; i++) {
-                            await SystemClock.SleepAsync(100);
+                            await Time.DelayAsync(100);
                             await ctx.ReportProgressAsync(10 * i);
                         }
                     });
@@ -132,7 +132,7 @@ namespace Foundatio.Tests.Jobs {
                                 _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
                         }
 
-                        await SystemClock.SleepAsync(100);
+                        await Time.DelayAsync(100);
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
                         Assert.Equal(workItemCount, completedItems.Count + errors);
@@ -182,7 +182,7 @@ namespace Foundatio.Tests.Jobs {
                         Assert.Equal("Test", jobData.SomeData);
 
                         for (int i = 1; i < 10; i++) {
-                            await SystemClock.SleepAsync(100);
+                            await Time.DelayAsync(100);
                             await ctx.ReportProgressAsync(10 * i);
                         }
                     }, Log.CreateLogger("MyWorkItem"));
@@ -276,7 +276,7 @@ namespace Foundatio.Tests.Jobs {
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 1; i < 10; i++) {
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 await context.ReportProgressAsync(10 * i);
             }
         }

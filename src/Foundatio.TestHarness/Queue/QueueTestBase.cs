@@ -132,7 +132,7 @@ namespace Foundatio.Tests.Queue {
                     Task.Run(async () => {
                         _logger.LogTrace("Starting enqueue loop.");
                         for (int index = 0; index < iterations; index++) {
-                            await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
+                            await Time.DelayAsync(RandomData.GetInt(10, 30));
                             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                         }
                         _logger.LogTrace("Finished enqueuing.");
@@ -271,7 +271,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(5000));
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(500);
+                    await Time.DelayAsync(500);
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     });
@@ -301,7 +301,7 @@ namespace Foundatio.Tests.Queue {
                 await AssertEmptyQueueAsync(queue);
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(250);
+                    await Time.DelayAsync(250);
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     });
@@ -372,7 +372,7 @@ namespace Foundatio.Tests.Queue {
                         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                         await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
 
-                        await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
+                        await Time.DelayAsync(100); // give time for the stats to reflect the changes.
                         var stats = await queue.GetQueueStatsAsync();
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
@@ -402,7 +402,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
+                await Time.DelayAsync(TimeSpan.FromSeconds(1));
 
                 // wait for the task to be auto abandoned
 
@@ -520,7 +520,7 @@ namespace Foundatio.Tests.Queue {
                     });
 
                     await countdown.WaitAsync();
-                    await SystemClock.SleepAsync(50);
+                    await Time.DelayAsync(50);
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}",
                         info.CompletedCount,
                         info.AbandonCount,
@@ -584,12 +584,12 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
-                var startTime = SystemClock.UtcNow;
+                var startTime = Time.UtcNow;
                 await workItem.AbandonAsync();
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
 
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                var elapsed = SystemClock.UtcNow.Subtract(startTime);
+                var elapsed = Time.UtcNow.Subtract(startTime);
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", elapsed);
                 Assert.NotNull(workItem);
                 Assert.True(elapsed > TimeSpan.FromSeconds(.95));
@@ -619,7 +619,7 @@ namespace Foundatio.Tests.Queue {
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-                        await SystemClock.SleepAsync(100);
+                        await Time.DelayAsync(100);
 
                         _logger.LogTrace("Before dequeue");
                         var item = await queue.DequeueAsync();
@@ -634,7 +634,7 @@ namespace Foundatio.Tests.Queue {
                         _logger.LogTrace("Before asserts");
                         Assert.Equal(2, completedCount);
 
-                        await SystemClock.SleepAsync(100); // flush metrics queue behaviors
+                        await Time.DelayAsync(100); // flush metrics queue behaviors
                         await metrics.FlushAsync();
                         Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
                         Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
@@ -703,11 +703,11 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal("Hello", entry.Value.Data);
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} before renewing lock", renewWait);
-                await SystemClock.SleepAsync(renewWait);
+                await Time.DelayAsync(renewWait);
                 _logger.LogTrace("Renewing lock");
                 await entry.RenewLockAsync();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} to see if lock was renewed", renewWait);
-                await SystemClock.SleepAsync(renewWait);
+                await Time.DelayAsync(renewWait);
 
                 // We shouldn't get another item here if RenewLock works.
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Attempting to dequeue item that shouldn't exist");
@@ -842,7 +842,7 @@ namespace Foundatio.Tests.Queue {
                         var l = await distributedLock.AcquireAsync("test");
                         Assert.NotNull(l);
                         _logger.LogInformation("Acquired distributed lock");
-                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
+                        await Time.DelayAsync(TimeSpan.FromMilliseconds(250));
                         await l.ReleaseAsync();
                         _logger.LogInformation("Released distributed lock");
 
@@ -853,7 +853,7 @@ namespace Foundatio.Tests.Queue {
                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                     await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
 
-                    await SystemClock.SleepAsync(1);
+                    await Time.DelayAsync(1);
                     var stats = await queue.GetQueueStatsAsync();
                     _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(1, stats.Completed);
@@ -899,7 +899,7 @@ namespace Foundatio.Tests.Queue {
                             Assert.NotNull(l);
                             if (_logger.IsEnabled(LogLevel.Information))
                                 _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
-                            await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                            await Time.DelayAsync(TimeSpan.FromMilliseconds(50));
                             await l.ReleaseAsync();
                             if (_logger.IsEnabled(LogLevel.Information))
                                 _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);
@@ -922,7 +922,7 @@ namespace Foundatio.Tests.Queue {
                     });
 
                     await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                    await SystemClock.SleepAsync(50);
+                    await Time.DelayAsync(50);
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
                     if (_logger.IsEnabled(LogLevel.Information))
@@ -1016,7 +1016,7 @@ namespace Foundatio.Tests.Queue {
                 var dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
                 Assert.NotNull(dequeuedQueueItem.Value);
                 // The first dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
-                await SystemClock.SleepAsync(60);
+                await Time.DelayAsync(60);
                 await dequeuedQueueItem.CompleteAsync();
                 Assert.True(dequeuedQueueItem.IsCompleted);
                 Assert.False(dequeuedQueueItem.IsAbandoned);
@@ -1024,7 +1024,7 @@ namespace Foundatio.Tests.Queue {
                 dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
                 Assert.NotNull(dequeuedQueueItem.Value);
                 // The second dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
-                await SystemClock.SleepAsync(60);
+                await Time.DelayAsync(60);
                 await dequeuedQueueItem.CompleteAsync();
                 Assert.True(dequeuedQueueItem.IsCompleted);
                 Assert.False(dequeuedQueueItem.IsAbandoned);

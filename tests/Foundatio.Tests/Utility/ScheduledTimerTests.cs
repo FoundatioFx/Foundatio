@@ -46,7 +46,7 @@ namespace Foundatio.Tests.Utility {
 
             async Task<DateTime?> Callback() {
                 _logger.LogInformation("Starting work.");
-                await SystemClock.SleepAsync(250);
+                await Time.DelayAsync(250);
                 countdown.Signal();
                 _logger.LogInformation("Finished work.");
                 return null;
@@ -56,7 +56,7 @@ namespace Foundatio.Tests.Utility {
                 timer.ScheduleNext();
                 var t = Task.Run(async () => {
                     for (int i = 0; i < iterations; i++) {
-                        await SystemClock.SleepAsync(10);
+                        await Time.DelayAsync(10);
                         timer.ScheduleNext();
                     }
                 });

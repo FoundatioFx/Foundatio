@@ -28,7 +28,7 @@ namespace Foundatio.Tests.Locks {
 
         [Fact]
         public override Task CanAcquireAndReleaseLockAsync() {
-            using (TestSystemClock.Install()) {
+            using (Time.UseTestTime()) {
                 return base.CanAcquireAndReleaseLockAsync();
             }
         }

@@ -43,7 +43,7 @@ namespace Foundatio.Tests.Messaging {
                     _logger.LogTrace("Set event");
                 });
 
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello",
                     Items = { { "Test", "Test" } }
@@ -69,7 +69,7 @@ namespace Foundatio.Tests.Messaging {
                     throw new Exception();
                 });
 
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 await messageBus.PublishAsync<object>(null);
                 _logger.LogTrace("Published one...");
 
@@ -94,7 +94,7 @@ namespace Foundatio.Tests.Messaging {
                     _logger.LogTrace("Set event");
                 });
 
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 await messageBus.PublishAsync(new DerivedSimpleMessageA {
                     Data = "Hello"
                 });
@@ -123,7 +123,7 @@ namespace Foundatio.Tests.Messaging {
                     _logger.LogTrace("Set event");
                 });
 
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 await messageBus.PublishAsync(new SimpleMessageA {
                     Data = "Hello"
                 });
@@ -219,7 +219,7 @@ namespace Foundatio.Tests.Messaging {
                 var subscribe = Run.InParallelAsync(iterations,
                     i => {
 #pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
-                        SystemClock.Sleep(RandomData.GetInt(0, 10));
+                        Time.Delay(RandomData.GetInt(0, 10));
 #pragma warning restore AsyncFixer02 // Long running or blocking operations under an async method
                         return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
                     });
@@ -418,7 +418,7 @@ namespace Foundatio.Tests.Messaging {
                     Data = "Hello"
                 });
 
-                await SystemClock.SleepAsync(100);
+                await Time.DelayAsync(100);
                 var resetEvent = new AsyncAutoResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);

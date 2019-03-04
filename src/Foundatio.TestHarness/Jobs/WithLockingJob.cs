@@ -26,7 +26,7 @@ namespace Foundatio.Tests.Jobs {
         protected override async Task<JobResult> RunInternalAsync(JobContext context) {
             RunCount++;
 
-            await SystemClock.SleepAsync(150, context.CancellationToken);
+            await Time.DelayAsync(150, context.CancellationToken);
             Assert.True(await _locker.IsLockedAsync("WithLockingJob"));
 
             return JobResult.Success;

@@ -36,17 +36,17 @@ namespace Foundatio.Lock {
             string lockId = Guid.NewGuid().ToString("N");
             var sw = Stopwatch.StartNew();
             do {
-                string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
+                string cacheKey = GetCacheKey(resource, Time.UtcNow);
 
                 try {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                        _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", Time.UtcNow.ToString("mm:ss.fff"), Time.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                     if (hitCount <= _maxHitsPerPeriod - 1) {
-                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
+                        hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, Time.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
 
                         // make sure someone didn't beat us to it.
                         if (hitCount <= _maxHitsPerPeriod) {
@@ -62,13 +62,13 @@ namespace Foundatio.Lock {
                     if (cancellationToken.IsCancellationRequested)
                         break;
 
-                    var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
-                    if (sleepUntil > SystemClock.UtcNow) {
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - SystemClock.UtcNow);
-                        await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
+                    var sleepUntil = Time.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
+                    if (sleepUntil > Time.UtcNow) {
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - Time.UtcNow);
+                        await Time.DelayAsync(sleepUntil - Time.UtcNow, cancellationToken).AnyContext();
                     } else {
                         if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep.");
-                        await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
+                        await Time.DelayAsync(50, cancellationToken).AnyContext();
                     }
                 } catch (OperationCanceledException) {
                     return null;
@@ -78,7 +78,7 @@ namespace Foundatio.Lock {
                     if (errors >= 3)
                         break;
 
-                    await SystemClock.SleepSafeAsync(50, cancellationToken).AnyContext();
+                    await Time.SafeDelayAsync(50, cancellationToken).AnyContext();
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
@@ -96,7 +96,7 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string resource) {
-            string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
+            string cacheKey = GetCacheKey(resource, Time.UtcNow);
             long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
             return hitCount >= _maxHitsPerPeriod;
         }

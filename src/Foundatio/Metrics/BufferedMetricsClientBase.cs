@@ -86,7 +86,7 @@ namespace Foundatio.Metrics {
             try {
                 _sendingMetrics = true;
 
-                var startTime = SystemClock.UtcNow;
+                var startTime = Time.UtcNow;
                 var entries = new List<MetricEntry>();
                 while (_queue.TryDequeue(out var entry)) {
                     entries.Add(entry);
@@ -200,7 +200,7 @@ namespace Foundatio.Metrics {
 
             long currentCount = count;
             var resetEvent = new AsyncAutoResetEvent(false);
-            var start = SystemClock.UtcNow;
+            var start = Time.UtcNow;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             using (Counted.AddHandler((s, e) => {
@@ -227,7 +227,7 @@ namespace Foundatio.Metrics {
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, count, currentCount <= 0, SystemClock.UtcNow.Subtract(start));
+                _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, count, currentCount <= 0, Time.UtcNow.Subtract(start));
 
             return currentCount <= 0;
         }
@@ -240,7 +240,7 @@ namespace Foundatio.Metrics {
 
         [DebuggerDisplay("Date: {EnqueuedDate} Type: {Type} Name: {Name} Counter: {Counter} Gauge: {Gauge} Timing: {Timing}")]
         protected class MetricEntry {
-            public DateTime EnqueuedDate { get; } = SystemClock.UtcNow;
+            public DateTime EnqueuedDate { get; } = Time.UtcNow;
             public string Name { get; set; }
             public MetricType Type { get; set; }
             public int Counter { get; set; }

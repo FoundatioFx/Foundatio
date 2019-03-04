@@ -59,7 +59,7 @@ namespace Foundatio.Tests.Metrics {
 
         private async Task AssertCounterAsync(IMetricsClientStats client, string name, long expected) {
             await Run.WithRetriesAsync(async () => {
-                long actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
+                long actual = await client.GetCounterCountAsync(name, Time.UtcNow.Subtract(TimeSpan.FromHours(1)));
                 Assert.Equal(expected, actual);
             }, 8, logger: _logger);
         }
@@ -72,12 +72,12 @@ namespace Foundatio.Tests.Metrics {
                 using (var behavior = new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(25), loggerFactory: Log)) {
                     using (var queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> { Behaviors = new [] { behavior }, LoggerFactory = Log })) {
                         await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
-                        await SystemClock.SleepAsync(50);
+                        await Time.DelayAsync(50);
                         var entry = await queue.DequeueAsync(TimeSpan.Zero);
-                        await SystemClock.SleepAsync(15);
+                        await Time.DelayAsync(15);
                         await entry.CompleteAsync();
 
-                        await SystemClock.SleepAsync(100); // give queue metrics time
+                        await Time.DelayAsync(100); // give queue metrics time
                         await metrics.FlushAsync();
                         var queueStats = await stats.GetQueueStatsAsync("simpleworkitem");
                         Assert.Equal(1, queueStats.Count.Max);
@@ -99,36 +99,36 @@ namespace Foundatio.Tests.Metrics {
 
                 metrics.Counter("c1");
                 await metrics.FlushAsync();
-                var counter = await stats.GetCounterStatsAsync("c1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                var counter = await stats.GetCounterStatsAsync("c1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(1, counter.Count);
 
                 metrics.Counter("c1", 5);
                 await metrics.FlushAsync();
-                counter = await stats.GetCounterStatsAsync("c1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                counter = await stats.GetCounterStatsAsync("c1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(6, counter.Count);
 
                 metrics.Gauge("g1", 5.34);
                 await metrics.FlushAsync();
-                var gauge = await stats.GetGaugeStatsAsync("g1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                var gauge = await stats.GetGaugeStatsAsync("g1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(5.34, gauge.Last);
                 Assert.Equal(5.34, gauge.Max);
 
                 metrics.Gauge("g1", 2.534);
                 await metrics.FlushAsync();
-                gauge = await stats.GetGaugeStatsAsync("g1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                gauge = await stats.GetGaugeStatsAsync("g1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(2.534, gauge.Last);
                 Assert.Equal(5.34, gauge.Max);
 
                 metrics.Timer("t1", 50788);
                 await metrics.FlushAsync();
-                var timer = await stats.GetTimerStatsAsync("t1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                var timer = await stats.GetTimerStatsAsync("t1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(1, timer.Count);
                 Assert.Equal(50788, timer.TotalDuration);
 
                 metrics.Timer("t1", 98);
                 metrics.Timer("t1", 102);
                 await metrics.FlushAsync();
-                timer = await stats.GetTimerStatsAsync("t1", SystemClock.UtcNow.AddMinutes(-5), SystemClock.UtcNow);
+                timer = await stats.GetTimerStatsAsync("t1", Time.UtcNow.AddMinutes(-5), Time.UtcNow);
                 Assert.Equal(3, timer.Count);
                 Assert.Equal(50788 + 98 + 102, timer.TotalDuration);
             }
@@ -142,33 +142,33 @@ namespace Foundatio.Tests.Metrics {
                     return;
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await Time.DelayAsync(TimeSpan.FromMilliseconds(50));
                     metrics.Counter(CounterName);
                 });
 
                 var sw = Stopwatch.StartNew();
                 var task = metrics.WaitForCounterAsync(CounterName, 1, TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
+                await Time.DelayAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, $"Expected at least 1 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await Time.DelayAsync(TimeSpan.FromMilliseconds(50));
                     metrics.Counter(CounterName);
                 });
 
                 sw.Restart();
                 task = metrics.WaitForCounterAsync(CounterName, timeout: TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
+                await Time.DelayAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, $"Expected at least 2 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 Task.Run(async () => {
-                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                    await Time.DelayAsync(TimeSpan.FromMilliseconds(50));
                     metrics.Counter(CounterName, 2);
                 });
 
                 sw.Restart();
                 task = metrics.WaitForCounterAsync(CounterName, 2, TimeSpan.FromMilliseconds(500));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
+                await Time.DelayAsync(TimeSpan.FromMilliseconds(100));
                 Assert.True(await task, $"Expected at least 4 count within 500 ms... Took: {sw.Elapsed:g}");
 
                 using(var timeoutCancellationTokenSource = new CancellationTokenSource(500)){
@@ -177,7 +177,7 @@ namespace Foundatio.Tests.Metrics {
                         metrics.Counter(CounterName);
                         return Task.CompletedTask;
                     }, cancellationToken: timeoutCancellationTokenSource.Token);
-                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(500));
+                    await Time.DelayAsync(TimeSpan.FromMilliseconds(500));
                     Assert.True(await task, $"Expected at least 5 count within 500 ms... Took: {sw.Elapsed:g}");
                 }
 

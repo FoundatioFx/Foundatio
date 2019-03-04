@@ -352,7 +352,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var expiresAt = SystemClock.UtcNow.AddMilliseconds(300);
+                var expiresAt = Time.UtcNow.AddMilliseconds(300);
                 bool success = await cache.SetAsync("test", 1, expiresAt);
                 Assert.True(success);
                 success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
@@ -360,7 +360,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
                 Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
 
-                await SystemClock.SleepAsync(500);
+                await Time.DelayAsync(500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
                 Assert.Null(await cache.GetExpirationAsync("test"));
                 Assert.False((await cache.GetAsync<int>("test2")).HasValue);
@@ -376,9 +376,9 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                using (TestSystemClock.Install()) {
+                using (var time = Time.UseTestTime()) {
                     var now = DateTime.UtcNow;
-                    SystemClock.Test.SetFixedTime(now);
+                    time.SetFrozenTime(now);
 
                     var expires = DateTime.MaxValue - now.AddDays(1);
                     Assert.True(await cache.SetAsync("test1", 1, expires));
@@ -435,7 +435,7 @@ namespace Foundatio.Tests.Caching {
 
                 Assert.Equal(1, newVal);
 
-                await SystemClock.SleepAsync(1500);
+                await Time.DelayAsync(1500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
             }
         }
@@ -517,7 +517,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                DateTime value = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
+                DateTime value = Time.UtcNow.Floor(TimeSpan.FromSeconds(1));
                 long unixTimeValue = value.ToUnixTimeSeconds();
                 Assert.True(await cache.SetUnixTimeSecondsAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
@@ -525,7 +525,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(value.Ticks, actual.Ticks);
                 Assert.Equal(value.Kind, actual.Kind);
 
-                value = SystemClock.Now.Floor(TimeSpan.FromMilliseconds(1));
+                value = Time.Now.Floor(TimeSpan.FromMilliseconds(1));
                 unixTimeValue = value.ToUnixTimeMilliseconds();
                 Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
@@ -533,7 +533,7 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(value.Ticks, actual.Ticks);
                 Assert.Equal(value.Kind, actual.Kind);
 
-                value = SystemClock.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+                value = Time.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
                 unixTimeValue = value.ToUnixTimeMilliseconds();
                 Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
@@ -669,7 +669,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = SystemClock.UtcNow;
+                var start = Time.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
@@ -681,7 +681,7 @@ namespace Foundatio.Tests.Caching {
                     metrics.Counter("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, Time.UtcNow);
             }
         }
 
@@ -693,7 +693,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = SystemClock.UtcNow;
+                var start = Time.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
@@ -708,7 +708,7 @@ namespace Foundatio.Tests.Caching {
                     metrics.Counter("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, Time.UtcNow);
             }
         }
 
@@ -720,7 +720,7 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                var start = SystemClock.UtcNow;
+                var start = Time.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 for (int i = 0; i < itemCount; i++) {
@@ -758,7 +758,7 @@ namespace Foundatio.Tests.Caching {
                     metrics.Counter("work");
                 }
 
-                var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+                var workCounter = metrics.GetCounterStatsAsync("work", start, Time.UtcNow);
             }
         }
     }

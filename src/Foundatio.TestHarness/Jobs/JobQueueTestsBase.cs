@@ -27,12 +27,12 @@ namespace Foundatio.Tests.Jobs {
                 await queue.DeleteQueueAsync();
 
                 var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem {
-                    Created = SystemClock.UtcNow,
+                    Created = Time.UtcNow,
                     Path = "somepath" + index
                 }));
 
                 var job = new SampleQueueJob(queue, null, Log);
-                await SystemClock.SleepAsync(10);
+                await Time.DelayAsync(10);
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
                 var stats = await queue.GetQueueStatsAsync();
@@ -53,14 +53,14 @@ namespace Foundatio.Tests.Jobs {
                 var enqueueTask = Run.InParallelAsync(workItemCount, index => {
                     _logger.LogInformation($"Enqueue #{index}");
                     return queue.EnqueueAsync(new SampleQueueWorkItem {
-                        Created = SystemClock.UtcNow,
+                        Created = Time.UtcNow,
                         Path = "somepath" + index
                     });  
                 });
 
                 var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions()), allowedLockCount, TimeSpan.FromDays(1), Log);
                 var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
-                await SystemClock.SleepAsync(10);
+                await Time.DelayAsync(10);
                 _logger.LogInformation("Starting RunUntilEmptyAsync");
                 await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
                 _logger.LogInformation("Done RunUntilEmptyAsync");
@@ -95,7 +95,7 @@ namespace Foundatio.Tests.Jobs {
                     var enqueueTask = Run.InParallelAsync(workItemCount, index => {
                         var queue = queues[RandomData.GetInt(0, jobCount - 1)];
                         return queue.EnqueueAsync(new SampleQueueWorkItem {
-                            Created = SystemClock.UtcNow,
+                            Created = Time.UtcNow,
                             Path = RandomData.GetString()
                         });
                     });

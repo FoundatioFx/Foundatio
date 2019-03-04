@@ -24,7 +24,7 @@ namespace Foundatio.Tests.Metrics {
 
         [Fact]
         public override Task CanWaitForCounterAsync() {
-            using (TestSystemClock.Install()) {
+            using (Time.UseTestTime()) {
                 return base.CanWaitForCounterAsync();
             }
         }

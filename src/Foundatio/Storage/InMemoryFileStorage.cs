@@ -83,8 +83,8 @@ namespace Foundatio.Storage {
 
             lock (_lock) {
                 _storage[path] = Tuple.Create(new FileSpec {
-                    Created = SystemClock.UtcNow,
-                    Modified = SystemClock.UtcNow,
+                    Created = Time.UtcNow,
+                    Modified = Time.UtcNow,
                     Path = path,
                     Size = contents.Length
                 }, contents);
@@ -110,7 +110,7 @@ namespace Foundatio.Storage {
 
                 _storage[newPath] = _storage[path];
                 _storage[newPath].Item1.Path = newPath;
-                _storage[newPath].Item1.Modified = SystemClock.UtcNow;
+                _storage[newPath].Item1.Modified = Time.UtcNow;
                 _storage.Remove(path);
             }
 
@@ -131,7 +131,7 @@ namespace Foundatio.Storage {
 
                 _storage[targetPath] = _storage[path];
                 _storage[targetPath].Item1.Path = targetPath;
-                _storage[targetPath].Item1.Modified = SystemClock.UtcNow;
+                _storage[targetPath].Item1.Modified = Time.UtcNow;
             }
 
             return Task.FromResult(true);

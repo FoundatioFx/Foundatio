@@ -35,7 +35,7 @@ namespace Foundatio.Tests.Locks {
                 Assert.NotNull(lock1);
                 Assert.True(await locker.IsLockedAsync("test"));
                 var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
+                await Time.DelayAsync(TimeSpan.FromMilliseconds(250));
                 Assert.Null(await lock2Task);
             } finally {
                 await lock1.ReleaseAsync();
@@ -149,49 +149,59 @@ namespace Foundatio.Tests.Locks {
         }
 
         private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
-            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
+            return await locker.TryUsingAsync("DoLockedWork", async () => await Time.DelayAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
         }
 
         public virtual async Task WillThrottleCallsAsync() {
             Log.MinimumLevel = LogLevel.Trace;
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
             Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
-            
-            const int allowedLocks = 25;
 
-            var period = TimeSpan.FromSeconds(2);
-            var locker = GetThrottlingLockProvider(allowedLocks, period);
-            if (locker == null)
-                return;
+            using (var time = Time.UseTestTime()) {
+                const int allowedLocks = 25;
 
-            string lockName = Guid.NewGuid().ToString("N").Substring(10);
+                var period = TimeSpan.FromSeconds(2);
+                var locker = GetThrottlingLockProvider(allowedLocks, period);
+                if (locker == null)
+                    return;
 
-            // sleep until start of throttling period
-            while (SystemClock.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
-                Thread.Sleep(10);
-            
-            var sw = Stopwatch.StartNew();
-            for (int i = 1; i <= allowedLocks; i++) {
-                _logger.LogInformation("Allowed Locks: {Id}", i);
-                var l = await locker.AcquireAsync(lockName);
-                Assert.NotNull(l);
+                string lockName = Guid.NewGuid().ToString("N").Substring(10);
+
+                var startTime = new DateTime(2019, 2, 27, 12, 0, 0);
+                time.SetFrozenTime(startTime);
+
+                var sw = Stopwatch.StartNew();
+                for (int i = 1; i <= allowedLocks; i++) {
+                    _logger.LogInformation("Allowed Locks: {Id}", i);
+                    var l = await locker.AcquireAsync(lockName);
+                    Assert.NotNull(l);
+                }
+
+                sw.Stop();
+
+                _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed:g}", allowedLocks, sw.Elapsed);
+                Assert.True(sw.Elapsed.TotalSeconds < 1);
+
+                sw.Restart();
+                var result = await locker.AcquireAsync(lockName, cancellationToken: new CancellationToken(true));
+                sw.Stop();
+                _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
+                Assert.Null(result);
+                
+                time.AddTime(period);
+                sw.Restart();
+                result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(1));
+                sw.Stop();
+                _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
+                Assert.NotNull(result);
+                
+                time.AddTime(period);
+                sw.Restart();
+                result = await locker.AcquireAsync(lockName, cancellationToken: new CancellationToken(true));
+                sw.Stop();
+                _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
+                Assert.NotNull(result);
             }
-            sw.Stop();
-
-            _logger.LogInformation("Time to acquire {AllowedLocks} locks: {Elapsed:g}", allowedLocks, sw.Elapsed);
-            Assert.True(sw.Elapsed.TotalSeconds < 1);
-
-            sw.Restart();
-            var result = await locker.AcquireAsync(lockName, cancellationToken: new CancellationToken(true));
-            sw.Stop();
-            _logger.LogInformation("Total acquire time took to attempt to get throttled lock: {Elapsed:g}", sw.Elapsed);
-            Assert.Null(result);
-
-            sw.Restart();
-            result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2.5));
-            sw.Stop();
-            _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
-            Assert.NotNull(result);
         }
     }
 }

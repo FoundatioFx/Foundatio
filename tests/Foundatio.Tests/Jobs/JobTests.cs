@@ -22,7 +22,7 @@ namespace Foundatio.Tests.Jobs {
             var job = new HelloWorldJob(Log);
             var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
             var resultTask = new JobRunner(job, Log).RunAsync(timeoutCancellationTokenSource.Token);
-            await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
+            await Time.DelayAsync(TimeSpan.FromSeconds(2));
             Assert.True(await resultTask);
         }
 
@@ -91,7 +91,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            using (TestSystemClock.Install()) {
+            using (var time = Time.UseTestTime()) {
                 var job = new HelloWorldJob(Log);
                 var timeoutCancellationTokenSource = new CancellationTokenSource(100);
                 await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
@@ -100,7 +100,7 @@ namespace Foundatio.Tests.Jobs {
 
                 timeoutCancellationTokenSource = new CancellationTokenSource(500);
                 var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
+                await Time.DelayAsync(TimeSpan.FromSeconds(1));
                 await runnerTask;
             }
         }
@@ -137,11 +137,11 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobsWithInterval() {
-            using (TestSystemClock.Install()) {
+            using (var testTime = Time.UseTestTime()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                testTime.SetFrozenTime(time);
+                testTime.UseFakeSleep();
 
                 var job = new HelloWorldJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -149,17 +149,17 @@ namespace Foundatio.Tests.Jobs {
                 await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
 
                 Assert.Equal(2, job.RunCount);
-                Assert.Equal(interval, (SystemClock.UtcNow - time));
+                Assert.Equal(interval, (Time.UtcNow - time));
             }
         }
 
         [Fact]
         public async Task CanRunJobsWithIntervalBetweenFailingJob() {
-            using (TestSystemClock.Install()) {
+            using (var testTime = Time.UseTestTime()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                testTime.SetFrozenTime(time);
+                testTime.UseFakeSleep();
 
                 var job = new FailingJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -167,7 +167,7 @@ namespace Foundatio.Tests.Jobs {
                 await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
 
                 Assert.Equal(2, job.RunCount);
-                Assert.Equal(interval, (SystemClock.UtcNow - time));
+                Assert.Equal(interval, (Time.UtcNow - time));
             }
         }
 

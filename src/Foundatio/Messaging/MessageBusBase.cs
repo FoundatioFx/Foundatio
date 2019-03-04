@@ -181,9 +181,9 @@ namespace Foundatio.Messaging {
             if (delay <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(delay));
 
-            var sendTime = SystemClock.UtcNow.SafeAdd(delay);
+            var sendTime = Time.UtcNow.SafeAdd(delay);
             Task.Factory.StartNew(async () => {
-                await SystemClock.SleepSafeAsync(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
+                await Time.SafeDelayAsync(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
 
                 bool isTraceLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
                 if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {

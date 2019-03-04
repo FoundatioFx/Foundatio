@@ -43,19 +43,19 @@ namespace Foundatio.Tests.Queue {
                 var disposables = new List<IDisposable>(5);
                 try {
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
+                        await Time.DelayAsync(250);
                         _logger.LogInformation("First Enqueuing.");
                     }));
                     disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
+                        await Time.DelayAsync(250);
                         _logger.LogInformation("Second Enqueuing.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
+                        await Time.DelayAsync(250);
                         _logger.LogInformation("First.");
                     }));
                     disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
+                        await Time.DelayAsync(250);
                         _logger.LogInformation("Second.");
                     }));
 
@@ -127,7 +127,7 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public override Task WorkItemsWillTimeoutAsync() {
-            using (TestSystemClock.Install()) {
+            using (Time.UseTestTime()) {
                 return base.WorkItemsWillTimeoutAsync();
             }
         }

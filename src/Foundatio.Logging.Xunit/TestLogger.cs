@@ -22,7 +22,7 @@ namespace Foundatio.Logging.Xunit {
 
             object[] scopes = CurrentScopeStack.Reverse().ToArray();
             var logEntry = new LogEntry {
-                Date = SystemClock.UtcNow,
+                Date = Time.UtcNow,
                 LogLevel = logLevel,
                 EventId = eventId,
                 State = state,
