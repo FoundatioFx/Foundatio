@@ -11,8 +11,6 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             return new RabbitMQMessageBus(o => {
                 o.ConnectionString("amqp://localhost");
-                o.Topic("test-messages");
-                o.ExchangeName("FoundatioExchange");
                 o.LoggerFactory(Log);
 
                 if (config != null)

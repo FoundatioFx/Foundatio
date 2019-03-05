@@ -56,12 +56,12 @@ namespace Foundatio.Messaging {
                     CreateRegularExchange(_subscriberChannel);
                 }
 
-                CreateQueue(_subscriberChannel);
+                var queueName = CreateQueue(_subscriberChannel);
                 var consumer = new EventingBasicConsumer(_subscriberChannel);
                 consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
 
-                _subscriberChannel.BasicConsume(_options.Topic, true, consumer);
+                _subscriberChannel.BasicConsume(queueName, true, consumer);
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
             }
@@ -162,7 +162,7 @@ namespace Foundatio.Messaging {
             }
 
             // The publication occurs with mandatory=false
-            _publisherChannel.BasicPublish(_options.ExchangeName, String.Empty, basicProperties, data);
+            _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
             return Task.CompletedTask;
         }
 
@@ -185,11 +185,11 @@ namespace Foundatio.Messaging {
                 return true;
 
             try {
-                // This exchange is a delayed exchange (direct). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
-                // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/ . Please read the *Performance
-                // Impact* of the delayed exchange type.
+                // This exchange is a delayed exchange (fanout). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+                // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/
+                // Please read the *Performance Impact* of the delayed exchange type.
                 var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
-                model.ExchangeDeclare(_options.ExchangeName, "x-delayed-message", _options.IsExchangeDurable, _options.IsExchangeExclusive, args);
+                model.ExchangeDeclare(_options.Topic, "x-delayed-message", _options.IsDurable, false, args);
             } catch (OperationInterruptedException ex) {
                 if (ex.ShutdownReason.ReplyCode == 503) {
                     if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(ex, "Not able to create x-delayed-type exchange");
@@ -202,7 +202,7 @@ namespace Foundatio.Messaging {
         }
 
         private void CreateRegularExchange(IModel model) {
-            model.ExchangeDeclare(_options.ExchangeName, ExchangeType.Fanout, _options.IsExchangeDurable, _options.IsExchangeExclusive, null);
+            model.ExchangeDeclare(_options.Topic, ExchangeType.Fanout, _options.IsDurable, false, null);
         }
 
         /// <summary>
@@ -212,16 +212,17 @@ namespace Foundatio.Messaging {
         /// exchange and not use the default one. Note that a queue can be dedicated to one or more routing keys.
         /// </summary>
         /// <param name="model">channel</param>
-        private void CreateQueue(IModel model) {
+        private string CreateQueue(IModel model) {
             // Setup the queue where the messages will reside - it requires the queue name and durability.
             // Durable (the queue will survive a broker restart)
-            // Exclusive (used by only one connection and the queue will be deleted when that connection closes)
-            // Auto-delete (queue is deleted when last consumer unsubscribes)
             // Arguments (some brokers use it to implement additional features like message TTL)
-            model.QueueDeclare(_options.Topic, _options.IsQueueDurable, _options.IsQueueExclusive, _options.IsQueueAutoDeleteEnabled, _options.Arguments);
+            var result = model.QueueDeclare(String.Empty, _options.IsDurable, true, true, _options.Arguments);
+            var queueName = result.QueueName;
 
             // bind the queue with the exchange.
-            model.QueueBind(_options.Topic, _options.ExchangeName, "");
+            model.QueueBind(queueName, _options.Topic, "");
+
+            return queueName;
         }
 
         public override void Dispose() {
