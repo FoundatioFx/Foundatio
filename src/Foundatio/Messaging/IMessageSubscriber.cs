@@ -17,31 +17,23 @@ namespace Foundatio.Messaging {
     public interface IMessageSubscriptionOptions {
         // message type for the subscription
         Type MessageType { get; }
-        // topic to use for subscription, if left blank it will be calculated using conventions from the message type
-        string Topic { get; set; }
         // subscription id, for worker queues use the same subscription id for all subscriptions and the messages will be round robin'd
         string SubscriptionId { get; set; }
         // how many messages should be fetched at a time
-        int PrefetchSize { get; set; }
+        int? PrefetchSize { get; set; }
         // what priority level messages should this subscription receive
-        int Priority { get; set; }
+        int? Priority { get; set; }
         // how long should the message remain in flight before timing out
-        TimeSpan TimeToLive { get; set; }
+        TimeSpan? TimeToLive { get; set; }
         // how messages should be acknowledged
-        AcknowledgementStrategy AcknowledgementStrategy { get; set; }
-    }
-
-    public enum AcknowledgementStrategy {
-        Manual, // consumer needs to do it
-        Automatic, // auto acknowledge after handler completes successfully and auto reject if handler throws
-        FireAndForget // acknowledge before handler runs
+        AcknowledgementStrategy? AcknowledgementStrategy { get; set; }
     }
 
     public interface IMessageSubscription : IDisposable {
-        // the subscription id
+        // subscription id
         string Id { get; }
-        // topic that this subscription is listening to
-        string Topic { get; }
+        // name of the queue that this subscription is listening to
+        string QueueName { get; }
         // when was the message created
         DateTime CreatedUtc { get; }
     }
