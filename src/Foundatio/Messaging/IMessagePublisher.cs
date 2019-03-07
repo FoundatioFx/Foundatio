@@ -27,6 +27,8 @@ namespace Foundatio.Messaging {
         object GetBody();
         // when the message should expire
         DateTime? ExpiresAtUtc { get; }
+        // when the message should be delivered when using delayed delivery
+        DateTime? DeliverAtUtc { get; }
         // additional data to store with the message
         DataDictionary Data { get; }
     }
