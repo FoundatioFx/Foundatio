@@ -19,17 +19,31 @@ namespace Foundatio.Messaging {
         // used for rpc (request/reply)
         string ReplyTo { get; }
         // message priority
-        int Priority { get; }
-        // topic the message will be sent to
-        string Topic { get; }
+        int? Priority { get; }
         // message type, will be converted to string and stored with the message for deserialization
         Type MessageType { get; }
         // message body
         object GetBody();
         // when the message should expire
-        DateTime ExpiresAtUtc { get; }
+        DateTime? ExpiresAtUtc { get; }
         // additional data to store with the message
         DataDictionary Data { get; }
+    }
+    
+    public delegate IMessageQueueOptions GetMessageQueueOptions(IMessage message);
+
+    public interface IMessageQueueOptions {
+        bool IsDurable { get; }
+        string QueueName { get; set; }
+        TimeSpan DefaultTimeToLive { get; set; }
+        AcknowledgementStrategy AcknowledgementStrategy { get; set; }
+        // need something for how to handle retries and deadletter
+    }
+
+    public enum AcknowledgementStrategy {
+        Manual, // consumer needs to do it
+        Automatic, // auto acknowledge after handler completes successfully and auto reject if handler throws
+        FireAndForget // acknowledge before handler runs
     }
 
     public static class MessagePublisherExtensions {
