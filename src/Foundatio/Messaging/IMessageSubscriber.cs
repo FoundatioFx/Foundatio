@@ -4,9 +4,17 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
+    // save our subscription handlers in memory so that they can be restored if the connection is interupted
+    
     public interface IMessageSubscriber {
         // there will be extensions that allow subscribing via generic message type parameters with and without the message context wrapper
         Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, Task> handler, IMessageSubscriptionOptions options);
+        
+        // the methods below will be extension methods that call the method above
+        Task<IMessageSubscription> SubscribeAsync<T>(Func<T, Task> handler) where T: class;
+        Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, Task> handler) where T: class;
+        Task<IMessageSubscription> SubscribeAsync<T>(Action<T> handler) where T: class;
+        Task<IMessageSubscription> SubscribeAsync<T>(Action<IMessageContext<T>> handler) where T: class;
     }
     
     public interface IMessageSubscriptionOptions {
@@ -18,7 +26,7 @@ namespace Foundatio.Messaging {
         // subscription id
         string Id { get; }
         // name of the queue that this subscription is listening to
-        string QueueName { get; }
+        Type MessageType { get; }
         // when was the message created
         DateTime CreatedUtc { get; }
     }
@@ -34,6 +42,7 @@ namespace Foundatio.Messaging {
         Task AcknowledgeAsync();
         // reject the message as not having been successfully processed
         Task RejectAsync();
+        // used to cancel processing of the current message
         CancellationToken CancellationToken { get; }
     }
 
