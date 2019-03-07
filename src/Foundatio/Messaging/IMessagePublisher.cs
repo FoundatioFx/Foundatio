@@ -18,8 +18,6 @@ namespace Foundatio.Messaging {
         string CorrelationId { get; }
         // used for rpc (request/reply)
         string ReplyTo { get; }
-        // message priority
-        int? Priority { get; }
         // message type, will be converted to string and stored with the message for deserialization
         Type MessageType { get; }
         // message body
@@ -30,12 +28,20 @@ namespace Foundatio.Messaging {
         DataDictionary Data { get; }
     }
     
-    public delegate IMessageQueueOptions GetMessageQueueOptions(IMessage message);
+    public delegate IMessageQueueOptions GetMessageQueueOptions(Type messageType);
 
     public interface IMessageQueueOptions {
-        bool IsDurable { get; }
+        // whether messages will survive transport restart
+        bool IsDurable { get; set; }
+        // if worker, subscriptions will default to using the same subscription id and 
+        bool IsWorker { get; set; }
+        // the name of the queue that the messages are stored in
         string QueueName { get; set; }
-        TimeSpan DefaultTimeToLive { get; set; }
+        // how long should the message remain in flight before timing out
+        TimeSpan TimeToLive { get; set; }
+        // how many messages should be fetched at a time
+        int PrefetchSize { get; set; }
+        // how messages should be acknowledged
         AcknowledgementStrategy AcknowledgementStrategy { get; set; }
         // need something for how to handle retries and deadletter
     }
