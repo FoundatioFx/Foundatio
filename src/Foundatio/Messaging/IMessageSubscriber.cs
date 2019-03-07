@@ -5,7 +5,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     // save our subscription handlers in memory so that they can be restored if the connection is interupted
-    
+
     public interface IMessageSubscriber {
         // there will be extensions that allow subscribing via generic message type parameters with and without the message context wrapper
         Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, Task> handler, IMessageSubscriptionOptions options);
@@ -34,6 +34,8 @@ namespace Foundatio.Messaging {
     public interface IMessageContext : IMessage, IMessagePublisher, IDisposable {
         // message id
         string Id { get; }
+        // message subscription id that received the message
+        string SubscriptionId { get; }
         // when the message was originally created
         DateTime CreatedUtc { get; }
         // number of times this message has been delivered
