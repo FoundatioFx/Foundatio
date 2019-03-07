@@ -66,9 +66,10 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
+        protected virtual Task<IMessageSubscription> SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler) where T : class {
+            var messageSubscription = new MessageSubscription();
             var subscriber = new Subscriber {
-                CancellationToken = cancellationToken,
+                CancellationToken = messageSubscription.CancellationToken,
                 Type = typeof(T),
                 Action = (message, token) => {
                     if (!(message is T)) {
@@ -77,21 +78,22 @@ namespace Foundatio.Messaging {
                         return Task.CompletedTask;
                     }
 
-                    return handler((T)message, cancellationToken);
+                    return handler((T)message, messageSubscription.CancellationToken);
                 }
             };
 
             if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
-            return Task.CompletedTask;
+            return Task.FromResult<IMessageSubscription>(messageSubscription);
         }
 
-        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
+        public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
-            await SubscribeImplAsync(handler, cancellationToken).AnyContext();
+            var messageSubscription = await SubscribeImplAsync(handler).AnyContext();
+            return messageSubscription;
         }
 
         protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
@@ -234,6 +236,16 @@ namespace Foundatio.Messaging {
             public bool IsAssignableFrom(Type type) {
                 return _assignableTypesCache.GetOrAdd(type, t => Type.GetTypeInfo().IsAssignableFrom(t));
             }
+        }
+    }
+
+    public class MessageSubscription : IMessageSubscription {
+        private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+
+        public CancellationToken CancellationToken => _cancellationTokenSource.Token;
+        
+        public void Dispose() {
+            _cancellationTokenSource.Cancel();
         }
     }
 }
