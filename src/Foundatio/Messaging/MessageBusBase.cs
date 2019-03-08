@@ -17,12 +17,14 @@ namespace Foundatio.Messaging {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
+        protected readonly ISerializer _serializer;
         private bool _isDisposed;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
@@ -36,7 +38,7 @@ namespace Foundatio.Messaging {
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
         }
-
+ 
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
         protected string GetMappedMessageType(Type messageType) {
             return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
@@ -184,6 +186,15 @@ namespace Foundatio.Messaging {
                 return null;
 
             return GetMappedMessageType(message.Type);
+        }
+       
+        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+
+            SendDelayedMessage(messageType, message, delay);
+
+            return Task.CompletedTask;
         }
 
         protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
