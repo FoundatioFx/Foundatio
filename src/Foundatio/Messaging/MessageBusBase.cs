@@ -94,8 +94,20 @@ namespace Foundatio.Messaging {
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
+        protected bool MessageTypeHasSubscribers(Type messageType) {
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
+            return subscribers.Count == 0;
+        }
+        
         protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
             var messageType = GetMessageBodyType(message);
+            if (messageType == null)
+                return;
+            
+            SendMessageToSubscribers(messageType, message.Data, serializer);
+        }
+
+        protected void SendMessageToSubscribers(Type messageType, byte[] data, ISerializer serializer) {
             if (messageType == null)
                 return;
 
@@ -108,7 +120,7 @@ namespace Foundatio.Messaging {
 
             object body;
             try {
-                body = serializer.Deserialize(message.Data, messageType);
+                body = serializer.Deserialize(data, messageType);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "Error deserializing message body: {Message}", ex.Message);
