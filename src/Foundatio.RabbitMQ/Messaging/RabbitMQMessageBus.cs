@@ -86,6 +86,10 @@ namespace Foundatio.Messaging {
                 return;
             }
 
+            var messageType = GetMappedMessageType(message.Type);
+            if (messageType == null || MessageTypeHasSubscribers(messageType))
+                return;
+
             SendMessageToSubscribers(message, _serializer);
         }
 
@@ -141,8 +145,12 @@ namespace Foundatio.Messaging {
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 var mappedType = GetMappedMessageType(messageType);
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                return AddDelayedMessageAsync(mappedType, message, delay.Value);
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                
+                AddDelayedMessageAsync(mappedType, message, delay.Value);
+
+                return Task.CompletedTask;
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();

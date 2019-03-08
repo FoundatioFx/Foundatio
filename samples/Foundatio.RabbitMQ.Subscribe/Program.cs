@@ -13,7 +13,7 @@ namespace Foundatio.RabbitMQ.Subscribe {
             for (int i = 0; i < 3; i++) {
                 var messageBus = new RabbitMQMessageBus(new RabbitMQMessageBusOptions { ConnectionString = "amqp://localhost:5672" });
                 messageBuses.Add(messageBus);
-                tasks.Add(messageBus.SubscribeAsync<string>(msg => { Console.WriteLine($"Got subscriber {messageBus.MessageBusId} message: {msg}"); }));
+                tasks.Add(messageBus.SubscribeAsync<MyMessage>(msg => { Console.WriteLine($"Got subscriber {messageBus.MessageBusId} message: {msg.Hey}"); }));
             }
             await Task.WhenAll(tasks);
             Console.ReadLine();

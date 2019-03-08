@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
+    <ProjectReference Include="..\Foundatio.RabbitMQ.Publish\Foundatio.RabbitMQ.Publish.csproj" />
   </ItemGroup>
 </Project>

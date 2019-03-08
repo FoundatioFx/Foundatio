@@ -11,8 +11,9 @@ namespace Foundatio.RabbitMQ.Publish {
                 string message;
                 do {
                     message = Console.ReadLine();
-                    var delay = TimeSpan.FromSeconds(10);
-                    await messageBus.PublishAsync(message, delay);
+                    var delay = TimeSpan.FromSeconds(1);
+                    var body = new MyMessage { Hey = message };
+                    await messageBus.PublishAsync(body, delay);
                     Console.WriteLine("Message sent. Enter new message or press enter to exit:");
                 } while (!String.IsNullOrEmpty(message));
             }
