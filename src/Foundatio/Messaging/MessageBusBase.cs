@@ -98,7 +98,7 @@ namespace Foundatio.Messaging {
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             return subscribers.Count == 0;
         }
-        
+
         protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
             var messageType = GetMessageBodyType(message);
             if (messageType == null)
@@ -213,7 +213,7 @@ namespace Foundatio.Messaging {
 
         public string MessageBusId { get; protected set; }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             if (_isDisposed) {
                 _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;
