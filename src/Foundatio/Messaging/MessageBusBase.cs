@@ -17,12 +17,14 @@ namespace Foundatio.Messaging {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
+        protected readonly ISerializer _serializer;
         private bool _isDisposed;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
+            _serializer = options.Serializer ?? DefaultSerializer.Instance;
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
@@ -36,7 +38,7 @@ namespace Foundatio.Messaging {
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
         }
-
+ 
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
         protected string GetMappedMessageType(Type messageType) {
             return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
@@ -94,8 +96,20 @@ namespace Foundatio.Messaging {
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
+        protected bool MessageTypeHasSubscribers(Type messageType) {
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
+            return subscribers.Count == 0;
+        }
+
         protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
             var messageType = GetMessageBodyType(message);
+            if (messageType == null)
+                return;
+            
+            SendMessageToSubscribers(messageType, message.Data, serializer);
+        }
+
+        protected void SendMessageToSubscribers(Type messageType, byte[] data, ISerializer serializer) {
             if (messageType == null)
                 return;
 
@@ -108,7 +122,7 @@ namespace Foundatio.Messaging {
 
             object body;
             try {
-                body = serializer.Deserialize(message.Data, messageType);
+                body = serializer.Deserialize(data, messageType);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "Error deserializing message body: {Message}", ex.Message);
@@ -173,6 +187,15 @@ namespace Foundatio.Messaging {
 
             return GetMappedMessageType(message.Type);
         }
+       
+        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+
+            SendDelayedMessage(messageType, message, delay);
+
+            return Task.CompletedTask;
+        }
 
         protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
@@ -201,7 +224,7 @@ namespace Foundatio.Messaging {
 
         public string MessageBusId { get; protected set; }
 
-        public void Dispose() {
+        public virtual void Dispose() {
             if (_isDisposed) {
                 _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;
