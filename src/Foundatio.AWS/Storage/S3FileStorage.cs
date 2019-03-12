@@ -168,7 +168,7 @@ namespace Foundatio.Storage {
         public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
             var criteria = GetRequestCriteria(searchPattern);
             int count = 0;
-            const int PAGE_SIZE = 1000;
+            const int PAGE_SIZE = 100;
 
             var listRequest = new ListObjectsV2Request { BucketName = _bucket, Prefix = criteria.Prefix, MaxKeys = PAGE_SIZE };
             var deleteRequest = new DeleteObjectsRequest { BucketName = _bucket };
