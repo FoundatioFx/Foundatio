@@ -8,6 +8,8 @@ namespace Foundatio.Storage {
         public string Bucket { get; set; }
         public AWSCredentials Credentials { get; set; }
         public RegionEndpoint Region { get; set; }
+        public bool? UseChunkEncoding { get; set; }
+        public string ServiceUrl { get; set; }
     }
 
     public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder> {
@@ -56,6 +58,19 @@ namespace Foundatio.Storage {
             return this;
         }
 
+        public S3FileStorageOptionsBuilder UseChunkEncoding(bool useChunkEncoding) {
+            Target.UseChunkEncoding = useChunkEncoding;
+            return this;
+        }
+
+        public S3FileStorageOptionsBuilder ServiceUrl(string serviceUrl) {
+            if (string.IsNullOrEmpty(serviceUrl))
+                throw new ArgumentNullException(nameof(serviceUrl));
+            Target.ServiceUrl = serviceUrl;
+            return this;
+        }
+
+
         public override S3FileStorageOptions Build() {
             if (String.IsNullOrEmpty(Target.ConnectionString))
                 return Target;
@@ -69,6 +84,12 @@ namespace Foundatio.Storage {
 
             if (String.IsNullOrEmpty(Target.Bucket) && !String.IsNullOrEmpty(connectionString.Bucket))
                 Target.Bucket = connectionString.Bucket;
+
+            if (Target.UseChunkEncoding == null &&  connectionString.UseChunkEncoding != null)
+                Target.UseChunkEncoding = connectionString.UseChunkEncoding;
+
+            if (String.IsNullOrEmpty(Target.ServiceUrl) && !String.IsNullOrEmpty(connectionString.ServiceUrl))
+                Target.ServiceUrl = connectionString.ServiceUrl;
 
             return Target;
         }

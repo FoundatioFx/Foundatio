@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -16,21 +15,31 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
     public class S3FileStorage : IFileStorage {
-        private readonly AWSCredentials _credentials;
-        private readonly RegionEndpoint _region;
         private readonly string _bucket;
         private readonly ISerializer _serializer;
         private readonly AmazonS3Client _client;
+        private readonly bool _useChunkEncoding;
 
         public S3FileStorage(S3FileStorageOptions options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            _credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
-            _region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
             _bucket = options.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
-            _client = new AmazonS3Client(_credentials, _region);
+            _useChunkEncoding = options.UseChunkEncoding ?? true;
+
+            var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+
+            if (string.IsNullOrEmpty(options.ServiceUrl)) {
+                var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
+                _client = new AmazonS3Client(credentials, region);
+            } else {
+                _client = new AmazonS3Client(
+                    credentials,
+                    new AmazonS3Config {
+                        ServiceURL = options.ServiceUrl
+                    });
+            }
         }
 
         public S3FileStorage(Builder<S3FileStorageOptionsBuilder, S3FileStorageOptions> builder)
@@ -102,7 +111,8 @@ namespace Foundatio.Storage {
                 Key = path.Replace('\\', '/'),
                 AutoResetStreamPosition = false,
                 AutoCloseStream = !stream.CanSeek,
-                InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream)
+                InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream),
+                UseChunkEncoding = _useChunkEncoding
             };
 
             var res = await _client.PutObjectAsync(req, cancellationToken).AnyContext();
