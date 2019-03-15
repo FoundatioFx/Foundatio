@@ -19,6 +19,7 @@ namespace Foundatio.Storage {
         private readonly ISerializer _serializer;
         private readonly AmazonS3Client _client;
         private readonly bool _useChunkEncoding;
+        private readonly S3CannedACL _cannedAcl;
 
         public S3FileStorage(S3FileStorageOptions options) {
             if (options == null)
@@ -27,6 +28,7 @@ namespace Foundatio.Storage {
             _bucket = options.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _useChunkEncoding = options.UseChunkEncoding ?? true;
+            _cannedAcl = options.CannedACL;
 
             var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
@@ -107,6 +109,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(stream));
 
             var req = new PutObjectRequest {
+                CannedACL = _cannedAcl,
                 BucketName = _bucket,
                 Key = path.Replace('\\', '/'),
                 AutoResetStreamPosition = false,
@@ -126,6 +129,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(newPath));
 
             var req = new CopyObjectRequest {
+                CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = path.Replace('\\', '/'),
                 DestinationBucket = _bucket,
@@ -152,6 +156,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(targetPath));
 
             var req = new CopyObjectRequest {
+                CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = path.Replace('\\', '/'),
                 DestinationBucket = _bucket,

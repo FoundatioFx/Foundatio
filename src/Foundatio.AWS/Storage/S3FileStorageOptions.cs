@@ -1,6 +1,7 @@
 ﻿using System;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.S3;
 
 namespace Foundatio.Storage {
     public class S3FileStorageOptions : SharedOptions {
@@ -10,6 +11,7 @@ namespace Foundatio.Storage {
         public RegionEndpoint Region { get; set; }
         public bool? UseChunkEncoding { get; set; }
         public string ServiceUrl { get; set; }
+        public S3CannedACL CannedACL { get; set; }
     }
 
     public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder> {
@@ -70,6 +72,19 @@ namespace Foundatio.Storage {
             return this;
         }
 
+        public S3FileStorageOptionsBuilder CannedACL(S3CannedACL cannedAcl) {
+            if (cannedAcl == null)
+                throw new ArgumentNullException(nameof(cannedAcl));
+            Target.CannedACL = cannedAcl;
+            return this;
+        }
+
+        public S3FileStorageOptionsBuilder CannedACL(string cannedAcl) {
+            if (string.IsNullOrEmpty(cannedAcl))
+                throw new ArgumentNullException(nameof(cannedAcl));
+            Target.CannedACL = S3CannedACL.FindValue(cannedAcl);
+            return this;
+        }
 
         public override S3FileStorageOptions Build() {
             if (String.IsNullOrEmpty(Target.ConnectionString))
@@ -85,11 +100,14 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(Target.Bucket) && !String.IsNullOrEmpty(connectionString.Bucket))
                 Target.Bucket = connectionString.Bucket;
 
-            if (Target.UseChunkEncoding == null &&  connectionString.UseChunkEncoding != null)
+            if (Target.UseChunkEncoding == null && connectionString.UseChunkEncoding != null)
                 Target.UseChunkEncoding = connectionString.UseChunkEncoding;
 
             if (String.IsNullOrEmpty(Target.ServiceUrl) && !String.IsNullOrEmpty(connectionString.ServiceUrl))
                 Target.ServiceUrl = connectionString.ServiceUrl;
+
+            if (Target.CannedACL == null && connectionString.CannedACL != null)
+                Target.CannedACL = connectionString.CannedACL;
 
             return Target;
         }
