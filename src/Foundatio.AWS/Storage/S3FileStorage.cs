@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -39,7 +40,9 @@ namespace Foundatio.Storage {
                 _client = new AmazonS3Client(
                     credentials,
                     new AmazonS3Config {
-                        ServiceURL = options.ServiceUrl
+                        RegionEndpoint = RegionEndpoint.USEast1,
+                        ServiceURL = options.ServiceUrl,
+                        ForcePathStyle = true
                     });
             }
         }
