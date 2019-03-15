@@ -16,21 +16,35 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
     public class S3FileStorage : IFileStorage {
-        private readonly AWSCredentials _credentials;
-        private readonly RegionEndpoint _region;
         private readonly string _bucket;
         private readonly ISerializer _serializer;
         private readonly AmazonS3Client _client;
+        private readonly bool _useChunkEncoding;
+        private readonly S3CannedACL _cannedAcl;
 
         public S3FileStorage(S3FileStorageOptions options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            _credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
-            _region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
             _bucket = options.Bucket;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
-            _client = new AmazonS3Client(_credentials, _region);
+            _useChunkEncoding = options.UseChunkEncoding ?? true;
+            _cannedAcl = options.CannedACL;
+
+            var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+
+            if (string.IsNullOrEmpty(options.ServiceUrl)) {
+                var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
+                _client = new AmazonS3Client(credentials, region);
+            } else {
+                _client = new AmazonS3Client(
+                    credentials,
+                    new AmazonS3Config {
+                        RegionEndpoint = RegionEndpoint.USEast1,
+                        ServiceURL = options.ServiceUrl,
+                        ForcePathStyle = true
+                    });
+            }
         }
 
         public S3FileStorage(Builder<S3FileStorageOptionsBuilder, S3FileStorageOptions> builder)
@@ -98,11 +112,13 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(stream));
 
             var req = new PutObjectRequest {
+                CannedACL = _cannedAcl,
                 BucketName = _bucket,
                 Key = path.Replace('\\', '/'),
                 AutoResetStreamPosition = false,
                 AutoCloseStream = !stream.CanSeek,
-                InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream)
+                InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream),
+                UseChunkEncoding = _useChunkEncoding
             };
 
             var res = await _client.PutObjectAsync(req, cancellationToken).AnyContext();
@@ -116,6 +132,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(newPath));
 
             var req = new CopyObjectRequest {
+                CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = path.Replace('\\', '/'),
                 DestinationBucket = _bucket,
@@ -142,6 +159,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(targetPath));
 
             var req = new CopyObjectRequest {
+                CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = path.Replace('\\', '/'),
                 DestinationBucket = _bucket,
