@@ -6,6 +6,13 @@ using Foundatio.Utility;
 namespace Foundatio.Messaging {
     // save our subscription handlers in memory so that they can be restored if the connection is interupted
 
+    // should we have a transport interface that we implement and then have more concrete things in the public
+    // interface classes?
+    public interface IMessageTransport {
+        Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, Task> handler, IMessageSubscriptionOptions options);
+        Task PublishAsync(IMessage message);
+    }
+
     public interface IMessageSubscriber {
         // there will be extensions that allow subscribing via generic message type parameters with and without the message context wrapper
         Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, Task> handler, IMessageSubscriptionOptions options);
@@ -44,6 +51,8 @@ namespace Foundatio.Messaging {
         Task AcknowledgeAsync();
         // reject the message as not having been successfully processed
         Task RejectAsync();
+        // used to reply to messages that have a replyto specified
+        Task ReplyAsync<T>(T message) where T: class;
         // used to cancel processing of the current message
         CancellationToken CancellationToken { get; }
     }
