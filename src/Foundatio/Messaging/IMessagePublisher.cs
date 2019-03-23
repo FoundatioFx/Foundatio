@@ -29,8 +29,8 @@ namespace Foundatio.Messaging {
         DateTime? ExpiresAtUtc { get; }
         // when the message should be delivered when using delayed delivery
         DateTime? DeliverAtUtc { get; }
-        // additional data to store with the message
-        DataDictionary Data { get; }
+        // additional message data to store with the message
+        DataDictionary Headers { get; }
     }
 
     public static class MessagePublisherExtensions {
@@ -39,3 +39,12 @@ namespace Foundatio.Messaging {
         }
     }
 }
+
+// unified messaging
+//  lots of metrics / stats on messaging
+// unify job / startup actions
+// add tags, key/value pairs to metrics
+// auto renewing locks
+// get rid of queues / queue job
+// simplify the way jobs are run
+
