@@ -137,10 +137,7 @@ namespace Foundatio.Messaging {
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            byte[] data = _serializer.SerializeToBytes(new MessageBusData {
-                Type = messageType,
-                Data = _serializer.SerializeToBytes(message)
-            });
+            byte[] data = SerializeMessage(messageType, message);
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
@@ -172,6 +169,14 @@ namespace Foundatio.Messaging {
             // The publication occurs with mandatory=false
             _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
             return Task.CompletedTask;
+        }
+
+        protected virtual byte[] SerializeMessage(string messageType, object message)
+        {
+            return _serializer.SerializeToBytes(new MessageBusData {
+                Type = messageType,
+                Data = _serializer.SerializeToBytes(message)
+            });
         }
 
         /// <summary>
