@@ -79,7 +79,7 @@ namespace Foundatio.Messaging {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
             MessageBusData message;
             try {
-                message = _serializer.Deserialize<MessageBusData>(e.Body);
+                message = DeserializeMessage(e.Body);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing messsage: {Message}", e.BasicProperties?.MessageId, ex.Message);
@@ -91,6 +91,10 @@ namespace Foundatio.Messaging {
                 return;
 
             SendMessageToSubscribers(message, _serializer);
+        }
+
+        protected virtual MessageBusData DeserializeMessage(byte[] messageBody) {
+            return _serializer.Deserialize<MessageBusData>(messageBody);
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
