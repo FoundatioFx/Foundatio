@@ -93,6 +93,11 @@ namespace Foundatio.Messaging {
             SendMessageToSubscribers(message, _serializer);
         }
 
+        /// <summary>
+        /// Deserialize message's body
+        /// </summary>
+        /// <param name="messageBody">raw body that was received from RabbitMQ</param>
+        /// <returns>deserialized representation of body</returns>
         protected virtual MessageBusData DeserializeMessage(byte[] messageBody) {
             return _serializer.Deserialize<MessageBusData>(messageBody);
         }
@@ -175,6 +180,12 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Serialize received message to RabbitMQ raw body
+        /// </summary>
+        /// <param name="messageType">type of message that should be provided</param>
+        /// <param name="message">message that should be serialized</param>
+        /// <returns>serialized representation of message</returns>
         protected virtual byte[] SerializeMessage(string messageType, object message)
         {
             return _serializer.SerializeToBytes(new MessageBusData {
