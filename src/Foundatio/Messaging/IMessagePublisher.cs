@@ -16,6 +16,12 @@ namespace Foundatio.Messaging {
         T Body { get; }
     }
 
+    public interface IMessageSerializer {
+        // used to serialize and deserialize messages. Normally just a wrapper for ISerializer, but
+        // can be used to transform messages to/from different formats from different systems
+        // needs ability to read and populate messages headers
+    }
+
     public interface IMessage {
         // correlation id used in logging
         string CorrelationId { get; }

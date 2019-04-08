@@ -57,6 +57,13 @@ namespace Foundatio.Messaging {
         CancellationToken CancellationToken { get; }
     }
 
+    public interface IWorkScheduler {
+        // ability to persist work items and schedule them for execution at a later time
+        // not sure if it should be specific to messaging or just generically useful
+        // Should grab items and work very similar to queue (ability to batch dequeue)
+        // worker probably in different interface so processing can be separate from scheduling.
+    }
+
     public interface IMessageContext<T> : IMessageContext, IMessage<T> where T: class {}
 
     public static class MessageBusExtensions {
