@@ -33,7 +33,7 @@ namespace Foundatio.Redis {
             else if (t == TypeHelper.BoolType)
                 redisValue = Convert.ToBoolean(value);
             else if (t == TypeHelper.ByteType)
-                redisValue = Convert.ToByte(value);
+                redisValue = Convert.ToInt16(value);
             else if (t == TypeHelper.Int16Type)
                 redisValue = Convert.ToInt16(value);
             else if (t == TypeHelper.Int32Type)
@@ -45,11 +45,11 @@ namespace Foundatio.Redis {
             else if (t == TypeHelper.StringType)
                 redisValue = value.ToString();
             else if (t == TypeHelper.CharType)
-                redisValue = Convert.ToChar(value);
+                redisValue = Convert.ToString(value);
             else if (t == TypeHelper.SByteType)
                 redisValue = Convert.ToSByte(value);
             else if (t == TypeHelper.UInt16Type)
-                redisValue = Convert.ToUInt16(value);
+                redisValue = Convert.ToUInt32(value);
             else if (t == TypeHelper.UInt32Type)
                 redisValue = Convert.ToUInt32(value);
             else if (t == TypeHelper.UInt64Type)
