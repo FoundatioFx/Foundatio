@@ -5,5 +5,6 @@
     "Xunit",
     "mygauge",
     "unscoped"
-  ]
+  ],
+  "msbuildProjectTools.nuget.includePreRelease": true
 }
