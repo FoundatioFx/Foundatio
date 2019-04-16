@@ -76,7 +76,9 @@ namespace Foundatio.Messaging {
             if (_subscribers.IsEmpty)
                 return;
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
+            
             MessageBusData message;
             try {
                 message = _serializer.Deserialize<MessageBusData>(e.Body);
