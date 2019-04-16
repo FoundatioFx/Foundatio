@@ -256,7 +256,7 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken);
+            var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
                 bool isTraceLevelLogging = _logger.IsEnabled(LogLevel.Trace);
