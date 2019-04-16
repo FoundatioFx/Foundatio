@@ -81,7 +81,7 @@ namespace Foundatio.Messaging {
             
             MessageBusData message;
             try {
-                message = _serializer.Deserialize<MessageBusData>(e.Body);
+                message = DeserializeMessage(e.Body);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing messsage: {Message}", e.BasicProperties?.MessageId, ex.Message);
@@ -93,6 +93,15 @@ namespace Foundatio.Messaging {
                 return;
 
             SendMessageToSubscribers(message, _serializer);
+        }
+
+        /// <summary>
+        /// Deserialize message's body
+        /// </summary>
+        /// <param name="messageBody">raw body that was received from RabbitMQ</param>
+        /// <returns>deserialized representation of body</returns>
+        protected virtual MessageBusData DeserializeMessage(byte[] messageBody) {
+            return _serializer.Deserialize<MessageBusData>(messageBody);
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
@@ -139,10 +148,7 @@ namespace Foundatio.Messaging {
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            byte[] data = _serializer.SerializeToBytes(new MessageBusData {
-                Type = messageType,
-                Data = _serializer.SerializeToBytes(message)
-            });
+            byte[] data = SerializeMessage(messageType, message);
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
@@ -174,6 +180,20 @@ namespace Foundatio.Messaging {
             // The publication occurs with mandatory=false
             _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Serialize received message to RabbitMQ raw body
+        /// </summary>
+        /// <param name="messageType">type of message that should be provided</param>
+        /// <param name="message">message that should be serialized</param>
+        /// <returns>serialized representation of message</returns>
+        protected virtual byte[] SerializeMessage(string messageType, object message)
+        {
+            return _serializer.SerializeToBytes(new MessageBusData {
+                Type = messageType,
+                Data = _serializer.SerializeToBytes(message)
+            });
         }
 
         /// <summary>
