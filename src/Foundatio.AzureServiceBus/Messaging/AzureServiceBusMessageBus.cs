@@ -46,7 +46,7 @@ namespace Foundatio.Messaging {
                     await _managementClient.CreateSubscriptionAsync(CreateSubscriptionDescription()).AnyContext();
                 } catch (MessagingEntityAlreadyExistsException) { }
 
-                // Look into message factory with multiple recievers so more than one connection is made and managed....
+                // Look into message factory with multiple receivers so more than one connection is made and managed....
                 _subscriptionClient = new SubscriptionClient(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete, _options.SubscriptionRetryPolicy);
                 _subscriptionClient.RegisterMessageHandler(OnMessageAsync, new MessageHandlerOptions(MessageHandlerException) {
                     /* AutoComplete = true, // Don't run with receive and delete */ MaxConcurrentCalls = 6 /* calculate this based on the the thread count. */ });

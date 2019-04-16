@@ -129,7 +129,7 @@ namespace Foundatio.Queues {
                 var queueEntry = await HandleDequeueAsync(msg).AnyContext();
 
                 try {
-                    using (var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken)) {
+                    using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
                         await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
                     }
 
