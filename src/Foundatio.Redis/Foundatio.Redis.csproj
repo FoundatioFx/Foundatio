@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="8.1.2024-pre" />
+    <PackageReference Include="Foundatio" Version="8.1.2027" />
     <PackageReference Include="StackExchange.Redis" Version="2.0.601" />
   </ItemGroup>
 
