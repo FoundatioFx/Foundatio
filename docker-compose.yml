@@ -2,7 +2,7 @@ version: '2'
 
 services:
   redis:
-    image: grokzen/redis-cluster:4.0.11
+    image: grokzen/redis-cluster:5.0.4
     environment:
       IP: '0.0.0.0'
       STANDALONE: 'true'
