@@ -81,7 +81,7 @@ namespace Foundatio.Messaging {
             
             MessageBusData message;
             try {
-                message = DeserializeMessage(e.Body);
+                message = ConvertToMessageBusData(e);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing messsage: {Message}", e.BasicProperties?.MessageId, ex.Message);
@@ -96,12 +96,25 @@ namespace Foundatio.Messaging {
         }
 
         /// <summary>
-        /// Deserialize message's body
+        /// Get MessageBusData from a RabbitMQ delivery
         /// </summary>
-        /// <param name="messageBody">raw body that was received from RabbitMQ</param>
-        /// <returns>deserialized representation of body</returns>
-        protected virtual MessageBusData DeserializeMessage(byte[] messageBody) {
-            return _serializer.Deserialize<MessageBusData>(messageBody);
+        /// <param name="envelope">The RabbitMQ delivery arguments</param>
+        /// <returns>The MessageBusData for the message</returns>
+        protected virtual MessageBusData ConvertToMessageBusData(BasicDeliverEventArgs envelope) {
+            return new MessageBusData {
+                Type = envelope.BasicProperties.Type,
+                Data = envelope.Body
+            };
+        }
+
+        /// <summary>
+        /// Serialize received message to RabbitMQ raw body
+        /// </summary>
+        /// <param name="messageType">type of message that should be provided</param>
+        /// <param name="message">message that should be serialized</param>
+        /// <returns>serialized representation of message</returns>
+        protected virtual byte[] SerializeMessage(string messageType, object message) {
+            return _serializer.SerializeToBytes(message);
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
@@ -162,6 +175,7 @@ namespace Foundatio.Messaging {
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
+            basicProperties.Type = messageType;
             if (_options.DefaultMessageTimeToLive.HasValue)
                 basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
 
@@ -180,20 +194,6 @@ namespace Foundatio.Messaging {
             // The publication occurs with mandatory=false
             _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
             return Task.CompletedTask;
-        }
-
-        /// <summary>
-        /// Serialize received message to RabbitMQ raw body
-        /// </summary>
-        /// <param name="messageType">type of message that should be provided</param>
-        /// <param name="message">message that should be serialized</param>
-        /// <returns>serialized representation of message</returns>
-        protected virtual byte[] SerializeMessage(string messageType, object message)
-        {
-            return _serializer.SerializeToBytes(new MessageBusData {
-                Type = messageType,
-                Data = _serializer.SerializeToBytes(message)
-            });
         }
 
         /// <summary>
