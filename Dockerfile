@@ -6,6 +6,7 @@ ENV VERSION_SUFFIX=$VERSION_SUFFIX
 
 COPY ./*.sln ./NuGet.config ./
 COPY ./*/*.props ./
+COPY ./LICENSE.txt ./LICENSE.txt
 
 # Copy the main source project files
 COPY src/*/*.csproj ./
