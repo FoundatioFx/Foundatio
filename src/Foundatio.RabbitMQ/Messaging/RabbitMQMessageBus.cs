@@ -101,6 +101,9 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual MessageBusData ConvertToMessageBusData(BasicDeliverEventArgs envelope) {
+            if (String.IsNullOrEmpty(envelope.BasicProperties.Type))
+                return _serializer.Deserialize<MessageBusData>(envelope.Body);
+            
             return new MessageBusData {
                 Type = envelope.BasicProperties.Type,
                 Data = envelope.Body
