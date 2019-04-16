@@ -1,0 +1,95 @@
+﻿using System;
+using System.Threading.Tasks;
+using Foundatio.Caching;
+using Foundatio.Messaging;
+using Microsoft.Extensions.Logging;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace Foundatio.Tests.Caching {
+    public class InMemoryHybridCacheClientTests : HybridCacheClientTests {
+        public InMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
+
+        protected override ICacheClient GetCacheClient() {
+            return new InMemoryHybridCacheClient(_messageBus, Log);
+        }
+
+        [Fact]
+        public override Task CanSetAndGetValueAsync() {
+            return base.CanSetAndGetValueAsync();
+        }
+
+        [Fact]
+        public override Task CanSetAndGetObjectAsync() {
+            return base.CanSetAndGetObjectAsync();
+        }
+        
+        [Fact]
+        public override Task CanTryGetAsync() {
+            return base.CanTryGetAsync();
+        }
+
+        [Fact]
+        public override Task CanRemoveByPrefixAsync() {
+            return base.CanRemoveByPrefixAsync();
+        }
+
+        [Fact]
+        public override Task CanUseScopedCachesAsync() {
+            return base.CanUseScopedCachesAsync();
+        }
+
+        [Fact]
+        public override Task CanSetExpirationAsync() {
+            return base.CanSetExpirationAsync();
+        }
+        
+        [Fact]
+        public override Task CanManageSetsAsync() {
+            return base.CanManageSetsAsync();
+        }
+
+        [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+        public override Task WillUseLocalCache() {
+            return base.WillUseLocalCache();
+        }
+
+        [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+        public override Task WillExpireRemoteItems() {
+            return base.WillExpireRemoteItems();
+        }
+
+        [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+        public override Task WillWorkWithSets() {
+            Log.MinimumLevel = LogLevel.Trace;
+            return base.WillWorkWithSets();
+        }
+
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureThroughputAsync() {
+            return base.MeasureThroughputAsync();
+        }
+
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureSerializerSimpleThroughputAsync() {
+            return base.MeasureSerializerSimpleThroughputAsync();
+        }
+
+        [Fact(Skip = "Performance Test")]
+        public override Task MeasureSerializerComplexThroughputAsync() {
+            return base.MeasureSerializerComplexThroughputAsync();
+        }
+    }
+    
+    public class InMemoryHybridCacheClient : HybridCacheClient {
+        public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory)
+            : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), messageBus, loggerFactory) {
+        }
+
+        public override void Dispose() {
+            base.Dispose();
+            _distributedCache.Dispose();
+            _messageBus.Dispose();
+        }
+    }
+}
