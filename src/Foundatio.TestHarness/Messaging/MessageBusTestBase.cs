@@ -10,6 +10,7 @@ using Foundatio.Messaging;
 using Foundatio.Utility;
 using Xunit;
 using Foundatio.AsyncEx;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
@@ -192,8 +193,7 @@ namespace Foundatio.Tests.Messaging {
                 await Run.InParallelAsync(iterations, i => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            }
-            finally {
+            } finally {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
@@ -352,6 +352,35 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
+        public virtual async Task WillOnlyReceiveSubscribedMessageTypeWithFilterAsync() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(2);
+
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                });
+
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                }, messagefilter: msg => string.Equals("Hello", msg.Data));
+
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                });
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
         public virtual async Task WillReceiveDerivedMessageTypesAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)
@@ -379,6 +408,7 @@ namespace Foundatio.Tests.Messaging {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
+        
 
         public virtual async Task CanSubscribeToAllMessageTypesAsync() {
             var messageBus = GetMessageBus();
@@ -424,7 +454,7 @@ namespace Foundatio.Tests.Messaging {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                
+
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
             } finally {
@@ -513,7 +543,7 @@ namespace Foundatio.Tests.Messaging {
             if (messageBus == null)
                 return;
 
-            using (messageBus) {}
+            using (messageBus) { }
         }
     }
 }

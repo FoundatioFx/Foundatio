@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Xunit;
@@ -117,6 +117,11 @@ namespace Foundatio.Tests.Messaging {
         [Fact]
         public override void CanDisposeWithNoSubscribersOrPublishers() {
             base.CanDisposeWithNoSubscribersOrPublishers();
+        }
+
+        [Fact]
+        public override Task WillOnlyReceiveSubscribedMessageTypeWithFilterAsync() {
+            return base.WillOnlyReceiveSubscribedMessageTypeWithFilterAsync();
         }
 
         public void Dispose() {

@@ -49,7 +49,7 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
             }
 
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType)).ToList();
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType, message)).ToList();
             if (subscribers.Count == 0) {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", mappedType.Name);
