@@ -29,14 +29,14 @@ namespace Foundatio.Messaging {
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
-        protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
+        protected virtual Task EnsureTopicCreatedAsync(Type messageType, CancellationToken cancellationToken) => Task.CompletedTask;
+        protected abstract Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
         public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
 
-            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
+            await EnsureTopicCreatedAsync(messageType, cancellationToken).AnyContext();
+            await PublishImplAsync(messageType, message, delay, cancellationToken).AnyContext();
         }
  
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
@@ -67,7 +67,7 @@ namespace Foundatio.Messaging {
             });
         }
 
-        protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        protected virtual Task EnsureTopicSubscriptionAsync<T>(CancellationToken cancellationToken) where T : class => Task.CompletedTask;
         protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
@@ -92,7 +92,8 @@ namespace Foundatio.Messaging {
         public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
-            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
+            
+            await EnsureTopicSubscriptionAsync<T>(cancellationToken).AnyContext();
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 

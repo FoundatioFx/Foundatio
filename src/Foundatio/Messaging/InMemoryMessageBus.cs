@@ -33,10 +33,10 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
-            _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
-            Type mappedType = GetMappedMessageType(messageType);
+            var mappedMessageType = GetMappedMessageType(messageType);
+            _messageCounts.AddOrUpdate(mappedMessageType, t => 1, (t, c) => c + 1);
 
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
@@ -45,21 +45,21 @@ namespace Foundatio.Messaging {
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                SendDelayedMessage(mappedType, message, delay.Value);
+                SendDelayedMessage(messageType, message, delay.Value);
                 return Task.CompletedTask;
             }
 
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType)).ToList();
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
             if (subscribers.Count == 0) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", mappedType.Name);
+                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
                 return Task.CompletedTask;
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Message Publish: {MessageType}", mappedType.FullName);
+                _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
 
-            SendMessageToSubscribers(subscribers, mappedType, message.DeepClone());
+            SendMessageToSubscribers(subscribers, messageType, message.DeepClone());
             return Task.CompletedTask;
         }
     }
