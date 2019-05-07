@@ -32,10 +32,10 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
-            _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
-            var mappedType = GetMappedMessageType(messageType);
+            var mappedMessageType = GetMappedMessageType(messageType);
+            _messageCounts.AddOrUpdate(mappedMessageType, t => 1, (t, c) => c + 1);
 
             if (_subscribers.IsEmpty)
                 return;
@@ -43,9 +43,9 @@ namespace Foundatio.Messaging {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-                SendDelayedMessage(mappedType, message, options.DeliveryDelay.Value);
-                return;
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                SendDelayedMessage(messageType, message, delay.Value);
+                return Task.CompletedTask;
             }
             
             byte[] body = SerializeMessageBody(messageType, message);
@@ -55,12 +55,18 @@ namespace Foundatio.Messaging {
                 Data = body
             };
 
-            try {
-                await SendMessageToSubscribersAsync(messageData).AnyContext();
-            } catch (Exception ex) {
-                // swallow exceptions from subscriber handlers for the in memory bus
-                _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
+            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
+            if (subscribers.Count == 0) {
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
+                return Task.CompletedTask;
             }
+
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Message Publish: {MessageType}", messageType.FullName);
+
+            SendMessageToSubscribers(subscribers, messageType, message.DeepClone());
+            return Task.CompletedTask;
         }
     }
 }

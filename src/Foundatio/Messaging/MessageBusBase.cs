@@ -29,14 +29,14 @@ namespace Foundatio.Messaging {
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
-        protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
+        protected virtual Task EnsureTopicCreatedAsync(Type messageType, CancellationToken cancellationToken) => Task.CompletedTask;
+        protected abstract Task PublishImplAsync(Type messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
+        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
 
-            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
+            await EnsureTopicCreatedAsync(messageType, cancellationToken).AnyContext();
+            await PublishImplAsync(messageType, message, delay, cancellationToken).AnyContext();
         }
  
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
@@ -79,9 +79,8 @@ namespace Foundatio.Messaging {
             });
         }
 
-        protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected virtual Task<IMessageSubscription> SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler) where T : class {
-            var messageSubscription = new MessageSubscription();
+        protected virtual Task EnsureTopicSubscriptionAsync<T>(CancellationToken cancellationToken) where T : class => Task.CompletedTask;
+        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = messageSubscription.CancellationToken,
                 Type = typeof(T),
@@ -105,9 +104,9 @@ namespace Foundatio.Messaging {
         public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
-            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
-            var messageSubscription = await SubscribeImplAsync(handler).AnyContext();
-            return messageSubscription;
+            
+            await EnsureTopicSubscriptionAsync<T>(cancellationToken).AnyContext();
+            await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
         protected List<Subscriber> GetMessageSubscribers(IMessage message) {
