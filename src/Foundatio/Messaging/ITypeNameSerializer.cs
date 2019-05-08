@@ -12,17 +12,19 @@ namespace Foundatio.Messaging {
     }
 
     public class DefaultTypeNameSerializer : ITypeNameSerializer {
-        private readonly Dictionary<string, Type> _typeNameOverrides;
         private readonly ILogger _logger;
+        private readonly Dictionary<string, Type> _typeNameOverrides;
+        private readonly ConcurrentDictionary<Type, string> _typeNameCache = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<string, Type> _typeCache = new ConcurrentDictionary<string, Type>();
 
         public DefaultTypeNameSerializer(ILogger logger = null, IDictionary<string, Type> typeNameOverrides = null) {
             _logger = logger ?? NullLogger.Instance;
-            _typeNameOverrides = typeNameOverrides != null ? new Dictionary<string, Type>(typeNameOverrides) : new Dictionary<string, Type>();
+            if (typeNameOverrides != null)
+                _typeNameOverrides = new Dictionary<string, Type>(typeNameOverrides);
         }
 
-        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         public Type Deserialize(string typeName) {
-            return _knownMessageTypesCache.GetOrAdd(typeName, newTypeName => {
+            return _typeCache.GetOrAdd(typeName, newTypeName => {
                 if (_typeNameOverrides != null && _typeNameOverrides.ContainsKey(newTypeName))
                     return _typeNameOverrides[newTypeName];
 
@@ -37,12 +39,13 @@ namespace Foundatio.Messaging {
             });
         }
 
-        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
         public string Serialize(Type type) {
-            return _mappedMessageTypesCache.GetOrAdd(type, newType => {
-                var reversedMap = _typeNameOverrides.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
-                if (reversedMap.ContainsKey(newType))
-                    return reversedMap[newType];
+            return _typeNameCache.GetOrAdd(type, newType => {
+                if (_typeNameOverrides != null) {
+                    var reversedMap = _typeNameOverrides.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
+                    if (reversedMap.ContainsKey(newType))
+                        return reversedMap[newType];
+                }
                 
                 return String.Concat(type.FullName, ", ", type.Assembly.GetName().Name);
             });
