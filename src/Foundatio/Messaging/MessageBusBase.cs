@@ -18,6 +18,7 @@ namespace Foundatio.Messaging {
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
         protected readonly ISerializer _serializer;
+        protected readonly ITypeNameSerializer _typeNameSerializer;
         private bool _isDisposed;
 
         public MessageBusBase(TOptions options) {
@@ -25,6 +26,7 @@ namespace Foundatio.Messaging {
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            _typeNameSerializer = options.TypeNameSerializer ?? new DefaultTypeNameSerializer(_logger);
             MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
@@ -39,32 +41,12 @@ namespace Foundatio.Messaging {
             await PublishImplAsync(messageType, message, delay, cancellationToken).AnyContext();
         }
  
-        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
         protected string GetMappedMessageType(Type messageType) {
-            return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
-                var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
-                if (reversedMap.ContainsKey(type))
-                    return reversedMap[type];
-                
-                return String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name);
-            });
+            return _typeNameSerializer.Serialize(messageType);
         }
 
-        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         protected Type GetMappedMessageType(string messageType) {
-            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
-                if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
-                    return _options.MessageTypeMappings[type];
-
-                try {
-                    return Type.GetType(type);
-                } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
-
-                    return null;
-                }
-            });
+            return _typeNameSerializer.Deserialize(messageType);
         }
 
         protected virtual Task EnsureTopicSubscriptionAsync<T>(CancellationToken cancellationToken) where T : class => Task.CompletedTask;
