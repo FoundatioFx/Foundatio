@@ -108,7 +108,7 @@ namespace Foundatio.Tests.Messaging {
 
         public virtual async Task CanSendMappedMessageAsync() {
             var messageBus = GetMessageBus(b => {
-                b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
+                b.TypeNameSerializer = new DefaultTypeNameSerializer(_logger, new Dictionary<string, Type> {{ nameof(SimpleMessageA), typeof(SimpleMessageA) }});
                 return b;
             });
             if (messageBus == null)

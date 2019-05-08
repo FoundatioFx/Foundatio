@@ -9,9 +9,9 @@ namespace Foundatio.Messaging {
         public string Topic { get; set; } = "messages";
 
         /// <summary>
-        /// Controls which types messages are mapped to.
+        /// Controls how message types are serialized to/from strings.
         /// </summary>
-        public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
+        public ITypeNameSerializer TypeNameSerializer { get; set; }
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -23,20 +23,9 @@ namespace Foundatio.Messaging {
             Target.Topic = topic;
             return (TBuilder)this;
         }
-
-        public TBuilder MapMessageType<T>(string name) {
-            if (Target.MessageTypeMappings == null)
-                Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
-            Target.MessageTypeMappings[name] = typeof(T);
-            return (TBuilder)this;
-        }
-
-        public TBuilder MapMessageTypeToClassName<T>() {
-            if (Target.MessageTypeMappings == null)
-                Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
-            Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
+        
+        public TBuilder TypeNameSerializer(ITypeNameSerializer typeNameSerializer) {
+            Target.TypeNameSerializer = typeNameSerializer;
             return (TBuilder)this;
         }
     }
