@@ -28,9 +28,11 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
-            _client = new Lazy<AmazonSQSClient>(() => new AmazonSQSClient(
-                options.Credentials ?? FallbackCredentialsFactory.GetCredentials(), 
-                options.Region ?? FallbackRegionFactory.GetRegionEndpoint()));
+            _client = new Lazy<AmazonSQSClient>(() => {
+                var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+                var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint() ?? RegionEndpoint.USEast1;
+                return new AmazonSQSClient(credentials, region);
+            });
         }
 
         public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
@@ -166,11 +168,10 @@ namespace Foundatio.Queues {
             // re-queue and wait for processing
             var request = new ChangeMessageVisibilityRequest {
                 QueueUrl = _queueUrl,
-                VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
+                VisibilityTimeout = (int)_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds,
                 ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
             };
 
-            // TODO: Ensure that we don't need to move this to a deadletter queue
             await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
 
             Interlocked.Increment(ref _abandonedCount);
@@ -236,6 +237,7 @@ namespace Foundatio.Queues {
                 Timeouts = 0
             };
         }
+
 
         public override async Task DeleteQueueAsync() {
             if (!String.IsNullOrEmpty(_queueUrl)) {
@@ -317,9 +319,10 @@ namespace Foundatio.Queues {
             var deadAttributeRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
             var deadAttributeResponse = await _client.Value.GetQueueAttributesAsync(deadAttributeRequest).AnyContext();
 
+            var maxReceiveCount = Math.Max(_options.Retries + 1, 1);
             // step 4, set retry policy
             var redrivePolicy = new JsonData {
-                ["maxReceiveCount"] = _options.Retries.ToString(),
+                ["maxReceiveCount"] = maxReceiveCount.ToString(),
                 ["deadLetterTargetArn"] = deadAttributeResponse.QueueARN
             };
 

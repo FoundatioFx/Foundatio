@@ -11,6 +11,10 @@ namespace Foundatio.Queues {
         public bool SupportDeadLetter { get; set; } = true;
         public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
         public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
+        private static Random _random = new Random();
+        public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => {
+            return TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(_random.Next(0, 100));
+        };
     }
 
     public class SQSQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, SQSQueueOptions<T>, SQSQueueOptionsBuilder<T>> where T : class {
@@ -26,6 +30,11 @@ namespace Foundatio.Queues {
             return this;
         }
 
+        public SQSQueueOptionsBuilder<T> RetryDelay(Func<int, TimeSpan> retryDelay) {
+            Target.RetryDelay = retryDelay;
+            return this;
+        }
+        
         public SQSQueueOptionsBuilder<T> DequeueInterval(TimeSpan interval) {
             Target.DequeueInterval = interval;
             return this;

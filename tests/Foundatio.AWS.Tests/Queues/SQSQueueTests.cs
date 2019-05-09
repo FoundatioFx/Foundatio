@@ -26,13 +26,38 @@ namespace Foundatio.AWS.Tests.Queues {
                 return null;
 
             var queue = new SQSQueue<SimpleWorkItem>(
-                o => o.ConnectionString($"id={accessKey};secret={secretKey}")
+                o => o.Credentials(accessKey, secretKey)
                     .Name(_queueName).Retries(retries)
                     .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                     .LoggerFactory(Log));
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
+        }
+
+        [Fact]
+        public void RetryBackoff() {
+            var options = new SQSQueueOptions<SimpleWorkItem>();
+            var backoff1 = options.RetryDelay(1);
+            Assert.InRange(backoff1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
+            var backoff2 = options.RetryDelay(2);
+            Assert.InRange(backoff2, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(5));
+            var backoff3 = options.RetryDelay(3);
+            Assert.InRange(backoff3, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(9));
+            var backoff4 = options.RetryDelay(4);
+            Assert.InRange(backoff4, TimeSpan.FromSeconds(16), TimeSpan.FromSeconds(17));
+            var backoff5 = options.RetryDelay(5);
+            Assert.InRange(backoff5, TimeSpan.FromSeconds(32), TimeSpan.FromSeconds(33));
+            var backoff6 = options.RetryDelay(6);
+            Assert.InRange(backoff6, TimeSpan.FromSeconds(64), TimeSpan.FromSeconds(65));
+            var backoff7 = options.RetryDelay(7);
+            Assert.InRange(backoff7, TimeSpan.FromSeconds(128), TimeSpan.FromSeconds(129));
+            var backoff8 = options.RetryDelay(8);
+            Assert.InRange(backoff8, TimeSpan.FromSeconds(256), TimeSpan.FromSeconds(257));
+            var backoff9 = options.RetryDelay(9);
+            Assert.InRange(backoff9, TimeSpan.FromSeconds(512), TimeSpan.FromSeconds(513));
+            var backoff10 = options.RetryDelay(10);
+            Assert.InRange(backoff10, TimeSpan.FromSeconds(1024), TimeSpan.FromSeconds(1025));
         }
 
         [Fact]
