@@ -16,13 +16,13 @@ namespace Foundatio.Messaging {
 
     public class PersistedMessage {
         public string Id { get; set; }
-        public DateTime CreatedUtc { get; set; }
+        public DateTime PublishedUtc { get; set; }
         public string CorrelationId { get; set; }
         public string MessageTypeName { get; set; }
         public byte[] Body { get; set; }
         public DateTime? ExpiresAtUtc { get; set; }
         public DateTime? DeliverAtUtc { get; set; }
-        public DataDictionary Headers { get; set; }
+        public IReadOnlyDictionary<string, string> Properties { get; set; }
     }
 
     public class InMemoryMessageStore : IMessageStore {

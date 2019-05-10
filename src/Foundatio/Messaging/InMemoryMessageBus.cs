@@ -87,7 +87,7 @@ namespace Foundatio.Messaging {
                         _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
 
                     try {
-                        var message = new Message(getBody, options.MessageType, options.CorrelationId, options.ExpiresAtUtc, options.DeliverAtUtc, options.Headers);
+                        var message = new Message(getBody, options.MessageType, options.CorrelationId, options.ExpiresAtUtc, options.DeliverAtUtc, options.Properties);
                         var context = new MessageContext(messageId, subscriber.Id, createdUtc, 1, message, () => Task.CompletedTask, () => Task.CompletedTask, () => {}, options.CancellationToken);
                         await subscriber.Action(context).AnyContext();
                         if (isTraceLogLevelEnabled)

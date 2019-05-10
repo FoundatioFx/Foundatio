@@ -10,7 +10,7 @@ namespace Foundatio.Messaging {
         string Id { get; }
         // message subscription id that received the message
         string SubscriptionId { get; }
-        // when the message was originally created
+        // when the message was originally published
         DateTime PublishedUtc { get; }
         // number of times this message has been delivered
         int DeliveryCount { get; }
@@ -40,7 +40,7 @@ namespace Foundatio.Messaging {
         public Type MessageType => _context.MessageType;
         public DateTime? ExpiresAtUtc => _context.ExpiresAtUtc;
         public DateTime? DeliverAtUtc => _context.DeliverAtUtc;
-        public IReadOnlyDictionary<string, object> Headers => _context.Headers;
+        public IReadOnlyDictionary<string, string> Properties => _context.Properties;
         public T Body => (T)GetBody();
 
         public object GetBody() {
@@ -89,7 +89,7 @@ namespace Foundatio.Messaging {
         public Type MessageType => _message.MessageType;
         public DateTime? ExpiresAtUtc => _message.ExpiresAtUtc;
         public DateTime? DeliverAtUtc => _message.DeliverAtUtc;
-        public IReadOnlyDictionary<string, object> Headers => _message.Headers;
+        public IReadOnlyDictionary<string, string> Properties => _message.Properties;
 
         public object GetBody() {
             return _message.GetBody();

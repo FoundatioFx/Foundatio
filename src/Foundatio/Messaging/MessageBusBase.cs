@@ -56,13 +56,13 @@ namespace Foundatio.Messaging {
                 var typeName = _typeNameSerializer.Serialize(options.MessageType);
                 await _store.AddAsync(new PersistedMessage {
                     Id = Guid.NewGuid().ToString("N"),
-                    CreatedUtc = SystemClock.UtcNow,
+                    PublishedUtc = SystemClock.UtcNow,
                     CorrelationId = options.CorrelationId,
                     MessageTypeName = typeName,
                     Body = body,
                     ExpiresAtUtc = options.ExpiresAtUtc,
                     DeliverAtUtc = options.DeliverAtUtc,
-                    Headers = options.Headers
+                    Properties = options.Properties
                 });
 
                 ScheduleNextMaintenance(options.DeliverAtUtc.Value);
@@ -101,12 +101,14 @@ namespace Foundatio.Messaging {
             var pendingMessages = await _store.GetPendingAsync(SystemClock.UtcNow);
             foreach (var pendingMessage in pendingMessages) {
                 var messageType = _typeNameSerializer.Deserialize(pendingMessage.MessageTypeName);
+                var properties = new Dictionary<string, string>();
+                properties.AddRange(pendingMessage.Properties);
                 await PublishImplAsync(pendingMessage.Body, new MessagePublishOptions {
                     CorrelationId = pendingMessage.CorrelationId,
                     DeliverAtUtc = pendingMessage.DeliverAtUtc,
                     ExpiresAtUtc = pendingMessage.ExpiresAtUtc,
                     MessageType = messageType,
-                    Headers = pendingMessage.Headers
+                    Properties = properties
                 }).AnyContext();
             }
 

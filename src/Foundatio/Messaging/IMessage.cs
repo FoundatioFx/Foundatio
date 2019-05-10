@@ -18,19 +18,19 @@ namespace Foundatio.Messaging {
         // when the message should be delivered when using delayed delivery
         DateTime? DeliverAtUtc { get; }
         // additional message data to store with the message
-        IReadOnlyDictionary<string, object> Headers { get; }
+        IReadOnlyDictionary<string, string> Properties { get; }
     }
 
     public class Message : IMessage {
         private Lazy<object> _body;
 
-        public Message(Func<object> getBodyFunc, Type messageType, string coorelationId, DateTime? expiresAtUtc, DateTime? deliverAtUtc, IReadOnlyDictionary<string, object> headers) {
+        public Message(Func<object> getBodyFunc, Type messageType, string coorelationId, DateTime? expiresAtUtc, DateTime? deliverAtUtc, IReadOnlyDictionary<string, string> properties) {
             _body = new Lazy<object>(getBodyFunc);
             MessageType = messageType;
             CorrelationId = coorelationId;
             ExpiresAtUtc = expiresAtUtc;
             DeliverAtUtc = deliverAtUtc;
-            Headers = headers;
+            Properties = properties;
         }
 
         public Message(Func<object> getBodyFunc, MessagePublishOptions options) {
@@ -39,14 +39,14 @@ namespace Foundatio.Messaging {
             MessageType = options.MessageType;
             ExpiresAtUtc = options.ExpiresAtUtc;
             DeliverAtUtc = options.DeliverAtUtc;
-            Headers = options.Headers;
+            Properties = options.Properties;
         }
 
         public string CorrelationId { get; private set; }
         public Type MessageType { get; private set; }
         public DateTime? ExpiresAtUtc { get; private set; }
         public DateTime? DeliverAtUtc { get; private set; }
-        public IReadOnlyDictionary<string, object> Headers { get; private set; }
+        public IReadOnlyDictionary<string, string> Properties { get; private set; }
         
         public object GetBody() {
             return _body.Value;
@@ -70,7 +70,7 @@ namespace Foundatio.Messaging {
         public Type MessageType => _message.MessageType;
         public DateTime? ExpiresAtUtc => _message.ExpiresAtUtc;
         public DateTime? DeliverAtUtc => _message.DeliverAtUtc;
-        public IReadOnlyDictionary<string, object> Headers => _message.Headers;
+        public IReadOnlyDictionary<string, string> Properties => _message.Properties;
         public object GetBody() => _message.GetBody();
     }
 }

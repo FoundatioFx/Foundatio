@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -13,7 +14,7 @@ namespace Foundatio.Messaging {
         public string CorrelationId { get; set; }
         public DateTime? ExpiresAtUtc { get; set; }
         public DateTime? DeliverAtUtc { get; set; }
-        public DataDictionary Headers { get; set; } = new DataDictionary();
+        public Dictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
         public CancellationToken CancellationToken { get; set; }
 
         public MessagePublishOptions WithMessageType(Type messageType) {
@@ -36,13 +37,13 @@ namespace Foundatio.Messaging {
             return this;
         }
 
-        public MessagePublishOptions WithHeaders(DataDictionary headers) {
-            Headers.AddRange(headers);
+        public MessagePublishOptions WithProperties(IDictionary<string, string> properties) {
+            Properties.AddRange(properties);
             return this;
         }
 
-        public MessagePublishOptions WithHeader(string name, object value) {
-            Headers.Add(name, value);
+        public MessagePublishOptions WithProperty(string name, string value) {
+            Properties.Add(name, value);
             return this;
         }
 
