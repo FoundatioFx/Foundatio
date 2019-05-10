@@ -10,7 +10,7 @@ namespace Foundatio.Messaging {
     public interface IMessageStore {
         Task AddAsync(PersistedMessage message);
         Task RemoveAsync(string[] ids);
-        Task<ICollection<PersistedMessage>> GetPendingAsync(DateTime? dateUtc = null);
+        Task<ICollection<PersistedMessage>> GetReadyForDeliveryAsync();
         Task RemoveAllAsync();
     }
 
@@ -38,12 +38,10 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        public Task<ICollection<PersistedMessage>> GetPendingAsync(DateTime? dueAfterDateUtc = null) {
-            var dueDate = dueAfterDateUtc ?? DateTime.UtcNow;
-            
+        public Task<ICollection<PersistedMessage>> GetReadyForDeliveryAsync() {
             var dueList = new List<PersistedMessage>();
             foreach (var message in _messages) {
-                if (!message.IsProcessing && message.Message.DeliverAtUtc < dueDate && message.MarkProcessing())
+                if (!message.IsProcessing && message.Message.DeliverAtUtc < SystemClock.UtcNow && message.MarkProcessing())
                     dueList.Add(message.Message);
             }
 

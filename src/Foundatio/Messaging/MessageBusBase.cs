@@ -98,7 +98,7 @@ namespace Foundatio.Messaging {
         }
 
         protected override async Task<DateTime?> DoMaintenanceAsync() {
-            var pendingMessages = await _store.GetPendingAsync(SystemClock.UtcNow);
+            var pendingMessages = await _store.GetReadyForDeliveryAsync();
             foreach (var pendingMessage in pendingMessages) {
                 var messageType = _typeNameSerializer.Deserialize(pendingMessage.MessageTypeName);
                 var properties = new Dictionary<string, string>();
