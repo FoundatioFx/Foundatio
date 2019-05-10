@@ -11,8 +11,8 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching {
     public class HybridCacheClientTests: CacheClientTestsBase, IDisposable {
-        private readonly ICacheClient _distributedCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
-        private readonly IMessageBus _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
+        protected readonly ICacheClient _distributedCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
+        protected readonly IMessageBus _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
 
         public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}
 

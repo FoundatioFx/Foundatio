@@ -378,7 +378,7 @@ namespace Foundatio.Tests.Caching {
 
                 using (TestSystemClock.Install()) {
                     var now = DateTime.UtcNow;
-                    SystemClock.Test.SetFixedTime(now);
+                    TestSystemClock.SetFrozenTime(now);
 
                     var expires = DateTime.MaxValue - now.AddDays(1);
                     Assert.True(await cache.SetAsync("test1", 1, expires));

@@ -140,8 +140,8 @@ namespace Foundatio.Tests.Jobs {
             using (TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.SetFrozenTime(time);
+                TestSystemClock.UseFakeSleep();
 
                 var job = new HelloWorldJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -158,8 +158,8 @@ namespace Foundatio.Tests.Jobs {
             using (TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.SetFrozenTime(time);
+                TestSystemClock.UseFakeSleep();
 
                 var job = new FailingJob(Log);
                 var interval = TimeSpan.FromHours(.75);
