@@ -19,6 +19,9 @@ namespace Foundatio.Utility {
         }
 
         protected void ScheduleNextMaintenance(DateTime utcDate) {
+            if (_maintenanceTimer == null)
+                return;
+            
             _maintenanceTimer.ScheduleNext(utcDate);
         }
 

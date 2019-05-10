@@ -6,18 +6,16 @@ namespace Foundatio.Messaging {
     public class NullMessageBus : IMessageBus {
         public static readonly NullMessageBus Instance = new();
 
-        public Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
+        public string MessageBusId { get; } = Guid.NewGuid().ToString("N");
+
+        public Task PublishAsync(object message, MessagePublishOptions options = null) {
             return Task.CompletedTask;
         }
 
-        public Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler) where T : class {
-            return Task.FromResult<IMessageSubscription>(new NullMessageSubscription());
+        public Task<IMessageSubscription> SubscribeAsync(MessageSubscriptionOptions options, Func<IMessageContext, Task> handler) {
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(options.MessageType, () => {}));
         }
 
-        public void Dispose() {}
-    }
-
-    public class NullMessageSubscription : IMessageSubscription {
         public void Dispose() {}
     }
 }
