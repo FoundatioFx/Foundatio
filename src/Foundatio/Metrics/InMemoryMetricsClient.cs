@@ -1,5 +1,4 @@
-﻿using System;
-using Foundatio.Caching;
+﻿using Foundatio.Caching;
 
 namespace Foundatio.Metrics {
     public class InMemoryMetricsClient : CacheBucketMetricsClientBase {

@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Foundatio {
+﻿namespace Foundatio {
     public interface IOptionsBuilder {
         object Target { get; }
     }

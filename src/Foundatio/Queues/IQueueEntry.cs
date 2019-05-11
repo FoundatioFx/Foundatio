@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using Foundatio.Utility;
+﻿using System.Threading.Tasks;
 
 namespace Foundatio.Queues {
     public interface IQueueEntry {

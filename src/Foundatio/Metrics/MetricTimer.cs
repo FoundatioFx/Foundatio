@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Threading.Tasks;
-using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public class MetricTimer : IDisposable {

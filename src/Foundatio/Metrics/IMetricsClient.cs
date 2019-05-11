@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     [Obsolete("IMetricsClient will be removed, use System.Diagnostics.Metrics.Meter instead.")]
