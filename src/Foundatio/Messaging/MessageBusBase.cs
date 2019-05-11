@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
@@ -22,7 +19,6 @@ namespace Foundatio.Messaging {
 
         public MessageBusBase(TOptions options) : base(options.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _typeNameSerializer = options.TypeNameSerializer ?? new DefaultTypeNameSerializer(_logger);
             _store = options.MessageStore ?? new InMemoryMessageStore(_logger);

@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -14,10 +12,14 @@ namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {
         private readonly ConcurrentDictionary<string, long> _messageCounts = new();
         private long _messagesSent;
+        private readonly TaskFactory _taskFactory;
 
         public InMemoryMessageBus() : this(o => o) {}
 
-        public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
+        public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) {
+            // limit message processing to 50 at a time
+            _taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(50));
+        }
 
         public InMemoryMessageBus(Builder<InMemoryMessageBusOptionsBuilder, InMemoryMessageBusOptions> config)
             : this(config(new InMemoryMessageBusOptionsBuilder()).Build()) { }
@@ -75,7 +77,7 @@ namespace Foundatio.Messaging {
                 _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Length, options.MessageType.Name);
 
             foreach (var subscriber in subscribers) {
-                Task.Factory.StartNew(async () => {
+                _taskFactory.StartNew(async () => {
                     if (subscriber.IsCancelled) {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
