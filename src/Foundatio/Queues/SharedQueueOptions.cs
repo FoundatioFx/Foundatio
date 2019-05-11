@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Foundatio.Queues {
     public class SharedQueueOptions<T> : SharedOptions where T : class {

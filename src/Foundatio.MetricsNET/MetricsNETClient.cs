@@ -1,5 +1,4 @@
-﻿using System;
-using Metrics;
+﻿using Metrics;
 
 namespace Foundatio.Metrics {
     public class MetricsNETClient : IMetricsClient {

@@ -1,14 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 

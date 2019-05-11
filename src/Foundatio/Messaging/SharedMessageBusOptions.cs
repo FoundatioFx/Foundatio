@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace Foundatio.Messaging {
     public class SharedMessageBusOptions : SharedOptions {
         /// <summary>

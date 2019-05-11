@@ -1,9 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Serializer;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
     public interface IMessage {

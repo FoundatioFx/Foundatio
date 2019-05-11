@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
     public interface IMetricsClient : IDisposable {

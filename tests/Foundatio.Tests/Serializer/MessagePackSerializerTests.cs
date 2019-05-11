@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Exporters.Json;
-using BenchmarkDotNet.Loggers;
-using BenchmarkDotNet.Reports;
-using Foundatio.Serializer;
+﻿using Foundatio.Serializer;
 using Foundatio.TestHarness.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;

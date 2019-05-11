@@ -3,15 +3,13 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 
-namespace Foundatio.Force.DeepCloner.Helpers
-{
-	/// <summary>
-	/// Safe types are types, which can be copied without real cloning. e.g. simple structs or strings (it is immutable)
-	/// </summary>
-	internal static class DeepClonerSafeTypes
+namespace Foundatio.Force.DeepCloner.Helpers {
+    /// <summary>
+    /// Safe types are types, which can be copied without real cloning. e.g. simple structs or strings (it is immutable)
+    /// </summary>
+    internal static class DeepClonerSafeTypes
 	{
 		internal static readonly ConcurrentDictionary<Type, bool> KnownTypes = new ConcurrentDictionary<Type, bool>();
 

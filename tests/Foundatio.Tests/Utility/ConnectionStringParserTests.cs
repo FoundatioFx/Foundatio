@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
-using Foundatio.Logging.Xunit;
 using Xunit;
-using Xunit.Abstractions;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Utility {
