@@ -21,18 +21,30 @@ namespace Foundatio.Utility {
             _taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(50));
         }
 
+        public void Schedule(Func<Task> action, TimeSpan delay, TimeSpan? interval = null) {
+            Schedule(() => { _ = action(); }, SystemClock.UtcNow.Add(delay), interval);
+        }
+
+        public void Schedule(Action action, TimeSpan delay, TimeSpan? interval = null) {
+            Schedule(action, SystemClock.UtcNow.Add(delay), interval);
+        }
+
+        public void Schedule(Func<Task> action, DateTime executeAt, TimeSpan? interval = null) {
+            Schedule(() => { _ = action(); }, executeAt, interval);
+        }
+
         public void Schedule(Action action, DateTime executeAt, TimeSpan? interval = null) {
             EnsureWorkLoopRunning();
 
+            if (executeAt.Kind != DateTimeKind.Utc)
+                executeAt = executeAt.ToUniversalTime();
+
+            _logger.LogTrace("Scheduling work due at {ExecuteAt}", executeAt);
             _workItems.Enqueue(executeAt, new WorkItem {
                 Action = action,
                 ExecuteAtUtc = executeAt,
                 Interval = interval
             });
-        }
-
-        public void Schedule(Func<Task> action, DateTime executeAt, TimeSpan? interval = null) {
-            Schedule(() => { _ = action(); }, executeAt, interval);
         }
 
         private void EnsureWorkLoopRunning() {
@@ -43,26 +55,30 @@ namespace Foundatio.Utility {
                 if (_workLoopTask != null)
                     return;
 
+                _logger.LogTrace("Starting work loop");
                 _workLoopTask = Task.Factory.StartNew(WorkLoop, TaskCreationOptions.LongRunning);
             }
         }
 
         private void WorkLoop() {
+            _logger.LogTrace("Work loop started");
             while (!_isDisposed) {
-                if (!_workItems.TryPeek(out var kvp) || kvp.Key < SystemClock.UtcNow) {
-                    Thread.Sleep(100);
-                    continue;
-                }
-
-                while (!_isDisposed && _workItems.TryDequeue(out var i)) {
+                _logger.LogTrace("Checking for items due after {CurrentTime}", SystemClock.UtcNow);
+                if (_workItems.TryDequeueIf(out var kvp, i => i.ExecuteAtUtc < SystemClock.UtcNow)) {
+                    _logger.LogTrace("Starting work item due at {DueTime}", kvp.Key);
                     _ = _taskFactory.StartNew(() => {
                         var startTime = SystemClock.UtcNow;
-                        i.Value.Action();
-                        if (i.Value.Interval.HasValue)
-                            Schedule(i.Value.Action, startTime.Add(i.Value.Interval.Value));
+                        kvp.Value.Action();
+                        if (kvp.Value.Interval.HasValue)
+                            Schedule(kvp.Value.Action, startTime.Add(kvp.Value.Interval.Value));
                     });
+                    _logger.LogTrace("Work item started");
+                } else {
+                    _logger.LogTrace("No work items due");
+                    Thread.Sleep(100);
                 }
             }
+            _logger.LogTrace("Work loop stopped");
         }
 
         public void Dispose() {

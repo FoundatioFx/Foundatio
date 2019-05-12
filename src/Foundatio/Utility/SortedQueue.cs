@@ -43,6 +43,22 @@ namespace Foundatio.Utility {
             return false;
         }
 
+        public bool TryDequeueIf(out KeyValuePair<TKey, TValue> item, Predicate<TValue> condition) {
+            item = default;
+
+            lock (_lock) {
+                if (_sortedDictionary.Count > 0) {
+                    item = _sortedDictionary.First();
+                    if (!condition(item.Value))
+                        return false;
+
+                    return _sortedDictionary.Remove(item.Key);
+                }
+            }
+
+            return false;
+        }
+
         public bool TryPeek(out KeyValuePair<TKey, TValue> item) {
             item = default;
 
