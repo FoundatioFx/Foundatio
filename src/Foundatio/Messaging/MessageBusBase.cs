@@ -9,21 +9,24 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : MaintenanceBase, IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
         protected readonly List<IMessageSubscription> _subscriptions = new List<IMessageSubscription>();
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly ITypeNameSerializer _typeNameSerializer;
         protected readonly IMessageStore _store;
+        protected readonly ILogger _logger;
         private bool _isDisposed;
 
-        public MessageBusBase(TOptions options) : base(options.LoggerFactory) {
+        public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
+            var loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+            _logger = loggerFactory.CreateLogger(GetType());
             _typeNameSerializer = options.TypeNameSerializer ?? new DefaultTypeNameSerializer(_logger);
             _store = options.MessageStore ?? new InMemoryMessageStore(_logger);
             MessageBusId = Guid.NewGuid().ToString("N");
-            InitializeMaintenance(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+            SystemClock.ScheduleWork(DoMaintenanceAsync, SystemClock.UtcNow.AddSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         public string MessageBusId { get; protected set; }
@@ -49,6 +52,7 @@ namespace Foundatio.Messaging {
             var body = _serializer.SerializeToBytes(message);
 
             if (options.DeliverAtUtc.HasValue && options.DeliverAtUtc > SystemClock.UtcNow) {
+                _logger.LogTrace("Storing message scheduled for delivery at {DeliverAt}.", options.DeliverAtUtc.Value);
                 var typeName = _typeNameSerializer.Serialize(options.MessageType);
                 await _store.AddAsync(new PersistedMessage {
                     Id = Guid.NewGuid().ToString("N"),
@@ -60,8 +64,6 @@ namespace Foundatio.Messaging {
                     DeliverAtUtc = options.DeliverAtUtc,
                     Properties = options.Properties
                 });
-
-                ScheduleNextMaintenance(options.DeliverAtUtc.Value);
 
                 return;
             }
@@ -93,12 +95,15 @@ namespace Foundatio.Messaging {
             return subscribers.Count == 0;
         }
 
-        protected override async Task<DateTime?> DoMaintenanceAsync() {
+        protected async Task DoMaintenanceAsync() {
+            _logger.LogTrace("Checking for stored messages that are ready for delivery...");
             var pendingMessages = await _store.GetReadyForDeliveryAsync();
             foreach (var pendingMessage in pendingMessages) {
                 var messageType = _typeNameSerializer.Deserialize(pendingMessage.MessageTypeName);
                 var properties = new Dictionary<string, string>();
-                properties.AddRange(pendingMessage.Properties);
+                if (pendingMessage.Properties != null)
+                    properties.AddRange(pendingMessage.Properties);
+
                 await PublishImplAsync(pendingMessage.Body, new MessagePublishOptions {
                     CorrelationId = pendingMessage.CorrelationId,
                     DeliverAtUtc = pendingMessage.DeliverAtUtc,
@@ -108,12 +113,12 @@ namespace Foundatio.Messaging {
                 }).AnyContext();
             }
 
-            _subscriptions.RemoveAll(s => s.IsCancelled);
-
-            return null;
+            int removed = _subscriptions.RemoveAll(s => s.IsCancelled);
+            if (removed > 0)
+                _logger.LogTrace("Removing {CancelledSubscriptionCount} cancelled subscriptions.", removed);
         }
 
-        public override void Dispose() {
+        public virtual void Dispose() {
             if (_isDisposed) {
                 _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;

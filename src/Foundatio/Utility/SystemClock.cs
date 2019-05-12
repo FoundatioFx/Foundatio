@@ -11,6 +11,8 @@ namespace Foundatio.Utility {
         void Sleep(int milliseconds);
         Task SleepAsync(int milliseconds, CancellationToken ct);
         TimeSpan TimeZoneOffset();
+        void ScheduleWork(Action action, DateTime executeAt, TimeSpan? interval = null);
+        void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null);
     }
 
     public class RealSystemClock : ISystemClock {
@@ -23,6 +25,10 @@ namespace Foundatio.Utility {
         public void Sleep(int milliseconds) => Thread.Sleep(milliseconds);
         public Task SleepAsync(int milliseconds, CancellationToken ct) => Task.Delay(milliseconds, ct);
         public TimeSpan TimeZoneOffset() => DateTimeOffset.Now.Offset;
+        public void ScheduleWork(Action action, DateTime executeAt, TimeSpan? interval = null)
+            => WorkScheduler.Instance.Schedule(action, executeAt, interval);
+        public void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null)
+            => WorkScheduler.Instance.Schedule(action, executeAt, interval);
     }
 
     internal class TestSystemClockImpl : ISystemClock, IDisposable {
@@ -43,6 +49,10 @@ namespace Foundatio.Utility {
         public DateTimeOffset OffsetNow() => new(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
         public DateTimeOffset OffsetUtcNow() => new(UtcNow().Ticks, TimeSpan.Zero);
         public TimeSpan TimeZoneOffset() => _timeZoneOffset;
+        public void ScheduleWork(Action action, DateTime executeAt, TimeSpan? interval = null)
+            => WorkScheduler.Instance.Schedule(action, executeAt, interval);
+        public void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null)
+            => WorkScheduler.Instance.Schedule(action, executeAt, interval);
 
         public void SetTimeZoneOffset(TimeSpan offset) => _timeZoneOffset = offset;
         public void AddTime(TimeSpan amount) => _offset = _offset.Add(amount);
@@ -164,9 +174,13 @@ namespace Foundatio.Utility {
         public static void Sleep(int milliseconds) => Instance.Sleep(milliseconds);
         public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default)
             => Instance.SleepAsync(milliseconds, cancellationToken);
-        
+        public static void ScheduleWork(Action action, DateTime executeAt, TimeSpan? interval = null)
+            => Instance.ScheduleWork(action, executeAt, interval);
+        public static void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null)
+            => Instance.ScheduleWork(action, executeAt, interval);
+
         #region Extensions
-        
+
         public static void Sleep(TimeSpan delay)
             => Instance.Sleep(delay);
         
