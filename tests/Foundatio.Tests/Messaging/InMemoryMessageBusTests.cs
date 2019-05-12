@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Xunit;
@@ -62,6 +62,11 @@ namespace Foundatio.Tests.Messaging {
         [Fact]
         public override Task CanSendDelayedMessageAsync() {
             return base.CanSendDelayedMessageAsync();
+        }
+
+        [Fact]
+        public override Task CanSendParallelDelayedMessagesAsync() {
+            return base.CanSendParallelDelayedMessagesAsync();
         }
 
         [Fact]

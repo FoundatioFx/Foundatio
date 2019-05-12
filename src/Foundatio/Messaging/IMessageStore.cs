@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -26,7 +26,7 @@ namespace Foundatio.Messaging {
     }
 
     public class InMemoryMessageStore : IMessageStore {
-        private readonly List<InMemoryStoredMessage> _messages = new List<InMemoryStoredMessage>();
+        private readonly List<InMemoryPersistedMessage> _messages = new List<InMemoryPersistedMessage>();
         private readonly ILogger _logger;
 
         public InMemoryMessageStore(ILogger logger) {
@@ -34,16 +34,32 @@ namespace Foundatio.Messaging {
         }
 
         public Task AddAsync(PersistedMessage message) {
-            _messages.Add(new InMemoryStoredMessage(message));
+            _messages.Add(new InMemoryPersistedMessage(message));
             return Task.CompletedTask;
         }
 
         public Task<ICollection<PersistedMessage>> GetReadyForDeliveryAsync() {
             var dueList = new List<PersistedMessage>();
             foreach (var message in _messages) {
-                if (!message.IsProcessing && message.Message.DeliverAtUtc < SystemClock.UtcNow && message.MarkProcessing())
-                    dueList.Add(message.Message);
+                if (message.IsProcessing)
+                    continue;
+
+                if (message.Message.DeliverAtUtc > SystemClock.UtcNow)
+                    continue;
+
+                if (!message.MarkProcessing())
+                    continue;
+
+                dueList.Add(message.Message);
+
+                if (dueList.Count >= 100)
+                    break;
             }
+
+            if (_messages.Count <= 0)
+                _logger.LogTrace("No messages ready for delivery.");
+            else
+                _logger.LogTrace("Got {Count} / {Total} messages ready for delivery.", dueList.Count, _messages.Count);
 
             return Task.FromResult<ICollection<PersistedMessage>>(dueList);
         }
@@ -58,18 +74,24 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        protected class InMemoryStoredMessage {
-            public InMemoryStoredMessage(PersistedMessage message) {
+        protected class InMemoryPersistedMessage {
+            public InMemoryPersistedMessage(PersistedMessage message) {
                 Message = message;
             }
             
             public PersistedMessage Message { get; set; }
             public bool IsProcessing {
                 get {
-                    if (_processing != 0 && _startedProcessing < SystemClock.Now.Subtract(TimeSpan.FromMinutes(1)))
+                    if (_processing == 0)
+                        return false;
+
+                    // check for timeout
+                    if (SystemClock.UtcNow.Subtract(_startedProcessing) > TimeSpan.FromMinutes(1)) {
                         _processing = 0;
-                    
-                    return _processing != 0;
+                        return false;
+                    }
+
+                    return true;
                 }
             }
 
