@@ -27,6 +27,10 @@ namespace Foundatio.Utility {
             _logger = logger ?? NullLogger.Instance;
         }
 
+        public void SetLogger(ILoggerFactory loggerFactory) {
+            _logger = loggerFactory?.CreateLogger<WorkScheduler>() ?? NullLogger<WorkScheduler>.Instance;
+        }
+
         public AutoResetEvent NoWorkItemsDue { get; } = new AutoResetEvent(false);
 
         public void Schedule(Func<Task> action, TimeSpan delay, TimeSpan? interval = null) {
@@ -85,16 +89,24 @@ namespace Foundatio.Utility {
                     continue;
                 }
 
-                NoWorkItemsDue.Set();
-
-                if (_workItems.TryPeek(out var p)) {
-                    var delay = p.Key.Subtract(SystemClock.UtcNow);
-                    _logger.LogTrace("No work items due, next due at {DueTime} ({Delay:g} from now)", p.Key, delay);
+                if (kvp.Key != default) {
+                    var delay = kvp.Key.Subtract(SystemClock.UtcNow);
+                    _logger.LogTrace("No work items due, next due at {DueTime} ({Delay:g} from now)", kvp.Key, delay);
+                    
+                    // this can happen if items were inserted right after the loop started
+                    if (delay < TimeSpan.Zero)
+                        continue;
+                    
+                    NoWorkItemsDue.Set();
+                    
+                    // don't delay more than 1 minute
+                    // TODO: Do we really need this? We know when items are enqueued. I think we can trust it and wait the full time.
                     if (delay > TimeSpan.FromMinutes(1))
                         delay = TimeSpan.FromMinutes(1);
                     _workItemScheduled.WaitOne(delay);
                 } else {
                     _logger.LogTrace("No work items scheduled");
+                    NoWorkItemsDue.Set();
                     _workItemScheduled.WaitOne(TimeSpan.FromMinutes(1));
                 }
             }
