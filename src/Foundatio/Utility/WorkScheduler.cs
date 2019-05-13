@@ -23,6 +23,8 @@ namespace Foundatio.Utility {
             _taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(50));
         }
 
+        public AutoResetEvent NoWorkItemsDue { get; } = new AutoResetEvent(false);
+
         public void Schedule(Func<Task> action, TimeSpan delay, TimeSpan? interval = null) {
             Schedule(() => { _ = action(); }, SystemClock.UtcNow.Add(delay), interval);
         }
@@ -41,7 +43,8 @@ namespace Foundatio.Utility {
             if (executeAt.Kind != DateTimeKind.Utc)
                 executeAt = executeAt.ToUniversalTime();
 
-            _logger.LogTrace("Scheduling work due at {ExecuteAt}", executeAt);
+            var delay = executeAt.Subtract(SystemClock.UtcNow);
+            _logger.LogTrace("Scheduling work due at {ExecuteAt} ({Delay:g} from now)", executeAt, delay);
             _workItems.Enqueue(executeAt, new WorkItem {
                 Action = action,
                 ExecuteAtUtc = executeAt,
@@ -59,6 +62,7 @@ namespace Foundatio.Utility {
                     return;
 
                 _logger.LogTrace("Starting work loop");
+                TestSystemClock.Changed += (s, e) => { _workItemScheduled.Set(); };
                 _workLoopTask = Task.Factory.StartNew(WorkLoop, TaskCreationOptions.LongRunning);
             }
         }
@@ -66,24 +70,28 @@ namespace Foundatio.Utility {
         private void WorkLoop() {
             _logger.LogTrace("Work loop started");
             while (!_isDisposed) {
-                _logger.LogTrace("Checking for items due after {CurrentTime}", SystemClock.UtcNow);
                 if (_workItems.TryDequeueIf(out var kvp, i => i.ExecuteAtUtc < SystemClock.UtcNow)) {
-                    _logger.LogTrace("Starting work item due at {DueTime}", kvp.Key);
+                    _logger.LogTrace("Starting work item due at {DueTime} current time {CurrentTime}", kvp.Key, SystemClock.UtcNow);
                     _ = _taskFactory.StartNew(() => {
                         var startTime = SystemClock.UtcNow;
                         kvp.Value.Action();
                         if (kvp.Value.Interval.HasValue)
                             Schedule(kvp.Value.Action, startTime.Add(kvp.Value.Interval.Value));
                     });
-                    _logger.LogTrace("Work item started");
+                    continue;
+                }
+
+                NoWorkItemsDue.Set();
+
+                if (_workItems.TryPeek(out var p)) {
+                    var delay = p.Key.Subtract(SystemClock.UtcNow);
+                    _logger.LogTrace("No work items due, next due at {DueTime} ({Delay:g} from now)", p.Key, delay);
+                    if (delay > TimeSpan.FromMinutes(1))
+                        delay = TimeSpan.FromMinutes(1);
+                    _workItemScheduled.WaitOne(delay);
                 } else {
-                    if (_workItems.TryPeek(out var p)) {
-                        _logger.LogTrace("Next work item due at {DueTime}", p.Key);
-                        _workItemScheduled.WaitOne(p.Key.Subtract(SystemClock.UtcNow));
-                    } else {
-                        _logger.LogTrace("No work items due");
-                        _workItemScheduled.WaitOne(TimeSpan.FromMinutes(1));
-                    }
+                    _logger.LogTrace("No work items scheduled");
+                    _workItemScheduled.WaitOne(TimeSpan.FromMinutes(1));
                 }
             }
             _logger.LogTrace("Work loop stopped");
