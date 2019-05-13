@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public interface ISystemClock {
@@ -186,8 +187,21 @@ namespace Foundatio.Utility {
         }
 
         public static IDisposable Install() {
+            return Install(true, null);
+        }
+
+        public static IDisposable Install(ILoggerFactory loggerFactory) {
+            return Install(true, loggerFactory);
+        }
+
+        public static IDisposable Install(bool freeze, ILoggerFactory loggerFactory) {
             var testClock = new TestSystemClockImpl(SystemClock.Instance);
             SystemClock.Instance = testClock;
+            if (freeze)
+                testClock.Freeze();
+            
+            if (loggerFactory != null)
+                WorkScheduler.Default.SetLogger(loggerFactory);
             
             return testClock;
         }
