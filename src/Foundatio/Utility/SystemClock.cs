@@ -64,9 +64,21 @@ namespace Foundatio.Utility {
         public void ScheduleWork(Func<Task> action, TimeSpan delay, TimeSpan? interval = null)
             => WorkScheduler.Instance.Schedule(action, delay, interval);
 
-        public void SetTimeZoneOffset(TimeSpan offset) => _timeZoneOffset = offset;
-        public void AddTime(TimeSpan amount) => _offset = _offset.Add(amount);
-        public void SubtractTime(TimeSpan amount) => _offset = _offset.Subtract(amount);
+        public void SetTimeZoneOffset(TimeSpan offset) {
+            _timeZoneOffset = offset;
+            OnChanged();
+        }
+
+        public void AddTime(TimeSpan amount) {
+            _offset = _offset.Add(amount);
+            OnChanged();
+        }
+
+        public void SubtractTime(TimeSpan amount) {
+            _offset = _offset.Subtract(amount);
+            OnChanged();
+        }
+
         public void UseFakeSleep() => _fakeSleep = true;
         public void UseRealSleep() => _fakeSleep = false;
         
@@ -110,8 +122,10 @@ namespace Foundatio.Utility {
 
                 if (time.Kind == DateTimeKind.Utc) {
                     _fixedUtc = time;
+                    OnChanged();
                 } else if (time.Kind == DateTimeKind.Local) {
                     _fixedUtc = new DateTime(time.Ticks - TimeZoneOffset().Ticks, DateTimeKind.Utc);
+                    OnChanged();
                 }
             } else {
                 _fixedUtc = null;
@@ -121,10 +135,18 @@ namespace Foundatio.Utility {
 
                 if (time.Kind == DateTimeKind.Utc) {
                     _offset = now.ToUniversalTime().Subtract(time);
+                    OnChanged();
                 } else if (time.Kind == DateTimeKind.Local) {
                     _offset = now.Subtract(time);
+                    OnChanged();
                 }
             }
+        }
+
+        public event EventHandler Changed;
+
+        private void OnChanged() {
+            Changed?.Invoke(this, EventArgs.Empty);
         }
         
         public void Dispose() {
@@ -156,6 +178,11 @@ namespace Foundatio.Utility {
         public static void Unfreeze() => TestSystemClockImpl.Instance.Unfreeze();
         public static void SetFrozenTime(DateTime time) => TestSystemClockImpl.Instance.SetFrozenTime(time);
         public static void SetTime(DateTime time, bool freeze = false) => TestSystemClockImpl.Instance.SetTime(time, freeze);
+
+        public static event EventHandler Changed {
+            add { TestSystemClockImpl.Instance.Changed += value; }
+            remove { TestSystemClockImpl.Instance.Changed -= value; }
+        }
 
         public static IDisposable Install() {
             var testClock = new TestSystemClockImpl(SystemClock.Instance);
