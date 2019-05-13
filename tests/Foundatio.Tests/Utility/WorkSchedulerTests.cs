@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Logging.Xunit;
-using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
