@@ -36,46 +36,48 @@ namespace Foundatio.Tests.Utility {
         public void CanScheduleMultipleWorkItems() {
             using (TestSystemClock.Install()) {
                 Log.MinimumLevel = LogLevel.Trace;
-                var now = TestSystemClock.Freeze();
-                var workScheduler = new WorkScheduler(Log);
+                TestSystemClock.Freeze();
+                WorkScheduler.Default.SetLogger(_logger);
                 var countdown = new CountdownEvent(3);
                 
                 // schedule work due in 5 minutes
-                workScheduler.Schedule(() => {
+                SystemClock.ScheduleWork(() => {
                     _logger.LogTrace("Doing 5 minute work");
                     countdown.Signal();
                 }, TimeSpan.FromMinutes(5));
                 
                 // schedule work due in 1 second
-                workScheduler.Schedule(() => {
+                SystemClock.ScheduleWork(() => {
                     _logger.LogTrace("Doing 1 second work");
                     countdown.Signal();
                 }, TimeSpan.FromSeconds(1));
                 
                 // schedule work that is already past due
-                workScheduler.Schedule(() => {
+                SystemClock.ScheduleWork(() => {
                     _logger.LogTrace("Doing past due work");
                     countdown.Signal();
                 }, TimeSpan.FromSeconds(-1));
 
                 // wait until we get signal that no items are currently due
-                workScheduler.NoWorkItemsDue.WaitOne();
-                countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(1));
+                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne(), "Wait for all due work items to be scheduled");
+                Assert.True(countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(1)), "Wait for past due work to be done");
                 Assert.Equal(2, countdown.CurrentCount);
                 
                 // verify additional work will not happen until time changes
                 Assert.False(countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(2)));
 
                 _logger.LogTrace("Adding 1 minute to current time.");
-                TestSystemClock.AddTime(TimeSpan.FromMinutes(1));
-                workScheduler.NoWorkItemsDue.WaitOne();
-                countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(1));
+                // sleeping for a minute to make 1 second work due
+                SystemClock.Sleep(TimeSpan.FromMinutes(1));
+                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne());
+                Assert.True(countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(1)));
                 Assert.Equal(1, countdown.CurrentCount);
 
                 _logger.LogTrace("Adding 5 minutes to current time.");
-                TestSystemClock.AddTime(TimeSpan.FromMinutes(5));
-                workScheduler.NoWorkItemsDue.WaitOne();
-                countdown.Wait(TimeSpan.FromSeconds(1));
+                // sleeping for 5 minutes to make 5 minute work due
+                SystemClock.Sleep(TimeSpan.FromMinutes(5));
+                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne());
+                Assert.True(countdown.Wait(TimeSpan.FromSeconds(1)));
                 Assert.Equal(0, countdown.CurrentCount);
             }
         }

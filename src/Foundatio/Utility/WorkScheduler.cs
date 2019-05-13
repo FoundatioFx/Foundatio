@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     public class WorkScheduler : IDisposable {
-        public static WorkScheduler Instance = new WorkScheduler();
+        public static WorkScheduler Default = new WorkScheduler();
 
-        private readonly ILogger _logger;
+        private ILogger _logger;
         private bool _isDisposed = false;
         private readonly SortedQueue<DateTime, WorkItem> _workItems = new SortedQueue<DateTime, WorkItem>();
         private readonly TaskFactory _taskFactory;
@@ -21,6 +21,10 @@ namespace Foundatio.Utility {
             _logger = loggerFactory?.CreateLogger<WorkScheduler>() ?? NullLogger<WorkScheduler>.Instance;
             // limit scheduled task processing to 50 at a time
             _taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(50));
+        }
+
+        public void SetLogger(ILogger logger) {
+            _logger = logger ?? NullLogger.Instance;
         }
 
         public AutoResetEvent NoWorkItemsDue { get; } = new AutoResetEvent(false);
