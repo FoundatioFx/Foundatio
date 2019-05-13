@@ -84,7 +84,7 @@ namespace Foundatio.Messaging {
                 message = ConvertToMessageBusData(e);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing messsage: {Message}", e.BasicProperties?.MessageId, ex.Message);
+                    _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing message: {Message}", e.BasicProperties?.MessageId, ex.Message);
                 return;
             }
 
@@ -249,7 +249,7 @@ namespace Foundatio.Messaging {
             // Setup the queue where the messages will reside - it requires the queue name and durability.
             // Durable (the queue will survive a broker restart)
             // Arguments (some brokers use it to implement additional features like message TTL)
-            var result = model.QueueDeclare(String.Empty, _options.IsDurable, true, true, _options.Arguments);
+            var result = model.QueueDeclare(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, String.IsNullOrEmpty(_options.SubscriptionQueueName), _options.Arguments);
             var queueName = result.QueueName;
 
             // bind the queue with the exchange.

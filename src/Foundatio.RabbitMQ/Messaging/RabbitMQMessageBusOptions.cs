@@ -22,6 +22,16 @@ namespace Foundatio.Messaging {
         /// Durable (will survive a broker restart)
         /// </summary>
         public bool IsDurable { get; set; } = true;
+
+        /// <summary>
+        /// Whether or not the subscription queue is exclusive to this message bus instance?
+        /// </summary>
+        public bool IsSubscriptionQueueExclusive { get; set; } = true;
+
+        /// <summary>
+        /// The name of the subscription queue this message bus instance will listen on.
+        /// </summary>
+        public string SubscriptionQueueName { get; set; } = String.Empty;
     }
 
     public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder> {
@@ -42,6 +52,16 @@ namespace Foundatio.Messaging {
 
         public RabbitMQMessageBusOptionsBuilder IsDurable(bool isDurable) {
             Target.IsDurable = isDurable;
+            return this;
+        }
+
+        public RabbitMQMessageBusOptionsBuilder IsSubscriptionQueueExclusive(bool isExclusive) {
+            Target.IsSubscriptionQueueExclusive = isExclusive;
+            return this;
+        }
+
+        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueName(string subscriptionQueueName) {
+            Target.SubscriptionQueueName = subscriptionQueueName;
             return this;
         }
     }
