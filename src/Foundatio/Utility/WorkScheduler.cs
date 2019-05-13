@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -14,6 +15,7 @@ namespace Foundatio.Utility {
         private readonly TaskFactory _taskFactory;
         private Task _workLoopTask;
         private readonly object _lock = new object();
+        private readonly AutoResetEvent _workItemScheduled = new AutoResetEvent(false);
 
         public WorkScheduler(ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<WorkScheduler>() ?? NullLogger<WorkScheduler>.Instance;
@@ -45,6 +47,7 @@ namespace Foundatio.Utility {
                 ExecuteAtUtc = executeAt,
                 Interval = interval
             });
+            _workItemScheduled.Set();
         }
 
         private void EnsureWorkLoopRunning() {
@@ -74,8 +77,13 @@ namespace Foundatio.Utility {
                     });
                     _logger.LogTrace("Work item started");
                 } else {
-                    _logger.LogTrace("No work items due");
-                    Thread.Sleep(100);
+                    if (_workItems.TryPeek(out var p)) {
+                        _logger.LogTrace("Next work item due at {DueTime}", p.Key);
+                        _workItemScheduled.WaitOne(p.Key.Subtract(SystemClock.UtcNow));
+                    } else {
+                        _logger.LogTrace("No work items due");
+                        _workItemScheduled.WaitOne(TimeSpan.FromMinutes(1));
+                    }
                 }
             }
             _logger.LogTrace("Work loop stopped");
@@ -83,7 +91,7 @@ namespace Foundatio.Utility {
 
         public void Dispose() {
             _isDisposed = true;
-            _workLoopTask.Wait(5000);
+            _workLoopTask.Wait();
             _workLoopTask = null;
         }
 
