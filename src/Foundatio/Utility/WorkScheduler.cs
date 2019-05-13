@@ -6,8 +6,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
+    /// <summary>
+    /// Used for scheduling tasks to be completed in the future. Uses the SystemClock so that making use of this makes it easy to test time sensitive code.
+    /// <remarks>This is the same as using the thread pool. Long running tasks should not be scheduled on this. Tasks should generally last no longer than a few seconds.</remarks>
+    /// </summary>
     public class WorkScheduler : IDisposable {
-        public static WorkScheduler Default = new WorkScheduler();
+        public static readonly WorkScheduler Default = new WorkScheduler();
 
         private ILogger _logger;
         private bool _isDisposed = false;
@@ -46,8 +50,6 @@ namespace Foundatio.Utility {
         }
 
         public void Schedule(Action action, DateTime executeAt, TimeSpan? interval = null) {
-            EnsureWorkLoopRunning();
-
             if (executeAt.Kind != DateTimeKind.Utc)
                 executeAt = executeAt.ToUniversalTime();
 
@@ -58,6 +60,8 @@ namespace Foundatio.Utility {
                 ExecuteAtUtc = executeAt,
                 Interval = interval
             });
+
+            EnsureWorkLoopRunning();
             _workItemScheduled.Set();
         }
 
@@ -88,25 +92,15 @@ namespace Foundatio.Utility {
                     });
                     continue;
                 }
+                    
+                NoWorkItemsDue.Set();
 
                 if (kvp.Key != default) {
                     var delay = kvp.Key.Subtract(SystemClock.UtcNow);
                     _logger.LogTrace("No work items due, next due at {DueTime} ({Delay:g} from now)", kvp.Key, delay);
-                    
-                    // this can happen if items were inserted right after the loop started
-                    if (delay < TimeSpan.Zero)
-                        continue;
-                    
-                    NoWorkItemsDue.Set();
-                    
-                    // don't delay more than 1 minute
-                    // TODO: Do we really need this? We know when items are enqueued. I think we can trust it and wait the full time.
-                    if (delay > TimeSpan.FromMinutes(1))
-                        delay = TimeSpan.FromMinutes(1);
                     _workItemScheduled.WaitOne(delay);
                 } else {
                     _logger.LogTrace("No work items scheduled");
-                    NoWorkItemsDue.Set();
                     _workItemScheduled.WaitOne(TimeSpan.FromMinutes(1));
                 }
             }

@@ -14,6 +14,7 @@ namespace Foundatio.Tests.Utility {
         [Fact]
         public void CanScheduleWork() {
             Log.MinimumLevel = LogLevel.Trace;
+            _logger.LogTrace("Starting test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
             using (TestSystemClock.Install(Log)) {
                 var countdown = new CountdownEvent(1);
                 SystemClock.ScheduleWork(() => {
@@ -28,11 +29,13 @@ namespace Foundatio.Tests.Utility {
                 countdown.Wait();
                 Assert.Equal(0, countdown.CurrentCount);
             }
+            _logger.LogTrace("Ending test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
         }
 
         [Fact]
         public void CanScheduleMultipleUnorderedWorkItems() {
             Log.MinimumLevel = LogLevel.Trace;
+            _logger.LogTrace("Starting test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
             using (TestSystemClock.Install(Log)) {
                 var countdown = new CountdownEvent(3);
                 
@@ -63,8 +66,8 @@ namespace Foundatio.Tests.Utility {
                 Assert.Equal(2, countdown.CurrentCount);
                 
                 // verify additional work will not happen until time changes
-                Assert.False(countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(2)));
-
+                countdown.WaitHandle.WaitOne(TimeSpan.FromSeconds(2));
+                
                 _logger.LogTrace("Adding 1 minute to current time");
                 // sleeping for a minute to make 1 second work due
                 SystemClock.Sleep(TimeSpan.FromMinutes(1));
@@ -82,11 +85,14 @@ namespace Foundatio.Tests.Utility {
                 _logger.LogTrace("Check that current countdown is zero");
                 Assert.Equal(0, countdown.CurrentCount);
             }
+            _logger.LogTrace("Ending test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
         }
         
-        // long running work item won't block other work items from running
+        // long running work item won't block other work items from running, this is bad usage, but we should make sure it works.
         // can run with no work scheduled
         // work items that throw don't affect other work items
         // do we need to do anything for unhandled exceptions or would users just use the normal unhandled exception handler since the tasks are just being run on the normal thread pool
+        // test overall performance, what is the throughput of this scheduler? Should be good since it's just using the normal thread pool, but we may want to increase max concurrent or base it on ThreadPool.GetMaxThreads to avoid thread starvation solely coming from Foundatio.
+        // verify multiple tests manipulating the systemclock don't affect each other
     }
 }
