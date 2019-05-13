@@ -2,6 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     public interface ISystemClock {
@@ -152,12 +153,7 @@ namespace Foundatio.Utility {
         }
         
         public void Dispose() {
-            if (_originalClock == null)
-                return;
-            
-            var originalClock = Interlocked.Exchange(ref _originalClock, null);
-            if (originalClock != null)
-                SystemClock.Instance = originalClock;
+            SystemClock.SetInstance(_originalClock, null);
         }
         
         public static TestSystemClockImpl Instance {
@@ -186,17 +182,13 @@ namespace Foundatio.Utility {
             remove => TestSystemClockImpl.Instance.Changed -= value;
         }
 
-        public static IDisposable Install() {
-            return Install(true, null);
-        }
-
         public static IDisposable Install(ILoggerFactory loggerFactory) {
             return Install(true, loggerFactory);
         }
 
-        public static IDisposable Install(bool freeze, ILoggerFactory loggerFactory) {
+        public static IDisposable Install(bool freeze = true, ILoggerFactory loggerFactory = null) {
             var testClock = new TestSystemClockImpl(SystemClock.Instance);
-            SystemClock.Instance = testClock;
+            SystemClock.SetInstance(testClock, loggerFactory);
             if (freeze)
                 testClock.Freeze();
             
@@ -210,13 +202,32 @@ namespace Foundatio.Utility {
     public static class SystemClock {
         private static AsyncLocal<ISystemClock> _instance;
         
-        public static ISystemClock Instance {
-            get => _instance?.Value ?? RealSystemClock.Instance;
-            set {
-                if (_instance == null)
-                    _instance = new AsyncLocal<ISystemClock>();
-                
-                _instance.Value = value;
+        public static ISystemClock Instance => _instance?.Value ?? RealSystemClock.Instance;
+
+        public static void SetInstance(ISystemClock clock, ILoggerFactory loggerFactory) {
+            var logger = loggerFactory?.CreateLogger("SystemClock") ?? NullLogger.Instance;
+            _instance = new AsyncLocal<ISystemClock>(e => {
+                if (e.ThreadContextChanged)
+                    return;
+
+                if (e.PreviousValue != null && e.CurrentValue != null) {
+                    var diff = e.PreviousValue.Now().Subtract(e.CurrentValue.Now());
+                    logger.LogTrace("SystemClock instance is being changed by {ThreadId} from {OldTime} to {NewTime} diff {Difference:g}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now(), e.CurrentValue?.Now(), diff);
+                }
+
+                if (e.PreviousValue == null)
+                    logger.LogTrace("SystemClock instance is being initially set by {ThreadId} to {NewTime}", Thread.CurrentThread.ManagedThreadId, e.CurrentValue?.Now());
+
+                if (e.CurrentValue == null)
+                    logger.LogTrace("SystemClock instance is being removed set by {ThreadId} from {OldTime}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now());
+            });
+
+            if (clock == null || clock is RealSystemClock) {
+                if (_instance != null)
+                    _instance.Value = null;
+                _instance = null;
+            } else {
+                _instance.Value = clock;
             }
         }
 
@@ -237,8 +248,6 @@ namespace Foundatio.Utility {
         public static void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null)
             => Instance.ScheduleWork(action, executeAt, interval);
 
-        #region Extensions
-
         public static void Sleep(TimeSpan delay)
             => Instance.Sleep(delay);
         
@@ -251,8 +260,6 @@ namespace Foundatio.Utility {
         
         public static Task SleepSafeAsync(TimeSpan delay, CancellationToken cancellationToken = default)
             => Instance.SleepSafeAsync(delay, cancellationToken);
-        
-        #endregion
     }
  
     public static class TimeExtensions {
