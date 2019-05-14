@@ -60,7 +60,7 @@ namespace Foundatio.Messaging {
         private Task OnMessageAsync(Message brokeredMessage, CancellationToken cancellationToken) {
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
-
+            
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             MessageBusData message;
             try {
