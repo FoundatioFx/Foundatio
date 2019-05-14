@@ -24,16 +24,26 @@ namespace Foundatio.Messaging {
         public bool IsDurable { get; set; } = true;
 
         /// <summary>
-        /// Whether or not the subscription queue is exclusive to this message bus instance?
+        /// Whether or not the subscription queue is exclusive to this message bus instance.
         /// </summary>
         public bool IsSubscriptionQueueExclusive { get; set; } = true;
+
+        /// <summary>
+        /// Whether or not the subscription queue should be automatically deleted.
+        /// </summary>
+        public bool SubscriptionQueueAutoDelete { get; set; } = true;
 
         /// <summary>
         /// The name of the subscription queue this message bus instance will listen on.
         /// </summary>
         public string SubscriptionQueueName { get; set; } = String.Empty;
-    }
 
+        /// <summary>
+        /// How messages should be acknowledged.
+        /// </summary>
+        public AcknowledgementStrategy AcknowledgementStrategy { get; set; } = AcknowledgementStrategy.FireAndForget;
+    }
+    
     public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder> {
         public RabbitMQMessageBusOptionsBuilder ConnectionString(string connectionString) {
             Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
@@ -60,8 +70,18 @@ namespace Foundatio.Messaging {
             return this;
         }
 
+        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueAutoDelete(bool autoDelete) {
+            Target.SubscriptionQueueAutoDelete = autoDelete;
+            return this;
+        }
+
         public RabbitMQMessageBusOptionsBuilder SubscriptionQueueName(string subscriptionQueueName) {
             Target.SubscriptionQueueName = subscriptionQueueName;
+            return this;
+        }
+
+        public RabbitMQMessageBusOptionsBuilder AcknowledgementStrategy(AcknowledgementStrategy acknowledgementStrategy) {
+            Target.AcknowledgementStrategy = acknowledgementStrategy;
             return this;
         }
     }

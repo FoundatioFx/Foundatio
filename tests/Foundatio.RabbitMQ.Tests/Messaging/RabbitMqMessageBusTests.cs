@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -13,8 +15,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
                 o.ConnectionString("amqp://localhost");
                 o.LoggerFactory(Log);
 
-                if (config != null)
-                    config(o.Target);
+                config?.Invoke(o.Target);
 
                 return o;
             });
@@ -93,6 +94,57 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         [Fact]
         public override void CanDisposeWithNoSubscribersOrPublishers() {
             base.CanDisposeWithNoSubscribersOrPublishers();
+        }
+        
+        [Fact]
+        public void MessageQueueWillPersistAndNotLoseMessages() {
+            Log.MinimumLevel = LogLevel.Trace;
+            var messageBus1 = new RabbitMQMessageBus(o => o
+                .ConnectionString("amqp://localhost:5673")
+                .LoggerFactory(Log)
+                .SubscriptionQueueName("MyQueue")
+                .IsSubscriptionQueueExclusive(false)
+                .SubscriptionQueueAutoDelete(false)
+                .AcknowledgementStrategy(AcknowledgementStrategy.Automatic));
+            var t = new AutoResetEvent(false);
+            var cts = new CancellationTokenSource();
+            messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogTrace("Got message {Data}", msg.Data);
+                t.Set();
+            }, cts.Token);
+            messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 1"});
+            t.WaitOne();
+            cts.Cancel();
+            
+            messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 2"});
+
+            cts = new CancellationTokenSource();
+            messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogTrace("Got message {Data}", msg.Data);
+                t.Set();
+            }, cts.Token);
+            t.WaitOne();
+            cts.Cancel();
+            
+            messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 1"});
+            messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 2"});
+            messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 3"});
+            
+            messageBus1.Dispose();
+            var messageBus2 = new RabbitMQMessageBus(o => o
+                .ConnectionString("amqp://localhost:5673")
+                .LoggerFactory(Log)
+                .SubscriptionQueueName("MyQueue")
+                .IsSubscriptionQueueExclusive(false)
+                .SubscriptionQueueAutoDelete(false)
+                .AcknowledgementStrategy(AcknowledgementStrategy.Automatic));
+            cts = new CancellationTokenSource();
+            messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogTrace("Got message {Data}", msg.Data);
+                t.Set();
+            }, cts.Token);
+            messageBus2.PublishAsync(new SimpleMessageA {Data = "Another audit message 4"});
+            Thread.Sleep(5000);
         }
     }
 }

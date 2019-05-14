@@ -55,13 +55,13 @@ namespace Foundatio.Messaging {
                     _subscriberChannel = _subscriberClient.CreateModel();
                     CreateRegularExchange(_subscriberChannel);
                 }
-
+                
                 var queueName = CreateQueue(_subscriberChannel);
                 var consumer = new EventingBasicConsumer(_subscriberChannel);
                 consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
 
-                _subscriberChannel.BasicConsume(queueName, true, consumer);
+                _subscriberChannel.BasicConsume(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, consumer);
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
             }
@@ -93,6 +93,9 @@ namespace Foundatio.Messaging {
                 return;
 
             SendMessageToSubscribers(message, _serializer);
+            
+            if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                _subscriberChannel.BasicAck(e.DeliveryTag, false);
         }
 
         /// <summary>
@@ -129,7 +132,7 @@ namespace Foundatio.Messaging {
                     return;
 
                 // Create the client connection, channel, declares the exchange, queue and binds
-                // the exchange with the publisher queue. It requires the name of our exchange, exhange type, durability and autodelete.
+                // the exchange with the publisher queue. It requires the name of our exchange, exchange type, durability and auto-delete.
                 // For now we are using same autoDelete for both exchange and queue ( it will survive a server restart )
                 _publisherClient = CreateConnection();
                 _publisherChannel = _publisherClient.CreateModel();
@@ -140,7 +143,7 @@ namespace Foundatio.Messaging {
                 // then trouble shoot the problem.
                 if (!CreateDelayedExchange(_publisherChannel)) {
                     // if the initial exchange creation was not successful then we must close the previous connection
-                    // and establish the new client connection and model otherwise you will keep recieving failure in creation
+                    // and establish the new client connection and model otherwise you will keep receiving failure in creation
                     // of the regular exchange too.
                     _publisherClient = CreateConnection();
                     _publisherChannel = _publisherClient.CreateModel();
@@ -178,7 +181,10 @@ namespace Foundatio.Messaging {
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
+            basicProperties.MessageId = Guid.NewGuid().ToString("N");
             basicProperties.Type = messageType;
+            if (_options.IsDurable)
+                basicProperties.Persistent = true;
             if (_options.DefaultMessageTimeToLive.HasValue)
                 basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
 
@@ -191,7 +197,7 @@ namespace Foundatio.Messaging {
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
             } else {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
             }
 
             // The publication occurs with mandatory=false
@@ -249,7 +255,7 @@ namespace Foundatio.Messaging {
             // Setup the queue where the messages will reside - it requires the queue name and durability.
             // Durable (the queue will survive a broker restart)
             // Arguments (some brokers use it to implement additional features like message TTL)
-            var result = model.QueueDeclare(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, String.IsNullOrEmpty(_options.SubscriptionQueueName), _options.Arguments);
+            var result = model.QueueDeclare(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, _options.SubscriptionQueueAutoDelete, _options.Arguments);
             var queueName = result.QueueName;
 
             // bind the queue with the exchange.
