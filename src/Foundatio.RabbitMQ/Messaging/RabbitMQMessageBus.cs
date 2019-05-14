@@ -89,8 +89,17 @@ namespace Foundatio.Messaging {
             }
 
             var messageType = GetMappedMessageType(message.Type);
-            if (messageType == null || MessageTypeHasSubscribers(messageType))
+            if (messageType == null) {
+                _logger.LogError("Unable to get mapped message type {MessageType}", message.Type);
                 return;
+            }
+            
+            if (!MessageTypeHasSubscribers(messageType)) {
+                if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                    _subscriberChannel.BasicAck(e.DeliveryTag, false);
+                
+                return;
+            }
 
             SendMessageToSubscribers(message, _serializer);
             

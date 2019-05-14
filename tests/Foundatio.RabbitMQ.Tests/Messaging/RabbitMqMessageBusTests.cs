@@ -113,7 +113,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
                 t.Set();
             }, cts.Token);
             messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 1"});
-            t.WaitOne();
+            t.WaitOne(TimeSpan.FromSeconds(5));
             cts.Cancel();
             
             messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 2"});
@@ -123,7 +123,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
                 _logger.LogTrace("Got message {Data}", msg.Data);
                 t.Set();
             }, cts.Token);
-            t.WaitOne();
+            t.WaitOne(TimeSpan.FromSeconds(5));
             cts.Cancel();
             
             messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 1"});
@@ -144,7 +144,6 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
                 t.Set();
             }, cts.Token);
             messageBus2.PublishAsync(new SimpleMessageA {Data = "Another audit message 4"});
-            Thread.Sleep(5000);
         }
     }
 }
