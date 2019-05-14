@@ -98,7 +98,7 @@ namespace Foundatio.Messaging {
 
         protected bool MessageTypeHasSubscribers(Type messageType) {
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
-            return subscribers.Count == 0;
+            return subscribers.Count > 0;
         }
 
         protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
