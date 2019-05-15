@@ -83,7 +83,8 @@ namespace Foundatio.Utility {
 
         public void UseFakeSleep() => _fakeSleep = true;
         public void UseRealSleep() => _fakeSleep = false;
-        
+        public bool IsTimeFrozen => _fakeSleep = _fixedUtc != null;
+
         public void Sleep(int milliseconds) {
             if (!_fakeSleep) {
                 Thread.Sleep(milliseconds);
@@ -176,6 +177,7 @@ namespace Foundatio.Utility {
         public static void Unfreeze() => TestSystemClockImpl.Instance.Unfreeze();
         public static void SetFrozenTime(DateTime time) => TestSystemClockImpl.Instance.SetFrozenTime(time);
         public static void SetTime(DateTime time, bool freeze = false) => TestSystemClockImpl.Instance.SetTime(time, freeze);
+        public static bool IsTimeFrozen => TestSystemClockImpl.Instance.IsTimeFrozen;
 
         public static event EventHandler Changed {
             add => TestSystemClockImpl.Instance.Changed += value;
