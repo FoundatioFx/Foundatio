@@ -137,11 +137,9 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobsWithInterval() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-                TestSystemClock.SetFrozenTime(time);
-                TestSystemClock.UseFakeSleep();
+                clock.SetTime(time);
 
                 var job = new HelloWorldJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -155,11 +153,9 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobsWithIntervalBetweenFailingJob() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-                TestSystemClock.SetFrozenTime(time);
-                TestSystemClock.UseFakeSleep();
+                clock.SetTime(time);
 
                 var job = new FailingJob(Log);
                 var interval = TimeSpan.FromHours(.75);

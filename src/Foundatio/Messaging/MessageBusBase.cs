@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+    public abstract class MessageBusBase<TOptions> : IMessageBus where TOptions : SharedMessageBusOptions {
         protected readonly List<IMessageSubscription> _subscriptions = new List<IMessageSubscription>();
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
@@ -88,6 +88,10 @@ namespace Foundatio.Messaging {
             _subscriptions.Add(subscription);
 
             return subscription;
+        }
+
+        public Task<IMessageContext> ReceiveAsync(MessageReceiveOptions options) {
+            throw new NotImplementedException();
         }
 
         protected bool MessageTypeHasSubscribers(Type messageType) {
