@@ -15,17 +15,17 @@ namespace Foundatio.Tests.Utility {
         public void CanScheduleWork() {
             Log.MinimumLevel = LogLevel.Trace;
             _logger.LogTrace("Starting test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
-            using (TestSystemClock.Install(Log)) {
+            using (var clock = TestSystemClock.Install(Log)) {
                 var countdown = new CountdownEvent(1);
                 SystemClock.ScheduleWork(() => {
                     _logger.LogTrace("Doing work");
                     countdown.Signal();
                 }, TimeSpan.FromMinutes(5));
-                WorkScheduler.Default.NoWorkItemsDue.WaitOne();
+                clock.NoScheduledWorkItemsDue.WaitOne(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
                 _logger.LogTrace("Adding 6 minutes to current time.");
                 SystemClock.Sleep(TimeSpan.FromMinutes(6));
-                WorkScheduler.Default.NoWorkItemsDue.WaitOne();
+                clock.NoScheduledWorkItemsDue.WaitOne(TimeSpan.FromMilliseconds(100));
                 countdown.Wait();
                 Assert.Equal(0, countdown.CurrentCount);
             }
@@ -36,51 +36,51 @@ namespace Foundatio.Tests.Utility {
         public void CanScheduleMultipleUnorderedWorkItems() {
             Log.MinimumLevel = LogLevel.Trace;
             _logger.LogTrace("Starting test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
-            using (TestSystemClock.Install(Log)) {
+            using (var clock = TestSystemClock.Install(Log)) {
                 var work1Event = new ManualResetEvent(false);
                 var work2Event = new ManualResetEvent(false);
                 var work3Event = new ManualResetEvent(false);
                 
                 // schedule work due in 5 minutes
-                SystemClock.ScheduleWork(() => {
+                clock.ScheduleWork(() => {
                     _logger.LogTrace("Doing 5 minute work");
                     work1Event.Set();
                 }, TimeSpan.FromMinutes(5));
                 
                 // schedule work due in 1 second
-                SystemClock.ScheduleWork(() => {
+                clock.ScheduleWork(() => {
                     _logger.LogTrace("Doing 1 second work");
                     work2Event.Set();
                 }, TimeSpan.FromSeconds(1));
                 
                 // schedule work that is already past due
-                SystemClock.ScheduleWork(() => {
+                clock.ScheduleWork(() => {
                     _logger.LogTrace("Doing past due work");
                     work3Event.Set();
                 }, TimeSpan.FromSeconds(-1));
 
                 // wait until we get signal that no items are currently due
                 _logger.LogTrace("Waiting for past due items to be started");
-                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne(), "Wait for all due work items to be scheduled");
+                Assert.True(clock.NoScheduledWorkItemsDue.WaitOne(), "Wait for all due work items to be scheduled");
                 _logger.LogTrace("Waiting for past due work to be completed");
                 // work can be done before we even get here, but wait one to be sure it's done
                 Assert.True(work3Event.WaitOne(TimeSpan.FromSeconds(1)));
 
                 // verify additional work will not happen until time changes
-                Assert.False(work2Event.WaitOne(TimeSpan.FromSeconds(1)));
+                Assert.False(work2Event.WaitOne(TimeSpan.FromMilliseconds(100)));
 
                 _logger.LogTrace("Adding 1 minute to current time");
                 // sleeping for a minute to make 1 second work due
-                SystemClock.Sleep(TimeSpan.FromMinutes(1));
-                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne());
+                clock.Sleep(TimeSpan.FromMinutes(1));
+                Assert.True(clock.NoScheduledWorkItemsDue.WaitOne());
                 Assert.True(work2Event.WaitOne(TimeSpan.FromSeconds(1)));
 
                 _logger.LogTrace("Adding 5 minutes to current time");
                 // sleeping for 5 minutes to make 5 minute work due
-                SystemClock.Sleep(TimeSpan.FromMinutes(5));
+                clock.Sleep(TimeSpan.FromMinutes(5));
                 _logger.LogTrace("Waiting for no work items due");
-                Assert.True(WorkScheduler.Default.NoWorkItemsDue.WaitOne());
-                _logger.LogTrace("Waiting for 5 minute work to be completes");
+                Assert.True(clock.NoScheduledWorkItemsDue.WaitOne());
+                _logger.LogTrace("Waiting for 5 minute work to be completed");
                 Assert.True(work1Event.WaitOne(TimeSpan.FromSeconds(1)));
             }
             _logger.LogTrace("Ending test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);

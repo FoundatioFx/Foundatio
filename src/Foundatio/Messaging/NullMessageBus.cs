@@ -15,6 +15,10 @@ namespace Foundatio.Messaging {
             return Task.FromResult<IMessageSubscription>(new MessageSubscription(options.MessageType, () => {}));
         }
 
+        public Task<IMessageContext> ReceiveAsync(MessageReceiveOptions options) {
+            return Task.FromResult<IMessageContext>(null);
+        }
+
         public void Dispose() {}
     }
 }

@@ -4,12 +4,14 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
-    public interface IMessageSubscriber {
+    public interface IMessageSubscriber : IDisposable {
         Task<IMessageSubscription> SubscribeAsync(MessageSubscriptionOptions options, Func<IMessageContext, Task> handler);
+        Task<IMessageContext> ReceiveAsync(MessageReceiveOptions options);
     }
 
     public class MessageSubscriptionOptions {
         public Type MessageType { get; set; }
+        public int PrefetchCount { get; set; } = 1;
         public CancellationToken CancellationToken { get; set; }
 
         public MessageSubscriptionOptions WithMessageType(Type messageType) {
@@ -17,7 +19,33 @@ namespace Foundatio.Messaging {
             return this;
         }
 
+        public MessageSubscriptionOptions WithPrefetchCount(int prefetchCount) {
+            PrefetchCount = prefetchCount;
+            return this;
+        }
+
         public MessageSubscriptionOptions WithCancellationToken(CancellationToken cancellationToken) {
+            CancellationToken = cancellationToken;
+            return this;
+        }
+    }
+
+    public class MessageReceiveOptions {
+        public Type MessageType { get; set; }
+        public TimeSpan Timeout { get; set; }
+        public CancellationToken CancellationToken { get; set; }
+
+        public MessageReceiveOptions WithMessageType(Type messageType) {
+            MessageType = messageType;
+            return this;
+        }
+
+        public MessageReceiveOptions WithTimeout(TimeSpan timeout) {
+            Timeout = timeout;
+            return this;
+        }
+
+        public MessageReceiveOptions WithCancellationToken(CancellationToken cancellationToken) {
             CancellationToken = cancellationToken;
             return this;
         }
