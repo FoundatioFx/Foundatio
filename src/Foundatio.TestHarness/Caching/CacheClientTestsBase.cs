@@ -377,11 +377,11 @@ namespace Foundatio.Tests.Caching {
                 await cache.RemoveAllAsync();
 
                 using (var clock = TestSystemClock.Install()) {
-                    var expires = DateTime.MaxValue - clock.Now().AddDays(1);
+                    var expires = DateTime.MaxValue - clock.Now.AddDays(1);
                     Assert.True(await cache.SetAsync("test1", 1, expires));
                     Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
                     Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
-                    Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - clock.Now().AddDays(-1)));
+                    Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - clock.Now.AddDays(-1)));
                     
                     Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
                     Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);

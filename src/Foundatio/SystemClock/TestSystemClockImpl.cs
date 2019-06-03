@@ -6,7 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
     internal class TestSystemClockImpl : ITestSystemClock {
-        private DateTimeOffset _time = DateTimeOffset.Now;
+        private DateTime _utcTime = DateTime.UtcNow;
+        private TimeSpan _offset = DateTimeOffset.Now.Offset;
         private readonly ISystemClock _originalClock;
         private readonly WorkScheduler _workScheduler;
 
@@ -20,26 +21,32 @@ namespace Foundatio.Utility {
             _originalClock = originalTime;
         }
 
-        public DateTime UtcNow() => _time.UtcDateTime;
-        public DateTime Now() => _time.DateTime;
-        public DateTimeOffset OffsetNow() => _time;
-        public DateTimeOffset OffsetUtcNow() => new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);
-        public TimeSpan TimeZoneOffset() => _time.Offset;
+        public DateTime UtcNow => _utcTime;
+        public DateTime Now => new DateTime(_utcTime.Add(_offset).Ticks, DateTimeKind.Local);
+        public DateTimeOffset OffsetNow => new DateTimeOffset(Now.Ticks, _offset);
+        public DateTimeOffset OffsetUtcNow => new DateTimeOffset(_utcTime);
+        public TimeSpan Offset => _offset;
         public void ScheduleWork(Action action, TimeSpan delay, TimeSpan? interval = null)
             => _workScheduler.Schedule(action, delay, interval);
         public void ScheduleWork(Action action, DateTime executeAtUtc, TimeSpan? interval = null)
             => _workScheduler.Schedule(action, executeAtUtc, interval);
 
         public void AddTime(TimeSpan amount) {
-            _time = _time.Add(amount);
+            _utcTime = _utcTime.Add(amount);
             OnChanged();
         }
 
-        public void SetTime(DateTime time, TimeSpan? timeZoneOffset = null) {
-            if (timeZoneOffset.HasValue)
-                _time = new DateTimeOffset(time.ToUniversalTime(), timeZoneOffset.Value);
+        public void SetTime(DateTime time, TimeSpan? offset = null) {
+            if (time.Kind == DateTimeKind.Local)
+                _utcTime = time.ToUniversalTime();
+            else if (time.Kind == DateTimeKind.Unspecified)
+                _utcTime = new DateTime(time.Ticks, DateTimeKind.Utc);
             else
-                _time = new DateTimeOffset(time);
+                _utcTime = time;
+
+            if (offset.HasValue)
+                _offset = offset.Value;
+            
             OnChanged();
         }
 
@@ -50,7 +57,7 @@ namespace Foundatio.Utility {
             Thread.Sleep(1);
         }
 
-        public Task SleepAsync(int milliseconds, CancellationToken ct) {
+        public Task SleepAsync(int milliseconds, CancellationToken ct = default) {
             Sleep(milliseconds);
             return Task.CompletedTask;
         }

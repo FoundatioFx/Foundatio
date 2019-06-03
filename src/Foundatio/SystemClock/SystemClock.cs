@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility {
-    public static class SystemClock {
+    public class SystemClock {
         private static AsyncLocal<ISystemClock> _instance;
         
         public static ISystemClock Instance => _instance?.Value ?? RealSystemClock.Instance;
@@ -17,15 +17,15 @@ namespace Foundatio.Utility {
                     return;
 
                 if (e.PreviousValue != null && e.CurrentValue != null) {
-                    var diff = e.PreviousValue.Now().Subtract(e.CurrentValue.Now());
-                    logger.LogTrace("SystemClock instance is being changed by {ThreadId} from {OldTime} to {NewTime} diff {Difference:g}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now(), e.CurrentValue?.Now(), diff);
+                    var diff = e.PreviousValue.Now.Subtract(e.CurrentValue.Now);
+                    logger.LogTrace("SystemClock instance is being changed by {ThreadId} from {OldTime} to {NewTime} diff {Difference:g}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now, e.CurrentValue?.Now, diff);
                 }
 
                 if (e.PreviousValue == null)
-                    logger.LogTrace("SystemClock instance is being initially set by {ThreadId} to {NewTime}", Thread.CurrentThread.ManagedThreadId, e.CurrentValue?.Now());
+                    logger.LogTrace("SystemClock instance is being initially set by {ThreadId} to {NewTime}", Thread.CurrentThread.ManagedThreadId, e.CurrentValue?.Now);
 
                 if (e.CurrentValue == null)
-                    logger.LogTrace("SystemClock instance is being removed set by {ThreadId} from {OldTime}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now());
+                    logger.LogTrace("SystemClock instance is being removed set by {ThreadId} from {OldTime}", Thread.CurrentThread.ManagedThreadId, e.PreviousValue?.Now);
             });
 
             if (clock == null || clock is RealSystemClock) {
@@ -37,11 +37,11 @@ namespace Foundatio.Utility {
             }
         }
 
-        public static DateTime Now => Instance.Now();
-        public static DateTime UtcNow => Instance.UtcNow();
-        public static DateTimeOffset OffsetNow => Instance.OffsetNow();
-        public static DateTimeOffset OffsetUtcNow => Instance.OffsetUtcNow();
-        public static TimeSpan TimeZoneOffset => Instance.TimeZoneOffset();
+        public static DateTime Now => Instance.Now;
+        public static DateTime UtcNow => Instance.UtcNow;
+        public static DateTimeOffset OffsetNow => Instance.OffsetNow;
+        public static DateTimeOffset OffsetUtcNow => Instance.OffsetUtcNow;
+        public static TimeSpan TimeZoneOffset => Instance.Offset;
         public static void Sleep(int milliseconds) => Instance.Sleep(milliseconds);
         
         public static Task SleepAsync(int milliseconds, CancellationToken cancellationToken = default)

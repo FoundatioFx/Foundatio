@@ -11,101 +11,86 @@ namespace Foundatio.Tests.Utility {
         public SystemClockTests(ITestOutputHelper output) : base(output) {}
 
         [Fact]
-        public void CanGetTime() {
-            using (var clock = TestSystemClock.Install()) {
-                var now = DateTime.UtcNow;
-                clock.SetTime(now);
-                Assert.Equal(now, SystemClock.UtcNow);
-                Assert.Equal(now.ToLocalTime(), SystemClock.Now);
-                Assert.Equal(now, SystemClock.OffsetUtcNow);
-                Assert.Equal(now.ToLocalTime(), SystemClock.OffsetNow);
-                Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
-            }
-        }
-
-        [Fact]
-        public void CanSleep() {
-            using (var clock = TestSystemClock.Install()) {
-                var sw = Stopwatch.StartNew();
-                SystemClock.Sleep(250);
-                sw.Stop();
-                Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
-
-                var now = SystemClock.UtcNow;
-                sw.Restart();
-                SystemClock.Sleep(1000);
-                sw.Stop();
-                var afterSleepNow = SystemClock.UtcNow;
-
-                Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
-                Assert.True(afterSleepNow > now);
-                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 1100);
-            }
-        }
-
-        [Fact]
-        public async Task CanSleepAsync() {
-            using (var clock = TestSystemClock.Install()) {
-                var sw = Stopwatch.StartNew();
-                await SystemClock.SleepAsync(250);
-                sw.Stop();
-
-                Assert.InRange(sw.ElapsedMilliseconds, 225, 3000);
-
-                var now = SystemClock.UtcNow;
-                sw.Restart();
-                await SystemClock.SleepAsync(1000);
-                sw.Stop();
-                var afterSleepNow = SystemClock.UtcNow;
-
-                Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
-                Assert.True(afterSleepNow > now);
-                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 5000);
-            }
-        }
-
-        [Fact]
-        public void CanSetTimeZone() {
-            using (var clock = TestSystemClock.Install()) {
-                var utcNow = DateTime.UtcNow;
-                var now = new DateTime(utcNow.AddHours(1).Ticks, DateTimeKind.Local);
-                clock.SetTime(utcNow);
-
-                Assert.Equal(utcNow, SystemClock.UtcNow);
-                Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
-                Assert.Equal(now, SystemClock.Now);
-                Assert.Equal(new DateTimeOffset(now.Ticks, TimeSpan.FromHours(1)), SystemClock.OffsetNow);
-                Assert.Equal(TimeSpan.FromHours(1), SystemClock.TimeZoneOffset);
-            }
-        }
-
-        [Fact]
-        public void CanSetLocalFixedTime() {
+        public void CanSetTime() {
             using (var clock = TestSystemClock.Install()) {
                 var now = DateTime.Now;
-                var utcNow = now.ToUniversalTime();
                 clock.SetTime(now);
-
-                Assert.Equal(now, SystemClock.Now);
-                Assert.Equal(now, SystemClock.OffsetNow);
-                Assert.Equal(utcNow, SystemClock.UtcNow);
-                Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
-                Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
+                Assert.Equal(now, clock.Now);
+                Assert.Equal(DateTimeOffset.Now.Offset, clock.Offset);
+                Assert.Equal(now.ToUniversalTime(), clock.UtcNow);
+                Assert.Equal(now.ToLocalTime(), clock.Now);
+                Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
+                
+                now = DateTime.UtcNow;
+                clock.SetTime(now);
+                Assert.Equal(now, clock.Now);
+                Assert.Equal(DateTimeOffset.Now.Offset, clock.Offset);
+                Assert.Equal(now.ToUniversalTime(), clock.UtcNow);
+                Assert.Equal(now.ToLocalTime(), clock.Now);
+                Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
             }
         }
 
         [Fact]
-        public void CanSetUtcFixedTime() {
+        public void CanSetTimeWithOffset() {
             using (var clock = TestSystemClock.Install()) {
-                var utcNow = DateTime.UtcNow;
-                var now = utcNow.ToLocalTime();
-                clock.SetTime(utcNow);
+                var now = DateTimeOffset.Now;
+                clock.SetTime(now.LocalDateTime, now.Offset);
+                Assert.Equal(now, clock.OffsetNow);
+                Assert.Equal(now.Offset, clock.Offset);
+                Assert.Equal(now.UtcDateTime, clock.UtcNow);
+                Assert.Equal(now.DateTime, clock.Now);
+                Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
+                
+                clock.SetTime(now.UtcDateTime, now.Offset);
+                Assert.Equal(now, clock.OffsetNow);
+                Assert.Equal(now.Offset, clock.Offset);
+                Assert.Equal(now.UtcDateTime, clock.UtcNow);
+                Assert.Equal(now.DateTime, clock.Now);
+                Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
+                
+                now = new DateTimeOffset(now.DateTime, TimeSpan.FromHours(1));
+                clock.SetTime(now.LocalDateTime, now.Offset);
+                Assert.Equal(now, clock.OffsetNow);
+                Assert.Equal(now.Offset, clock.Offset);
+                Assert.Equal(now.UtcDateTime, clock.UtcNow);
+                Assert.Equal(now.DateTime, clock.Now);
+                Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
+            }
+        }
 
-                Assert.Equal(now, SystemClock.Now);
-                Assert.Equal(now, SystemClock.OffsetNow);
-                Assert.Equal(utcNow, SystemClock.UtcNow);
-                Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
-                Assert.Equal(DateTimeOffset.Now.Offset, SystemClock.TimeZoneOffset);
+        [Fact]
+        public void CanRealSleep() {
+            var clock = new RealSystemClock();
+            var sw = Stopwatch.StartNew();
+            clock.Sleep(250);
+            sw.Stop();
+            Assert.InRange(sw.ElapsedMilliseconds, 100, 500);
+        }
+
+        [Fact]
+        public void CanTestSleep() {
+            using (var clock = TestSystemClock.Install()) {
+                var startTime = clock.UtcNow;
+                clock.Sleep(250);
+                Assert.Equal(250, clock.UtcNow.Subtract(startTime).TotalMilliseconds);
+            }
+        }
+        [Fact]
+        public async Task CanRealSleepAsync() {
+            var clock = new RealSystemClock();
+            var sw = Stopwatch.StartNew();
+            await clock.SleepAsync(250);
+            sw.Stop();
+            Assert.InRange(sw.ElapsedMilliseconds, 100, 500);
+        }
+
+        [Fact]
+        public async Task CanTestSleepAsync() {
+            using (var clock = TestSystemClock.Install()) {
+                var startTime = clock.UtcNow;
+                await clock.SleepAsync(250);
+                Assert.Equal(250, clock.UtcNow.Subtract(startTime).TotalMilliseconds);
             }
         }
     }

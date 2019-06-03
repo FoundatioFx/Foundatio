@@ -32,14 +32,14 @@ namespace Foundatio.Utility {
         public WaitHandle NoWorkItemsDue => _noWorkItemsDue;
 
         public void Schedule(Action action, TimeSpan delay, TimeSpan? interval = null) {
-            Schedule(action, _clock.UtcNow().Add(delay), interval);
+            Schedule(action, _clock.UtcNow.Add(delay), interval);
         }
 
         public void Schedule(Action action, DateTime executeAt, TimeSpan? interval = null) {
             if (executeAt.Kind != DateTimeKind.Utc)
                 executeAt = executeAt.ToUniversalTime();
 
-            var delay = executeAt.Subtract(_clock.UtcNow());
+            var delay = executeAt.Subtract(_clock.UtcNow);
             _logger.LogTrace("Scheduling work due at {ExecuteAt} ({Delay:g} from now)", executeAt, delay);
             _workItems.Enqueue(executeAt, new WorkItem {
                 Action = action,
@@ -70,10 +70,10 @@ namespace Foundatio.Utility {
         private void WorkLoop() {
             _logger.LogTrace("Work loop started");
             while (!_isDisposed) {
-                if (_workItems.TryDequeueIf(out var kvp, i => i.ExecuteAtUtc < _clock.UtcNow())) {
-                    _logger.LogTrace("Starting work item due at {DueTime} current time {CurrentTime}", kvp.Key, _clock.UtcNow());
+                if (_workItems.TryDequeueIf(out var kvp, i => i.ExecuteAtUtc < _clock.UtcNow)) {
+                    _logger.LogTrace("Starting work item due at {DueTime} current time {CurrentTime}", kvp.Key, _clock.UtcNow);
                     _ = _taskFactory.StartNew(() => {
-                        var startTime = _clock.UtcNow();
+                        var startTime = _clock.UtcNow;
                         kvp.Value.Action();
                         if (kvp.Value.Interval.HasValue)
                             Schedule(kvp.Value.Action, startTime.Add(kvp.Value.Interval.Value));
@@ -84,7 +84,7 @@ namespace Foundatio.Utility {
                 _noWorkItemsDue.Set();
                 
                 if (kvp.Key != default) {
-                    var delay = kvp.Key.Subtract(_clock.UtcNow());
+                    var delay = kvp.Key.Subtract(_clock.UtcNow);
                     _logger.LogTrace("No work items due, next due at {DueTime} ({Delay:g} from now)", kvp.Key, delay);
                     _workItemScheduled.WaitOne(delay);
                 } else {
