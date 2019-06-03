@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var job = new HelloWorldJob(Log);
                 var timeoutCancellationTokenSource = new CancellationTokenSource(100);
                 await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
@@ -101,7 +101,7 @@ namespace Foundatio.Tests.Jobs {
 
                 timeoutCancellationTokenSource = new CancellationTokenSource(500);
                 var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
+                await clock.SleepAsync(TimeSpan.FromSeconds(1));
                 await runnerTask;
             }
         }
