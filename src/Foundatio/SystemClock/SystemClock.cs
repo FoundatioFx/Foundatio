@@ -7,8 +7,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Utility {
     public class SystemClock {
         private static AsyncLocal<ISystemClock> _instance;
+        private static readonly ISystemClock _realClock = new RealSystemClock(null);
         
-        public static ISystemClock Instance => _instance?.Value ?? RealSystemClock.Instance;
+        public static ISystemClock Instance => _instance?.Value ?? _realClock;
 
         public static void SetInstance(ISystemClock clock, ILoggerFactory loggerFactory) {
             var logger = loggerFactory?.CreateLogger("SystemClock") ?? NullLogger.Instance;
@@ -60,17 +61,17 @@ namespace Foundatio.Utility {
         public static Task SleepSafeAsync(TimeSpan delay, CancellationToken cancellationToken = default)
             => Instance.SleepSafeAsync(delay, cancellationToken);
         
-        public static void ScheduleWork(Func<Task> action, TimeSpan delay, TimeSpan? interval = null)
-            => Instance.ScheduleWork(action, delay, interval);
+        public static void Schedule(Func<Task> action, TimeSpan dueTime)
+            => Instance.Schedule(action, dueTime);
         
-        public static void ScheduleWork(Action action, TimeSpan delay, TimeSpan? interval = null)
-            => Instance.ScheduleWork(action, delay, interval);
+        public static void Schedule(Action action, TimeSpan dueTime)
+            => Instance.Schedule(action, dueTime);
         
-        public static void ScheduleWork(Func<Task> action, DateTime executeAt, TimeSpan? interval = null)
-            => Instance.ScheduleWork(action, executeAt, interval);
+        public static void Schedule(Func<Task> action, DateTime executeAt)
+            => Instance.Schedule(action, executeAt);
         
-        public static void ScheduleWork(Action action, DateTime executeAt, TimeSpan? interval = null)
-            => Instance.ScheduleWork(action, executeAt, interval);
+        public static void Schedule(Action action, DateTime executeAt)
+            => Instance.Schedule(action, executeAt);
     }
  
     public static class SystemClockExtensions {
@@ -86,13 +87,19 @@ namespace Foundatio.Utility {
             } catch (OperationCanceledException) {}
         }
         
-        public static Task SleepSafeAsync(this ISystemClock clock, TimeSpan delay, CancellationToken cancellationToken = default)
-            => clock.SleepSafeAsync((int)delay.TotalMilliseconds, cancellationToken);
+        public static Task SleepSafeAsync(this ISystemClock clock, TimeSpan dueTime, CancellationToken cancellationToken = default)
+            => clock.SleepSafeAsync((int)dueTime.TotalMilliseconds, cancellationToken);
         
-        public static void ScheduleWork(this ISystemClock clock, Func<Task> action, TimeSpan delay, TimeSpan? interval = null) =>
-            clock.ScheduleWork(() => { _ = action(); }, delay, interval);
+        public static void Schedule(this ISystemClock clock, Action action, DateTime executeAt) =>
+            clock.Schedule(action, executeAt.Subtract(clock.UtcNow));
+        
+        public static void Schedule(this ISystemClock clock, Func<Task> action, TimeSpan dueTime) =>
+            clock.Schedule(() => { _ = action(); }, dueTime);
 
-        public static void ScheduleWork(this ISystemClock clock, Func<Task> action, DateTime executeAt, TimeSpan? interval = null) =>
-            clock.ScheduleWork(() => { _ = action(); }, executeAt, interval);
+        public static void Schedule(this ISystemClock clock, Func<Task> action, DateTime executeAt) =>
+            clock.Schedule(() => { _ = action(); }, executeAt);
+        
+        public static ITimer Timer(this ISystemClock clock, Func<Task> action, TimeSpan dueTime, TimeSpan period) =>
+            clock.Timer(() => { _ = action(); }, dueTime, period);
     }
 }
