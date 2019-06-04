@@ -10,9 +10,7 @@ namespace Foundatio.Utility {
     /// <remarks>This is the same as using the thread pool. Long running tasks should not be scheduled on this. Tasks should generally last no longer than a few seconds.</remarks>
     /// </summary>
     public class WorkScheduler : IDisposable {
-        public static readonly WorkScheduler Default = new WorkScheduler(SystemClock.Instance);
-
-        private ILogger _logger;
+        private readonly ILogger _logger;
         private bool _isDisposed = false;
         private readonly SortedQueue<DateTime, WorkItem> _workItems = new SortedQueue<DateTime, WorkItem>();
         private readonly TaskFactory _taskFactory;
@@ -31,20 +29,30 @@ namespace Foundatio.Utility {
         
         public WaitHandle NoWorkItemsDue => _noWorkItemsDue;
 
-        public void Schedule(Action action, TimeSpan delay, TimeSpan? interval = null) {
-            Schedule(action, _clock.UtcNow.Add(delay), interval);
-        }
-
-        public void Schedule(Action action, DateTime executeAt, TimeSpan? interval = null) {
+        public ITimer Timer(Action action, TimeSpan dueTime, TimeSpan period) {
+            var executeAt = _clock.UtcNow.Add(dueTime);
             if (executeAt.Kind != DateTimeKind.Utc)
                 executeAt = executeAt.ToUniversalTime();
 
-            var delay = executeAt.Subtract(_clock.UtcNow);
-            _logger.LogTrace("Scheduling work due at {ExecuteAt} ({Delay:g} from now)", executeAt, delay);
-            _workItems.Enqueue(executeAt, new WorkItem {
+            _logger.LogTrace("Scheduling work due at {ExecuteAt} ({DueTime:g} from now)", executeAt, dueTime);
+            var workItem = new WorkItem(this) { Action = action, ExecuteAtUtc = executeAt, Period = period };
+            _workItems.Enqueue(executeAt, workItem);
+
+            EnsureWorkLoopRunning();
+            _workItemScheduled.Set();
+
+            return workItem;
+        }
+
+        public void Schedule(Action action, TimeSpan dueTime) {
+            var executeAt = _clock.UtcNow.Add(dueTime);
+            if (executeAt.Kind != DateTimeKind.Utc)
+                executeAt = executeAt.ToUniversalTime();
+
+            _logger.LogTrace("Scheduling work due at {ExecuteAt} ({DueTime:g} from now)", executeAt, dueTime);
+            _workItems.Enqueue(executeAt, new WorkItem(this) {
                 Action = action,
-                ExecuteAtUtc = executeAt,
-                Interval = interval
+                ExecuteAtUtc = executeAt
             });
 
             EnsureWorkLoopRunning();
@@ -75,8 +83,8 @@ namespace Foundatio.Utility {
                     _ = _taskFactory.StartNew(() => {
                         var startTime = _clock.UtcNow;
                         kvp.Value.Action();
-                        if (kvp.Value.Interval.HasValue)
-                            Schedule(kvp.Value.Action, startTime.Add(kvp.Value.Interval.Value));
+                        if (kvp.Value.Period.HasValue)
+                            Schedule(kvp.Value.Action, kvp.Value.Period.Value);
                     });
                     continue;
                 }
@@ -101,10 +109,32 @@ namespace Foundatio.Utility {
             _workLoopTask = null;
         }
 
-        private class WorkItem {
+        private class WorkItem : ITimer {
+            private readonly WorkScheduler _workScheduler;
+            
+            public WorkItem(WorkScheduler scheduler) {
+                _workScheduler = scheduler;
+            }
+            
             public DateTime ExecuteAtUtc { get; set; }
             public Action Action { get; set; }
-            public TimeSpan? Interval { get; set; }
+            public TimeSpan? Period { get; set; }
+            public bool IsCancelled { get; set; }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) {
+                if (IsCancelled)
+                    return false;
+                
+                IsCancelled = true;
+                
+                var workItem = _workScheduler.Timer(Action, dueTime, period);
+                // TODO: Figure out how to make it so the original ITimer instance can still have access to the currently scheduled workitem
+                return true;
+            }
+
+            public void Dispose() {
+                IsCancelled = true;
+            }
         }
     }
 }

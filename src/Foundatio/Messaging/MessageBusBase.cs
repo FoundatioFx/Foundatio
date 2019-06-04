@@ -17,6 +17,8 @@ namespace Foundatio.Messaging {
         protected readonly IMessageStore _store;
         protected readonly ILogger _logger;
         private bool _isDisposed;
+        protected readonly ISystemClock _clock;
+        protected readonly ITimer _maintenanceTimer;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -26,7 +28,8 @@ namespace Foundatio.Messaging {
             _typeNameSerializer = options.TypeNameSerializer ?? new DefaultTypeNameSerializer(_logger);
             _store = options.MessageStore ?? new InMemoryMessageStore(_logger);
             MessageBusId = Guid.NewGuid().ToString("N");
-            SystemClock.ScheduleWork(DoMaintenanceAsync, SystemClock.UtcNow.AddSeconds(1), TimeSpan.FromSeconds(1));
+            _clock = options.SystemClock ?? SystemClock.Instance;
+            _maintenanceTimer = _clock.Timer(DoMaintenanceAsync, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         public string MessageBusId { get; protected set; }
@@ -131,6 +134,8 @@ namespace Foundatio.Messaging {
             _isDisposed = true;
             
             _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
+
+            _maintenanceTimer?.Dispose();
 
             if (_subscriptions != null && _subscriptions.Count > 0) {
                 foreach (var subscription in _subscriptions)

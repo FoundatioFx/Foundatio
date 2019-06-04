@@ -17,7 +17,7 @@ namespace Foundatio.Tests.Utility {
             _logger.LogTrace("Starting test on thread {ThreadId} time {Time}", Thread.CurrentThread.ManagedThreadId, DateTime.Now);
             using (var clock = TestSystemClock.Install(Log)) {
                 var countdown = new CountdownEvent(1);
-                SystemClock.ScheduleWork(() => {
+                SystemClock.Schedule(() => {
                     _logger.LogTrace("Doing work");
                     countdown.Signal();
                 }, TimeSpan.FromMinutes(5));
@@ -42,19 +42,19 @@ namespace Foundatio.Tests.Utility {
                 var work3Event = new ManualResetEvent(false);
                 
                 // schedule work due in 5 minutes
-                clock.ScheduleWork(() => {
+                clock.Schedule(() => {
                     _logger.LogTrace("Doing 5 minute work");
                     work1Event.Set();
                 }, TimeSpan.FromMinutes(5));
                 
                 // schedule work due in 1 second
-                clock.ScheduleWork(() => {
+                clock.Schedule(() => {
                     _logger.LogTrace("Doing 1 second work");
                     work2Event.Set();
                 }, TimeSpan.FromSeconds(1));
                 
                 // schedule work that is already past due
-                clock.ScheduleWork(() => {
+                clock.Schedule(() => {
                     _logger.LogTrace("Doing past due work");
                     work3Event.Set();
                 }, TimeSpan.FromSeconds(-1));

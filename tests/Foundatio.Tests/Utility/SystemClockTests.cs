@@ -61,7 +61,7 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public void CanRealSleep() {
-            var clock = new RealSystemClock();
+            var clock = new RealSystemClock(Log);
             var sw = Stopwatch.StartNew();
             clock.Sleep(250);
             sw.Stop();
@@ -70,7 +70,7 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public void CanTestSleep() {
-            using (var clock = TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install(Log)) {
                 var startTime = clock.UtcNow;
                 clock.Sleep(250);
                 Assert.Equal(250, clock.UtcNow.Subtract(startTime).TotalMilliseconds);
@@ -78,7 +78,7 @@ namespace Foundatio.Tests.Utility {
         }
         [Fact]
         public async Task CanRealSleepAsync() {
-            var clock = new RealSystemClock();
+            var clock = new RealSystemClock(Log);
             var sw = Stopwatch.StartNew();
             await clock.SleepAsync(250);
             sw.Stop();
@@ -87,7 +87,7 @@ namespace Foundatio.Tests.Utility {
 
         [Fact]
         public async Task CanTestSleepAsync() {
-            using (var clock = TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install(Log)) {
                 var startTime = clock.UtcNow;
                 await clock.SleepAsync(250);
                 Assert.Equal(250, clock.UtcNow.Subtract(startTime).TotalMilliseconds);
