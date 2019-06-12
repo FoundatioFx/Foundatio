@@ -1,0 +1,18 @@
+- Multiple receivers (pub/sub)
+  - Fire and forget
+  - Message acknowledgement
+- Worker queues
+  - Single Worker
+  - Round robin workers
+- Delayed delivery
+  - Can schedule delivery, messages are persisted to a message store and a background task polls for messages that are due and then sends them out
+- Message persistence
+  - Not all messages need to be persisted and guaranteed delivery
+- Message subscriptions are push based with prefetch count setting which should greatly improve throughput
+- Can either use generic method overloads or use options to change the message type or topic the message is being published to
+- Can subscribe to multiple message types by controlling the message topic instead of using the default topic per .net type
+- Request/response
+  - Publishes message and then does a single message receive on a topic that is for that exact request and waits the specified amount of time
+- Receive message (pull model)
+  - Equivalent of current worker queues pulling a single message at a time
+  - Ability to receive a batch of messages 

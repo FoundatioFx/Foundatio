@@ -21,9 +21,10 @@ namespace Foundatio.Tests.Utility {
                 Assert.Equal(now.ToLocalTime(), clock.Now);
                 Assert.Equal(now.ToUniversalTime(), clock.OffsetUtcNow);
                 
+                // set using utc
                 now = DateTime.UtcNow;
                 clock.SetTime(now);
-                Assert.Equal(now, clock.Now);
+                Assert.Equal(now, clock.UtcNow);
                 Assert.Equal(DateTimeOffset.Now.Offset, clock.Offset);
                 Assert.Equal(now.ToUniversalTime(), clock.UtcNow);
                 Assert.Equal(now.ToLocalTime(), clock.Now);
