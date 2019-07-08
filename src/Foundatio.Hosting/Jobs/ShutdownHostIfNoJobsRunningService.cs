@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Hosting.Startup;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,10 +14,13 @@ namespace Foundatio.Hosting.Jobs {
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
         private readonly IApplicationLifetime _lifetime;
+        private readonly IServiceProvider _serviceProvider;
+        private bool _isStarted = false;
         private readonly ILogger _logger;
 
-        public ShutdownHostIfNoJobsRunningService(IApplicationLifetime applicationLifetime, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
+        public ShutdownHostIfNoJobsRunningService(IApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+            _serviceProvider = serviceProvider;
             _logger = logger ?? NullLogger<ShutdownHostIfNoJobsRunningService>.Instance;
 
             _lifetime.ApplicationStarted.Register(() => {
@@ -24,6 +29,15 @@ namespace Foundatio.Hosting.Jobs {
         }
 
         public Task StartAsync(CancellationToken cancellationToken) {
+            // if there are startup actions, don't allow shutdown to happen until after the startup actions have completed
+            _ = Task.Run(async () => {
+                var startupContext = _serviceProvider.GetService<StartupActionsContext>();
+                if (startupContext != null)
+                    await startupContext.WaitForStartupAsync(cancellationToken).AnyContext();
+
+                _isStarted = true;
+            }, cancellationToken);
+
             return Task.CompletedTask;
         }
 
@@ -37,6 +51,9 @@ namespace Foundatio.Hosting.Jobs {
         }
 
         public void CheckForShutdown() {
+            if (!_isStarted)
+                return;
+            
             int runningJobCount = _jobs.Count(s => s.IsRunning);
             if (runningJobCount == 0) {
                 _timer?.Change(Timeout.Infinite, 0);

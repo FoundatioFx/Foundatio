@@ -35,6 +35,9 @@ namespace Foundatio.Hosting.Startup {
         public int Priority { get; private set; }
 
         public async Task RunAsync(IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
+            if (shutdownToken.IsCancellationRequested)
+                return;
+            
             if (_actionType != null) {
                 if (serviceProvider.GetRequiredService(_actionType) is IStartupAction startup)
                     await startup.RunAsync(shutdownToken).AnyContext();

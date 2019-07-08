@@ -12,7 +12,7 @@ namespace Foundatio.Hosting.Jobs {
             if (String.IsNullOrEmpty(jobOptions.CronSchedule)) {
                 return services.AddTransient<IHostedService>(s => {
                     if (jobOptions.JobFactory == null)
-                        jobOptions.JobFactory = () => s.GetRequiredService<T>();
+                        jobOptions.JobFactory = s.GetRequiredService<T>;
 
                     return new HostedJobService<T>(s, jobOptions, s.GetService<ILoggerFactory>());
                     });
@@ -20,7 +20,7 @@ namespace Foundatio.Hosting.Jobs {
                 if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
                     services.AddTransient<IHostedService, ScheduledJobService>();
 
-                return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.JobFactory ?? (() => s.GetRequiredService<T>()), jobOptions.CronSchedule));
+                return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.JobFactory ?? (s.GetRequiredService<T>), jobOptions.CronSchedule));
             }
         }
 
@@ -39,7 +39,9 @@ namespace Foundatio.Hosting.Jobs {
         }
 
         public static IServiceCollection AddJobLifetimeService(this IServiceCollection services) {
-            return services.AddSingleton<ShutdownHostIfNoJobsRunningService>();
+            services.AddSingleton<ShutdownHostIfNoJobsRunningService>();
+            services.AddSingleton<IHostedService>(x => x.GetRequiredService<ShutdownHostIfNoJobsRunningService>());
+            return services;
         }
     }
 }

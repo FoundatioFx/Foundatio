@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Hosting;
@@ -34,11 +34,12 @@ namespace Foundatio.HostingSample {
         }
                 
         public static IWebHostBuilder CreateWebHostBuilder(string[] args) {
-            bool sample1 = args.Length == 0 || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
-            bool sample2 = args.Length == 0 || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
-            bool everyMinute = args.Length == 0 || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
-            bool evenMinutes = args.Length == 0 || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
-
+            bool all = args.Contains("all", StringComparer.OrdinalIgnoreCase);
+            bool sample1 = all || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
+            bool sample2 = all || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
+            bool everyMinute = all || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
+            bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
+            
             var loggerFactory = new SerilogLoggerFactory(new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Console()
@@ -62,7 +63,7 @@ namespace Foundatio.HostingSample {
 
                     // add health check that does not return healthy until the startup actions have completed
                     // useful for readiness checks
-                    s.AddHealthChecks().AddCheckForStartupActionsComplete();
+                    s.AddHealthChecks().AddStartupActionsHealthCheck("CustomCritical");
 
                     if (everyMinute)
                         s.AddCronJob<EveryMinuteJob>("* * * * *");
@@ -102,10 +103,12 @@ namespace Foundatio.HostingSample {
                         //throw new ApplicationException("Boom goes the startup.");
                         _logger.LogTrace("Done running startup 2 action.");
                     });
+                    
+                    //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
-                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("CustomCritical", StringComparer.OrdinalIgnoreCase) || c.GetType() == typeof(StartupHealthCheck) });
+                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("CustomCritical", StringComparer.OrdinalIgnoreCase) });
 
                     // this middleware will return Service Unavailable until the startup actions have completed
                     app.UseWaitForStartupActionsBeforeServingRequests();

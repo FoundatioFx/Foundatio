@@ -5,36 +5,30 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Hosting.Startup {
-    public class StartupContext {
+    public class StartupActionsContext {
         private readonly ILogger _logger;
         private int _waitCount = 0;
 
-        public StartupContext(ILogger<StartupContext> logger) {
+        public StartupActionsContext(ILogger<StartupActionsContext> logger) {
             _logger = logger;
         }
 
         public bool IsStartupComplete { get; private set; }
-        public bool StartupActionsFailed { get; private set; }
+        public RunStartupActionsResult Result { get; private set; }
 
-        internal void MarkStartupComplete() {
+        internal void MarkStartupComplete(RunStartupActionsResult result) {
             IsStartupComplete = true;
+            Result = result;
         }
 
-        internal void MarkStartupFailure() {
-            StartupActionsFailed = true;
-        }
-
-        public async Task<bool> WaitForStartupAsync(CancellationToken cancellationToken) {
+        public async Task<RunStartupActionsResult> WaitForStartupAsync(CancellationToken cancellationToken) {
             bool isFirstWaiter = Interlocked.Increment(ref _waitCount) == 1;
             var startTime = SystemClock.UtcNow;
             var lastStatus = SystemClock.UtcNow;
 
             while (!cancellationToken.IsCancellationRequested) {
                 if (IsStartupComplete)
-                    return true;
-
-                if (StartupActionsFailed)
-                    return false;
+                    return Result;
 
                 if (isFirstWaiter && SystemClock.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information)) {
                     lastStatus = SystemClock.UtcNow;
@@ -47,7 +41,7 @@ namespace Foundatio.Hosting.Startup {
             if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", SystemClock.UtcNow.Subtract(startTime));
 
-            return false;
+            return new RunStartupActionsResult { Success = false, ErrorMessage = $"Timed out waiting for startup actions to be completed after {SystemClock.UtcNow.Subtract(startTime):mm\\:ss}" };
         }
     }
 }

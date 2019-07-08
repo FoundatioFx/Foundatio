@@ -4,20 +4,20 @@ using Microsoft.AspNetCore.Http;
 
 namespace Foundatio.Hosting.Startup {
     public class WaitForStartupActionsBeforeServingRequestsMiddleware {
-        private readonly StartupContext _context;
+        private readonly StartupActionsContext _context;
         private readonly RequestDelegate _next;
         private readonly IApplicationLifetime _applicationLifetime;
 
-        public WaitForStartupActionsBeforeServingRequestsMiddleware(StartupContext context, RequestDelegate next, IApplicationLifetime applicationLifetime) {
+        public WaitForStartupActionsBeforeServingRequestsMiddleware(StartupActionsContext context, RequestDelegate next, IApplicationLifetime applicationLifetime) {
             _context = context;
             _next = next;
             _applicationLifetime = applicationLifetime;
         }
 
         public async Task Invoke(HttpContext httpContext) {
-            if (_context.IsStartupComplete) {
+            if (_context.IsStartupComplete && _context.Result.Success) {
                 await _next(httpContext).AnyContext();
-            } else if (_context.StartupActionsFailed) {
+            } else if (_context.IsStartupComplete && !_context.Result.Success) {
                 _applicationLifetime.StopApplication();
             } else {
                 httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

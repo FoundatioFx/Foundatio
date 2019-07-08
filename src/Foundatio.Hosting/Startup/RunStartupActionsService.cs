@@ -5,20 +5,17 @@ using Microsoft.Extensions.Hosting;
 
 namespace Foundatio.Hosting.Startup {
     public class RunStartupActionsService : BackgroundService {
-        private readonly StartupContext _startupContext;
+        private readonly StartupActionsContext _startupContext;
         private readonly IServiceProvider _serviceProvider;
 
-        public RunStartupActionsService(StartupContext startupContext, IServiceProvider serviceProvider) {
+        public RunStartupActionsService(StartupActionsContext startupContext, IServiceProvider serviceProvider) {
             _startupContext = startupContext;
             _serviceProvider = serviceProvider;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
-            var success = await _serviceProvider.RunStartupActionsAsync(stoppingToken).AnyContext();
-            if (success)
-                _startupContext.MarkStartupComplete();
-            else
-                _startupContext.MarkStartupFailure();
+            var result = await _serviceProvider.RunStartupActionsAsync(stoppingToken).AnyContext();
+            _startupContext.MarkStartupComplete(result);
         }
     }
 }

@@ -36,10 +36,10 @@ namespace Foundatio.Hosting.Jobs {
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
             // TODO: Add more logging throughout
-            var startupContext = _serviceProvider.GetRequiredService<StartupContext>();
+            var startupContext = _serviceProvider.GetRequiredService<StartupActionsContext>();
             if (startupContext != null) {
-                bool success = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
-                if (!success) {
+                var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
+                if (!result.Success) {
                     IsRunning = false;
                     throw new ApplicationException("Failed to wait for startup actions to complete.");
                 }
