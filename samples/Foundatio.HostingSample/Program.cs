@@ -57,13 +57,13 @@ namespace Foundatio.HostingSample {
 
                     // inserts a startup action that does not complete until the critical health checks are healthy
                     // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
-                    s.AddStartupActionToWaitForHealthChecks(c => c.Tags.Contains("CustomCritical"));
+                    s.AddStartupActionToWaitForHealthChecks("Critical");
 
-                    s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "CustomCritical" });
+                    s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "Critical" });
 
                     // add health check that does not return healthy until the startup actions have completed
                     // useful for readiness checks
-                    s.AddHealthChecks().AddStartupActionsHealthCheck("CustomCritical");
+                    s.AddHealthChecks().AddStartupActionsHealthCheck("Critical");
 
                     if (everyMinute)
                         s.AddCronJob<EveryMinuteJob>("* * * * *");
@@ -104,11 +104,11 @@ namespace Foundatio.HostingSample {
                         _logger.LogTrace("Done running startup 2 action.");
                     });
                     
-                    //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
+                    s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
-                    app.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("CustomCritical", StringComparer.OrdinalIgnoreCase) });
+                    app.UseReadyHealthChecks("Critical");
 
                     // this middleware will return Service Unavailable until the startup actions have completed
                     app.UseWaitForStartupActionsBeforeServingRequests();

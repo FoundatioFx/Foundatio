@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -117,6 +118,20 @@ namespace Foundatio.Hosting.Startup {
 
         public static IApplicationBuilder UseWaitForStartupActionsBeforeServingRequests(this IApplicationBuilder builder) {
             return builder.UseMiddleware<WaitForStartupActionsBeforeServingRequestsMiddleware>();
+        }
+
+        public static IApplicationBuilder UseReadyHealthChecks(this IApplicationBuilder builder, params string[] tags) {
+            if (tags == null)
+                tags = new string[0];
+            
+            return builder.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)) });
+        }
+
+        public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, params string[] tags) {
+            if (tags == null)
+                tags = new string[0];
+            
+            services.AddStartupActionToWaitForHealthChecks(c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)));
         }
 
         public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, Func<HealthCheckRegistration, bool> shouldWaitForHealthCheck = null) {
