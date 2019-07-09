@@ -63,7 +63,7 @@ namespace Foundatio.HostingSample {
 
                     // add health check that does not return healthy until the startup actions have completed
                     // useful for readiness checks
-                    s.AddHealthChecks().AddStartupActionsHealthCheck("Critical");
+                    s.AddHealthChecks().AddCheckForStartupActions("Critical");
 
                     if (everyMinute)
                         s.AddCronJob<EveryMinuteJob>("* * * * *");

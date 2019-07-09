@@ -112,8 +112,9 @@ namespace Foundatio.Hosting.Startup {
             services.AddTransient(s => new StartupActionRegistration(name, action, priority));
         }
 
-        public static IHealthChecksBuilder AddStartupActionsHealthCheck(this IHealthChecksBuilder builder, params string[] tags) {
-            return builder.AddCheck<StartupActionsHealthCheck>("StartupActionsHealthCheck", null, tags);
+        public const string CheckForStartupActionsName = "CheckForStartupActions";
+        public static IHealthChecksBuilder AddCheckForStartupActions(this IHealthChecksBuilder builder, params string[] tags) {
+            return builder.AddCheck<StartupActionsHealthCheck>(CheckForStartupActionsName, null, tags);
         }
 
         public static IApplicationBuilder UseWaitForStartupActionsBeforeServingRequests(this IApplicationBuilder builder) {
@@ -144,11 +145,11 @@ namespace Foundatio.Hosting.Startup {
                 
                 var healthCheckService = sp.GetService<HealthCheckService>();
                 var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
-                var result = await healthCheckService.CheckHealthAsync(c => c.Name != "StartupActionsHealthCheck" && shouldWaitForHealthCheck(c), t).AnyContext();
+                var result = await healthCheckService.CheckHealthAsync(c => c.Name != CheckForStartupActionsName && shouldWaitForHealthCheck(c), t).AnyContext();
                 while (result.Status == HealthStatus.Unhealthy && !t.IsCancellationRequested) {
                     logger.LogDebug("Last health check was unhealthy. Waiting 1s until next health check.");
                     await Task.Delay(1000, t).AnyContext();
-                    result = await healthCheckService.CheckHealthAsync(c => c.Name != "StartupActionsHealthCheck" && shouldWaitForHealthCheck(c), t).AnyContext();
+                    result = await healthCheckService.CheckHealthAsync(c => c.Name != CheckForStartupActionsName && shouldWaitForHealthCheck(c), t).AnyContext();
                 }
             }, -100);
         }

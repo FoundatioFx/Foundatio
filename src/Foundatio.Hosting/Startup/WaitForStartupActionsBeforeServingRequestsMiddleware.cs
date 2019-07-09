@@ -18,6 +18,7 @@ namespace Foundatio.Hosting.Startup {
             if (_context.IsStartupComplete && _context.Result.Success) {
                 await _next(httpContext).AnyContext();
             } else if (_context.IsStartupComplete && !_context.Result.Success) {
+                // kill the server if the startup actions failed
                 _applicationLifetime.StopApplication();
             } else {
                 httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
