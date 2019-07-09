@@ -17,6 +17,7 @@ namespace Foundatio.Tests.Utility {
                 IntProperty = 1,
                 StringProperty = "test",
                 ListProperty = new List<int> { 1 },
+                HashSet = new HashSet<string>(),
                 ObjectProperty = new CloneModel { IntProperty =  1 }
             };
             
@@ -25,6 +26,8 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal(model.StringProperty, cloned.StringProperty);
             Assert.Equal(model.ListProperty, cloned.ListProperty);
             Assert.Equal(model.EmptyStringList, cloned.EmptyStringList);
+            Assert.Equal(model.EmptyHashSet, cloned.EmptyHashSet);
+            Assert.Equal(model.HashSet, cloned.HashSet);
             Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, ((CloneModel)model.ObjectProperty).IntProperty);
         }
 
@@ -86,6 +89,8 @@ namespace Foundatio.Tests.Utility {
         public string StringProperty { get; set; }
         public List<int> ListProperty { get; set; }
         public IList<string> EmptyStringList { get; } = new List<string>();
+        public ISet<string> EmptyHashSet { get; } = new HashSet<string>();
+        public ISet<string> HashSet { get; set; }
         public object ObjectProperty { get; set; }
     }
 }
