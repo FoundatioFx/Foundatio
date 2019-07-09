@@ -1,0 +1,27 @@
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- script: docker build --target testrunner -t foundatio:test --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
+  displayName: 'Build'
+  env:
+    VERSION_SUFFIX: $(Build.BuildId)-pre
+- script: docker run --net=host -v $(Build.ArtifactStagingDirectory):/app/artifacts foundatio:test
+  displayName: 'Tests'
+- script: docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
+  displayName: 'Build Pack'
+  env:
+    VERSION_SUFFIX: $(Build.BuildId)-pre
+- script: docker run --rm -v $(Build.ArtifactStagingDirectory):/app/artifacts foundatio:pack
+  displayName: 'Pack'
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'VSTest'
+    testResultsFiles: '*.trx'
+    searchFolder: '$(Build.ArtifactStagingDirectory)'
+    failTaskOnFailedTests: true
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'Packages'
+    publishLocation: 'Container'
