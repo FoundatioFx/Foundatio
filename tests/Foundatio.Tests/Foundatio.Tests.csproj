@@ -1,8 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="1.1.47" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="2.2.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio.Hosting\Foundatio.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.JsonNet\Foundatio.JsonNet.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Utf8Json\Foundatio.Utf8Json.csproj" />

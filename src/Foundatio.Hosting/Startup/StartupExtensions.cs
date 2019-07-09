@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -91,6 +92,9 @@ namespace Foundatio.Hosting.Startup {
         }
 
         public static void AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider, CancellationToken> action, int? priority = null) {
+            services.TryAddSingleton<StartupActionsContext>();
+            if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
+                services.AddSingleton<IHostedService, RunStartupActionsService>();
             services.AddTransient(s => new StartupActionRegistration(name, (sp, ct) => {
                 action(sp, ct);
                 return Task.CompletedTask;
@@ -121,11 +125,21 @@ namespace Foundatio.Hosting.Startup {
             return builder.UseMiddleware<WaitForStartupActionsBeforeServingRequestsMiddleware>();
         }
 
-        public static IApplicationBuilder UseReadyHealthChecks(this IApplicationBuilder builder, params string[] tags) {
+        public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder builder, PathString path, params string[] tags) {
             if (tags == null)
                 tags = new string[0];
             
-            return builder.UseHealthChecks("/ready", new HealthCheckOptions { Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)) });
+            return builder.UseHealthChecks(path, new HealthCheckOptions { Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)) });
+        }
+
+        public static IApplicationBuilder UseReadyHealthChecks(this IApplicationBuilder builder, params string[] tags) {
+            if (tags == null)
+                tags = new string[0];
+
+            var options = new HealthCheckOptions {
+                Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase))
+            };
+            return builder.UseHealthChecks("/ready", options);
         }
 
         public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, params string[] tags) {

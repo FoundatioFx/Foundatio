@@ -72,6 +72,9 @@ namespace Foundatio.Jobs {
                     await queueEntry.CompleteAsync().AnyContext();
                     LogAutoCompletedQueueEntry(queueEntry);
                 } else {
+                    if (result.Error != null || result.Message != null)
+                        _logger.LogError(result.Error, "{QueueEntryName} queue entry {Id} returned an unsuccessful response: {ErrorMessage}", _queueEntryName, queueEntry.Id, result.Message ?? result.Error?.Message);
+
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
                     await queueEntry.AbandonAsync().AnyContext();
