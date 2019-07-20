@@ -3,12 +3,12 @@ using StackExchange.Redis;
 
 namespace Foundatio.Storage {
     public class RedisFileStorageOptions : SharedOptions {
-        public ConnectionMultiplexer ConnectionMultiplexer { get; set; }
+        public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
         public string ContainerName { get; set; } = "storage";
     }
 
     public class RedisFileStorageOptionsBuilder : SharedOptionsBuilder<RedisFileStorageOptions, RedisFileStorageOptionsBuilder> {
-        public RedisFileStorageOptionsBuilder ConnectionMultiplexer(ConnectionMultiplexer connectionMultiplexer) {
+        public RedisFileStorageOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer) {
             Target.ConnectionMultiplexer = connectionMultiplexer;
             return this;
         }
