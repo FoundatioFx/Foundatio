@@ -8,7 +8,7 @@ using Foundatio.Jobs;
 using Foundatio.Hosting.Startup;
 
 namespace Foundatio.Hosting.Jobs {
-    public class HostedJobService<T> : IHostedService, IJobStatus, IDisposable where T : class, IJob {
+    public class HostedJobService : IHostedService, IJobStatus, IDisposable {
         private readonly CancellationTokenSource _stoppingCts = new CancellationTokenSource();
         private Task _executingTask;
         private readonly IServiceProvider _serviceProvider;
@@ -19,8 +19,8 @@ namespace Foundatio.Hosting.Jobs {
 
         public HostedJobService(IServiceProvider serviceProvider, HostedJobOptions jobOptions, ILoggerFactory loggerFactory) {
             _serviceProvider = serviceProvider;
-            _loggerFactory = loggerFactory; 
-            _logger = loggerFactory.CreateLogger<T>();
+            _loggerFactory = loggerFactory;
+            _logger = loggerFactory.CreateLogger<HostedJobService>();
             _jobOptions = jobOptions;
 
             var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();

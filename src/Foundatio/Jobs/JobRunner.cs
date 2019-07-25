@@ -97,7 +97,14 @@ namespace Foundatio.Jobs {
                 return false;
             }
 
-            var job = _options.JobFactory();
+            IJob job = null;
+            try {
+                job = _options.JobFactory();
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error creating job instance from JobFactory.");
+                return false;
+            }
+
             if (job == null) {
                 _logger.LogError("JobFactory returned null job instance.");
                 return false;

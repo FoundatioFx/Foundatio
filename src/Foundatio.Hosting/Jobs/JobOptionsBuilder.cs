@@ -2,64 +2,69 @@
 using Foundatio.Jobs;
 
 namespace Foundatio.Hosting.Jobs {
-    public class HostedJobOptionsBuilder<T> where T : IJob {
+    public class HostedJobOptionsBuilder {
         public HostedJobOptionsBuilder(HostedJobOptions target = null) {
             Target = target ?? new HostedJobOptions();
         }
 
         public HostedJobOptions Target { get; }
-
-        public HostedJobOptionsBuilder<T> ApplyDefaults() {
+        
+        public HostedJobOptionsBuilder ApplyDefaults<T>() where T: IJob {
             Target.ApplyDefaults<T>();
             return this;
         }
+        
+        public HostedJobOptionsBuilder ApplyDefaults(Type jobType) {
+            JobOptions.ApplyDefaults(Target, jobType);
+            return this;
+        }
 
-        public HostedJobOptionsBuilder<T> Name(string value) {
+        public HostedJobOptionsBuilder Name(string value) {
             Target.Name = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> Description(string value) {
+        public HostedJobOptionsBuilder Description(string value) {
             Target.Description = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> JobFactory(Func<IJob> value) {
+        public HostedJobOptionsBuilder JobFactory(Func<IJob> value) {
             Target.JobFactory = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> RunContinuous(bool value) {
+        public HostedJobOptionsBuilder RunContinuous(bool value) {
             Target.RunContinuous = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> CronSchedule(string value) {
+        public HostedJobOptionsBuilder CronSchedule(string value) {
             Target.CronSchedule = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> Interval(TimeSpan? value) {
+        public HostedJobOptionsBuilder Interval(TimeSpan? value) {
             Target.Interval = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> InitialDelay(TimeSpan? value) {
+        public HostedJobOptionsBuilder InitialDelay(TimeSpan? value) {
             Target.InitialDelay = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> IterationLimit(int value) {
+        public HostedJobOptionsBuilder IterationLimit(int value) {
             Target.IterationLimit = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> InstanceCount(int value) {
+        public HostedJobOptionsBuilder InstanceCount(int value) {
             Target.InstanceCount = value;
             return this;
         }
 
-        public HostedJobOptionsBuilder<T> WaitForStartupActions(bool value) {
+        public HostedJobOptionsBuilder WaitForStartupActions(bool value) {
             Target.WaitForStartupActions = value;
             return this;
         }
