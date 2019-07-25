@@ -72,7 +72,7 @@ namespace Foundatio.HostingSample {
                         s.AddCronJob<EvenMinutesJob>("*/2 * * * *");
 
                     if (sample1)
-                        s.AddJob<Sample1Job>(o => o.ApplyDefaults().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(5)));
+                        s.AddJob(sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(5)));
 
                     if (sample2) {
                         s.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
@@ -104,7 +104,7 @@ namespace Foundatio.HostingSample {
                         _logger.LogTrace("Done running startup 2 action.");
                     });
                     
-                    s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
+                    //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
                 })
                 .Configure(app => {
                     app.UseHealthChecks("/health");
