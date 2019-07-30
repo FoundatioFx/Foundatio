@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,7 +39,7 @@ namespace Foundatio.AsyncEx {
         /// </summary>
         /// <param name="initialCount">The initial count for this semaphore. This must be greater than or equal to zero.</param>
         /// <param name="queue">The wait queue used to manage waiters. This may be <c>null</c> to use a default (FIFO) queue.</param>
-        public AsyncSemaphore(long initialCount, IAsyncWaitQueue<object> queue)
+        internal AsyncSemaphore(long initialCount, IAsyncWaitQueue<object> queue)
         {
             _queue = queue ?? new DefaultAsyncWaitQueue<object>();
             _count = initialCount;
@@ -151,6 +152,41 @@ namespace Foundatio.AsyncEx {
         {
             Release(1);
         }
+
+        private async Task<IDisposable> DoLockAsync(CancellationToken cancellationToken)
+        {
+            await WaitAsync(cancellationToken).ConfigureAwait(false);
+            return Disposables.AnonymousDisposable.Create(Release);
+        }
+
+        /// <summary>
+        /// Asynchronously waits on the semaphore, and returns a disposable that releases the semaphore when disposed, thus treating this semaphore as a "multi-lock".
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token used to cancel the wait. If this is already set, then this method will attempt to take the slot immediately (succeeding if a slot is currently available).</param>
+        public AwaitableDisposable<IDisposable> LockAsync(CancellationToken cancellationToken)
+        {
+            return new AwaitableDisposable<IDisposable>(DoLockAsync(cancellationToken));
+        }
+
+        /// <summary>
+        /// Asynchronously waits on the semaphore, and returns a disposable that releases the semaphore when disposed, thus treating this semaphore as a "multi-lock".
+        /// </summary>
+        public AwaitableDisposable<IDisposable> LockAsync() => LockAsync(CancellationToken.None);
+
+        /// <summary>
+        /// Synchronously waits on the semaphore, and returns a disposable that releases the semaphore when disposed, thus treating this semaphore as a "multi-lock".
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token used to cancel the wait. If this is already set, then this method will attempt to take the slot immediately (succeeding if a slot is currently available).</param>
+        public IDisposable Lock(CancellationToken cancellationToken)
+        {
+            Wait(cancellationToken);
+            return Disposables.AnonymousDisposable.Create(Release);
+        }
+
+        /// <summary>
+        /// Synchronously waits on the semaphore, and returns a disposable that releases the semaphore when disposed, thus treating this semaphore as a "multi-lock".
+        /// </summary>
+        public IDisposable Lock() => Lock(CancellationToken.None);
 
         // ReSharper disable UnusedMember.Local
         [DebuggerNonUserCode]

@@ -1,8 +1,10 @@
-using System;
+﻿using System;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.AsyncEx.Synchronous {
+namespace Foundatio.AsyncEx.Synchronous
+{
     /// <summary>
     /// Provides synchronous extension methods for tasks.
     /// </summary>
@@ -14,6 +16,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <param name="task">The task. May not be <c>null</c>.</param>
         public static void WaitAndUnwrapException(this Task task)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             task.GetAwaiter().GetResult();
         }
 
@@ -25,6 +29,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <exception cref="OperationCanceledException">The <paramref name="cancellationToken"/> was cancelled before the <paramref name="task"/> completed, or the <paramref name="task"/> raised an <see cref="OperationCanceledException"/>.</exception>
         public static void WaitAndUnwrapException(this Task task, CancellationToken cancellationToken)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             try
             {
                 task.Wait(cancellationToken);
@@ -43,6 +49,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <returns>The result of the task.</returns>
         public static TResult WaitAndUnwrapException<TResult>(this Task<TResult> task)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             return task.GetAwaiter().GetResult();
         }
 
@@ -56,6 +64,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <exception cref="OperationCanceledException">The <paramref name="cancellationToken"/> was cancelled before the <paramref name="task"/> completed, or the <paramref name="task"/> raised an <see cref="OperationCanceledException"/>.</exception>
         public static TResult WaitAndUnwrapException<TResult>(this Task<TResult> task, CancellationToken cancellationToken)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             try
             {
                 task.Wait(cancellationToken);
@@ -73,6 +83,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <param name="task">The task. May not be <c>null</c>.</param>
         public static void WaitWithoutException(this Task task)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             try
             {
                 task.Wait();
@@ -90,6 +102,8 @@ namespace Foundatio.AsyncEx.Synchronous {
         /// <exception cref="OperationCanceledException">The <paramref name="cancellationToken"/> was cancelled before the <paramref name="task"/> completed.</exception>
         public static void WaitWithoutException(this Task task, CancellationToken cancellationToken)
         {
+            if (task == null)
+                throw new ArgumentNullException(nameof(task));
             try
             {
                 task.Wait(cancellationToken);
