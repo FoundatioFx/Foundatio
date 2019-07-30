@@ -36,7 +36,7 @@ Function UpdateSource {
     Remove-Item $work_dir\$name -Recurse -Force
 }
 
-UpdateSource "https://github.com/StephenCleary/Deque/archive/v1.0.0.zip" "Nito.Collections.Deque"
-UpdateSource "https://github.com/StephenClearyArchive/AsyncEx.Tasks/archive/v1.0.0-delta-4.zip" "Nito.AsyncEx.Tasks"
-UpdateSource "https://github.com/StephenClearyArchive/AsyncEx.Coordination/archive/v1.0.2.zip" "Nito.AsyncEx.Coordination"
-UpdateSource "https://github.com/StephenCleary/Disposables/archive/v1.0.0.zip" "Nito.Disposables"
+# TODO: Need to update this to pull from master repo and discard unused files.
+#UpdateSource "https://github.com/StephenClearyArchive/AsyncEx.Tasks/archive/v1.0.0-delta-4.zip" "Nito.AsyncEx.Tasks"
+#UpdateSource "https://github.com/StephenClearyArchive/AsyncEx.Coordination/archive/v1.0.2.zip" "Nito.AsyncEx.Coordination"
+UpdateSource "https://github.com/StephenCleary/Disposables/archive/v2.0.1.zip" "Nito.Disposables"

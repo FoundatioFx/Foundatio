@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,7 +39,7 @@ namespace Foundatio.AsyncEx {
         /// </summary>
         /// <param name="set">Whether the auto-reset event is initially set or unset.</param>
         /// <param name="queue">The wait queue used to manage waiters. This may be <c>null</c> to use a default (FIFO) queue.</param>
-        public AsyncAutoResetEvent(bool set, IAsyncWaitQueue<object> queue)
+        internal AsyncAutoResetEvent(bool set, IAsyncWaitQueue<object> queue)
         {
             _queue = queue ?? new DefaultAsyncWaitQueue<object>();
             _set = set;

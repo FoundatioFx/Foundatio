@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -40,8 +40,7 @@ namespace Foundatio.AsyncEx
         /// </summary>
         public void Dispose()
         {
-            if (_registration != null)
-                _registration.Dispose();
+            _registration?.Dispose();
         }
     }
 }

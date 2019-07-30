@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,7 +37,7 @@ namespace Foundatio.AsyncEx {
         /// </summary>
         /// <param name="asyncLock">The lock associated with this condition variable.</param>
         /// <param name="queue">The wait queue used to manage waiters. This may be <c>null</c> to use a default (FIFO) queue.</param>
-        public AsyncConditionVariable(AsyncLock asyncLock, IAsyncWaitQueue<object> queue)
+        internal AsyncConditionVariable(AsyncLock asyncLock, IAsyncWaitQueue<object> queue)
         {
             _asyncLock = asyncLock;
             _queue = queue ?? new DefaultAsyncWaitQueue<object>();
