@@ -343,7 +343,7 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var workItemIds = new List<string>();
                 for (int i = 0; i < 10; i++) {
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem {Data = "blah", Id = i});
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = i });
                     _logger.LogTrace(id);
                     workItemIds.Add(id);
                 }
@@ -367,6 +367,45 @@ namespace Foundatio.Redis.Tests.Queues {
                 Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:wait"));
                 Assert.Equal(3, await db.ListLengthAsync($"{listPrefix}:dead"));
                 Assert.InRange(await muxer.CountAllKeysAsync(), 10, 11);
+            }
+        }
+
+        [Fact]
+        public async Task VerifyFirstDequeueTimeout() {
+
+            var workItemTimeout = TimeSpan.FromMilliseconds(100);
+            var itemData = "blah";
+            var itemId = 1;
+
+            var queue = GetQueue(retries: 0, workItemTimeout: workItemTimeout, retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
+            if (queue == null)
+                return;
+
+            using (queue) {
+                // Start DequeueAsync but allow it to yield.
+                var itemTask = queue.DequeueAsync();
+
+                // Wait longer than the workItemTimeout. 
+                // This is the period between a queue having DequeueAsync called on it and the first item being enqueued.
+                await SystemClock.SleepAsync(workItemTimeout.Add(TimeSpan.FromMilliseconds(1)));
+
+                // Add an item. DequeueAsync can now return.
+                string id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = itemData,
+                    Id = itemId
+                });
+
+                // Run DoMaintenanceWorkAsync to verify that our item will not be auto-abandoned. 
+                await queue.DoMaintenanceWorkAsync();
+
+                // Completing the item will throw if the item is abandoned.
+                var item = await itemTask;
+                await item.CompleteAsync();
+
+                var value = item.Value;
+                Assert.NotNull(value);
+                Assert.Equal(itemData, value.Data);
+                Assert.Equal(itemId, value.Id);
             }
         }
 

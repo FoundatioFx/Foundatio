@@ -65,7 +65,7 @@ namespace Foundatio.Queues {
             if (IsMaintenanceRunning)
                 return;
 
-            using (await  _lock.LockAsync().AnyContext()) {
+            using (await _lock.LockAsync().AnyContext()) {
                 if (_maintenanceTask != null)
                     return;
 
@@ -245,7 +245,6 @@ namespace Foundatio.Queues {
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} dequeuing item...", _options.Name);
-            long now = SystemClock.UtcNow.Ticks;
 
             if (!IsMaintenanceRunning)
                 await EnsureMaintenanceRunningAsync().AnyContext();
@@ -277,6 +276,7 @@ namespace Foundatio.Queues {
                 return null;
 
             var wiTimeoutTtl = GetWorkItemTimeoutTimeTtl();
+            long now = SystemClock.UtcNow.Ticks;
             await Run.WithRetriesAsync(() => Task.WhenAll(
                 _cache.SetAsync(GetDequeuedTimeKey(value), now, wiTimeoutTtl),
                 _cache.SetAsync(GetRenewedTimeKey(value), now, wiTimeoutTtl)
@@ -482,7 +482,7 @@ namespace Foundatio.Queues {
             var itemIds = (await Database.ListRangeAsync(_deadListName).AnyContext()).Skip(maxItems);
             var tasks = new List<Task>();
             foreach (var id in itemIds) {
-                tasks.AddRange(new Task[] { 
+                tasks.AddRange(new Task[] {
                     Database.KeyDeleteAsync(GetPayloadKey(id)),
                     Database.KeyDeleteAsync(GetAttemptsKey(id)),
                     Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
