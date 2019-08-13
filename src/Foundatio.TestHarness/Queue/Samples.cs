@@ -6,9 +6,6 @@ namespace Foundatio.Tests.Queue {
         public string Data { get; set; }
         public int Id { get; set; }
         public string UniqueIdentifier { get; set; }
-
-        public string GetSubMetricName() {
-            return Data.Trim();
-        }
+        public string SubMetricName { get; set; }
     }
 }

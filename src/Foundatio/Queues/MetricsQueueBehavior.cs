@@ -124,7 +124,7 @@ namespace Foundatio.Queues {
 
         protected string GetSubMetricName(T data) {
             var haveStatName = data as IHaveSubMetricName;
-            return haveStatName?.GetSubMetricName();
+            return haveStatName?.SubMetricName;
         }
 
         protected string GetFullMetricName(string name) {
