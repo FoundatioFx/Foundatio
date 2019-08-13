@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx.Synchronous;
 // ReSharper disable AsyncFixer02
+#pragma warning disable AsyncFixer02
 
 namespace Foundatio.AsyncEx
 {
