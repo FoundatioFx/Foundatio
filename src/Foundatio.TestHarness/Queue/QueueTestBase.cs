@@ -87,7 +87,7 @@ namespace Foundatio.Tests.Queue {
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
-                queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient()));
+                queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(), Log));
                 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello",
