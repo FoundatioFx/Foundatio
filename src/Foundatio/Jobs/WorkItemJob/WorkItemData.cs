@@ -9,8 +9,12 @@ namespace Foundatio.Jobs {
         public byte[] Data { get; set; }
         public bool SendProgressReports { get; set; }
         public string UniqueIdentifier { get; set; }
+        public string SubMetricName { get; set; }
 
         public string GetSubMetricName() {
+            if (!String.IsNullOrEmpty(SubMetricName))
+                return SubMetricName;
+            
             if (String.IsNullOrEmpty(Type))
                 return null;
 
