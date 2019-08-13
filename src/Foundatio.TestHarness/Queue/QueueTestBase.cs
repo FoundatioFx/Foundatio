@@ -79,6 +79,52 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
+        public virtual async Task CanDiscardDuplicateQueueEntriesAsync() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+                queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient()));
+                
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(2, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                await workItem.CompleteAsync();
+                Assert.False(workItem.IsAbandoned);
+                Assert.True(workItem.IsCompleted);
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(1, stats.Queued);
+
+            }
+            finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
         /// <summary>
         /// When a cancelled token is passed into Dequeue, it will only try to dequeue one time and then exit.
         /// </summary>
