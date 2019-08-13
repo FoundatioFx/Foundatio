@@ -1,14 +1,18 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
+using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
         private readonly ICacheClient _cacheClient;
+        private readonly ILoggerFactory _loggerFactory;
         private readonly TimeSpan _detectionWindow;
 
-        public DuplicateDetectionQueueBehavior(ICacheClient cacheClient, TimeSpan? detectionWindow = null) {
+        public DuplicateDetectionQueueBehavior(ICacheClient cacheClient, ILoggerFactory loggerFactory, TimeSpan? detectionWindow = null) {
             _cacheClient = cacheClient;
+            _loggerFactory = loggerFactory;
             _detectionWindow = detectionWindow ?? TimeSpan.FromMinutes(10);
         }
         
@@ -18,8 +22,11 @@ namespace Foundatio.Queues {
                 return;
             
             bool success = await _cacheClient.AddAsync(uniqueIdentifier, true, _detectionWindow);
-            if (!success)
+            if (!success) {
+                var logger = _loggerFactory.CreateLogger<T>();
+                logger.LogInformation("Discarding queue entry due to duplicate {UniqueIdentifier}", uniqueIdentifier);
                 enqueuingEventArgs.Cancel = true;
+            }
         }
 
         protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs) {
