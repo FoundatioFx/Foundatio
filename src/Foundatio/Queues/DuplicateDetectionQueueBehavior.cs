@@ -37,6 +37,6 @@ namespace Foundatio.Queues {
     }
 
     public interface IHaveUniqueIdentifier {
-        string UniqueIdentifier { get; set; }
+        string UniqueIdentifier { get; }
     }
 }
