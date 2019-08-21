@@ -20,7 +20,8 @@ jobs:
       run: docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
       env:
         VERSION_SUFFIX: 1-pre
-- uses: actions/upload-artifact@master
-  with:
-    name: packages
-    path: /app/artifacts
+    - name: Artifacts
+      uses: actions/upload-artifact@master
+      with:
+        name: packages
+        path: /app/artifacts
