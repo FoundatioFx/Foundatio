@@ -17,7 +17,9 @@ jobs:
     - name: Test
       run: docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
     - name: Pack
-      run: docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
+      run: |
+        docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
+        docker run --rm -v $(pwd)/artifacts:/app/artifacts foundatio:pack
       env:
         VERSION_SUFFIX: 1-pre
     - name: Artifacts
