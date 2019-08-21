@@ -24,4 +24,4 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         name: packages
-        path: /app/artifacts
+        path: artifacts
