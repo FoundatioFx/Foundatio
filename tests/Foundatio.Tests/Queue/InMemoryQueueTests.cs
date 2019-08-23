@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -185,6 +185,16 @@ namespace Foundatio.Tests.Queue {
         [Fact]
         public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry() {
             return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+        }
+
+        [Fact]
+        public override Task CheckRetryCountAsync() {
+            return base.CheckRetryCountAsync();
+        }
+
+        [Fact]
+        public override Task CheckAttemptCountInQueueEntryAsync() {
+            return base.CheckAttemptCountInQueueEntryAsync();
         }
     }
 }
