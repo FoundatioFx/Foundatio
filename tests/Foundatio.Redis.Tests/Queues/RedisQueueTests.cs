@@ -31,6 +31,7 @@ namespace Foundatio.Redis.Tests.Queues {
                 .ConnectionMultiplexer(SharedConnection.GetMuxer())
                 .Retries(retries)
                 .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
+                .RetryMultipliers(new []{1})
                 .DeadLetterMaxItems(deadLetterMaxItems)
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .RunMaintenanceTasks(runQueueMaintenance)
@@ -135,6 +136,7 @@ namespace Foundatio.Redis.Tests.Queues {
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
         }
+
 
         [Fact]
         public override async Task CanDequeueWithLockingAsync() {
@@ -527,6 +529,88 @@ namespace Foundatio.Redis.Tests.Queues {
 
                 var muxer = SharedConnection.GetMuxer();
                 _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+            }
+        }
+
+        [Fact]
+        public virtual async Task CheckRetryCountAsync() {
+            const int retryCount = 4;
+            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                //await base.AssertEmptyQueueAsync(queue);
+
+                int attempts = 0;
+                await queue.StartWorkingAsync(async w => {
+
+                    attempts++;
+                    Assert.Equal("Hello", w.Value.Data);
+                    await w.AbandonAsync();
+
+                });
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+
+                // wait 40 seconds for every retry
+                await Task.Delay(TimeSpan.FromSeconds(retryCount * 40));
+
+                int realRetryCount = attempts - 1;
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(retryCount, realRetryCount);
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(retryCount + 1, stats.Dequeued);
+                Assert.Equal(retryCount + 1, stats.Abandoned);
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        [Fact]
+        public virtual async Task CheckAttemptCountInQueueEntryAsync() {
+            const int retryCount = 4;
+            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+               // await AssertEmptyQueueAsync(queue);
+
+                int attempts = 0;
+                await queue.StartWorkingAsync(async w => {
+
+                    attempts++;
+                    Assert.Equal("Hello", w.Value.Data);
+
+                    var queueEntryMetadata = (IQueueEntryMetadata)w;
+                    Assert.Equal(attempts, queueEntryMetadata.Attempts);
+
+                    await w.AbandonAsync();
+
+                });
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+
+                // wait 40 seconds for every retry
+                await Task.Delay(TimeSpan.FromSeconds(retryCount * 40));
+
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(retryCount + 1, stats.Dequeued);
+                Assert.Equal(retryCount + 1, stats.Abandoned);
+            } finally {
+                await CleanupQueueAsync(queue);
             }
         }
     }
