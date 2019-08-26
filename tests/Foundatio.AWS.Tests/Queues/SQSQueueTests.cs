@@ -71,7 +71,7 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override  CanQueueAndDequeueMultipleWorkItemsAsync() {
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
@@ -86,7 +86,7 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override CanUseQueueWorkerAsync() {
+        public override Task CanUseQueueWorkerAsync() {
             return base.CanUseQueueWorkerAsync();
         }
 
