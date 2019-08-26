@@ -46,6 +46,51 @@ namespace Foundatio.Redis.Tests.Metrics {
         public override Task CanSendBufferedMetricsAsync() {
             return base.CanSendBufferedMetricsAsync();
         }
+        
+        [Fact]
+        public async Task SendGaugesAsync() {
+            using (var metrics = GetMetricsClient()) {
+                if (!(metrics is IMetricsClientStats stats))
+                    return;
+
+                int max = 1000;
+                for (int index = 0; index <= max; index++) {
+                    metrics.Gauge("mygauge", index);
+                    metrics.Timer("mygauge", index);
+                }
+
+                Assert.Equal(max, (await stats.GetGaugeStatsAsync("mygauge")).Last);
+            }
+        }
+
+        [Fact]
+        public async Task SendGaugesBufferedAsync() {
+            using (var metrics = GetMetricsClient(true)) {
+                if (!(metrics is IMetricsClientStats stats))
+                    return;
+
+                int max = 1000;
+                for (int index = 0; index <= max; index++) {
+                    metrics.Gauge("mygauge", index);
+                    metrics.Timer("mygauge", index);
+                }
+
+                if (metrics is IBufferedMetricsClient bufferedMetrics)
+                    await bufferedMetrics.FlushAsync();
+
+                Assert.Equal(max, (await stats.GetGaugeStatsAsync("mygauge")).Last);
+            }
+        }
+
+        [Fact]
+        public async Task SendRedisAsync() {
+            var db = SharedConnection.GetMuxer().GetDatabase();
+
+            int max = 1000;
+            for (int index = 0; index <= max; index++) {
+                await db.SetAddAsync("test", index);
+            }
+        }
 
         public void Dispose() {
             var muxer = SharedConnection.GetMuxer();

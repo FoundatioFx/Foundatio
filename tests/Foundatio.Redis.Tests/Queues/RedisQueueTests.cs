@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -612,6 +612,89 @@ namespace Foundatio.Redis.Tests.Queues {
             } finally {
                 await CleanupQueueAsync(queue);
             }
+        }
+        
+        [Fact]
+        public async Task CanHaveDifferentMessageTypeInQueueWithSameNameAsync() {
+            await HandlerCommand1Async();
+            await HandlerCommand2Async();
+
+            await Task.Delay(1000);
+
+            await Publish1Async();
+            await Publish2Async();
+        }
+
+        private IQueue<T> CreateQueue<T>(bool allQueuesTheSameName = true) where T : class {
+            var name = typeof(T).FullName.Trim().Replace(".", string.Empty).ToLower();
+
+            if (allQueuesTheSameName)
+                name = "cmd";
+
+            var queue = new RedisQueue<T>(o => o
+                .ConnectionMultiplexer(SharedConnection.GetMuxer())
+                .Name(name)
+                .LoggerFactory(Log)
+            );
+
+            _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+            return queue;
+        }
+
+        private async Task HandlerCommand1Async() {
+            var q = CreateQueue<Command1>();
+
+            await q.StartWorkingAsync((entry, token) => {
+                _logger.LogInformation($"{SystemClock.UtcNow:O}: Handler1\t{entry.Value.GetType().Name} {entry.Value.Id}");
+                Assert.InRange(entry.Value.Id, 100, 199);
+                return Task.CompletedTask;
+            });
+        }
+
+        private async Task HandlerCommand2Async() {
+            var q = CreateQueue<Command2>();
+
+            await q.StartWorkingAsync((entry, token) => {
+                _logger.LogInformation($"{SystemClock.UtcNow:O}: Handler2\t{entry.Value.GetType().Name} {entry.Value.Id}");
+                Assert.InRange(entry.Value.Id, 200, 299);
+                return Task.CompletedTask;
+            }, true);
+        }
+
+        private async Task Publish1Async() {
+            var q = CreateQueue<Command1>();
+
+            for (var i = 0; i < 10; i++) {
+                var cmd = new Command1(100 + i);
+                _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand1 {cmd.Id}");
+                await q.EnqueueAsync(cmd);
+            }
+        }
+
+        private async Task Publish2Async() {
+            var q = CreateQueue<Command2>();
+
+            for (var i = 0; i < 10; i++) {
+                var cmd = new Command2(200 + i);
+                _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand2 {cmd.Id}");
+                await q.EnqueueAsync(cmd);
+            }
+        }
+
+        public class Command1 {
+            public Command1(int id) {
+                Id = id;
+            }
+
+            public int Id { get; }
+        }
+
+        public class Command2 {
+            public Command2(int id) {
+                Id = id;
+            }
+
+            public int Id { get; }
         }
     }
 }
