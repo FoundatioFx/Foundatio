@@ -1,4 +1,4 @@
-﻿using Exceptionless;
+using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
@@ -121,6 +121,88 @@ namespace Foundatio.Tests.Queue {
 
             }
             finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        public virtual async Task CheckRetryCountAsync() {
+            var retryCount = 4;
+            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+
+                //var resetEvent = new AsyncManualResetEvent(false);
+                int attempts = 0;
+                await queue.StartWorkingAsync(async w => {
+
+                    attempts++;
+                    Assert.Equal("Hello", w.Value.Data);
+                    await w.AbandonAsync();
+                    
+                });
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+
+                // wait 5 seconds for every retry
+                await Task.Delay(TimeSpan.FromSeconds(retryCount*5));
+
+                int realRetryCount = attempts - 1;
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(retryCount, realRetryCount);
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(retryCount + 1, stats.Dequeued);
+                Assert.Equal(retryCount + 1, stats.Abandoned);
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        public virtual async Task CheckAttemptCountInQueueEntryAsync() {
+            var retryCount = 4;
+            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+
+                //var resetEvent = new AsyncManualResetEvent(false);
+                int attempts = 0;
+                await queue.StartWorkingAsync(async w => {
+
+                    attempts++;
+                    Assert.Equal("Hello", w.Value.Data);
+
+                    var queueEntryMetadata = (IQueueEntryMetadata)w;
+                    Assert.Equal(attempts, queueEntryMetadata.Attempts);
+
+                    await w.AbandonAsync();
+
+                });
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                });
+
+                // wait 5 seconds for every retry
+                await Task.Delay(TimeSpan.FromSeconds(retryCount * 5));
+
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Completed);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(retryCount + 1, stats.Dequeued);
+                Assert.Equal(retryCount + 1, stats.Abandoned);
+            } finally {
                 await CleanupQueueAsync(queue);
             }
         }
