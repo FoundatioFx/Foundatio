@@ -11,7 +11,7 @@
       },
       "args": [
         "build",
-        "${workspaceFolder}/tests/Foundatio.Tests/Foundatio.Tests.csproj",
+        "${workspaceFolder}/Foundatio.sln",
         "/p:GenerateFullPaths=true"
       ],
       "problemMatcher": "$msCompile"
@@ -39,7 +39,7 @@
     },
     {
       "label": "docker: build",
-      "command": "docker build --target build -t foundatio:build . && docker run -v $(pwd)/artifacts:/app/artifacts foundatio:build",
+      "command": "docker build --target build -t foundatio:build .",
       "type": "shell",
       "group": "build",
       "problemMatcher": "$msCompile"
@@ -47,6 +47,9 @@
     {
       "label": "docker: test",
       "command": "docker build --target testrunner -t foundatio:test . && docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test",
+      "windows": {
+        "command": "docker build --target testrunner -t foundatio:test . ; docker run -it --net host foundatio:test"
+      },
       "type": "shell",
       "group": "build",
       "problemMatcher": "$msCompile"

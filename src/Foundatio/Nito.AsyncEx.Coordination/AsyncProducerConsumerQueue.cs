@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx.Synchronous;
-// ReSharper disable MethodSupportsCancellation
-#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
+// ReSharper disable AsyncFixer02
+#pragma warning disable AsyncFixer02
 
 namespace Foundatio.AsyncEx
 {
@@ -71,7 +71,7 @@ namespace Foundatio.AsyncEx
         /// </summary>
         /// <param name="collection">The initial elements to place in the queue. This may be <c>null</c> to start with an empty collection.</param>
         public AsyncProducerConsumerQueue(IEnumerable<T> collection)
-            : this(collection, Int32.MaxValue)
+            : this(collection, int.MaxValue)
         {
         }
 
@@ -88,19 +88,19 @@ namespace Foundatio.AsyncEx
         /// Creates a new async-compatible producer/consumer queue.
         /// </summary>
         public AsyncProducerConsumerQueue()
-            : this(null, Int32.MaxValue)
+            : this(null, int.MaxValue)
         {
         }
 
         /// <summary>
         /// Whether the queue is empty. This property assumes that the <c>_mutex</c> is already held.
         /// </summary>
-        private bool Empty => _queue.Count == 0;
+        private bool Empty { get { return _queue.Count == 0; } }
 
         /// <summary>
         /// Whether the queue is full. This property assumes that the <c>_mutex</c> is already held.
         /// </summary>
-        private bool Full => _queue.Count == _maxCount;
+        private bool Full { get { return _queue.Count == _maxCount; } }
 
         /// <summary>
         /// Marks the producer/consumer queue as complete for adding.
@@ -129,7 +129,7 @@ namespace Foundatio.AsyncEx
                 while (Full && !_completed)
                 {
                     if (sync)
-                        _completedOrNotFull.Wait();
+                        _completedOrNotFull.Wait(cancellationToken);
                     else
                         await _completedOrNotFull.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -197,7 +197,7 @@ namespace Foundatio.AsyncEx
                 while (Empty && !_completed)
                 {
                     if (sync)
-                        _completedOrNotEmpty.Wait();
+                        _completedOrNotEmpty.Wait(cancellationToken);
                     else
                         await _completedOrNotEmpty.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -247,16 +247,10 @@ namespace Foundatio.AsyncEx
         {
             while (true)
             {
-                T item;
-                try
-                {
-                    item = Dequeue(cancellationToken);
-                }
-                catch (InvalidOperationException)
-                {
+                var result = TryDoDequeueAsync(cancellationToken, sync: true).WaitAndUnwrapException();
+                if (!result.Item1)
                     yield break;
-                }
-                yield return item;
+                yield return result.Item2;
             }
         }
 
@@ -269,6 +263,32 @@ namespace Foundatio.AsyncEx
         }
 
         /// <summary>
+        /// Attempts to dequeue an item from the producer/consumer queue. Returns <c>false</c> if the producer/consumer queue has completed adding and is empty.
+        /// </summary>
+        /// <param name="cancellationToken">A cancellation token that can be used to abort the dequeue operation.</param>
+        /// <param name="sync">Whether to run this method synchronously.</param>
+        private async Task<Tuple<bool, T>> TryDoDequeueAsync(CancellationToken cancellationToken, bool sync)
+        {
+            using (sync ? _mutex.Lock() : await _mutex.LockAsync().ConfigureAwait(false))
+            {
+                while (Empty && !_completed)
+                {
+                    if (sync)
+                        _completedOrNotEmpty.Wait(cancellationToken);
+                    else
+                        await _completedOrNotEmpty.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                if (_completed && Empty)
+                    return Tuple.Create(false, default(T));
+
+                var item = _queue.Dequeue();
+                _completedOrNotFull.Notify();
+                return Tuple.Create(true, item);
+            }
+        }
+
+        /// <summary>
         /// Dequeues an item from the producer/consumer queue. Throws <see cref="InvalidOperationException"/> if the producer/consumer queue has completed adding and is empty.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token that can be used to abort the dequeue operation.</param>
@@ -276,23 +296,10 @@ namespace Foundatio.AsyncEx
         /// <exception cref="InvalidOperationException">The producer/consumer queue has been marked complete for adding and is empty.</exception>
         private async Task<T> DoDequeueAsync(CancellationToken cancellationToken, bool sync)
         {
-            using (sync ? _mutex.Lock() : await _mutex.LockAsync().ConfigureAwait(false))
-            {
-                while (Empty && !_completed)
-                {
-                    if (sync)
-                        _completedOrNotEmpty.Wait();
-                    else
-                        await _completedOrNotEmpty.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-
-                if (_completed && Empty)
-                    throw new InvalidOperationException("Dequeue failed; the producer/consumer queue has completed adding and is empty.");
-
-                var item = _queue.Dequeue();
-                _completedOrNotFull.Notify();
-                return item;
-            }
+            var result = await TryDoDequeueAsync(cancellationToken, sync).ConfigureAwait(false);
+            if (result.Item1)
+                return result.Item2;
+            throw new InvalidOperationException("Dequeue failed; the producer/consumer queue has completed adding and is empty.");
         }
 
         /// <summary>

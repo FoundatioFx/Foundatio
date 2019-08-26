@@ -1,4 +1,4 @@
-using Foundatio.AsyncEx.Synchronous;
+﻿using Foundatio.AsyncEx.Synchronous;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -68,7 +68,7 @@ namespace Foundatio.AsyncEx
         /// </summary>
         /// <param name="writerQueue">The wait queue used to manage waiters for writer locks. This may be <c>null</c> to use a default (FIFO) queue.</param>
         /// <param name="readerQueue">The wait queue used to manage waiters for reader locks. This may be <c>null</c> to use a default (FIFO) queue.</param>
-        public AsyncReaderWriterLock(IAsyncWaitQueue<IDisposable> writerQueue, IAsyncWaitQueue<IDisposable> readerQueue)
+        internal AsyncReaderWriterLock(IAsyncWaitQueue<IDisposable> writerQueue, IAsyncWaitQueue<IDisposable> readerQueue)
         {
             _writerQueue = writerQueue ?? new DefaultAsyncWaitQueue<IDisposable>();
             _readerQueue = readerQueue ?? new DefaultAsyncWaitQueue<IDisposable>();
@@ -234,22 +234,26 @@ namespace Foundatio.AsyncEx
         /// </summary>
         private void ReleaseWaiters()
         {
-            if (_locksHeld != 0)
+            if (_locksHeld == -1)
                 return;
 
-            // Give priority to writers.
+            // Give priority to writers, then readers.
             if (!_writerQueue.IsEmpty)
             {
-                _locksHeld = -1;
-                _writerQueue.Dequeue(new WriterKey(this));
-                return;
+                if (_locksHeld == 0)
+                {
+                    _locksHeld = -1;
+                    _writerQueue.Dequeue(new WriterKey(this));
+                    return;
+                }
             }
-
-            // Then to readers.
-            while (!_readerQueue.IsEmpty)
+            else
             {
-                _readerQueue.Dequeue(new ReaderKey(this));
-                ++_locksHeld;
+                while (!_readerQueue.IsEmpty)
+                {
+                    _readerQueue.Dequeue(new ReaderKey(this));
+                    ++_locksHeld;
+                }
             }
         }
 

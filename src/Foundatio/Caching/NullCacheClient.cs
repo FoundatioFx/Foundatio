@@ -7,6 +7,14 @@ namespace Foundatio.Caching {
     public class NullCacheClient : ICacheClient {
         public static readonly NullCacheClient Instance = new NullCacheClient();
 
+        public Task<bool> RemoveAsync(string key) {
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+            return Task.FromResult(false);
+        }
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             return Task.FromResult(0);
         }
@@ -36,6 +44,10 @@ namespace Foundatio.Caching {
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
             return Task.FromResult(true);
         }
 

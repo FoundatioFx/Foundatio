@@ -9,15 +9,6 @@ namespace Foundatio.Messaging {
         public string Topic { get; set; } = "messages";
 
         /// <summary>
-        /// Controls the maximum number of backplane messages that need to be queued and sent to subscribers.
-        /// </summary>
-        public int TaskQueueMaxItems { get; set; } = 10000;
-        /// <summary>
-        /// Controls the maximum number of threads that will process queued subscriber messages.
-        /// </summary>
-        public byte TaskQueueMaxDegreeOfParallelism { get; set; } = 4;
-
-        /// <summary>
         /// Controls which types messages are mapped to.
         /// </summary>
         public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
@@ -30,16 +21,6 @@ namespace Foundatio.Messaging {
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
             Target.Topic = topic;
-            return (TBuilder)this;
-        }
-
-        public TBuilder TaskQueueMaxItems(int maxItems) {
-            Target.TaskQueueMaxItems = maxItems;
-            return (TBuilder)this;
-        }
-
-        public TBuilder TaskQueueMaxDegreeOfParallelism(byte maxDegree) {
-            Target.TaskQueueMaxDegreeOfParallelism = maxDegree;
             return (TBuilder)this;
         }
 

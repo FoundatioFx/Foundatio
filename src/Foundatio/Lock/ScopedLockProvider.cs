@@ -38,20 +38,20 @@ namespace Foundatio.Lock {
             return String.Concat(_keyPrefix, key);
         }
 
-        public Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
-            return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(name), lockTimeout, cancellationToken);
+        public Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
+            return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, cancellationToken);
         }
 
-        public Task<bool> IsLockedAsync(string name) {
-            return UnscopedLockProvider.IsLockedAsync(GetScopedLockProviderKey(name));
+        public Task<bool> IsLockedAsync(string resource) {
+            return UnscopedLockProvider.IsLockedAsync(GetScopedLockProviderKey(resource));
         }
 
-        public Task ReleaseAsync(string name) {
-            return UnscopedLockProvider.ReleaseAsync(GetScopedLockProviderKey(name));
+        public Task ReleaseAsync(ILock @lock) {
+            return UnscopedLockProvider.ReleaseAsync(@lock);
         }
 
-        public Task RenewAsync(string name, TimeSpan? lockExtension = null) {
-            return UnscopedLockProvider.RenewAsync(GetScopedLockProviderKey(name));
+        public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
+            return UnscopedLockProvider.RenewAsync(@lock, lockExtension);
         }
     }
 }

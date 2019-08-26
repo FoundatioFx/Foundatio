@@ -378,7 +378,7 @@ namespace Foundatio.Tests.Caching {
 
                 using (TestSystemClock.Install()) {
                     var now = DateTime.UtcNow;
-                    SystemClock.Test.SetFixedTime(now);
+                    TestSystemClock.SetFrozenTime(now);
 
                     var expires = DateTime.MaxValue - now.AddDays(1);
                     Assert.True(await cache.SetAsync("test1", 1, expires));
@@ -437,6 +437,48 @@ namespace Foundatio.Tests.Caching {
 
                 await SystemClock.SleepAsync(1500);
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
+            }
+        }
+        
+        public virtual async Task CanReplaceIfEqual() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                Assert.True(await cache.AddAsync("replace-if-equal", "123"));
+                var result = await cache.GetAsync<string>("replace-if-equal");
+                Assert.NotNull(result);
+                Assert.Equal("123", result.Value);
+
+                Assert.False(await cache.ReplaceIfEqualAsync("replace-if-equal", "456", "789"));
+                Assert.True(await cache.ReplaceIfEqualAsync("replace-if-equal", "456", "123"));
+                result = await cache.GetAsync<string>("replace-if-equal");
+                Assert.NotNull(result);
+                Assert.Equal("456", result.Value);
+            }
+        }
+        
+        public virtual async Task CanRemoveIfEqual() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                Assert.True(await cache.AddAsync("remove-if-equal", "123"));
+                var result = await cache.GetAsync<string>("remove-if-equal");
+                Assert.NotNull(result);
+                Assert.Equal("123", result.Value);
+
+                Assert.False(await cache.RemoveIfEqualAsync("remove-if-equal", "789"));
+                Assert.True(await cache.RemoveIfEqualAsync("remove-if-equal", "123"));
+                result = await cache.GetAsync<string>("remove-if-equal");
+                Assert.NotNull(result);
+                Assert.False(result.HasValue);
             }
         }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using Foundatio.Utility;
 
@@ -15,6 +15,11 @@ namespace Foundatio.Jobs {
 
         public static JobOptions GetDefaults(Type jobType) {
             var jobOptions = new JobOptions();
+            ApplyDefaults(jobOptions, jobType);
+            return jobOptions;
+        }
+
+        public static void ApplyDefaults(JobOptions jobOptions, Type jobType) {
             var jobAttribute = jobType.GetCustomAttribute<JobAttribute>() ?? new JobAttribute();
 
             jobOptions.Name = jobAttribute.Name;
@@ -43,8 +48,6 @@ namespace Foundatio.Jobs {
 
             jobOptions.IterationLimit = jobAttribute.IterationLimit;
             jobOptions.InstanceCount = jobAttribute.InstanceCount;
-
-            return jobOptions;
         }
 
         public static JobOptions GetDefaults<T>() where T : IJob {
@@ -73,6 +76,12 @@ namespace Foundatio.Jobs {
             var jobOptions = GetDefaults<T>();
             jobOptions.JobFactory = jobFactory;
             return jobOptions;
+        }
+    }
+
+    public static class JobOptionExtensions {
+        public static void ApplyDefaults<T>(this JobOptions jobOptions) {
+            JobOptions.ApplyDefaults(jobOptions, typeof(T));
         }
     }
 }

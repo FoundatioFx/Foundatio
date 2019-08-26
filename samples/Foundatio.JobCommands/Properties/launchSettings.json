@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "Foundatio.JobCommands": {
-      "commandName": "Project",
-      "commandLineArgs": "run-all"
-    }
-  }
-}

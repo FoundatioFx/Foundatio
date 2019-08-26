@@ -8,11 +8,12 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
-    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T> where T : class where TOptions : SharedQueueOptions<T> {
+    public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
         protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
+        private bool _isDisposed;
 
         protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -37,13 +38,17 @@ namespace Foundatio.Queues {
         protected abstract Task<string> EnqueueImplAsync(T data);
         public async Task<string> EnqueueAsync(T data) {
             await EnsureQueueCreatedAsync().AnyContext();
+            
+            LastEnqueueActivity = SystemClock.UtcNow;
             return await EnqueueImplAsync(data).AnyContext();
         }
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using (var linkedCancellationToken = GetLinkedDisposableCanncellationTokenSource(cancellationToken)) {
+            using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
                 await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+                
+                LastDequeueActivity = SystemClock.UtcNow;
                 return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
             }
         }
@@ -97,6 +102,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; } = new AsyncEvent<EnqueuedEventArgs<T>>(true);
 
         protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry) {
+            LastEnqueueActivity = SystemClock.UtcNow;
+            
             var enqueued = Enqueued;
             if (enqueued == null)
                 return Task.CompletedTask;
@@ -108,6 +115,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             var dequeued = Dequeued;
             if (dequeued == null)
                 return Task.CompletedTask;
@@ -119,6 +128,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
 
         protected virtual Task OnLockRenewedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             var lockRenewed = LockRenewed;
             if (lockRenewed == null)
                 return Task.CompletedTask;
@@ -130,8 +141,16 @@ namespace Foundatio.Queues {
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
         protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
-            if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
-                metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
+            var now = SystemClock.UtcNow;
+            LastDequeueActivity = now;
+            
+            if (entry is QueueEntry<T> metadata) {
+                if (metadata.EnqueuedTimeUtc > DateTime.MinValue)
+                    metadata.TotalTime = now.Subtract(metadata.EnqueuedTimeUtc);
+
+                if (metadata.DequeuedTimeUtc > DateTime.MinValue)
+                    metadata.ProcessingTime = now.Subtract(metadata.DequeuedTimeUtc);
+            }
 
             var completed = Completed;
             if (completed == null)
@@ -144,6 +163,8 @@ namespace Foundatio.Queues {
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
         protected virtual Task OnAbandonedAsync(IQueueEntry<T> entry) {
+            LastDequeueActivity = SystemClock.UtcNow;
+            
             if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
@@ -157,15 +178,26 @@ namespace Foundatio.Queues {
 
         public string QueueId { get; protected set; }
 
+        public DateTime? LastEnqueueActivity { get; protected set; }
+        
+        public DateTime? LastDequeueActivity { get; protected set; }
+
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        protected CancellationTokenSource GetLinkedDisposableCanncellationTokenSource(CancellationToken cancellationToken) {
+        protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken) {
             return CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken);
         }
 
         public override void Dispose() {
-            _logger.LogTrace("Queue {0} dispose", _options.Name);
+            if (_isDisposed) {
+                _logger.LogTrace("Queue {Name} ({Id})  dispose was already called.", _options.Name, QueueId);
+                return;
+            }
+            
+            _isDisposed = true;
+            _logger.LogTrace("Queue {Name} ({Id}) dispose", _options.Name, QueueId);
             _queueDisposedCancellationTokenSource?.Cancel();
+            _queueDisposedCancellationTokenSource?.Dispose();
             base.Dispose();
 
             Abandoned?.Dispose();

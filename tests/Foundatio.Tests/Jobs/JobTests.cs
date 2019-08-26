@@ -20,11 +20,10 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public async Task CanCancelJob() {
             var job = new HelloWorldJob(Log);
-            using (var timeoutCancellationTokenSource = new CancellationTokenSource(1000)) {
-                var resultTask = new JobRunner(job, Log).RunAsync(timeoutCancellationTokenSource.Token);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
-                Assert.True(await resultTask);
-            }
+            var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
+            var resultTask = new JobRunner(job, Log).RunAsync(timeoutCancellationTokenSource.Token);
+            await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
+            Assert.True(await resultTask);
         }
 
         [Fact]
@@ -94,17 +93,15 @@ namespace Foundatio.Tests.Jobs {
         public async Task CanCancelContinuousJobs() {
             using (TestSystemClock.Install()) {
                 var job = new HelloWorldJob(Log);
-                using (var timeoutCancellationTokenSource = new CancellationTokenSource(100)) {
-                    await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
-                }
+                var timeoutCancellationTokenSource = new CancellationTokenSource(100);
+                await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
 
                 Assert.Equal(1, job.RunCount);
 
-                using (var timeoutCancellationTokenSource = new CancellationTokenSource(500)) {
-                    var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
-                    await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
-                    await runnerTask;
-                }
+                timeoutCancellationTokenSource = new CancellationTokenSource(500);
+                var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
+                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
+                await runnerTask;
             }
         }
 
@@ -143,8 +140,8 @@ namespace Foundatio.Tests.Jobs {
             using (TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.SetFrozenTime(time);
+                TestSystemClock.UseFakeSleep();
 
                 var job = new HelloWorldJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -161,8 +158,8 @@ namespace Foundatio.Tests.Jobs {
             using (TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-                SystemClock.Test.SetFixedTime(time);
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.SetFrozenTime(time);
+                TestSystemClock.UseFakeSleep();
 
                 var job = new FailingJob(Log);
                 var interval = TimeSpan.FromHours(.75);

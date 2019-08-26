@@ -1,4 +1,4 @@
-﻿using Exceptionless;
+using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
@@ -39,12 +39,10 @@ namespace Foundatio.Tests.Queue {
 
             try {
                 await queue.DeleteQueueAsync();
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error cleaning up queue");
-            }
-            finally {
+            } finally {
                 queue.Dispose();
             }
         }
@@ -74,6 +72,52 @@ namespace Foundatio.Tests.Queue {
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
+
+            }
+            finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        public virtual async Task CanDiscardDuplicateQueueEntriesAsync() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+                queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(), Log));
+                
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello",
+                    UniqueIdentifier = "123"
+                });
+                Assert.Equal(2, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                await workItem.CompleteAsync();
+                Assert.False(workItem.IsAbandoned);
+                Assert.True(workItem.IsCompleted);
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Completed);
+                Assert.Equal(1, stats.Queued);
 
             }
             finally {

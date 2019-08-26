@@ -95,7 +95,7 @@ namespace Foundatio.Utility {
                 if (excludes.Contains(option.Key))
                     continue;
 
-                if (option.Value.Contains("\""))
+                if (option.Value != null && option.Value.Contains("\""))
                     builder.Append($"{option.Key}=\"{option.Value.Replace("\"", "\"\"")}\";");
                 else
                     builder.Append($"{option.Key}={option.Value};");

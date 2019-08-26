@@ -1,9 +1,10 @@
 Dockerfile*
 docker-compose*
 .dockerignore
-.gitignore
 .vscode
-.circleci
+.idea
+.vs
+**/artifacts/
 **/bin/
 **/obj/
 **/TestResult/

@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Utility {
         public void CanGetTime() {
             using (TestSystemClock.Install()) {
                 var now = DateTime.UtcNow;
-                SystemClock.Test.SetFixedTime(now);
+                TestSystemClock.SetFrozenTime(now);
                 Assert.Equal(now, SystemClock.UtcNow);
                 Assert.Equal(now.ToLocalTime(), SystemClock.Now);
                 Assert.Equal(now, SystemClock.OffsetUtcNow);
@@ -31,7 +31,7 @@ namespace Foundatio.Tests.Utility {
                 sw.Stop();
                 Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
 
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.UseFakeSleep();
 
                 var now = SystemClock.UtcNow;
                 sw.Restart();
@@ -52,9 +52,9 @@ namespace Foundatio.Tests.Utility {
                 await SystemClock.SleepAsync(250);
                 sw.Stop();
 
-                Assert.InRange(sw.ElapsedMilliseconds, 225, 400);
+                Assert.InRange(sw.ElapsedMilliseconds, 225, 3000);
 
-                SystemClock.Test.UseFakeSleep();
+                TestSystemClock.UseFakeSleep();
 
                 var now = SystemClock.UtcNow;
                 sw.Restart();
@@ -64,7 +64,7 @@ namespace Foundatio.Tests.Utility {
 
                 Assert.InRange(sw.ElapsedMilliseconds, 0, 30);
                 Assert.True(afterSleepNow > now);
-                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 1100);
+                Assert.InRange(afterSleepNow.Subtract(now).TotalMilliseconds, 950, 5000);
             }
         }
 
@@ -73,8 +73,8 @@ namespace Foundatio.Tests.Utility {
             using (TestSystemClock.Install()) {
                 var utcNow = DateTime.UtcNow;
                 var now = new DateTime(utcNow.AddHours(1).Ticks, DateTimeKind.Local);
-                SystemClock.Test.SetFixedTime(utcNow);
-                SystemClock.Test.SetTimeZoneOffset(TimeSpan.FromHours(1));
+                TestSystemClock.SetFrozenTime(utcNow);
+                TestSystemClock.SetTimeZoneOffset(TimeSpan.FromHours(1));
 
                 Assert.Equal(utcNow, SystemClock.UtcNow);
                 Assert.Equal(utcNow, SystemClock.OffsetUtcNow);
@@ -89,7 +89,7 @@ namespace Foundatio.Tests.Utility {
             using (TestSystemClock.Install()) {
                 var now = DateTime.Now;
                 var utcNow = now.ToUniversalTime();
-                SystemClock.Test.SetFixedTime(now);
+                TestSystemClock.SetFrozenTime(now);
 
                 Assert.Equal(now, SystemClock.Now);
                 Assert.Equal(now, SystemClock.OffsetNow);
@@ -104,7 +104,7 @@ namespace Foundatio.Tests.Utility {
             using (TestSystemClock.Install()) {
                 var utcNow = DateTime.UtcNow;
                 var now = utcNow.ToLocalTime();
-                SystemClock.Test.SetFixedTime(utcNow);
+                TestSystemClock.SetFrozenTime(utcNow);
 
                 Assert.Equal(now, SystemClock.Now);
                 Assert.Equal(now, SystemClock.OffsetNow);

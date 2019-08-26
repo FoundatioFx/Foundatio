@@ -8,19 +8,22 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching {
-    public class InMemoryCacheClient : MaintenanceBase, ICacheClient {
+    public class InMemoryCacheClient : ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private long _hits;
         private long _misses;
+        private readonly ILogger _logger;
 
         public InMemoryCacheClient() : this(o => o) {}
 
-        public InMemoryCacheClient(InMemoryCacheClientOptions options = null) : base(options?.LoggerFactory) {
+        public InMemoryCacheClient(InMemoryCacheClientOptions options = null) {
             ShouldCloneValues = true;
+            var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+            _logger = loggerFactory.CreateLogger<InMemoryCacheClient>();
             _memory = new ConcurrentDictionary<string, CacheEntry>();
-            InitializeMaintenance();
         }
 
         public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
@@ -35,13 +38,20 @@ namespace Foundatio.Caching {
         public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
 
         private Task OnItemExpiredAsync(string key, bool sendNotification = true) {
-            var args = new ItemExpiredEventArgs {
-                Client = this,
-                Key = key,
-                SendNotification = sendNotification
-            };
+            if (ItemExpired == null)
+                return Task.CompletedTask;
 
-            return ItemExpired?.InvokeAsync(this, args) ?? Task.CompletedTask;
+            Task.Factory.StartNew(state => {
+                var args = new ItemExpiredEventArgs {
+                    Client = this,
+                    Key = key,
+                    SendNotification = sendNotification
+                };
+
+                return ItemExpired.InvokeAsync(this, args);
+            }, this, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+
+            return Task.CompletedTask;
         }
 
         public ICollection<string> Keys {
@@ -52,6 +62,42 @@ namespace Foundatio.Caching {
                         .Select(kvp => kvp.Key)
                         .ToList();
             }
+        }
+
+        public Task<bool> RemoveAsync(string key) {
+            if (String.IsNullOrEmpty(key))
+                return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
+            return Task.FromResult(_memory.TryRemove(key, out _));
+        }
+
+        public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+
+            bool wasExpectedValue = false;
+            bool success = _memory.TryUpdate(key, (k, e) => {
+                var currentValue = e.GetValue<T>();
+                if (currentValue.Equals(expected)) {
+                    e.ExpiresAt = DateTime.MinValue;
+                    wasExpectedValue = true;
+                }
+                
+                return e;
+            });
+            
+            success = success && wasExpectedValue;
+
+            await StartMaintenanceAsync().AnyContext();
+            
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+
+            return success;
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
@@ -93,7 +139,7 @@ namespace Foundatio.Caching {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
 
             if (_memory.TryRemove(key, out _))
-                return OnItemExpiredAsync(key, sendNotification);
+                OnItemExpiredAsync(key, sendNotification);
 
             return Task.CompletedTask;
         }
@@ -137,7 +183,7 @@ namespace Foundatio.Caching {
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
@@ -145,7 +191,7 @@ namespace Foundatio.Caching {
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
@@ -182,10 +228,7 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
-
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync().AnyContext();
 
             return difference;
         }
@@ -221,10 +264,7 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
-
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync().AnyContext();
 
             return difference;
         }
@@ -260,10 +300,7 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
-
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync().AnyContext();
 
             return difference;
         }
@@ -299,10 +336,7 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
-
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync().AnyContext();
 
             return difference;
         }
@@ -332,28 +366,9 @@ namespace Foundatio.Caching {
                 return cacheEntry;
             });
 
-            ScheduleNextMaintenance(expiresAt);
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync().AnyContext();
 
             return items.Count;
-        }
-
-        private Task CleanupAsync() {
-            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
-                return Task.CompletedTask;
-
-            string oldest = _memory.ToArray()
-                                   .OrderBy(kvp => kvp.Value.LastAccessTicks)
-                                   .ThenBy(kvp => kvp.Value.InstanceNumber)
-                                   .First()
-                                   .Key;
-
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
-            _memory.TryRemove(oldest, out var cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
-                return OnItemExpiredAsync(oldest);
-
-            return Task.CompletedTask;
         }
 
         public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
@@ -388,7 +403,7 @@ namespace Foundatio.Caching {
 
         public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             return GetAsync<ICollection<T>>(key);
         }
@@ -404,10 +419,13 @@ namespace Foundatio.Caching {
 
             if (addOnly) {
                 if (!_memory.TryAdd(key, entry)) {
-                    if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt >= SystemClock.UtcNow)
+                    if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt < SystemClock.UtcNow) {
+                        if (existingEntry != null)
+                            await RemoveExpiredKeyAsync(key).AnyContext();
+                        _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
+                    } else {
                         return false;
-
-                    _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
+                    }
                 }
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Added cache key: {Key}", key);
@@ -416,8 +434,7 @@ namespace Foundatio.Caching {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set cache key: {Key}", key);
             }
 
-            ScheduleNextMaintenance(entry.ExpiresAt);
-            await CleanupAsync().AnyContext();
+            await StartMaintenanceAsync(true).AnyContext();
 
             return true;
         }
@@ -436,12 +453,41 @@ namespace Foundatio.Caching {
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             if (!_memory.ContainsKey(key))
                 return Task.FromResult(false);
 
             return SetAsync(key, value, expiresIn);
+        }
+
+        public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
+            if (String.IsNullOrEmpty(key))
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+
+            var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+            bool wasExpectedValue = false;
+            bool success = _memory.TryUpdate(key, (k, e) => {
+                var currentValue = e.GetValue<T>();
+                if (currentValue.Equals(expected)) {
+                    e.Value = value;
+                    wasExpectedValue = true;
+                }
+                
+                return e;
+            });
+
+            success = success && wasExpectedValue;
+
+            await StartMaintenanceAsync().AnyContext();
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+
+            return success;
         }
 
         public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
@@ -473,8 +519,7 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
+            await StartMaintenanceAsync().AnyContext();
 
             return result.GetValue<double>();
         }
@@ -508,15 +553,14 @@ namespace Foundatio.Caching {
                 return entry;
             });
 
-            if (expiresIn.HasValue)
-                ScheduleNextMaintenance(expiresAt);
+            await StartMaintenanceAsync().AnyContext();
 
             return result.GetValue<long>();
         }
 
         public Task<bool> ExistsAsync(string key) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             return Task.FromResult(_memory.ContainsKey(key));
         }
@@ -532,6 +576,7 @@ namespace Foundatio.Caching {
                 return value.ExpiresAt.Subtract(SystemClock.UtcNow);
 
             await RemoveExpiredKeyAsync(key).AnyContext();
+
             return null;
         }
 
@@ -547,41 +592,61 @@ namespace Foundatio.Caching {
 
             if (_memory.TryGetValue(key, out var value)) {
                 value.ExpiresAt = expiresAt;
-                ScheduleNextMaintenance(expiresAt);
+                await StartMaintenanceAsync().AnyContext();
             }
         }
 
-        public override void Dispose() {
-            base.Dispose();
-            _memory.Clear();
-            ItemExpired?.Dispose();
+        private DateTimeOffset _lastMaintenance;
+
+        private async Task StartMaintenanceAsync(bool compactImmediately = false) {
+            var now = SystemClock.UtcNow;
+            if (compactImmediately)
+                await CompactAsync().AnyContext();
+
+            if (TimeSpan.FromMilliseconds(100) < now - _lastMaintenance) {
+                _lastMaintenance = now;
+                var _ = Task.Factory.StartNew(s => DoMaintenanceAsync(), this, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+            }
         }
 
-        protected override async Task<DateTime?> DoMaintenanceAsync() {
-            _logger.LogTrace("DoMaintenanceAsync");
-            var expiredKeys = new List<string>();
+        private async Task CompactAsync() {
+            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
+                return;
+
+            (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
+            foreach (var kvp in _memory) {
+                if (kvp.Value.LastAccessTicks < oldest.LastAccessTicks
+                    || (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
+                    oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+            }
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
+            _memory.TryRemove(oldest.Key, out var cacheEntry);
+            if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
+                await OnItemExpiredAsync(oldest.Key).AnyContext();
+        }
+
+        private async Task DoMaintenanceAsync() {
+            _logger.LogTrace("DoMaintenance");
 
             var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
-            var minExpiration = DateTime.MaxValue;
 
             try {
-                foreach (var kvp in _memory) {
+                foreach (var kvp in _memory.ToArray()) {
                     var expiresAt = kvp.Value.ExpiresAt;
                     if (expiresAt <= utcNow)
-                        expiredKeys.Add(kvp.Key);
-                    else if (expiresAt < minExpiration)
-                        minExpiration = expiresAt;
+                        await RemoveExpiredKeyAsync(kvp.Key).AnyContext();
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to find expired cache items.");
             }
 
-            var tasks = new List<Task>();
-            foreach (string key in expiredKeys)
-                tasks.Add(RemoveExpiredKeyAsync(key));
+            await CompactAsync().AnyContext();
+        }
 
-            await Task.WhenAll(tasks).AnyContext();
-            return minExpiration;
+        public void Dispose() {
+            _memory.Clear();
+            ItemExpired?.Dispose();
         }
 
         private class CacheEntry {

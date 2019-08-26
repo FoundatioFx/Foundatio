@@ -1,19 +1,19 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27130.2027
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28606.126
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{70515E66-DAF8-4D18-8F8F-8A2934171AA9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4E12E4C1-2EC6-4EC7-8956-AF2721DA4ECE}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
-		.gitlab-ci.yml = .gitlab-ci.yml
 		appveyor.yml = appveyor.yml
 		build\common.props = build\common.props
 		README.md = README.md
-		build\sourcelink.props = build\sourcelink.props
-		build\version.props = build\version.props
+		Dockerfile = Dockerfile
+		tests\Directory.Build.props = tests\Directory.Build.props
+		src\Directory.Build.props = src\Directory.Build.props
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{A1DFF80C-113F-4FEC-84BB-1E3790FB410F}"
@@ -22,11 +22,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio", "src\Foundatio\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.MetricsNET", "src\Foundatio.MetricsNET\Foundatio.MetricsNET.csproj", "{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.CronJob", "samples\Foundatio.CronJob\Foundatio.CronJob.csproj", "{7105C156-3B0A-4078-BE17-A368A0D98958}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Commands", "src\Foundatio.Jobs.Commands\Foundatio.Jobs.Commands.csproj", "{46D368FC-E974-4551-9360-1482E9C0B6B8}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JobCommands", "samples\Foundatio.JobCommands\Foundatio.JobCommands.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.HostingSample", "samples\Foundatio.HostingSample\Foundatio.HostingSample.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "src\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
 EndProject
@@ -40,7 +38,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Utf8Json", "src\F
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.AppMetrics", "src\Foundatio.AppMetrics\Foundatio.AppMetrics.csproj", "{D97811C5-186A-4ED3-8675-925A7ACD32F6}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Hosting", "src\Foundatio.Jobs.Hosting\Foundatio.Jobs.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Hosting", "src\Foundatio.Hosting\Foundatio.Hosting.csproj", "{D1AA555A-41F8-4DAC-BF4B-35A72BD57417}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -76,18 +74,6 @@ Global
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x64.Build.0 = Release|Any CPU
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x86.Build.0 = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|x64.Build.0 = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Debug|x86.Build.0 = Debug|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|x64.ActiveCfg = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|x64.Build.0 = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|x86.ActiveCfg = Release|Any CPU
-		{7105C156-3B0A-4078-BE17-A368A0D98958}.Release|x86.Build.0 = Release|Any CPU
 		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -201,7 +187,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{7105C156-3B0A-4078-BE17-A368A0D98958} = {A1DFF80C-113F-4FEC-84BB-1E3790FB410F}
 		{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93} = {A1DFF80C-113F-4FEC-84BB-1E3790FB410F}
 		{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
 		{99CBF75F-9204-4D7E-A792-4377C0291900} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}

@@ -52,6 +52,14 @@ namespace Foundatio.Caching {
             return scopedKey?.Substring(_keyPrefix.Length);
         }
 
+        public Task<bool> RemoveAsync(string key) {
+            return UnscopedCache.RemoveAsync(GetScopedCacheKey(key));
+        }
+
+        public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
+            return UnscopedCache.RemoveIfEqualAsync(GetScopedCacheKey(key), expected);
+        }
+
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null)
                 return RemoveByPrefixAsync(String.Empty);
@@ -86,6 +94,10 @@ namespace Foundatio.Caching {
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
             return UnscopedCache.ReplaceAsync(GetScopedCacheKey(key), value, expiresIn);
+        }
+
+        public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
+            return UnscopedCache.ReplaceIfEqualAsync(GetScopedCacheKey(key), value, expected, expiresIn);
         }
 
         public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {

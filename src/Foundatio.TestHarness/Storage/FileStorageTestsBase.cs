@@ -58,6 +58,51 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanGetPagedFileListForSingleFolderAsync() {
+            await ResetAsync();
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                var result = await storage.GetPagedFileListAsync(1);
+                Assert.False(result.HasMore);
+                Assert.Equal(0, result.Files.Count);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Equal(0, result.Files.Count);
+
+                await storage.SaveFileAsync(@"archived\archived.txt", "archived");
+                result = await storage.GetPagedFileListAsync(1);
+                Assert.False(result.HasMore);
+                Assert.Equal(1, result.Files.Count);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Equal(1, result.Files.Count);
+
+                await storage.SaveFileAsync(@"q\new.txt", "new");
+                result = await storage.GetPagedFileListAsync(1);
+                Assert.True(result.HasMore);
+                Assert.Equal(1, result.Files.Count);
+                Assert.True(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Equal(1, result.Files.Count);
+
+                await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
+
+                Assert.Equal(3, (await storage.GetPagedFileListAsync(100)).Files.Count);
+                Assert.Single((await storage.GetPagedFileListAsync(1)).Files);
+                Assert.Single((await storage.GetPagedFileListAsync(2, @"long\path\in\here\*stuff*.json")).Files);
+
+                Assert.Single((await storage.GetPagedFileListAsync(2,@"archived\*")).Files);
+                Assert.Equal("archived", await storage.GetFileContentsAsync(@"archived\archived.txt"));
+
+                Assert.Single((await storage.GetPagedFileListAsync(2,@"q\*")).Files);
+                Assert.Equal("new", await storage.GetFileContentsAsync(@"q\new.txt"));
+            }
+        }
+
         public virtual async Task CanGetFileInfoAsync() {
             await ResetAsync();
 
@@ -353,6 +398,7 @@ namespace Foundatio.Tests.Storage {
                         await writer.WriteAsync("Eric");
                         offset = memoryStream.Position;
                         await writer.WriteAsync("Blake");
+                        await writer.FlushAsync();
                     }
 
                     memoryStream.Seek(offset, SeekOrigin.Begin);
@@ -425,7 +471,7 @@ namespace Foundatio.Tests.Storage {
                 });
             }
         }
-        
+
         public virtual void CanUseDataDirectory() {
             const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
 

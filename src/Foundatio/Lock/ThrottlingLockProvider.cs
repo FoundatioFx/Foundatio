@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -25,15 +26,17 @@ namespace Foundatio.Lock {
                 _throttlingPeriod = throttlingPeriod.Value;
         }
 
-        public async Task<ILock> AcquireAsync(string name, TimeSpan? lockTimeout = null, CancellationToken cancellationToken = default) {
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Name}", name);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 
             bool allowLock = false;
             byte errors = 0;
 
+            string lockId = Guid.NewGuid().ToString("N");
+            var sw = Stopwatch.StartNew();
             do {
-                string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
+                string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
 
                 try {
                     if (isTraceLogLevelEnabled)
@@ -51,9 +54,9 @@ namespace Foundatio.Lock {
                             break;
                         }
 
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Max hits exceeded after increment for {Name}.", name);
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Max hits exceeded after increment for {Resource}.", resource);
                     } else if (isTraceLogLevelEnabled) {
-                        _logger.LogTrace("Max hits exceeded for {Name}.", name);
+                        _logger.LogTrace("Max hits exceeded for {Resource}.", resource);
                     }
 
                     if (cancellationToken.IsCancellationRequested)
@@ -70,12 +73,12 @@ namespace Foundatio.Lock {
                 } catch (OperationCanceledException) {
                     return null;
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Error acquiring throttled lock: name={Name} message={Message}", name, ex.Message);
+                    _logger.LogError(ex, "Error acquiring throttled lock: name={Resource} message={Message}", resource, ex.Message);
                     errors++;
                     if (errors >= 3)
                         break;
 
-                    await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
+                    await SystemClock.SleepSafeAsync(50, cancellationToken).AnyContext();
                 }
             } while (!cancellationToken.IsCancellationRequested);
 
@@ -85,28 +88,29 @@ namespace Foundatio.Lock {
             if (!allowLock)
                 return null;
 
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Allowing lock: {Name}", name);
-            return new DisposableLock(name, this, _logger);
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Allowing lock: {Resource}", resource);
+            
+            sw.Stop();
+            return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger);
         }
 
-        public async Task<bool> IsLockedAsync(string name) {
-            string cacheKey = GetCacheKey(name, SystemClock.UtcNow);
+        public async Task<bool> IsLockedAsync(string resource) {
+            string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
             long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public Task ReleaseAsync(string name) {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("ReleaseAsync: {Name}", name);
+        public Task ReleaseAsync(ILock @lock) {
             return Task.CompletedTask;
         }
         
-        public Task RenewAsync(string name, TimeSpan? lockExtension = null) {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RenewAsync: {Name}", name);
+        public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
             return Task.CompletedTask;
         }
 
-        private string GetCacheKey(string name, DateTime now) {
-            return String.Concat(name, ":", now.Floor(_throttlingPeriod).Ticks);
+        private string GetCacheKey(string resource, DateTime now) {
+            return String.Concat(resource, ":", now.Floor(_throttlingPeriod).Ticks);
         }
     }
 }

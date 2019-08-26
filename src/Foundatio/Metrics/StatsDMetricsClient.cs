@@ -17,7 +17,7 @@ namespace Foundatio.Metrics {
         public StatsDMetricsClient(StatsDMetricsClientOptions options) {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger<StatsDMetricsClient>() ?? NullLogger<StatsDMetricsClient>.Instance;
-            _endPoint = new IPEndPoint(IPAddress.Parse(options.ServerName), options.Port);
+            _endPoint = GetIPEndPointFromHostName(options.ServerName, options.Port, false);
 
             if (!String.IsNullOrEmpty(options.Prefix))
                 options.Prefix = options.Prefix.EndsWith(".") ? options.Prefix : String.Concat(options.Prefix, ".");
@@ -84,6 +84,25 @@ namespace Foundatio.Metrics {
                     _socket = null;
                 }
             }
+        }
+        
+        private IPEndPoint GetIPEndPointFromHostName(string hostName, int port, bool throwIfMoreThanOneIP) {
+            var addresses = Dns.GetHostAddresses(hostName);
+            if (addresses.Length == 0) {
+                throw new ArgumentException(
+                    "Unable to retrieve address from specified host name.", 
+                    nameof(hostName)
+                );
+            }
+
+            if (throwIfMoreThanOneIP && addresses.Length > 1) {
+                throw new ArgumentException(
+                    "There is more that one IP address to the specified host.", 
+                    nameof(hostName)
+                );
+            }
+
+            return new IPEndPoint(addresses[0], port);
         }
 
         public void Dispose() {

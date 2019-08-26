@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs {
     public class JobResult {
@@ -47,6 +48,26 @@ namespace Foundatio.Jobs {
                 IsSuccess = false,
                 Message = message
             };
+        }
+    }
+
+    public static class JobResultExtensions {
+        public static void LogJobResult(this ILogger logger, JobResult result, string jobName) {
+            if (result == null) {
+                if (logger.IsEnabled(LogLevel.Error))
+                    logger.LogError("Null job run result for {JobName}.", jobName);
+
+                return;
+            }
+
+            if (result.IsCancelled)
+                logger.LogWarning(result.Error, "Job run {JobName} cancelled: {Message}", jobName, result.Message);
+            else if (!result.IsSuccess)
+                logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
+            else if (!String.IsNullOrEmpty(result.Message))
+                logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
+            else if (logger.IsEnabled(LogLevel.Debug))
+                logger.LogDebug("Job run {JobName} succeeded.", jobName);
         }
     }
 }

@@ -45,7 +45,8 @@ namespace Foundatio.Messaging {
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                return AddDelayedMessageAsync(mappedType, message, delay.Value);
+                SendDelayedMessage(mappedType, message, delay.Value);
+                return Task.CompletedTask;
             }
 
             var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType)).ToList();

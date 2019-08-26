@@ -1,10 +1,12 @@
-FROM microsoft/dotnet:2.1.500-sdk AS build  
+FROM mcr.microsoft.com/dotnet/core/sdk:2.2 AS build
 WORKDIR /app
-ARG build=0-dev
-ENV build=$build
+
+ARG VERSION_SUFFIX=0-dev
+ENV VERSION_SUFFIX=$VERSION_SUFFIX
 
 COPY ./*.sln ./NuGet.config ./
-COPY ./build/*.props ./build/
+COPY ./*/*.props ./
+COPY ./LICENSE.txt ./LICENSE.txt
 
 # Copy the main source project files
 COPY src/*/*.csproj ./
@@ -22,7 +24,7 @@ RUN dotnet restore
 
 # Copy everything else and build
 COPY . .
-RUN dotnet build --version-suffix $build -c Release
+RUN dotnet build --version-suffix $VERSION_SUFFIX -c Release
 
 # testrunner
 
@@ -35,10 +37,10 @@ ENTRYPOINT dotnet test --results-directory /app/artifacts --logger:trx
 FROM build AS pack
 WORKDIR /app/
 
-ARG build=0-dev
-ENV build=$build
+ARG VERSION_SUFFIX=0-dev
+ENV VERSION_SUFFIX=$VERSION_SUFFIX
 
-ENTRYPOINT dotnet pack --version-suffix $build -c Release -o /app/artifacts
+ENTRYPOINT dotnet pack --version-suffix $VERSION_SUFFIX -c Release -o /app/artifacts
 
 # publish
 
@@ -47,10 +49,10 @@ WORKDIR /app/
 
 ENTRYPOINT [ "dotnet", "nuget", "push", "/app/artifacts/*.nupkg" ]
 
-# docker build --target testrunner -t foundatio:testrunner --build-arg build=123-dev .
+# docker build --target testrunner -t foundatio:testrunner --build-arg VERSION_SUFFIX=123-dev .
 # docker run -it -v $(pwd)/artifacts:/app/artifacts foundatio:testrunner
 
-# docker build --target publish -t foundatio:publish --build-arg build=123-dev .
+# docker build --target publish -t foundatio:publish --build-arg VERSION_SUFFIX=123-dev .
 # export NUGET_SOURCE=https://api.nuget.org/v3/index.json
 # export NUGET_KEY=MY_SECRET_NUGET_KEY
 # docker run -it foundatio:publish -k $NUGET_KEY -s ${NUGET_SOURCE:-https://api.nuget.org/v3/index.json}

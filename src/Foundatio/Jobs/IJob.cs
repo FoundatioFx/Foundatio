@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -35,17 +35,17 @@ namespace Foundatio.Jobs {
                 var sw = Stopwatch.StartNew();
                 while (!cancellationToken.IsCancellationRequested) {
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                    LogResult(result, logger, jobName);
+                    logger.LogJobResult(result, jobName);
                     iterations++;
 
                     if (cancellationToken.IsCancellationRequested || (iterationLimit > -1 && iterationLimit <= iterations))
                        break;
 
-                    // Maybe look into yeilding threads. task scheduler queue is starving.
+                    // Maybe look into yielding threads. Task scheduler queue is starving.
                     if (result.Error != null) {
-                        await SystemClock.SleepAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100)).AnyContext();
+                        await SystemClock.SleepSafeAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100), cancellationToken).AnyContext();
                     } else if (interval.HasValue && interval.Value > TimeSpan.Zero) {
-                        await SystemClock.SleepAsync(interval.Value).AnyContext();
+                        await SystemClock.SleepSafeAsync(interval.Value, cancellationToken).AnyContext();
                     } else if (sw.ElapsedMilliseconds > 5000) {
                         // allow for cancellation token to get set
                         Thread.Yield();
@@ -73,21 +73,6 @@ namespace Foundatio.Jobs {
 
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Stopping continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
-            }
-        }
-
-        internal static void LogResult(JobResult result, ILogger logger, string jobName) {
-            if (result != null) {
-                if (result.IsCancelled)
-                    logger.LogWarning(result.Error, "Job run {JobName} cancelled: {Message}", jobName, result.Message);
-                else if (!result.IsSuccess)
-                    logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
-                else if (!String.IsNullOrEmpty(result.Message))
-                    logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
-                else if (logger.IsEnabled(LogLevel.Debug))
-                    logger.LogDebug("Job run {JobName} succeeded.", jobName);
-            } else if (logger.IsEnabled(LogLevel.Error)) {
-                logger.LogError("Null job run result for {JobName}.", jobName);
             }
         }
     }

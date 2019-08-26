@@ -2,7 +2,6 @@
 
 using System;
 using System.Linq;
-using System.Reflection;
 
 namespace Foundatio.Force.DeepCloner.Helpers
 {
@@ -10,46 +9,50 @@ namespace Foundatio.Force.DeepCloner.Helpers
 	{
 		public static T CloneObject<T>(T obj)
 		{
-			return obj is ValueType && typeof(T) == obj.GetType()
-						? CloneStructInternal(obj, new DeepCloneState()) 
-						: (T)CloneClassRoot(obj);
+			if (obj is ValueType)
+			{
+				var type = obj.GetType();
+				if (typeof(T) == type)
+				{
+					if (DeepClonerSafeTypes.CanReturnSameObject(type))
+						return obj;
+
+					return CloneStructInternal(obj, new DeepCloneState());
+				}
+			}
+
+			return (T)CloneClassRoot(obj);
 		}
 
 		private static object CloneClassRoot(object obj)
 		{
-			if (obj == null) return null;
+			if (obj == null)
+				return null;
+		
+			var cloner = (Func<object, DeepCloneState, object>)DeepClonerCache.GetOrAddClass(obj.GetType(), t => GenerateCloner(t, true));
 
-			// we can receive an poco objects which is faster to copy in shallow way if possible
-			var type = obj.GetType();
-			// 200ms
-			if (DeepClonerSafeTypes.CanNotDeepCopyClass(type)) 
-				return ShallowObjectCloner.CloneObject(obj);
-			// 350ms
-			var cloner = (Func<object, DeepCloneState, object>)DeepClonerCache.GetOrAddClass(type, t => GenerateCloner(t, true));
+			// null -> should return same type
+			if (cloner == null) 
+				return obj;
 
-			if (cloner == null) return obj;
-
-			// 200ms
 			return cloner(obj, new DeepCloneState());
-		}
-
-		public static T CloneStruct<T>(T obj) where T : struct 
-		{
-			return CloneStructInternal(obj, new DeepCloneState());
 		}
 
 		internal static object CloneClassInternal(object obj, DeepCloneState state)
 		{
-			if (obj == null) return null;
+			if (obj == null) 
+				return null;
 
 			var cloner = (Func<object, DeepCloneState, object>)DeepClonerCache.GetOrAddClass(obj.GetType(), t => GenerateCloner(t, true));
 
 			// safe ojbect
-			if (cloner == null) return obj;
+			if (cloner == null) 
+				return obj;
 
 			// loop
 			var knownRef = state.GetKnownRef(obj);
-			if (knownRef != null) return knownRef;
+			if (knownRef != null) 
+				return knownRef;
 
 			return cloner(obj, state);
 		}
@@ -60,7 +63,8 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			var cloner = GetClonerForValueType<T>();
 
 			// safe ojbect
-			if (cloner == null) return obj;
+			if (cloner == null) 
+				return obj;
 
 			return cloner(obj, state);
 		}
@@ -111,7 +115,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			var l2 = obj.GetLength(1);
 			var outArray = new T[l1, l2];
 			state.AddKnownRef(obj, outArray);
-			if (DeepClonerSafeTypes.CanNotCopyType(typeof(T), null))
+			if (DeepClonerSafeTypes.CanReturnSameObject(typeof(T)))
 			{
 				Array.Copy(obj, outArray, obj.Length);
 				return outArray;
@@ -173,6 +177,9 @@ namespace Foundatio.Force.DeepCloner.Helpers
 
 		private static object GenerateCloner(Type t, bool asObject)
 		{
+			if (DeepClonerSafeTypes.CanReturnSameObject(t) && (asObject && !t.IsValueType())) 
+				return null;
+
 #if !NETCORE
 			if (ShallowObjectCloner.IsSafeVariant()) return DeepClonerExprGenerator.GenerateClonerInternal(t, asObject);
 			else return DeepClonerMsilGenerator.GenerateClonerInternal(t, asObject);

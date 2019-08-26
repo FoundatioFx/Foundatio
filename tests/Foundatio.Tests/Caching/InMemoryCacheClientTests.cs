@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Utility;
@@ -85,6 +85,16 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
+        public override Task CanReplaceIfEqual() {
+            return base.CanReplaceIfEqual();
+        }
+
+        [Fact]
+        public override Task CanRemoveIfEqual() {
+            return base.CanRemoveIfEqual();
+        }
+
+        [Fact]
         public override Task CanGetAndSetDateTimeAsync() {
             return base.CanGetAndSetDateTimeAsync();
         }
@@ -106,6 +116,8 @@ namespace Foundatio.Tests.Caching {
 
         [Fact]
         public async Task CanSetMaxItems() {
+            Log.MinimumLevel = LogLevel.Trace;
+
             // run in tight loop so that the code is warmed up and we can catch timing issues
             for (int x = 0; x < 5; x++) {
                 var cache = GetCacheClient() as InMemoryCacheClient;

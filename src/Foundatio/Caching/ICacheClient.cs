@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public interface ICacheClient : IDisposable {
+        Task<bool> RemoveAsync(string key);
+        Task<bool> RemoveIfEqualAsync<T>(string key, T expected);
         Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
         Task<int> RemoveByPrefixAsync(string prefix);
         Task<CacheValue<T>> GetAsync<T>(string key);
@@ -12,6 +14,7 @@ namespace Foundatio.Caching {
         Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null);
         Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null);
         Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
+        Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null);
         Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null);
         Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null);
         Task<bool> ExistsAsync(string key);

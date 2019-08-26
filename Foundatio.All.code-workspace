@@ -1,0 +1,40 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../Foundatio.Repositories"
+		},
+		{
+			"path": "../Foundatio.Redis"
+		},
+		{
+			"path": "../Foundatio.RabbitMQ"
+		},
+		{
+			"path": "../Foundatio.Parsers"
+		},
+		{
+			"path": "../Foundatio.AzureStorage"
+		},
+		{
+			"path": "../Foundatio.AzureServiceBus"
+		},
+		{
+			"path": "../Foundatio.AWS"
+		},
+		{
+			"path": "../Foundatio.Aliyun"
+		},
+		{
+			"path": "../Foundatio.Minio"
+		},
+		{
+			"path": "../Foundatio.Storage.SshNet"
+		}
+	],
+	"settings": {
+		"msbuildProjectTools.nuget.includePreRelease": true
+	}
+}

@@ -8,23 +8,35 @@ services:
 pull_requests:
   do_not_increment_build_number: true
 
+environment:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
 init:
   - git config --global core.autocrlf input
+
+before_build:
   - |
+    VERSION_PREFIX=$(sed -n 's/.*<VersionPrefix>\([^<]*\)<\/VersionPrefix>.*/\1/p' <<< cat ./build/common.props)
     if [ $APPVEYOR_REPO_TAG != "true" ]; then
-      BUILD_NUMBER="$APPVEYOR_BUILD_NUMBER-pre"
-      echo "Build: $BUILD_NUMBER Tag: $APPVEYOR_REPO_TAG_NAME"
+      VERSION_SUFFIX="$APPVEYOR_BUILD_NUMBER-pre"
+      VERSION="$VERSION_PREFIX.$VERSION_SUFFIX"
+      echo "Version: $VERSION"
     else
-      BUILD_NUMBER=$APPVEYOR_BUILD_NUMBER
-      echo "Build: $BUILD_NUMBER"
+      VERSION_SUFFIX=$APPVEYOR_BUILD_NUMBER
+      VERSION="$VERSION_PREFIX.$VERSION_SUFFIX"
+      echo "Version: $VERSION Tag: $APPVEYOR_REPO_TAG_NAME"
+    fi
+    if [ -z $APPVEYOR_PULL_REQUEST_NUMBER ]; then
+      appveyor UpdateBuild -Version $VERSION
     fi
 
 build_script:
-  - docker build --target testrunner -t foundatio:test --build-arg build=${BUILD_NUMBER} .
+  - docker build --target testrunner -t foundatio:test --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
   - docker run -e APPVEYOR_API_URL --net=host -v $(pwd)/artifacts:/app/artifacts foundatio:test
 
 after_build:
-  - docker build --target pack -t foundatio:pack --build-arg build=${BUILD_NUMBER} .
+  - docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
   - docker run --rm -v $(pwd)/artifacts:/app/artifacts foundatio:pack
 
 artifacts:
