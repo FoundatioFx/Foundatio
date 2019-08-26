@@ -66,77 +66,85 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override async Task CanDequeueWithCancelledTokenAsync() {
-            await base.CanDequeueWithCancelledTokenAsync();
+        public override Task CanDequeueWithCancelledTokenAsync() {
+            return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override async Task CanQueueAndDequeueMultipleWorkItemsAsync() {
-            await base.CanQueueAndDequeueMultipleWorkItemsAsync();
+        public override  CanQueueAndDequeueMultipleWorkItemsAsync() {
+            return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact]
-        public override async Task WillWaitForItemAsync() {
-            await base.WillWaitForItemAsync();
+        public override Task WillWaitForItemAsync() {
+            return base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override async Task DequeueWaitWillGetSignaledAsync() {
-            await base.DequeueWaitWillGetSignaledAsync();
+        public override Task DequeueWaitWillGetSignaledAsync() {
+            return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override async Task CanUseQueueWorkerAsync() {
-            await base.CanUseQueueWorkerAsync();
+        public override CanUseQueueWorkerAsync() {
+            return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override async Task CanHandleErrorInWorkerAsync() {
-            await base.CanHandleErrorInWorkerAsync();
+        public override Task CanHandleErrorInWorkerAsync() {
+            return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact]
-        public override async Task WorkItemsWillTimeoutAsync() {
-            await base.WorkItemsWillTimeoutAsync();
+        public override Task WorkItemsWillTimeoutAsync() {
+            return base.WorkItemsWillTimeoutAsync();
         }
 
         [Fact]
-        public override async Task WorkItemsWillGetMovedToDeadletterAsync() {
-            await base.WorkItemsWillGetMovedToDeadletterAsync();
+        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+            return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override async Task CanAutoCompleteWorkerAsync() {
-            await base.CanAutoCompleteWorkerAsync();
+        public override Task CanAutoCompleteWorkerAsync() {
+            return base.CanAutoCompleteWorkerAsync();
         }
 
         [Fact]
-        public override async Task CanHaveMultipleQueueInstancesAsync() {
-            await base.CanHaveMultipleQueueInstancesAsync();
+        public override Task CanHaveMultipleQueueInstancesAsync() {
+            return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override async Task CanRunWorkItemWithMetricsAsync() {
-            await base.CanRunWorkItemWithMetricsAsync();
+        public override Task CanRunWorkItemWithMetricsAsync() {
+            return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override async Task CanRenewLockAsync() {
-            await base.CanRenewLockAsync();
+        public override Task CanRenewLockAsync() {
+            return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override async Task CanAbandonQueueEntryOnceAsync() {
-            await base.CanAbandonQueueEntryOnceAsync();
+        public override Task CanAbandonQueueEntryOnceAsync() {
+            return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override async Task CanCompleteQueueEntryOnceAsync() {
-            await base.CanCompleteQueueEntryOnceAsync();
+        public override Task CanCompleteQueueEntryOnceAsync() {
+            return base.CanCompleteQueueEntryOnceAsync();
         }
 
-        public override void Dispose() {
-            // do nothing
+        [Fact]
+        public override Task CheckRetryCountAsync()
+        {
+            return base.CheckRetryCountAsync();
+        }
+
+        [Fact]
+        public override Task CheckAttemptCountInQueueEntryAsync()
+        {
+            return base.CheckAttemptCountInQueueEntryAsync();
         }
     }
 }
