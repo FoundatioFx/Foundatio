@@ -153,5 +153,17 @@ namespace Foundatio.AzureServiceBus.Tests.Queue {
         public override Task CanDelayRetryAsync() {
             return base.CanDelayRetryAsync();
         }
+
+        [Fact]
+        public override Task CheckRetryCountAsync()
+        {
+            return base.CheckRetryCountAsync();
+        }
+
+        [Fact]
+        public override Task CheckAttemptCountInQueueEntryAsync()
+        {
+            return base.CheckAttemptCountInQueueEntryAsync();
+        }
     }
 }
