@@ -29,11 +29,13 @@ namespace Foundatio.Hosting.Jobs {
 
         private async Task ExecuteAsync(CancellationToken stoppingToken) {
             if (_jobOptions.WaitForStartupActions) {
-                var startupContext = _serviceProvider.GetRequiredService<StartupActionsContext>();
-                var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
-                if (!result.Success) {
-                    _logger.LogError("Unable to start {JobName} job due to startup actions failure.", _jobOptions.Name);
-                    return;
+                var startupContext = _serviceProvider.GetService<StartupActionsContext>();
+                if (startupContext != null) {
+                    var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
+                    if (!result.Success) {
+                        _logger.LogError("Unable to start {JobName} job due to startup actions failure.", _jobOptions.Name);
+                        return;
+                    }
                 }
             }
 
