@@ -14,7 +14,7 @@ namespace Foundatio.Azure.Tests.Queue {
 
         public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
@@ -24,6 +24,7 @@ namespace Foundatio.Azure.Tests.Queue {
                 .ConnectionString(connectionString)
                 .Name(_queueName)
                 .Retries(retries)
+                .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                 .RetryPolicy(retries <= 0 ? new NoRetry() : (IRetryPolicy)new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries))
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(TimeSpan.FromMilliseconds(100))
@@ -137,15 +138,9 @@ namespace Foundatio.Azure.Tests.Queue {
         }
 
         [Fact]
-        public override Task CheckRetryCountAsync()
+        public override Task VerifyRetryAttemptsAsync()
         {
-            return base.CheckRetryCountAsync();
-        }
-
-        [Fact]
-        public override Task CheckAttemptCountInQueueEntryAsync()
-        {
-            return base.CheckAttemptCountInQueueEntryAsync();
+            return base.VerifyRetryAttemptsAsync();
         }
     }
 }
