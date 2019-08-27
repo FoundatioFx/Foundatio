@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -25,11 +25,12 @@ namespace Foundatio.AWS.Tests.Queues {
             if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
                 return null;
 
+            // TODO: Add RetryMultipliers
             var queue = new SQSQueue<SimpleWorkItem>(
                 o => o.Credentials(accessKey, secretKey)
                     .Name(_queueName)
                     .Retries(retries)
-                    .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
+                    //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                     .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                     .LoggerFactory(Log));
 

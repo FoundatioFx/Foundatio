@@ -28,6 +28,7 @@ namespace Foundatio.Queues {
         private long _workerErrorCount;
 
         public SQSQueue(SQSQueueOptions<T> options) : base(options) {
+            // TODO: Flow through the options like retries and the like.
             _client = new Lazy<AmazonSQSClient>(() => {
                 var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
                 var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint() ?? RegionEndpoint.USEast1;
