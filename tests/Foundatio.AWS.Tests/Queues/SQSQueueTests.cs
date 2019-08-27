@@ -13,7 +13,7 @@ namespace Foundatio.AWS.Tests.Queues {
 
         public SQSQueueTests(ITestOutputHelper output) : base(output) {}
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             // Don't run this as part of the tests yet
             return null;
 
@@ -27,7 +27,9 @@ namespace Foundatio.AWS.Tests.Queues {
 
             var queue = new SQSQueue<SimpleWorkItem>(
                 o => o.Credentials(accessKey, secretKey)
-                    .Name(_queueName).Retries(retries)
+                    .Name(_queueName)
+                    .Retries(retries)
+                    .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                     .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                     .LoggerFactory(Log));
 
@@ -136,15 +138,9 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override Task CheckRetryCountAsync()
+        public override Task VerifyRetryAttemptsAsync()
         {
-            return base.CheckRetryCountAsync();
-        }
-
-        [Fact]
-        public override Task CheckAttemptCountInQueueEntryAsync()
-        {
-            return base.CheckAttemptCountInQueueEntryAsync();
+            return base.VerifyRetryAttemptsAsync();
         }
     }
 }
