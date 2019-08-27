@@ -14,11 +14,12 @@ namespace Foundatio.Tests.Queue {
 
         public InMemoryQueueTests(ITestOutputHelper output) : base(output) {}
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             if (_queue == null)
                 _queue = new InMemoryQueue<SimpleWorkItem>(o => o
                         .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
                         .Retries(retries)
+                        .RetryMultipliers(retryMultipliers ?? new [] { 1, 3, 5, 10 })
                         .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                         .LoggerFactory(Log));
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -193,13 +194,8 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public override Task CheckRetryCountAsync() {
-            return base.CheckRetryCountAsync();
-        }
-
-        [Fact]
-        public override Task CheckAttemptCountInQueueEntryAsync() {
-            return base.CheckAttemptCountInQueueEntryAsync();
+        public override Task VerifyRetryAttemptsAsync() {
+            return base.VerifyRetryAttemptsAsync();
         }
     }
 }

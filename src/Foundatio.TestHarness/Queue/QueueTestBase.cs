@@ -29,7 +29,7 @@ namespace Foundatio.Tests.Queue {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
         }
 
-        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             return null;
         }
 
@@ -125,9 +125,9 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task CheckRetryCountAsync() {
-            var retryCount = 4;
-            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
+        public virtual async Task VerifyRetryAttemptsAsync() {
+            const int retryCount = 2;
+            var queue = GetQueue(retryCount, null, TimeSpan.FromMilliseconds(250), new []{ 1 });
             if (queue == null)
                 return;
 
@@ -135,68 +135,29 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                //var resetEvent = new AsyncManualResetEvent(false);
+                var countdown = new AsyncCountdownEvent(retryCount + 1);
                 int attempts = 0;
                 await queue.StartWorkingAsync(async w => {
-
-                    attempts++;
+                    Interlocked.Increment(ref attempts);
+                    _logger.LogInformation("Attempt {Attempt} to work on queue item", attempts);
                     Assert.Equal("Hello", w.Value.Data);
-                    await w.AbandonAsync();
                     
-                });
-
-                await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                });
-
-                // wait 5 seconds for every retry
-                await Task.Delay(TimeSpan.FromSeconds(retryCount*5));
-
-                int realRetryCount = attempts - 1;
-                var stats = await queue.GetQueueStatsAsync();
-                Assert.Equal(retryCount, realRetryCount);
-                Assert.Equal(0, stats.Completed);
-                Assert.Equal(0, stats.Queued);
-                Assert.Equal(0, stats.Errors);
-                Assert.Equal(retryCount + 1, stats.Dequeued);
-                Assert.Equal(retryCount + 1, stats.Abandoned);
-            } finally {
-                await CleanupQueueAsync(queue);
-            }
-        }
-
-        public virtual async Task CheckAttemptCountInQueueEntryAsync() {
-            var retryCount = 4;
-            var queue = GetQueue(retryCount, null, TimeSpan.FromSeconds(1));
-            if (queue == null)
-                return;
-
-            try {
-                await queue.DeleteQueueAsync();
-                await AssertEmptyQueueAsync(queue);
-
-                //var resetEvent = new AsyncManualResetEvent(false);
-                int attempts = 0;
-                await queue.StartWorkingAsync(async w => {
-
-                    attempts++;
-                    Assert.Equal("Hello", w.Value.Data);
-
                     var queueEntryMetadata = (IQueueEntryMetadata)w;
                     Assert.Equal(attempts, queueEntryMetadata.Attempts);
-
+                    
                     await w.AbandonAsync();
-
+                    countdown.Signal();
                 });
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 });
 
-                // wait 5 seconds for every retry
-                await Task.Delay(TimeSpan.FromSeconds(retryCount * 5));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert.Equal(0, countdown.CurrentCount);
 
                 var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(retryCount + 1, attempts);
                 Assert.Equal(0, stats.Completed);
                 Assert.Equal(0, stats.Queued);
                 Assert.Equal(0, stats.Errors);

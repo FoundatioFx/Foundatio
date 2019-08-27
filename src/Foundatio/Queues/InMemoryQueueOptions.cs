@@ -8,12 +8,26 @@ namespace Foundatio.Queues {
 
     public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, InMemoryQueueOptions<T>, InMemoryQueueOptionsBuilder<T>> where T: class {
         public InMemoryQueueOptionsBuilder<T> RetryDelay(TimeSpan retryDelay) {
+            if (retryDelay == null)
+                throw new ArgumentNullException(nameof(retryDelay));
+            
+            if (retryDelay < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(retryDelay));
+            
             Target.RetryDelay = retryDelay;
             return this;
         }
 
         public InMemoryQueueOptionsBuilder<T> RetryMultipliers(int[] multipliers) {
-            Target.RetryMultipliers = multipliers ?? throw new ArgumentNullException(nameof(multipliers));
+            if (multipliers == null)
+                throw new ArgumentNullException(nameof(multipliers));
+            
+            foreach (int multiplier in multipliers) {
+                if (multiplier < 1)
+                    throw new ArgumentOutOfRangeException(nameof(multipliers));
+            }
+            
+            Target.RetryMultipliers = multipliers;
             return this;
         }
     }

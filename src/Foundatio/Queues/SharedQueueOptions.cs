@@ -20,11 +20,20 @@ namespace Foundatio.Queues {
         }
 
         public TBuilder Retries(int retries) {
+            if (retries < 0)
+                throw new ArgumentOutOfRangeException(nameof(retries));
+            
             Target.Retries = retries;
             return (TBuilder)this;
         }
 
         public TBuilder WorkItemTimeout(TimeSpan timeout) {
+            if (timeout == null)
+                throw new ArgumentNullException(nameof(timeout));
+            
+            if (timeout < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            
             Target.WorkItemTimeout = timeout;
             return (TBuilder)this;
         }
