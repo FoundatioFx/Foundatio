@@ -20,28 +20,20 @@ namespace Foundatio.Caching {
         private long _localCacheHits;
         private long _invalidateCacheCalls;
 
-        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
+        public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger<HybridCacheClient>.Instance;
             _distributedCache = distributedCacheClient;
             _messageBus = messageBus;
             _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
-            _localCache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }) { MaxItems = 100 };
+            if (localCacheOptions == null)
+                localCacheOptions = new InMemoryCacheClientOptions { LoggerFactory = loggerFactory };
+            _localCache = new InMemoryCacheClient(localCacheOptions);
             _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
         }
 
         public InMemoryCacheClient LocalCache => _localCache;
         public long LocalCacheHits => _localCacheHits;
         public long InvalidateCacheCalls => _invalidateCacheCalls;
-
-        public int LocalCacheSize {
-            get => _localCache.MaxItems ?? -1;
-            set => _localCache.MaxItems = value;
-        }
-
-        public bool ShouldCloneLocalValues {
-            get => _localCache.ShouldCloneValues;
-            set => _localCache.ShouldCloneValues = value;
-        }
 
         private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args) {
             if (!args.SendNotification)

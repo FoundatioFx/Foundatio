@@ -83,7 +83,7 @@ namespace Foundatio.Tests.Caching {
     
     public class InMemoryHybridCacheClient : HybridCacheClient {
         public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory)
-            : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), messageBus, loggerFactory) {
+            : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), messageBus, new InMemoryCacheClientOptions { CloneValues = true }, loggerFactory) {
         }
 
         public override void Dispose() {

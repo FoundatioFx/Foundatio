@@ -13,6 +13,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
+        private bool _shouldClone;
+        private int _maxItems;
         private long _hits;
         private long _misses;
         private readonly ILogger _logger;
@@ -20,8 +22,11 @@ namespace Foundatio.Caching {
         public InMemoryCacheClient() : this(o => o) {}
 
         public InMemoryCacheClient(InMemoryCacheClientOptions options = null) {
-            ShouldCloneValues = true;
-            var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+            if (options == null)
+                options = new InMemoryCacheClientOptions();
+            _shouldClone = options.CloneValues;
+            _maxItems = options.MaxItems;
+            var loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger<InMemoryCacheClient>();
             _memory = new ConcurrentDictionary<string, CacheEntry>();
         }
@@ -30,8 +35,7 @@ namespace Foundatio.Caching {
             : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
 
         public int Count => _memory.Count;
-        public int? MaxItems { get; set; }
-        public bool ShouldCloneValues { get; set; }
+        public int MaxItems => _maxItems;
         public long Hits => _hits;
         public long Misses => _misses;
 
@@ -186,7 +190,7 @@ namespace Foundatio.Caching {
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues), true);
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt, _shouldClone), true);
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -194,7 +198,7 @@ namespace Foundatio.Caching {
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            return SetInternalAsync(key, new CacheEntry(value, expiresAt, ShouldCloneValues));
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt, _shouldClone));
         }
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
@@ -208,7 +212,7 @@ namespace Foundatio.Caching {
 
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
                 double? currentValue = null;
                 try {
                     currentValue = entry.GetValue<double?>();
@@ -244,7 +248,7 @@ namespace Foundatio.Caching {
 
             long difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
@@ -280,7 +284,7 @@ namespace Foundatio.Caching {
 
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
                 double? currentValue = null;
                 try {
                     currentValue = entry.GetValue<double?>();
@@ -316,7 +320,7 @@ namespace Foundatio.Caching {
 
             long difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, ShouldCloneValues), (k, entry) => {
+            _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
@@ -355,7 +359,7 @@ namespace Foundatio.Caching {
             }
 
             var items = new HashSet<T>(values);
-            var entry = new CacheEntry(items, expiresAt, ShouldCloneValues);
+            var entry = new CacheEntry(items, expiresAt, _shouldClone);
             _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
                 if (!(cacheEntry.Value is ICollection<T> collection))
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
@@ -500,7 +504,7 @@ namespace Foundatio.Caching {
             }
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
+            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) => {
                 double? currentValue = null;
                 try {
                     currentValue = entry.GetValue<double?>();
@@ -534,7 +538,7 @@ namespace Foundatio.Caching {
             }
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, ShouldCloneValues), (k, entry) => {
+            var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) => {
                 long? currentValue = null;
                 try {
                     currentValue = entry.GetValue<long?>();
@@ -610,7 +614,7 @@ namespace Foundatio.Caching {
         }
 
         private async Task CompactAsync() {
-            if (!MaxItems.HasValue || _memory.Count <= MaxItems.Value)
+            if (_memory.Count <= _maxItems)
                 return;
 
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);

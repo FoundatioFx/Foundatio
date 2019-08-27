@@ -11,7 +11,7 @@ namespace Foundatio.Tests.Caching {
         public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) {}
 
         protected override ICacheClient GetCacheClient() {
-            return new InMemoryCacheClient(o => o.LoggerFactory(Log));
+            return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true));
         }
 
         [Fact]
@@ -120,14 +120,11 @@ namespace Foundatio.Tests.Caching {
 
             // run in tight loop so that the code is warmed up and we can catch timing issues
             for (int x = 0; x < 5; x++) {
-                var cache = GetCacheClient() as InMemoryCacheClient;
-                if (cache == null)
-                    return;
+                var cache = new InMemoryCacheClient(o => o.MaxItems(10).CloneValues(true));
 
                 using (cache) {
                     await cache.RemoveAllAsync();
 
-                    cache.MaxItems = 10;
                     for (int i = 0; i < cache.MaxItems; i++)
                         await cache.SetAsync("test" + i, i);
 
