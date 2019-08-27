@@ -16,11 +16,12 @@ namespace Foundatio.AzureServiceBus.Tests.Queue {
             Log.SetLogLevel<AzureServiceBusQueue<SimpleWorkItem>>(LogLevel.Trace);
         }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
 
+            // TODO: Respect retryMultipliers
             var retryPolicy = retryDelay.GetValueOrDefault() > TimeSpan.Zero
                 ? new RetryExponential(retryDelay.GetValueOrDefault(), retryDelay.GetValueOrDefault() + retryDelay.GetValueOrDefault(), retries + 1)
                 : RetryPolicy.NoRetry;
@@ -155,15 +156,9 @@ namespace Foundatio.AzureServiceBus.Tests.Queue {
         }
 
         [Fact]
-        public override Task CheckRetryCountAsync()
+        public override Task VerifyRetryAttemptsAsync()
         {
-            return base.CheckRetryCountAsync();
-        }
-
-        [Fact]
-        public override Task CheckAttemptCountInQueueEntryAsync()
-        {
-            return base.CheckAttemptCountInQueueEntryAsync();
+            return base.VerifyRetryAttemptsAsync();
         }
     }
 }

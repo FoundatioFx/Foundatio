@@ -29,9 +29,8 @@ namespace Foundatio.AzureServiceBus.Tests.Messaging {
                 o.SubscriptionMaxDeliveryCount(Int32.MaxValue);
                 o.PrefetchCount(500);
                 o.LoggerFactory(Log);
-                
-                if (config != null)
-                config(o.Target);
+
+                config?.Invoke(o.Target);
 
                 return o;
             });
