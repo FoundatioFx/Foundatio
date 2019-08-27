@@ -15,7 +15,7 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         protected override ICacheClient GetCacheClient() {
-            return new RedisHybridCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log));
+            return new RedisHybridCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log), localConfig => localConfig.CloneValues(true));
         }
 
         [Fact]
