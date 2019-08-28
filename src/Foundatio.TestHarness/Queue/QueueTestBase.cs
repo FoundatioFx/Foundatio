@@ -125,35 +125,51 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        public virtual async Task VerifyRetryAttemptsAsync() {
+        public virtual Task VerifyRetryAttemptsAsync() {
             const int retryCount = 2;
-            var queue = GetQueue(retryCount, null, TimeSpan.FromMilliseconds(250), new []{ 1 });
+            var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, new []{ 1 });
             if (queue == null)
-                return;
+                return Task.CompletedTask;
 
+            return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(3));
+        }
+
+        public virtual Task VerifyDelayedRetryAttemptsAsync() {
+            const int retryCount = 2;
+            var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), new []{ 1 });
+            if (queue == null)
+                return Task.CompletedTask;
+
+            return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(7));
+        }
+
+        private async Task VerifyRetryAttemptsImplAsync(IQueue<SimpleWorkItem> queue, int retryCount, TimeSpan waitTime) {
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
                 var countdown = new AsyncCountdownEvent(retryCount + 1);
                 int attempts = 0;
-                await queue.StartWorkingAsync(async w => {
+                await queue.StartWorkingAsync(async w =>
+                {
                     Interlocked.Increment(ref attempts);
-                    _logger.LogInformation("Attempt {Attempt} to work on queue item", attempts);
+                    _logger.LogInformation("Starting Attempt {Attempt} to work on queue item", attempts);
                     Assert.Equal("Hello", w.Value.Data);
-                    
-                    var queueEntryMetadata = (IQueueEntryMetadata)w;
+
+                    var queueEntryMetadata = (IQueueEntryMetadata) w;
                     Assert.Equal(attempts, queueEntryMetadata.Attempts);
-                    
+
                     await w.AbandonAsync();
                     countdown.Signal();
+                    
+                    _logger.LogInformation("Finished Attempt {Attempt} to work on queue item, Metadata Attempts: {MetadataAttempts}", attempts, queueEntryMetadata.Attempts);
                 });
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                await countdown.WaitAsync(waitTime);
                 Assert.Equal(0, countdown.CurrentCount);
 
                 var stats = await queue.GetQueueStatsAsync();

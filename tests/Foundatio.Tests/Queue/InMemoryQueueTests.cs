@@ -197,5 +197,10 @@ namespace Foundatio.Tests.Queue {
         public override Task VerifyRetryAttemptsAsync() {
             return base.VerifyRetryAttemptsAsync();
         }
+
+        [Fact]
+        public override Task VerifyDelayedRetryAttemptsAsync() {
+            return base.VerifyDelayedRetryAttemptsAsync();
+        }
     }
 }
