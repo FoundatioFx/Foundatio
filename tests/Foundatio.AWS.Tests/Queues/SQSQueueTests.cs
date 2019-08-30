@@ -143,5 +143,11 @@ namespace Foundatio.AWS.Tests.Queues {
         {
             return base.VerifyRetryAttemptsAsync();
         }
+
+        [Fact]
+        public override Task VerifyDelayedRetryAttemptsAsync()
+        {
+            return base.VerifyDelayedRetryAttemptsAsync();
+        }
     }
 }
