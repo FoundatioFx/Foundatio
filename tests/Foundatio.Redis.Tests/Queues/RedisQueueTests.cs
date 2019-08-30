@@ -533,48 +533,13 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public override async Task VerifyRetryAttemptsAsync() {
-            // TODO: Once new version of foundatio comes out, we can just call the base.
-            const int retryCount = 2;
-            var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, new []{ 1 });
-            if (queue == null)
-                return;
+        public override Task VerifyRetryAttemptsAsync() {
+            return base.VerifyRetryAttemptsAsync();
+        }
 
-            try {
-                await queue.DeleteQueueAsync();
-
-                var countdown = new AsyncCountdownEvent(retryCount + 1);
-                int attempts = 0;
-                await queue.StartWorkingAsync(async w => {
-                    Interlocked.Increment(ref attempts);
-                    _logger.LogInformation("Starting Attempt {Attempt} to work on queue item", attempts);
-                    Assert.Equal("Hello", w.Value.Data);
-                    
-                    var queueEntryMetadata = (IQueueEntryMetadata)w;
-                    Assert.Equal(attempts, queueEntryMetadata.Attempts);
-                    
-                    await w.AbandonAsync();
-                    countdown.Signal();
-                    _logger.LogInformation("Finished Attempt {Attempt} signaled: Metadata Attempts: {MetaDataAttempts}", attempts, queueEntryMetadata.Attempts);
-                });
-
-                await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
-                });
-
-                await countdown.WaitAsync(TimeSpan.FromSeconds(7));
-                Assert.Equal(0, countdown.CurrentCount);
-
-                var stats = await queue.GetQueueStatsAsync();
-                Assert.Equal(retryCount + 1, attempts);
-                Assert.Equal(0, stats.Completed);
-                Assert.Equal(0, stats.Queued);
-                Assert.Equal(0, stats.Errors);
-                Assert.Equal(retryCount + 1, stats.Dequeued);
-                Assert.Equal(retryCount + 1, stats.Abandoned);
-            } finally {
-                await CleanupQueueAsync(queue);
-            }
+        [Fact]
+        public override Task VerifyDelayedRetryAttemptsAsync() {
+            return base.VerifyDelayedRetryAttemptsAsync();
         }
 
         [Fact]
