@@ -142,5 +142,11 @@ namespace Foundatio.Azure.Tests.Queue {
         {
             return base.VerifyRetryAttemptsAsync();
         }
+
+        [Fact]
+        public override Task VerifyDelayedRetryAttemptsAsync()
+        {
+            return base.VerifyDelayedRetryAttemptsAsync();
+        }
     }
 }
