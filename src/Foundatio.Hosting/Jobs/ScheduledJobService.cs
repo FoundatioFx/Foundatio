@@ -17,19 +17,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Hosting.Jobs {
     public class ScheduledJobService : BackgroundService, IJobStatus {
         private readonly List<ScheduledJobRunner> _jobs;
-        private readonly ICacheClient _cacheClient;
-        private readonly ILoggerFactory _loggerFactory;
         private readonly IServiceProvider _serviceProvider;
 
         public ScheduledJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory) {
             _serviceProvider = serviceProvider;
-            _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient();
-            _loggerFactory = loggerFactory;
-            _jobs = new List<ScheduledJobRunner>(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.JobFactory, j.Schedule, _cacheClient, _loggerFactory)));
+            var cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient();
+            _jobs = new List<ScheduledJobRunner>(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.JobFactory, j.Schedule, cacheClient, loggerFactory)));
 
             var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
-            if (lifetime != null)
-                lifetime.RegisterHostedJobInstance(this);
+            lifetime?.RegisterHostedJobInstance(this);
         }
 
         public bool IsRunning { get; private set; } = true;
