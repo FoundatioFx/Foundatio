@@ -13,12 +13,12 @@ namespace Foundatio.Hosting.Jobs {
     public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable {
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
-        private readonly IApplicationLifetime _lifetime;
+        private readonly IHostApplicationLifetime _lifetime;
         private readonly IServiceProvider _serviceProvider;
         private bool _isStarted = false;
         private readonly ILogger _logger;
 
-        public ShutdownHostIfNoJobsRunningService(IApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
+        public ShutdownHostIfNoJobsRunningService(IHostApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
             _serviceProvider = serviceProvider;
             _logger = logger ?? NullLogger<ShutdownHostIfNoJobsRunningService>.Instance;

@@ -1,29 +1,34 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Hosting;
 using Foundatio.Hosting.Jobs;
 using Foundatio.Hosting.Startup;
-using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using Serilog.AspNetCore;
 using Serilog;
 using System.Diagnostics;
+using Microsoft.Extensions.Hosting;
+using Serilog.Events;
 
 namespace Foundatio.HostingSample {
     public class Program {
-        private static Microsoft.Extensions.Logging.ILogger _logger;
-
-        public static async Task<int> Main(string[] args) {
+        public static int Main(string[] args) {
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Verbose()
+                .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", LogEventLevel.Warning)
+                .Enrich.FromLogContext()
+                .WriteTo.Console()
+                .CreateLogger();
+            
             try {
-                await CreateWebHostBuilder(args).Build().RunAsync(_logger);
+                Log.Information("Starting host");
+                CreateHostBuilder(args).Build().Run();
                 return 0;
             } catch (Exception ex) {
-                _logger.LogError(ex, "Job host terminated unexpectedly");
+                Log.Fatal(ex, "Host terminated unexpectedly");
                 return 1;
             } finally {
                 Log.CloseAndFlush();
@@ -33,25 +38,29 @@ namespace Foundatio.HostingSample {
             }
         }
                 
-        public static IWebHostBuilder CreateWebHostBuilder(string[] args) {
+        public static IHostBuilder CreateHostBuilder(string[] args) {
             bool all = args.Contains("all", StringComparer.OrdinalIgnoreCase);
             bool sample1 = all || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
             bool sample2 = all || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
             bool everyMinute = all || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
             bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
-            
-            var loggerFactory = new SerilogLoggerFactory(new LoggerConfiguration()
-                .MinimumLevel.Verbose()
-                .WriteTo.Console()
-                .CreateLogger());
 
-            _logger = loggerFactory.CreateLogger<Program>();
+            var builder = Host.CreateDefaultBuilder(args)
+                .UseSerilog()
+                .ConfigureWebHostDefaults(webBuilder => {
+                    webBuilder.Configure(app => {
+                        app.UseSerilogRequestLogging();
+                        
+                        app.UseHealthChecks("/health");
+                        app.UseReadyHealthChecks("Critical");
 
-            var builder = WebHost.CreateDefaultBuilder(args)
-                .SuppressStatusMessages(true)
+                        // this middleware will return Service Unavailable until the startup actions have completed
+                        app.UseWaitForStartupActionsBeforeServingRequests();
+
+                        // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
+                    });
+                })
                 .ConfigureServices(s => {
-                    s.AddSingleton<ILoggerFactory>(loggerFactory);
-
                     // will shutdown the host if no jobs are running
                     s.AddJobLifetimeService();
 
@@ -80,40 +89,33 @@ namespace Foundatio.HostingSample {
                     }
 
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
-                    s.AddStartupAction("Test1", async () => {
-                        _logger.LogTrace("Running startup 1 action.");
+                    s.AddStartupAction("Test1", async sp => {
+                        var logger = sp.GetRequiredService<ILogger<Program>>();
+                        logger.LogTrace("Running startup 1 action.");
                         for (int i = 0; i < 3; i++) {
                             await Task.Delay(1000);
-                            _logger.LogTrace("Running startup 1 action...");
+                            logger.LogTrace("Running startup 1 action...");
                         }
 
-                        _logger.LogTrace("Done running startup 1 action.");
+                        logger.LogTrace("Done running startup 1 action.");
                     });
 
                     // then these startup actions will run concurrently since they both have the same priority
                     s.AddStartupAction<MyStartupAction>(priority: 100);
                     s.AddStartupAction<OtherStartupAction>(priority: 100);
 
-                    s.AddStartupAction("Test2", async () => {
-                        _logger.LogTrace("Running startup 2 action.");
+                    s.AddStartupAction("Test2", async sp => {
+                        var logger = sp.GetRequiredService<ILogger<Program>>();
+                        logger.LogTrace("Running startup 2 action.");
                         for (int i = 0; i < 2; i++) {
                             await Task.Delay(1500);
-                            _logger.LogTrace("Running startup 2 action...");
+                            logger.LogTrace("Running startup 2 action...");
                         }
                         //throw new ApplicationException("Boom goes the startup.");
-                        _logger.LogTrace("Done running startup 2 action.");
+                        logger.LogTrace("Done running startup 2 action.");
                     });
                     
                     //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
-                })
-                .Configure(app => {
-                    app.UseHealthChecks("/health");
-                    app.UseReadyHealthChecks("Critical");
-
-                    // this middleware will return Service Unavailable until the startup actions have completed
-                    app.UseWaitForStartupActionsBeforeServingRequests();
-
-                    // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
                 });
 
             return builder;
