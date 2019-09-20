@@ -47,7 +47,7 @@ artifacts:
 
 deploy:
   - provider: Environment
-    name: MyGet
+    name: GitHub Packages
     on:
       APPVEYOR_REPO_TAG: false
   - provider: Environment
