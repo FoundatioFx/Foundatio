@@ -14,7 +14,7 @@ namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private bool _shouldClone;
-        private int _maxItems;
+        private int? _maxItems;
         private long _hits;
         private long _misses;
         private readonly ILogger _logger;
@@ -35,7 +35,7 @@ namespace Foundatio.Caching {
             : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
 
         public int Count => _memory.Count;
-        public int MaxItems => _maxItems;
+        public int? MaxItems => _maxItems;
         public long Hits => _hits;
         public long Misses => _misses;
 
@@ -140,7 +140,7 @@ namespace Foundatio.Caching {
         }
 
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+            _logger.LogInformation("Removing expired cache entry {Key}", key);
 
             if (_memory.TryRemove(key, out _))
                 OnItemExpiredAsync(key, sendNotification);
@@ -614,7 +614,7 @@ namespace Foundatio.Caching {
         }
 
         private async Task CompactAsync() {
-            if (_memory.Count <= _maxItems)
+            if (!_maxItems.HasValue || _memory.Count <= _maxItems)
                 return;
 
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
@@ -624,7 +624,7 @@ namespace Foundatio.Caching {
                     oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
             }
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing key: {Key}", oldest);
+            _logger.LogInformation("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 await OnItemExpiredAsync(oldest.Key).AnyContext();
