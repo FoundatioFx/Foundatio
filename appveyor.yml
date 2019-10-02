@@ -51,6 +51,10 @@ deploy:
     on:
       APPVEYOR_REPO_TAG: false
   - provider: Environment
+    name: MyGet
+    on:
+      APPVEYOR_REPO_TAG: false
+  - provider: Environment
     name: NuGet
     on:
       APPVEYOR_REPO_TAG: true
