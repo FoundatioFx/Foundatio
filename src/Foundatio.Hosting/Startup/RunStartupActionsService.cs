@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 using Microsoft.Extensions.Hosting;
 
 namespace Foundatio.Hosting.Startup {

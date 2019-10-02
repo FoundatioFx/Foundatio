@@ -1,4 +1,5 @@
 ﻿using System.Threading.Tasks;
+using Foundatio.Utility;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
@@ -6,9 +7,17 @@ namespace Foundatio.Hosting.Startup {
     public class WaitForStartupActionsBeforeServingRequestsMiddleware {
         private readonly StartupActionsContext _context;
         private readonly RequestDelegate _next;
+#if NETSTANDARD2_0
+        private readonly IApplicationLifetime _applicationLifetime;
+#else
         private readonly IHostApplicationLifetime _applicationLifetime;
+#endif
 
+#if NETSTANDARD2_0
+        public WaitForStartupActionsBeforeServingRequestsMiddleware(StartupActionsContext context, RequestDelegate next, IApplicationLifetime applicationLifetime) {
+#else
         public WaitForStartupActionsBeforeServingRequestsMiddleware(StartupActionsContext context, RequestDelegate next, IHostApplicationLifetime applicationLifetime) {
+#endif
             _context = context;
             _next = next;
             _applicationLifetime = applicationLifetime;

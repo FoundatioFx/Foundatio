@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Foundatio.Jobs;
 using Foundatio.Hosting.Startup;
+using Foundatio.Utility;
 
 namespace Foundatio.Hosting.Jobs {
     public class HostedJobService : IHostedService, IJobStatus, IDisposable {

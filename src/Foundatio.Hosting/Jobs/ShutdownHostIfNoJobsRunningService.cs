@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Hosting.Startup;
+using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,12 +14,20 @@ namespace Foundatio.Hosting.Jobs {
     public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable {
         private Timer _timer;
         private readonly List<IJobStatus> _jobs = new List<IJobStatus>();
+#if NETSTANDARD2_0
+        private readonly IApplicationLifetime _lifetime;
+#else
         private readonly IHostApplicationLifetime _lifetime;
+#endif
         private readonly IServiceProvider _serviceProvider;
         private bool _isStarted = false;
         private readonly ILogger _logger;
 
+#if NETSTANDARD2_0
+        public ShutdownHostIfNoJobsRunningService(IApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
+#else
         public ShutdownHostIfNoJobsRunningService(IHostApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger) {
+#endif
             _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
             _serviceProvider = serviceProvider;
             _logger = logger ?? NullLogger<ShutdownHostIfNoJobsRunningService>.Instance;

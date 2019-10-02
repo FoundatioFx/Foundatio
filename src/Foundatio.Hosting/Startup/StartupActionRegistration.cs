@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Foundatio.Hosting.Startup {

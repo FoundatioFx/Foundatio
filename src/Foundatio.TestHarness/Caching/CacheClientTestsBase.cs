@@ -4,11 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Text.Json;
 using Foundatio.Caching;
 using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
+using Newtonsoft.Json;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -43,7 +43,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
                 await cache.SetAsync("obj3", (SimpleModel)null);
 
-                string json = JsonSerializer.Serialize(new SimpleModel {Data1 = "test 1", Data2 = 4});
+                string json = JsonConvert.SerializeObject(new SimpleModel {Data1 = "test 1", Data2 = 4});
                 await cache.SetAsync("obj4", json);
 
                 //await cache.SetAsync("obj4", "{ \"Data1\":\"data 3\", \"Data2\":3 }");
