@@ -53,6 +53,16 @@
       "type": "shell",
       "group": "build",
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "docker: pack",
+      "command": "docker build --target pack -t foundatio:pack . && docker run -v $(pwd)/artifacts:/app/artifacts foundatio:pack",
+      "windows": {
+        "command": "docker build --target pack -t foundatio:pack . ; docker run -it --net host foundatio:pack"
+      },
+      "type": "shell",
+      "group": "build",
+      "problemMatcher": "$msCompile"
     }
   ]
 }
