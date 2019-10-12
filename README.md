@@ -13,7 +13,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
 
-Includes implementations in Redis, Azure, AWS and in memory (for development).
+Includes implementations in Redis, Azure, AWS and in memory (for development). 
 
 ## Why Foundatio?
 When building several big cloud applications we found a lack of great solutions (that's not to say there isn't solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
