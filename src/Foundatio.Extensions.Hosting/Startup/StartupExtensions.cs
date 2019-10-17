@@ -27,7 +27,7 @@ namespace Foundatio.Extensions.Hosting.Startup {
                 var sw = Stopwatch.StartNew();
                 var logger = startupActionsScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
                 var startupActions = startupActionsScope.ServiceProvider.GetServices<StartupActionRegistration>().ToArray();
-                logger.LogInformation("Found {StartupActions} registered startup action(s).", startupActions.Length);
+                logger.LogInformation("Found {StartupActionCount} registered startup action(s).", startupActions.Length);
 
                 var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
                 foreach (var startupActionGroup in startupActionPriorityGroups) {
@@ -73,7 +73,7 @@ namespace Foundatio.Extensions.Hosting.Startup {
                 }
 
                 sw.Stop();
-                logger.LogInformation("Completed all {StartupActions} startup action(s) in {Duration:mm\\:ss}.",
+                logger.LogInformation("Completed all {StartupActionCount} startup action(s) in {Duration:mm\\:ss}.",
                     startupActions.Length, sw.Elapsed);
 
                 return new RunStartupActionsResult {Success = true};
