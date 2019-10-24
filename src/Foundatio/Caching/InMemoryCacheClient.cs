@@ -140,7 +140,7 @@ namespace Foundatio.Caching {
         }
 
         internal Task RemoveExpiredKeyAsync(string key, bool sendNotification = true) {
-            _logger.LogInformation("Removing expired cache entry {Key}", key);
+            _logger.LogDebug("Removing expired cache entry {Key}", key);
 
             if (_memory.TryRemove(key, out _))
                 OnItemExpiredAsync(key, sendNotification);
@@ -624,7 +624,7 @@ namespace Foundatio.Caching {
                     oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
             }
 
-            _logger.LogInformation("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
+            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 await OnItemExpiredAsync(oldest.Key).AnyContext();
