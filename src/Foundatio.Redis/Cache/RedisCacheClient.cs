@@ -150,12 +150,22 @@ namespace Foundatio.Caching {
             return result;
         }
 
-        public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+        public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            
+            if (page.HasValue && page.Value < 1)
+                throw new ArgumentNullException(nameof(page), "Page cannot be less than 1.");
 
-            var set = await Database.SetMembersAsync(key).AnyContext();
-            return RedisValuesToCacheValue<T>(set);
+            if (!page.HasValue) {
+                var set = await Database.SortedSetRangeByScoreAsync(key).AnyContext();
+                return RedisValuesToCacheValue<T>(set);
+            } else {
+                long start = ((page.Value - 1) * pageSize);
+                long end = start + pageSize - 1;
+                var set = await Database.SortedSetRangeByRankAsync(key, start, end).AnyContext();
+                return RedisValuesToCacheValue<T>(set);
+            }
         }
 
         public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
@@ -172,7 +182,7 @@ namespace Foundatio.Caching {
             return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
         }
 
-        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -186,18 +196,22 @@ namespace Foundatio.Caching {
                 return default;
             }
 
-            var redisValues = new List<RedisValue>();
-            foreach (var value in values.Distinct())
-                redisValues.Add(value.ToRedisValue(_options.Serializer));
+            var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending);
+            long highestScore = items.Length > 0 ? (long)items.First().Score : 0;
 
-            long result = await Database.SetAddAsync(key, redisValues.ToArray()).AnyContext();
+            var redisValues = new List<SortedSetEntry>();
+            var valuesArray = values.Distinct().ToArray();
+            for (int i = 0; i < valuesArray.Length; i++)
+                redisValues.Add(new SortedSetEntry(valuesArray[i].ToRedisValue(_options.Serializer), highestScore + i + 1));
+
+            long result = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
             return result;
         }
 
-        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -215,7 +229,7 @@ namespace Foundatio.Caching {
             foreach (var value in values.Distinct())
                 redisValues.Add(value.ToRedisValue(_options.Serializer));
 
-            long result = await Database.SetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+            long result = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
                 await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 

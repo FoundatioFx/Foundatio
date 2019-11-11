@@ -108,8 +108,8 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanManageSetsAsync() {
-            return base.CanManageSetsAsync();
+        public override Task CanManageListsAsync() {
+            return base.CanManageListsAsync();
         }
 
         [Fact(Skip = "Performance Test")]

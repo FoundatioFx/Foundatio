@@ -1,12 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="8.1.2126" />
+    <PackageReference Include="Foundatio" Version="9.0.2157-pre" />
     <PackageReference Include="StackExchange.Redis" Version="2.0.601" />
   </ItemGroup>
 
 	<ItemGroup>
 	  <EmbeddedResource Include="Scripts\*.lua" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <!--ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" /-->
 	</ItemGroup>
 
 </Project>
