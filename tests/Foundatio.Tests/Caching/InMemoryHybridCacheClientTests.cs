@@ -45,8 +45,8 @@ namespace Foundatio.Tests.Caching {
         }
         
         [Fact]
-        public override Task CanManageSetsAsync() {
-            return base.CanManageSetsAsync();
+        public override Task CanManageListsAsync() {
+            return base.CanManageListsAsync();
         }
 
         [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]

@@ -230,24 +230,24 @@ namespace Foundatio.Caching {
             return difference;
         }
 
-        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             var items = values?.ToArray();
-            await _localCache.SetAddAsync(key, items, expiresIn).AnyContext();
-            long set = await _distributedCache.SetAddAsync(key, items, expiresIn).AnyContext();
+            await _localCache.ListAddAsync(key, items, expiresIn).AnyContext();
+            long set = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             return set;
         }
 
-        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             var items = values?.ToArray();
-            await _localCache.SetRemoveAsync(key, items, expiresIn).AnyContext();
-            long removed = await _distributedCache.SetRemoveAsync(key, items, expiresIn).AnyContext();
+            await _localCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
+            long removed = await _distributedCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
             return removed;
         }
 
-        public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
-            var cacheValue = await _localCache.GetSetAsync<T>(key).AnyContext();
+        public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
+            var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
             if (cacheValue.HasValue) {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
                 Interlocked.Increment(ref _localCacheHits);
@@ -255,12 +255,12 @@ namespace Foundatio.Caching {
             }
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
-            cacheValue = await _distributedCache.GetSetAsync<T>(key).AnyContext();
+            cacheValue = await _distributedCache.GetListAsync<T>(key, page, pageSize).AnyContext();
             if (cacheValue.HasValue) {
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
-                await _localCache.SetAddAsync(key, cacheValue.Value, expiration).AnyContext();
+                await _localCache.ListAddAsync(key, cacheValue.Value, expiration).AnyContext();
                 return cacheValue;
             }
 

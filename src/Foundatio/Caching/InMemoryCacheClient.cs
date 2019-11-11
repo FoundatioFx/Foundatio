@@ -345,7 +345,7 @@ namespace Foundatio.Caching {
             return difference;
         }
 
-        public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -375,7 +375,7 @@ namespace Foundatio.Caching {
             return items.Count;
         }
 
-        public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
@@ -405,11 +405,17 @@ namespace Foundatio.Caching {
             return items.Count;
         }
 
-        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+        public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
             if (String.IsNullOrEmpty(key))
-                return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            return GetAsync<ICollection<T>>(key);
+            var list = await GetAsync<ICollection<T>>(key);
+            if (!list.HasValue || !page.HasValue)
+                return list;
+            
+            int skip = (page.Value - 1) * pageSize;
+            var pagedItems = list.Value.Skip(skip).Take(pageSize).ToArray();
+            return new CacheValue<ICollection<T>>(pagedItems, true);
         }
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {

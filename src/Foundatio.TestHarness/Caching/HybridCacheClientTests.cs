@@ -101,8 +101,8 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanManageSetsAsync() {
-            return base.CanManageSetsAsync();
+        public override Task CanManageListsAsync() {
+            return base.CanManageListsAsync();
         }
 
         [Fact]
@@ -192,9 +192,9 @@ namespace Foundatio.Tests.Caching {
                 using (var secondCache = GetCacheClient() as HybridCacheClient) {
                     Assert.NotNull(secondCache);
 
-                    await firstCache.SetAddAsync("set1", new[] { 1, 2, 3 });
+                    await firstCache.ListAddAsync("set1", new[] { 1, 2, 3 });
 
-                    var values = await secondCache.GetSetAsync<int>("set1");
+                    var values = await secondCache.GetListAsync<int>("set1");
 
                     Assert.Equal(3, values.Value.Count);
                 }

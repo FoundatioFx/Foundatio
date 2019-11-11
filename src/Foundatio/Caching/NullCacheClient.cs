@@ -87,15 +87,15 @@ namespace Foundatio.Caching {
             return Task.FromResult(value);
         }
 
-        public Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             return Task.FromResult(default(long));
         }
 
-        public Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+        public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             return Task.FromResult(default(long));
         }
 
-        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
+        public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
             return Task.FromResult(CacheValue<ICollection<T>>.NoValue);
         }
 

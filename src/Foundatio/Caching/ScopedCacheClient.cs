@@ -136,16 +136,16 @@ namespace Foundatio.Caching {
             return UnscopedCache.SetIfLowerAsync(GetScopedCacheKey(key), value, expiresIn);
         }
 
-        public Task<long> SetAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetAddAsync(GetScopedCacheKey(key), values, expiresIn);
+        public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            return UnscopedCache.ListAddAsync(GetScopedCacheKey(key), values, expiresIn);
         }
 
-        public Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetRemoveAsync(GetScopedCacheKey(key), values, expiresIn);
+        public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
+            return UnscopedCache.ListRemoveAsync(GetScopedCacheKey(key), values, expiresIn);
         }
 
-        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key) {
-            return UnscopedCache.GetSetAsync<T>(GetScopedCacheKey(key));
+        public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
+            return UnscopedCache.GetListAsync<T>(GetScopedCacheKey(key), page, pageSize);
         }
 
         public void Dispose() {}

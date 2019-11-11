@@ -98,13 +98,13 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                Assert.Equal(3, await cache.SetAddAsync("set", new List<int> { 1, 1, 2, 3 }));
-                var result = await cache.GetSetAsync<int>("set");
+                Assert.Equal(3, await cache.ListAddAsync("set", new List<int> { 1, 1, 2, 3 }));
+                var result = await cache.GetListAsync<int>("set");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                Assert.True(await cache.SetRemoveAsync("set", 1));
-                result = await cache.GetSetAsync<int>("set");
+                Assert.True(await cache.ListRemoveAsync("set", 1));
+                result = await cache.GetListAsync<int>("set");
                 Assert.NotNull(result);
                 Assert.Equal(2, result.Value.Count);
             }
@@ -607,7 +607,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanManageSetsAsync() {
+        public virtual async Task CanManageListsAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -615,49 +615,74 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetAddAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetAddAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetRemoveAsync(null, 1));
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.SetRemoveAsync(String.Empty, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(String.Empty, 1));
 
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetSetAsync<ICollection<int>>(null));
-                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetSetAsync<ICollection<int>>(String.Empty));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
+                await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
 
-                await cache.SetAddAsync("test1", new[] { 1, 2, 3 });
-                var result = await cache.GetSetAsync<int>("test1");
+                await cache.ListAddAsync("test1", new[] { 1, 2, 3 });
+                var result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", new[] { 1, 2, 3 });
-                result = await cache.GetSetAsync<int>("test1");
+                await cache.ListRemoveAsync("test1", new[] { 1, 2, 3 });
+                result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
 
                 await cache.RemoveAllAsync();
 
-                await cache.SetAddAsync("test1", 1);
-                await cache.SetAddAsync("test1", 2);
-                await cache.SetAddAsync("test1", 3);
-                result = await cache.GetSetAsync<int>("test1");
+                await cache.ListAddAsync("test1", 1);
+                await cache.ListAddAsync("test1", 2);
+                await cache.ListAddAsync("test1", 3);
+                result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 2);
-                result = await cache.GetSetAsync<int>("test1");
+                await cache.ListRemoveAsync("test1", 2);
+                result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(2, result.Value.Count);
 
-                await cache.SetRemoveAsync("test1", 1);
-                await cache.SetRemoveAsync("test1", 3);
-                result = await cache.GetSetAsync<int>("test1");
+                await cache.ListRemoveAsync("test1", 1);
+                await cache.ListRemoveAsync("test1", 3);
+                result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
 
                 await Assert.ThrowsAnyAsync<Exception>(async () => {
                     await cache.AddAsync("key1", 1);
-                    await cache.SetAddAsync("key1", 1);
+                    await cache.ListAddAsync("key1", 1);
                 });
+                
+                // test paging through items in list
+                await cache.ListAddAsync("testpaging", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 });
+                var pagedResult = await cache.GetListAsync<int>("testpaging", 1, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { 1, 2, 3, 4, 5 });
+                
+                pagedResult = await cache.GetListAsync<int>("testpaging", 2, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { 6, 7, 8, 9, 10 });
+                
+                await cache.ListAddAsync("testpaging", new[] { 21, 22 });
+                
+                pagedResult = await cache.GetListAsync<int>("testpaging", 5, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(2, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { 21, 22 });
+
+                await cache.ListRemoveAsync("testpaging", 2);
+                pagedResult = await cache.GetListAsync<int>("testpaging", 1, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { 1, 3, 4, 5, 6 });
             }
         }
 
