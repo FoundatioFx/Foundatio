@@ -200,9 +200,13 @@ namespace Foundatio.Caching {
             long highestScore = items.Length > 0 ? (long)items.First().Score : 0;
 
             var redisValues = new List<SortedSetEntry>();
-            var valuesArray = values.Distinct().ToArray();
-            for (int i = 0; i < valuesArray.Length; i++)
-                redisValues.Add(new SortedSetEntry(valuesArray[i].ToRedisValue(_options.Serializer), highestScore + i + 1));
+            if (values is string stringValue) {
+                redisValues.Add(new SortedSetEntry(stringValue.ToRedisValue(_options.Serializer), highestScore + 1));
+            } else {
+                var valuesArray = values.ToArray();
+                for (int i = 0; i < valuesArray.Length; i++)
+                    redisValues.Add(new SortedSetEntry(valuesArray[i].ToRedisValue(_options.Serializer), highestScore + i + 1));
+            }
 
             long result = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)
@@ -226,8 +230,11 @@ namespace Foundatio.Caching {
             }
 
             var redisValues = new List<RedisValue>();
-            foreach (var value in values.Distinct())
-                redisValues.Add(value.ToRedisValue(_options.Serializer));
+            if (values is string stringValue)
+                redisValues.Add(stringValue.ToRedisValue(_options.Serializer));
+            else
+                foreach (var value in values)
+                    redisValues.Add(value.ToRedisValue(_options.Serializer));
 
             long result = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
             if (result > 0 && expiresIn.HasValue)

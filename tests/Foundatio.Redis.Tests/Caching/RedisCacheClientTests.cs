@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
@@ -112,6 +114,56 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanManageListsAsync();
         }
 
+        [Fact]
+        public async Task CanManageLargeListsAsync() {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                var items = new List<string>();
+                // test paging through items in list
+                for (int i = 1; i < 20001; i++)
+                    items.Add(Guid.NewGuid().ToString());
+
+                foreach (var batch in Batch(items, 1000))
+                    await cache.ListAddAsync("largelist", batch);
+                
+                var pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[1], items[2], items[3], items[4] });
+                
+                pagedResult = await cache.GetListAsync<string>("largelist", 2, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { items[5], items[6], items[7], items[8], items[9] });
+
+                string newGuid1 = Guid.NewGuid().ToString();
+                string newGuid2 = Guid.NewGuid().ToString();
+                await cache.ListAddAsync("largelist", new[] { newGuid1, newGuid2 });
+
+                int page = (20000 / 5) + 1;
+                pagedResult = await cache.GetListAsync<string>("largelist", page, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(2, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { newGuid1, newGuid2 });
+
+                long result = await cache.ListAddAsync("largelist", Guid.NewGuid().ToString());
+                Assert.Equal(1, result);
+
+                result = await cache.ListRemoveAsync("largelist", items[1]);
+                Assert.Equal(1, result);
+               
+                pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[2], items[3], items[4], items[5] });
+            }
+        }
+
         [Fact(Skip = "Performance Test")]
         public override Task MeasureThroughputAsync() {
             return base.MeasureThroughputAsync();
@@ -125,6 +177,25 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact(Skip = "Performance Test")]
         public override Task MeasureSerializerComplexThroughputAsync() {
             return base.MeasureSerializerComplexThroughputAsync();
+        }
+        
+        private IEnumerable<IEnumerable<TSource>> Batch<TSource>(IList<TSource> source, int size)
+        {
+            if (size <= 0) throw new ArgumentOutOfRangeException(nameof(size));
+            var enumerator = source.GetEnumerator();
+            for (int i = 0; i < source.Count; i += size)
+            {
+                enumerator.MoveNext();
+                yield return GetChunk(i, Math.Min(i + size, source.Count));
+            }
+            IEnumerable<TSource> GetChunk(int from, int toExclusive)
+            {
+                for (int j = from; j < toExclusive; j++)
+                {
+                    enumerator.MoveNext();
+                    yield return source[j];
+                }
+            }
         }
     }
 }
