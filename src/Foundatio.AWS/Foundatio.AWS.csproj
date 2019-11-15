@@ -4,7 +4,7 @@
     <PackageTags>$(PackageTags);Amazon;AWS;S3</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.102.22" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.103.12" />
     <PackageReference Include="AWSSDK.S3" Version="3.3.106.6" />
     <PackageReference Include="AWSSDK.SQS" Version="3.3.102.31" />
     <PackageReference Include="Foundatio" Version="8.1.2126" />
