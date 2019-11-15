@@ -3,6 +3,6 @@
   <ItemGroup>
     <PackageReference Include="Foundatio" Version="8.1.2126" />
     <PackageReference Include="Microsoft.Azure.Management.ServiceBus" Version="2.1.0" />
-    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="4.1.1" />
   </ItemGroup>
 </Project>
