@@ -23,7 +23,7 @@ jobs:
       env:
         VERSION_SUFFIX: 1-pre
     - name: Artifacts
-      uses: actions/upload-artifact@master
+      uses: actions/upload-artifact@v1.0.0
       with:
         name: packages
         path: artifacts
