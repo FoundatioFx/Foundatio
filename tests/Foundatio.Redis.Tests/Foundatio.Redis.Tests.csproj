@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.2</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <!--ProjectReference Include="..\..\..\Foundatio\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" /-->
