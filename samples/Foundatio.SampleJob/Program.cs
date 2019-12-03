@@ -10,12 +10,7 @@ namespace Foundatio.SampleJob {
         private static ILogger _logger;
 
         public static int Main() {
-            var loggerFactory = new LoggerFactory().AddConsole((source, level) => {
-                if (source.EndsWith("RedisMessageBus"))
-                    return true;
-                
-                return level >= LogLevel.Information;
-            });
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
             _logger = loggerFactory.CreateLogger("MessageBus");
 
             var serviceProvider = SampleServiceProvider.Create(loggerFactory);
