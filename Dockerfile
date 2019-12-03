@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/core/sdk:3.0 AS build
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 AS build
 
 # install dotnet sdk 2.2
 ENV DOTNET_SDK_VERSION 2.2.402
