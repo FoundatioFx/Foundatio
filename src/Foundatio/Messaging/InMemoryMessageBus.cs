@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
@@ -48,18 +46,15 @@ namespace Foundatio.Messaging {
                 SendDelayedMessage(mappedType, message, delay.Value);
                 return Task.CompletedTask;
             }
+            
+            var body = SerializeMessageBody(message);
+            var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
+                Type = messageType,
+                ClrType = mappedType,
+                Data = body
+            };
 
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(mappedType)).ToList();
-            if (subscribers.Count == 0) {
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", mappedType.Name);
-                return Task.CompletedTask;
-            }
-
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Message Publish: {MessageType}", mappedType.FullName);
-
-            SendMessageToSubscribers(subscribers, mappedType, message.DeepClone());
+            SendMessageToSubscribers(messageData);
             return Task.CompletedTask;
         }
     }
