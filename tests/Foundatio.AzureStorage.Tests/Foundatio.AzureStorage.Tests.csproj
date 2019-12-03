@@ -1,13 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.2</TargetFrameworks>
+    <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
     <NoWarn>$(NoWarn);CS1591;NU1701</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="8.1.2126" />
+    <PackageReference Include="Foundatio.TestHarness" Version="9.0.2201-pre" />
 
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.4.0" />
     <PackageReference Include="xunit" Version="2.4.1" />
