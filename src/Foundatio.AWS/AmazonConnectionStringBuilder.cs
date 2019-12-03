@@ -16,7 +16,7 @@ namespace Foundatio {
         protected AmazonConnectionStringBuilder(string connectionString) {
             if (String.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
-            
+
             Parse(connectionString);
         }
 
@@ -34,7 +34,7 @@ namespace Foundatio {
         }
 
         public AWSCredentials GetCredentials() {
-            return !String.IsNullOrEmpty(AccessKey)	
+            return !String.IsNullOrEmpty(AccessKey)
                 ? new BasicAWSCredentials(AccessKey, SecretKey)
                 : null;
         }
