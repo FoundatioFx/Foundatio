@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
     public interface IMessage {

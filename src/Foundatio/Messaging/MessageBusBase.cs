@@ -112,7 +112,7 @@ namespace Foundatio.Messaging {
             return false;
         }
 
-        protected virtual byte[] SerializeMessageBody(object body) {
+        protected virtual byte[] SerializeMessageBody(string messageType, object body) {
             if (body == null)
                 return new byte[0];
             
