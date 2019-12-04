@@ -14,6 +14,9 @@ namespace Foundatio.Messaging {
         private Lazy<object> _getBody;
 
         public Message(Func<object> getBody) {
+            if (getBody == null)
+                throw new ArgumentNullException("getBody");
+            
             _getBody = new Lazy<object>(getBody);
         }
 

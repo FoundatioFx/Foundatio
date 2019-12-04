@@ -17,7 +17,7 @@ namespace Foundatio.Messaging {
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
-        private readonly ISerializer _serializer;
+        protected readonly ISerializer _serializer;
         private bool _isDisposed;
 
         public MessageBusBase(TOptions options) {
