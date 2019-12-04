@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
-using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -79,29 +78,8 @@ namespace Foundatio.Messaging {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
             
-            MessageBusData message;
-            try {
-                message = ConvertToMessageBusData(e);
-            } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning(ex, "OnMessageAsync({MessageId}) Error deserializing message: {Message}", e.BasicProperties?.MessageId, ex.Message);
-                return;
-            }
-
-            var messageType = GetMappedMessageType(message.Type);
-            if (messageType == null) {
-                _logger.LogError("Unable to get mapped message type {MessageType}", message.Type);
-                return;
-            }
-            
-            if (!MessageTypeHasSubscribers(messageType)) {
-                if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
-                    _subscriberChannel.BasicAck(e.DeliveryTag, false);
-                
-                return;
-            }
-
-            SendMessageToSubscribers(message, _serializer);
+            var message = ConvertToMessage(e);
+            SendMessageToSubscribers(message);
             
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 _subscriberChannel.BasicAck(e.DeliveryTag, false);
@@ -112,24 +90,12 @@ namespace Foundatio.Messaging {
         /// </summary>
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
-        protected virtual MessageBusData ConvertToMessageBusData(BasicDeliverEventArgs envelope) {
-            if (String.IsNullOrEmpty(envelope.BasicProperties.Type))
-                return _serializer.Deserialize<MessageBusData>(envelope.Body);
-            
-            return new MessageBusData {
+        protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
+            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body)) {
                 Type = envelope.BasicProperties.Type,
+                ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
                 Data = envelope.Body
             };
-        }
-
-        /// <summary>
-        /// Serialize received message to RabbitMQ raw body
-        /// </summary>
-        /// <param name="messageType">type of message that should be provided</param>
-        /// <param name="message">message that should be serialized</param>
-        /// <returns>serialized representation of message</returns>
-        protected virtual byte[] SerializeMessage(string messageType, object message) {
-            return _serializer.SerializeToBytes(message);
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
@@ -176,7 +142,7 @@ namespace Foundatio.Messaging {
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            byte[] data = SerializeMessage(messageType, message);
+            byte[] data = SerializeMessageBody(messageType, message);
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
             if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
