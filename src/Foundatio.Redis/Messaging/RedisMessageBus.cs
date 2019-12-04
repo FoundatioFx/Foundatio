@@ -13,7 +13,7 @@ namespace Foundatio.Messaging {
         private readonly AsyncLock _lock = new AsyncLock();
         private bool _isSubscribed;
 
-        public RedisMessageBus(RedisMessageBusOptions options) : base(options) { }
+        public RedisMessageBus(RedisMessageBusOptions options) : base(options) {}
 
         public RedisMessageBus(Builder<RedisMessageBusOptionsBuilder, RedisMessageBusOptions> config)
             : this(config(new RedisMessageBusOptionsBuilder()).Build()) { }
@@ -39,16 +39,21 @@ namespace Foundatio.Messaging {
                 return;
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("OnMessage({Channel})", channel);
-            MessageBusData message;
+            IMessage message;
             try {
-                message = _serializer.Deserialize<MessageBusData>((byte[])value);
+                var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])value);
+                message = new Message(() => DeserializeMessageBody(envelope.Type, envelope.Data)) {
+                    Type = envelope.Type,
+                    Data = envelope.Data,
+                    ClrType = GetMappedMessageType(envelope.Type)
+                };
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing messsage: {Message}", channel, ex.Message);
                 return;
             }
 
-            SendMessageToSubscribers(message, _serializer);
+            SendMessageToSubscribers(message);
         }
 
         protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
@@ -60,9 +65,10 @@ namespace Foundatio.Messaging {
             }
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
-            byte[] data = _serializer.SerializeToBytes(new MessageBusData {
+            var bodyData = SerializeMessageBody(messageType, message);
+            byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope() {
                 Type = messageType,
-                Data = _serializer.SerializeToBytes(message)
+                Data = bodyData
             });
 
             await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
@@ -84,5 +90,10 @@ namespace Foundatio.Messaging {
                 }
             }
         }
+    }
+
+    public class RedisMessageEnvelope {
+        public string Type { get; set; }
+        public byte[] Data { get; set; }
     }
 }
