@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -57,21 +56,17 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private Task OnMessageAsync(Message brokeredMessage, CancellationToken cancellationToken) {
+        private Task OnMessageAsync(Microsoft.Azure.ServiceBus.Message brokeredMessage, CancellationToken cancellationToken) {
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
             
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
-            MessageBusData message;
-            try {
-                message = _serializer.Deserialize<MessageBusData>(brokeredMessage.Body);
-            }
-            catch (Exception ex) {
-                _logger.LogWarning(ex, "OnMessageAsync({0}) Error deserializing messsage: {1}", brokeredMessage.MessageId, ex.Message);
-                return _subscriptionClient.DeadLetterAsync(brokeredMessage.SystemProperties.LockToken, "Deserialization error", ex.Message);
-            }
+            var message = new Message(() => DeserializeMessageBody(brokeredMessage.ContentType, brokeredMessage.Body)) {
+                Data = brokeredMessage.Body,
+                Type = brokeredMessage.ContentType
+            };
 
-            SendMessageToSubscribers(message, _serializer);
+            SendMessageToSubscribers(message);
             return Task.CompletedTask;
         }
 
@@ -101,13 +96,8 @@ namespace Foundatio.Messaging {
         }
 
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var stream = new MemoryStream();
-            _serializer.Serialize(new MessageBusData {
-                Type = messageType,
-                Data = _serializer.SerializeToBytes(message)
-            }, stream);
-
-            var brokeredMessage = new Message(stream.ToArray());
+            var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message));
+            brokeredMessage.ContentType = messageType;
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, delay.Value.TotalMilliseconds);
