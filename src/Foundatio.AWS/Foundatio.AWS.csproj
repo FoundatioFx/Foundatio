@@ -7,6 +7,6 @@
     <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.104.3" />
     <PackageReference Include="AWSSDK.S3" Version="3.3.109" />
     <PackageReference Include="AWSSDK.SQS" Version="3.3.102.39" />
-    <PackageReference Include="Foundatio" Version="9.0.2201-pre" />
+    <PackageReference Include="Foundatio" Version="9.0.2210-pre" />
   </ItemGroup>
 </Project>

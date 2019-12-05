@@ -6,7 +6,7 @@
     <ProjectReference Include="..\..\src\Foundatio.AWS\Foundatio.AWS.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.TestHarness" Version="9.0.2201-pre" />
+    <PackageReference Include="Foundatio.TestHarness" Version="9.0.2210-pre" />
     <PackageReference Include="log4net" Version="2.0.8" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.4.0" />
     <PackageReference Include="xunit" Version="2.4.1" />
