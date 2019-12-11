@@ -634,6 +634,18 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(result);
                 Assert.Equal(0, result.Value.Count);
 
+                // test single strings don't get handled as char arrays
+                await cache.RemoveAllAsync();
+
+                await cache.ListAddAsync("stringlist", "myvalue");
+                var stringResult = await cache.GetListAsync<string>("stringlist");
+                Assert.Single(stringResult.Value);
+                Assert.Equal("myvalue", stringResult.Value.First());
+                
+                await cache.ListRemoveAsync("stringlist", "myvalue");
+                stringResult = await cache.GetListAsync<string>("stringlist");
+                Assert.Empty(stringResult.Value);
+
                 await cache.RemoveAllAsync();
 
                 await cache.ListAddAsync("test1", 1);
