@@ -196,8 +196,29 @@ namespace Foundatio.Caching {
                 return default;
             }
 
-            var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending);
-            long highestScore = items.Length > 0 ? (long)items.First().Score : 0;
+            long highestScore = 0;
+            try {
+                var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending);
+                highestScore = items.Length > 0 ? (long)items.First().Score : 0;
+            } catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE")) {
+                // convert legacy set to sortedset
+                var oldItems = await Database.SetMembersAsync(key).AnyContext();
+                await Database.KeyDeleteAsync(key).AnyContext();
+
+                if (values is string) {
+                    var oldItemValues = new List<string>();
+                    foreach (var oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
+                        oldItemValues.Add(oldItem);
+
+                    highestScore = await ListAddAsync(key, oldItemValues).AnyContext();
+                } else {
+                    var oldItemValues = new List<T>();
+                    foreach (var oldItem in RedisValuesToCacheValue<T>(oldItems).Value)
+                        oldItemValues.Add(oldItem);
+
+                    highestScore = await ListAddAsync(key, oldItemValues).AnyContext();
+                }
+            }
 
             var redisValues = new List<SortedSetEntry>();
             if (values is string stringValue) {
@@ -236,11 +257,34 @@ namespace Foundatio.Caching {
                 foreach (var value in values)
                     redisValues.Add(value.ToRedisValue(_options.Serializer));
 
-            long result = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
-            if (result > 0 && expiresIn.HasValue)
-                await SetExpirationAsync(key, expiresIn.Value).AnyContext();
+            try {
+                long result = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+                if (result > 0 && expiresIn.HasValue)
+                    await SetExpirationAsync(key, expiresIn.Value).AnyContext();
 
-            return result;
+                return result;
+            } catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE")) {
+                // convert legacy set to sortedset
+                var oldItems = await Database.SetMembersAsync(key).AnyContext();
+                await Database.KeyDeleteAsync(key).AnyContext();
+
+                if (values is string) {
+                    var oldItemValues = new List<string>();
+                    foreach (var oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
+                        oldItemValues.Add(oldItem);
+
+                    await ListAddAsync(key, oldItemValues).AnyContext();
+                } else {
+                    var oldItemValues = new List<T>();
+                    foreach (var oldItem in RedisValuesToCacheValue<T>(oldItems).Value)
+                        oldItemValues.Add(oldItem);
+
+                    await ListAddAsync(key, oldItemValues).AnyContext();
+                }
+
+                // try again
+                return await ListRemoveAsync(key, values).AnyContext();
+            }
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

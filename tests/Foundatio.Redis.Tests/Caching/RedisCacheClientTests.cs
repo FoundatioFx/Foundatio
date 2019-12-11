@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
+using StackExchange.Redis;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -112,6 +113,37 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact]
         public override Task CanManageListsAsync() {
             return base.CanManageListsAsync();
+        }
+
+        [Fact]
+        public async Task CanUpgradeListType() {
+            var db = SharedConnection.GetMuxer().GetDatabase();
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                var items = new List<RedisValue>();
+                for (int i = 1; i < 20001; i++)
+                    items.Add(Guid.NewGuid().ToString());
+
+                await cache.RemoveAllAsync();
+
+                await db.SetAddAsync("mylist", items.ToArray());
+                await cache.ListAddAsync("mylist", new[] { "newitem1", "newitem2" });
+                await cache.ListAddAsync("mylist", "newitem3");
+
+                var listItems = await cache.GetListAsync<string>("mylist");
+                Assert.Equal(items.Count + 3, listItems.Value.Count);
+
+                await cache.RemoveAllAsync();
+
+                await db.SetAddAsync("mylist", items.ToArray());
+                await cache.ListRemoveAsync("mylist", (string)items[10]);
+
+                listItems = await cache.GetListAsync<string>("mylist");
+                Assert.Equal(items.Count - 1, listItems.Value.Count);
+            }
         }
 
         [Fact]
