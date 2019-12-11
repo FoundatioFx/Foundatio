@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="9.0.2209-pre" />
+    <PackageReference Include="Foundatio" Version="9.0.2213-pre" />
     <PackageReference Include="RabbitMQ.Client" Version="5.1.2" />
   </ItemGroup>
 </Project>
