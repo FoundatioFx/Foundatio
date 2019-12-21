@@ -14,7 +14,7 @@
     <PackageProjectUrl>https://github.com/FoundatioFx/Foundatio</PackageProjectUrl>
     <PackageReleaseNotes>https://github.com/FoundatioFx/Foundatio/releases</PackageReleaseNotes>
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log</PackageTags>
-    
+
     <Copyright>Copyright (c) 2019 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591;NU1701</NoWarn>
@@ -44,5 +44,5 @@
     <None Include="../../LICENSE.txt" Pack="true" Visible="false" PackagePath="$(PackageLicenseFile)" />
     <None Include="../../build/foundatio-icon.png" Pack="true" PackagePath="$(PackageIcon)" />
   </ItemGroup>
-  
+
 </Project>

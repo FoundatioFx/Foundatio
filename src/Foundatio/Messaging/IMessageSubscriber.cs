@@ -18,5 +18,20 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
             }, cancellationToken);
         }
+
+        public static Task SubscribeAsync(this IMessageSubscriber subscriber, Func<IMessage, CancellationToken, Task> handler, CancellationToken cancellationToken = default) {
+            return subscriber.SubscribeAsync<IMessage>((msg, token) => handler(msg, token), cancellationToken);
+        }
+
+        public static Task SubscribeAsync(this IMessageSubscriber subscriber, Func<IMessage, Task> handler, CancellationToken cancellationToken = default) {
+            return subscriber.SubscribeAsync((msg, token) => handler(msg), cancellationToken);
+        }
+
+        public static Task SubscribeAsync(this IMessageSubscriber subscriber, Action<IMessage> handler, CancellationToken cancellationToken = default) {
+            return subscriber.SubscribeAsync((msg, token) => {
+                handler(msg);
+                return Task.CompletedTask;
+            }, cancellationToken);
+        }
     }
 }

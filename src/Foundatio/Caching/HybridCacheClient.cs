@@ -231,19 +231,33 @@ namespace Foundatio.Caching {
         }
 
         public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            var items = values?.ToArray();
-            await _localCache.ListAddAsync(key, items, expiresIn).AnyContext();
-            long set = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            return set;
+            if (values is string stringValue) {
+                await _localCache.ListAddAsync(key, stringValue, expiresIn).AnyContext();
+                long set = await _distributedCache.ListAddAsync(key, stringValue, expiresIn).AnyContext();
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+                return set;
+            } else {
+                var items = values?.ToArray();
+                await _localCache.ListAddAsync(key, items, expiresIn).AnyContext();
+                long set = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+                return set;
+            }
         }
 
         public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            var items = values?.ToArray();
-            await _localCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
-            long removed = await _distributedCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
-            return removed;
+            if (values is string stringValue) {
+                await _localCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
+                long removed = await _distributedCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+                return removed;
+            } else {
+                var items = values?.ToArray();
+                await _localCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
+                long removed = await _distributedCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = new[] { key } }).AnyContext();
+                return removed;
+            }
         }
 
         public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {

@@ -100,6 +100,11 @@ namespace Foundatio.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanSubscribeToRawMessagesAsync() {
+            return base.CanSubscribeToRawMessagesAsync();
+        }
+
+        [Fact]
         public override Task CanCancelSubscriptionAsync() {
             return base.CanCancelSubscriptionAsync();
         }

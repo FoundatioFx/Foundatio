@@ -380,6 +380,36 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
+        public virtual async Task CanSubscribeToRawMessagesAsync() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(3);
+                await messageBus.SubscribeAsync(msg => {
+                    Assert.True(msg.Type.Contains(nameof(SimpleMessageA))
+                        || msg.Type.Contains(nameof(SimpleMessageB))
+                        || msg.Type.Contains(nameof(SimpleMessageC)));
+                    countdown.Signal();
+                });
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello"
+                });
+                await messageBus.PublishAsync(new SimpleMessageB {
+                    Data = "Hello"
+                });
+                await messageBus.PublishAsync(new SimpleMessageC {
+                    Data = "Hello"
+                });
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
         public virtual async Task CanSubscribeToAllMessageTypesAsync() {
             var messageBus = GetMessageBus();
             if (messageBus == null)

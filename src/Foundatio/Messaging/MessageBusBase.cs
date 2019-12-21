@@ -51,7 +51,7 @@ namespace Foundatio.Messaging {
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
-        protected Type GetMappedMessageType(string messageType) {
+        protected virtual Type GetMappedMessageType(string messageType) {
             return _knownMessageTypesCache.GetOrAdd(messageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
@@ -96,52 +96,67 @@ namespace Foundatio.Messaging {
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         }
 
-        protected bool MessageTypeHasSubscribers(Type messageType) {
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
-            return subscribers.Count > 0;
+        protected List<Subscriber> GetMessageSubscribers(IMessage message) {
+            return _subscribers.Values.Where(s => SubscriberHandlesMessage(s, message)).ToList();
         }
 
-        protected void SendMessageToSubscribers(MessageBusData message, ISerializer serializer) {
-            var messageType = GetMessageBodyType(message);
-            if (messageType == null)
+        protected virtual bool SubscriberHandlesMessage(Subscriber subscriber, IMessage message) {
+            if (subscriber.Type == typeof(IMessage))
+                return true;
+
+            var clrType = GetMappedMessageType(message.Type);
+            
+            if (subscriber.IsAssignableFrom(clrType))
+                return true;
+            
+            return false;
+        }
+
+        protected virtual byte[] SerializeMessageBody(string messageType, object body) {
+            if (body == null)
+                return new byte[0];
+            
+            return _serializer.SerializeToBytes(body);
+        }
+
+        protected virtual object DeserializeMessageBody(string messageType, byte[] data) {
+            if (data == null || data.Length == 0)
+                return null;
+            
+            object body = null;
+            try {
+                var clrType = GetMappedMessageType(messageType);
+                if (clrType != null)
+                    body = _serializer.Deserialize(data, clrType);
+                else
+                    body = data;
+            } catch (Exception ex) {
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
+                
+                return null;
+            }
+
+            return body;
+        }
+
+        protected void SendMessageToSubscribers(IMessage message) {
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            var subscribers = GetMessageSubscribers(message);
+
+            if (isTraceLogLevelEnabled)
+                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
+            
+            if (subscribers.Count == 0)
                 return;
             
-            SendMessageToSubscribers(messageType, message.Data, serializer);
-        }
-
-        protected void SendMessageToSubscribers(Type messageType, byte[] data, ISerializer serializer) {
-            if (messageType == null)
-                return;
-
-            var subscribers = _subscribers.Values.Where(s => s.IsAssignableFrom(messageType)).ToList();
-            if (subscribers.Count == 0) {
-                if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("Done sending message to 0 subscribers for message type {MessageType}.", messageType.Name);
-                return;
-            }
-
-            object body;
-            try {
-                body = serializer.Deserialize(data, messageType);
-            } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning(ex, "Error deserializing message body: {Message}", ex.Message);
-                return;
-            }
+            var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
             if (body == null) {
                 if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning("Unable to send null message for type {MessageType}", messageType.Name);
+                    _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
                 return;
             }
-
-            SendMessageToSubscribers(subscribers, messageType, body);
-        }
-
-        protected void SendMessageToSubscribers(List<Subscriber> subscribers, Type messageType, object message) {
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
 
             foreach (var subscriber in subscribers) {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
@@ -167,25 +182,22 @@ namespace Foundatio.Messaging {
                         _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
 
                     try {
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        if (subscriber.Type == typeof(IMessage))
+                            await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        else
+                            await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
+                        
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
                     } catch (Exception ex) {
                         if (_logger.IsEnabled(LogLevel.Warning))
-                            _logger.LogWarning(ex, "Error sending message to subscriber: {Message}", ex.Message);
+                            _logger.LogWarning(ex, "Error sending message to subscriber: {ErrorMessage}", ex.Message);
                     }
                 });
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, messageType.Name);
-        }
-
-        protected Type GetMessageBodyType(MessageBusData message) {
-            if (message?.Type == null)
-                return null;
-
-            return GetMappedMessageType(message.Type);
+                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
         }
        
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {

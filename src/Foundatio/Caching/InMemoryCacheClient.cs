@@ -358,21 +358,39 @@ namespace Foundatio.Caching {
                 return default;
             }
 
-            var items = new HashSet<T>(values);
-            var entry = new CacheEntry(items, expiresAt, _shouldClone);
-            _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
-                if (!(cacheEntry.Value is ICollection<T> collection))
-                    throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
+            if (values is string stringValue) {
+                var items = new HashSet<string>(new[] { stringValue });
+                var entry = new CacheEntry(items, expiresAt, _shouldClone);
+                _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
+                    if (!(cacheEntry.Value is ICollection<string> collection))
+                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
 
-                collection.AddRange(items);
-                cacheEntry.Value = collection;
-                cacheEntry.ExpiresAt = expiresAt;
-                return cacheEntry;
-            });
+                    collection.Add(stringValue);
+                    cacheEntry.Value = collection;
+                    cacheEntry.ExpiresAt = expiresAt;
+                    return cacheEntry;
+                });
 
-            await StartMaintenanceAsync().AnyContext();
+                await StartMaintenanceAsync().AnyContext();
 
-            return items.Count;
+                return items.Count;
+            } else {
+                var items = new HashSet<T>(values);
+                var entry = new CacheEntry(items, expiresAt, _shouldClone);
+                _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
+                    if (!(cacheEntry.Value is ICollection<T> collection))
+                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
+
+                    collection.AddRange(items);
+                    cacheEntry.Value = collection;
+                    cacheEntry.ExpiresAt = expiresAt;
+                    return cacheEntry;
+                });
+
+                await StartMaintenanceAsync().AnyContext();
+
+                return items.Count;
+            }
         }
 
         public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
@@ -388,21 +406,39 @@ namespace Foundatio.Caching {
                 return default;
             }
 
-            var items = new HashSet<T>(values);
-            _memory.TryUpdate(key, (k, cacheEntry) => {
-                if (cacheEntry.Value is ICollection<T> collection && collection.Count > 0) {
-                    foreach (var value in items)
-                        collection.Remove(value);
+            if (values is string stringValue) {
+                var items = new HashSet<string>(new[] { stringValue });
+                _memory.TryUpdate(key, (k, cacheEntry) => {
+                    if (cacheEntry.Value is ICollection<string> collection && collection.Count > 0) {
+                        foreach (var value in items)
+                            collection.Remove(value);
 
-                    cacheEntry.Value = collection;
-                }
+                        cacheEntry.Value = collection;
+                    }
 
-                cacheEntry.ExpiresAt = expiresAt;
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
-                return cacheEntry;
-            });
+                    cacheEntry.ExpiresAt = expiresAt;
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
+                    return cacheEntry;
+                });
 
-            return items.Count;
+                return items.Count;
+            } else {
+                var items = new HashSet<T>(values);
+                _memory.TryUpdate(key, (k, cacheEntry) => {
+                    if (cacheEntry.Value is ICollection<T> collection && collection.Count > 0) {
+                        foreach (var value in items)
+                            collection.Remove(value);
+
+                        cacheEntry.Value = collection;
+                    }
+
+                    cacheEntry.ExpiresAt = expiresAt;
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
+                    return cacheEntry;
+                });
+
+                return items.Count;
+            }
         }
 
         public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {

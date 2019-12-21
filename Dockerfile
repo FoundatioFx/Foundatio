@@ -1,13 +1,4 @@
-FROM mcr.microsoft.com/dotnet/core/sdk:3.0 AS build
-
-# install dotnet sdk 2.2
-ENV DOTNET_SDK_VERSION 2.2.402
-
-RUN curl -SL --output dotnet.tar.gz https://dotnetcli.blob.core.windows.net/dotnet/Sdk/$DOTNET_SDK_VERSION/dotnet-sdk-$DOTNET_SDK_VERSION-linux-x64.tar.gz \
-    && dotnet_sha512='81937de0874ee837e3b42e36d1cf9e04bd9deff6ba60d0162ae7ca9336a78f733e624136d27f559728df3f681a72a669869bf91d02db47c5331398c0cfda9b44' \
-    && echo "$dotnet_sha512 dotnet.tar.gz" | sha512sum -c - \
-    && tar -zxf dotnet.tar.gz -C /usr/share/dotnet \
-    && rm dotnet.tar.gz
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1 AS build
 
 WORKDIR /app
 
