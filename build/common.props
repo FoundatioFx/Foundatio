@@ -8,6 +8,7 @@
     <PackageReleaseNotes>https://github.com/FoundatioFx/Foundatio/releases</PackageReleaseNotes>
     <PackageTags>Queue;Messaging;Message;Bus;ServiceBus;Locking;Lock;Distributed;File;Storage;Blob;Jobs;Metrics;Stats;Azure;Redis;StatsD;Amazon;AWS;S3;broker;Logging;Log</PackageTags>
     <MinVerSkip Condition="'$(Configuration)' == 'Debug'">true</MinVerSkip>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
 
     <Copyright>Copyright (c) 2020 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
