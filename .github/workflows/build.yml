@@ -1,29 +1,28 @@
 name: Build
-
-on: [push]
-
+on: [push, pull_request]
 jobs:
   build:
-
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
+    - uses: actions/checkout@v1
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 3.1.100
+    - name: Build Reason
+      run: echo ${{github.ref}} and ${{github.event_name}}
     - name: Build
-      run: docker build --target testrunner -t foundatio:test --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
-      env:
-        VERSION_SUFFIX: 1-pre
-    - name: Test
-      run: docker run -v $(pwd)/artifacts:/app/artifacts foundatio:test
-    - name: Pack
-      run: |
-        docker build --target pack -t foundatio:pack --build-arg VERSION_SUFFIX=${VERSION_SUFFIX} .
-        docker run --rm -v $(pwd)/artifacts:/app/artifacts foundatio:pack
-      env:
-        VERSION_SUFFIX: 1-pre
+      run: dotnet build --configuration Release --nologo
+    - name: Run Tests
+      run: dotnet test --configuration Release --no-build --nologo --results-directory /github/home/artifacts --logger:trx
+    - name: Package
+      if: github.event_name != 'pull_request'
+      run: dotnet pack --configuration Release --output /github/home/artifacts
+    - name: Push Packages
+      if: github.event_name != 'pull_request'
+      run: ./push.sh ${{ secrets.FEEDZ_KEY }}
     - name: Artifacts
       uses: actions/upload-artifact@v1.0.0
       with:
         name: packages
-        path: artifacts
+        path: /github/home/artifacts
