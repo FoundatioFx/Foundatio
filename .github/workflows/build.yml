@@ -6,24 +6,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
+    - name: Checkout
+      uses: actions/checkout@v1
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.1.100
-    - name: Build Reason
+    - name: Reason
       run: echo ${{github.ref}} and ${{github.event_name}}
     - name: Build
       run: dotnet build --configuration Release --nologo
     - name: Run Tests
-      run: dotnet test --configuration Release --no-build --nologo --results-directory artifacts --logger:trx
+      run: dotnet test --configuration Release --nologo --results-directory artifacts --no-build --logger:trx
     - name: Package
       if: github.event_name != 'pull_request'
-      run: dotnet pack --configuration Release --output artifacts
-    - name: Push Packages
-      if: github.event_name != 'pull_request'
-      run: ./push.sh ${{ secrets.FEEDZ_KEY }}
-    - name: Artifacts
+      run: dotnet pack --configuration Release --output artifacts --no-build
+    # - name: Push Packages
+    #   if: github.event_name != 'pull_request'
+    #   run: ./push.sh ${{ secrets.FEEDZ_KEY }}
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v1.0.0
       with:
         name: packages
