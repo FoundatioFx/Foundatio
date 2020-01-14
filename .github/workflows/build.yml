@@ -13,10 +13,9 @@ jobs:
       with:
         dotnet-version: 3.1.100
     - name: Install MinVer
-      run: |
-        dotnet tool install --global minver-cli --version 2.0.0
+      run: dotnet tool install --global minver-cli --version 2.0.0
     - name: Build Reason
-      run: echo ref: ${{github.ref}} event: ${{github.event_name}}
+      run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build Version
       run: minver -t v
     - name: Build
