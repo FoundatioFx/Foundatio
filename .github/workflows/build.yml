@@ -22,9 +22,9 @@ jobs:
       with:
         tag-prefix: v
     - name: Build
-      run: dotnet build --configuration Release --nologo
+      run: dotnet build --configuration Release
     - name: Run Tests
-      run: dotnet test --configuration Release --nologo --results-directory artifacts --no-build --logger:trx
+      run: dotnet test --configuration Release --results-directory artifacts --no-build --logger:trx
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack --configuration Release --no-build
