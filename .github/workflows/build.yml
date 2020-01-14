@@ -14,15 +14,13 @@ jobs:
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.1.100
-    - name: Run MinVer
+    - name: Build Reason
+      run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
+    - name: Build Version
       id: version
       uses: thefringeninja/action-minver@2.0.0-preview1
       with:
         tag-prefix: v
-    - name: Build Version
-      run: echo ${{ steps.version.outputs.version }}
-    - name: Build Reason
-      run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build
       run: dotnet build --configuration Release --nologo
     - name: Run Tests
@@ -30,12 +28,19 @@ jobs:
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack --configuration Release --output artifacts --no-build
-    - name: Push CI Packages
-      if: github.event_name != 'pull_request'
-      run: ./build/push.sh https://f.feedz.io/foundatio/foundatio/nuget ${{ secrets.FEEDZ_KEY }}
+    - name: Publish CI Packages
+      run: |
+        for package in $(find -name "*.nupkg" | grep "minver" -v); do
+          echo "${0##*/}": Pushing $package...
+          curl -vX PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/
+        done
     - name: Push Release Packages
       if: startsWith(github.ref, 'refs/tags/v')
-      run: ./build/push.sh https://api.nuget.org/v3/index.json ${{ secrets.NUGET_KEY }}
+      run: |
+        for package in $(find -name "*.nupkg" | grep "minver" -v); do
+          echo "${0##*/}": Pushing $package...
+          dotnet nuget push $package --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_KEY }}
+        done
     - name: Upload Artifacts
       uses: actions/upload-artifact@v1.0.0
       with:
