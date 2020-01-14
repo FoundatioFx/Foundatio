@@ -1,6 +1,6 @@
 ![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
 
-[![Build status](https://ci.appveyor.com/api/projects/status/abateixcmgqxoj8f?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-azurestorage-agg58)
+[![Build status](https://github.com/FoundatioFx/Foundatio.AzureStorage/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.AzureStorage/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureStorage.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureStorage/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
