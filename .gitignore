@@ -29,6 +29,8 @@ _NCrunch_*
 # NuGet Packages
 *.nupkg
 
+.DS_Store
+
 # Rider
 
 # User specific
