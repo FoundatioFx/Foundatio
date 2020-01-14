@@ -1,4 +1,4 @@
-<Project ToolsVersion="15.0">
+<Project>
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>

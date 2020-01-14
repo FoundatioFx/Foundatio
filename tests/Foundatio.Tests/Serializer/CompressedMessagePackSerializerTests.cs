@@ -1,5 +1,6 @@
 ﻿using Foundatio.Serializer;
 using Foundatio.TestHarness.Utility;
+using MessagePack.Resolvers;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -9,7 +10,9 @@ namespace Foundatio.Tests.Serializer {
         public CompressedMessagePackSerializerTests(ITestOutputHelper output) : base(output) { }
 
         protected override ISerializer GetSerializer() {
-            return new MessagePackSerializer(useCompression: true);
+            return new MessagePackSerializer(MessagePack.MessagePackSerializerOptions.Standard
+                .WithCompression(MessagePack.MessagePackCompression.Lz4Block)
+                .WithResolver(ContractlessStandardResolver.Instance));
         }
 
         [Fact]
@@ -31,7 +34,9 @@ namespace Foundatio.Tests.Serializer {
 
     public class CompressedMessagePackSerializerBenchmark : SerializerBenchmarkBase {
         protected override ISerializer GetSerializer() {
-            return new MessagePackSerializer(useCompression: true);
+            return new MessagePackSerializer(MessagePack.MessagePackSerializerOptions.Standard
+                .WithCompression(MessagePack.MessagePackCompression.Lz4Block)
+                .WithResolver(ContractlessStandardResolver.Instance));
         }
     }
 }
