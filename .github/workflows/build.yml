@@ -32,7 +32,7 @@ jobs:
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
-          curl -vX PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/
+          curl -sX PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/
         done
     - name: Publish Release Packages
       if: startsWith(github.ref, 'refs/tags/v')
