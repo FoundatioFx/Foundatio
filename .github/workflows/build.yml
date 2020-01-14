@@ -21,9 +21,9 @@ jobs:
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack --configuration Release --output artifacts --no-build
-    # - name: Push Packages
-    #   if: github.event_name != 'pull_request'
-    #   run: ./push.sh ${{ secrets.FEEDZ_KEY }}
+    - name: Push Packages
+      if: github.event_name != 'pull_request'
+      run: ./build/push.sh ${{ secrets.FEEDZ_KEY }}
     - name: Upload Artifacts
       uses: actions/upload-artifact@v1.0.0
       with:
