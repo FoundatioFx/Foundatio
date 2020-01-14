@@ -1,6 +1,6 @@
 ![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.png "Foundatio")
 
-[![Build status](https://ci.appveyor.com/api/projects/status/xdky8avbt35xr50p?svg=true)](https://ci.appveyor.com/project/Exceptionless/foundatio-aws-mi5u6)
+[![Build status](https://github.com/FoundatioFx/Foundatio.AWS/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.AWS/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AWS.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AWS/)
 [![Slack Status](https://slack.exceptionless.com/badge.svg)](https://slack.exceptionless.com)
 
