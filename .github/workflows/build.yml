@@ -35,9 +35,13 @@ jobs:
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
-          # dotnet nuget push $package --source https://nuget.pkg.github.com/foundatiofx/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
+          
+          # GPR
           # workaround for GPR push issue
           curl -sX PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/
+          
+          # feedz
+          dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }}
         done
     - name: Publish Release Packages
       if: startsWith(github.ref, 'refs/tags/v')
