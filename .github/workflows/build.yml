@@ -16,7 +16,7 @@ jobs:
         dotnet-version: 3.1.100
     - name: Run MinVer
       id: version
-      uses: thefringeninja/action-minver
+      uses: thefringeninja/action-minver@2.0.0-preview1
       with:
         tag-prefix: v
     - name: Build Version
