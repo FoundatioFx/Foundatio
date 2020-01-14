@@ -14,9 +14,6 @@ jobs:
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.1.100
-        source-url: https://nuget.pkg.github.com/foundatiofx/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
     - name: Build Reason
       run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build Version
@@ -39,8 +36,8 @@ jobs:
           # GPR
           # workaround for GPR push issue
           curl -sX PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/
-          
-          # feedz
+
+          # feedz (remove once GPR supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }}
         done
     - name: Publish Release Packages
