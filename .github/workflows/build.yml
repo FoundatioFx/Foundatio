@@ -29,6 +29,7 @@ jobs:
       if: github.event_name != 'pull_request'
       run: dotnet pack --configuration Release --no-build
     - name: Publish CI Packages
+      if: github.event_name != 'pull_request'
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
