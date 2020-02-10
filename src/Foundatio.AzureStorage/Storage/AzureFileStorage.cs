@@ -75,7 +75,7 @@ namespace Foundatio.Storage {
 
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
-
+            
             var blockBlob = _container.GetBlockBlobReference(path);
             await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
 
