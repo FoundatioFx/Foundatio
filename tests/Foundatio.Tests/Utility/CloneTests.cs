@@ -8,8 +8,8 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility {
-    public class CloneTestsTests : TestWithLoggingBase {
-        public CloneTestsTests(ITestOutputHelper output) : base(output) { }
+    public class CloneTests : TestWithLoggingBase {
+        public CloneTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
         public void CanCloneModel() {
@@ -66,7 +66,7 @@ namespace Foundatio.Tests.Utility {
                 ObjectProperty = new CloneModel { IntProperty = 1 }
             };
 
-            var serializer = DefaultSerializer.Instance;
+            var serializer = new MessagePackSerializer();
             var result = serializer.SerializeToBytes(model);
             var deserialized = serializer.Deserialize<CloneModel>(result);
             Assert.Equal(model.IntProperty, deserialized.IntProperty);

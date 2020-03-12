@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposable where T : class {
+    public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, Foundatio.Utility.IAsyncDisposable where T : class {
         private readonly IQueue<T> _queue;
 
         public QueueEntry(string id, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {

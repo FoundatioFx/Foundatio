@@ -11,7 +11,7 @@ namespace Foundatio.Serializer {
     public interface ITextSerializer : ISerializer {}
 
     public static class DefaultSerializer {
-        public static ISerializer Instance { get; set; } = new MessagePackSerializer();
+        public static ISerializer Instance { get; set; } = new SystemTextJsonSerializer();
     }
 
     public static class SerializerExtensions {

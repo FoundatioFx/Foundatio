@@ -154,7 +154,7 @@ namespace Foundatio.Jobs {
                         return result.IsSuccess;
                     }
                 } finally {
-                    var jobDisposable = job as IAsyncDisposable;
+                    var jobDisposable = job as Foundatio.Utility.IAsyncDisposable;
                     if (jobDisposable != null) {
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("Disposing job lifetime {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
