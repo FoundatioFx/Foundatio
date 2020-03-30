@@ -3,10 +3,6 @@ using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 
 namespace Foundatio.Utility {
-    public interface IAsyncDisposable {
-        Task DisposeAsync();
-    }
-
     public static class Async {
         public static async Task<TReturn> Using<TResource, TReturn>(TResource resource, Func<TResource, Task<TReturn>> body)
             where TResource : IAsyncDisposable {

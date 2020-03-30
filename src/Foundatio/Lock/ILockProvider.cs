@@ -11,7 +11,7 @@ namespace Foundatio.Lock {
         Task RenewAsync(ILock @lock, TimeSpan? timeUntilExpires = null);
     }
 
-    public interface ILock : Foundatio.Utility.IAsyncDisposable {
+    public interface ILock : IAsyncDisposable {
         Task RenewAsync(TimeSpan? timeUntilExpires = null);
         Task ReleaseAsync();
         string LockId { get; }

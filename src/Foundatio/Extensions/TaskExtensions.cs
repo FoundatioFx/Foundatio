@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -12,7 +13,22 @@ namespace Foundatio.Utility {
         }
 
         [DebuggerStepThrough]
+        public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> source) {
+            return source.ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        [DebuggerStepThrough]
+        public static ConfiguredAsyncDisposable AnyContext(this IAsyncDisposable source) {
+            return source.ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        [DebuggerStepThrough]
         public static ConfiguredTaskAwaitable AnyContext(this Task task) {
+            return task.ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        [DebuggerStepThrough]
+        public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task) {
             return task.ConfigureAwait(continueOnCapturedContext: false);
         }
 

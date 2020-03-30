@@ -29,7 +29,7 @@ namespace Foundatio.Lock {
         public TimeSpan TimeWaitedForLock { get; }
         public int RenewalCount => _renewalCount;
 
-        public async Task DisposeAsync() {
+        public async ValueTask DisposeAsync() {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Disposing lock {Resource}", Resource);

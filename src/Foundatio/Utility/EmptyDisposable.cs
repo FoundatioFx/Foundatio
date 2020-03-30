@@ -18,8 +18,8 @@ namespace Foundatio.Utility {
 
         public int RenewalCount => 0;
 
-        public Task DisposeAsync() {
-            return Task.CompletedTask;
+        public ValueTask DisposeAsync() {
+            return new ValueTask();
         }
 
         public Task RenewAsync(TimeSpan? lockExtension = null) {
