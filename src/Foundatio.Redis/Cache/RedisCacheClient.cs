@@ -70,9 +70,8 @@ namespace Foundatio.Caching {
                     } catch (Exception) {}
 
                     try {
-                        var redisKeys = server.Keys().ToArray();
-                        if (redisKeys.Length > 0)
-                            await Database.KeyDeleteAsync(redisKeys).AnyContext();
+                        await foreach (var key in server.KeysAsync().ConfigureAwait(false))
+                            await Database.KeyDeleteAsync(key).AnyContext();
                     } catch (Exception) {}
                 }
             } else {

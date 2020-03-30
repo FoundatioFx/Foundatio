@@ -2,12 +2,13 @@ version: '2'
 
 services:
   redis:
-    image: grokzen/redis-cluster:5.0.5
+    image: grokzen/redis-cluster:5.0.7
     environment:
       IP: '0.0.0.0'
       STANDALONE: 'true'
+      SENTINEL: 'true'
     ports:
-      - 7000-7002:7000-7002 # cluster masters
-      - 7003-7005:7003-7005 # cluster slaves
-      - 7006:7006 # single
+      - 7000-7005:7000-7005 # cluster
+      - 7006-7007:7006-7007 # single
+      - 5000-5002:5000-5002 # sentinel
     mem_limit: 52428800
