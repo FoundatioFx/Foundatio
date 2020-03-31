@@ -607,8 +607,14 @@ namespace Foundatio.Caching {
         public Task<bool> ExistsAsync(string key) {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            
+            if (!_memory.TryGetValue(key, out var cacheEntry))
+                return Task.FromResult(false);
 
-            return Task.FromResult(_memory.ContainsKey(key));
+            if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
+                return Task.FromResult(false);
+
+            return Task.FromResult(true);
         }
 
         public async Task<TimeSpan?> GetExpirationAsync(string key) {

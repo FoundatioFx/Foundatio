@@ -145,8 +145,8 @@ namespace Foundatio.Lock {
         }
 
         public async Task<bool> IsLockedAsync(string resource) {
-            var result = await Run.WithRetriesAsync(() => _cacheClient.GetAsync<object>(resource), logger: _logger).AnyContext();
-            return result.HasValue;
+            var result = await Run.WithRetriesAsync(() => _cacheClient.ExistsAsync(resource), logger: _logger).AnyContext();
+            return result;
         }
 
         public async Task ReleaseAsync(ILock @lock) {

@@ -22,6 +22,11 @@ namespace Foundatio.Tests.Serializer {
         public override void CanRoundTripString() {
             base.CanRoundTripString();
         }
+        
+        [Fact]
+        public override void CanHandlePrimitiveTypes() {
+            base.CanHandlePrimitiveTypes();
+        }
 
         [Fact(Skip = "Skip benchmarks for now")]
         public virtual void Benchmark() {

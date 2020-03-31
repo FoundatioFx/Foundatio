@@ -63,6 +63,18 @@ namespace Foundatio.Tests.Serializer {
             Assert.NotNull(model.ObjectProperty);
             Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
         }
+
+        public virtual void CanHandlePrimitiveTypes() {
+            var serializer = GetSerializer();
+            if (serializer == null)
+                return;
+
+            object expected = "primitive";
+            string text = serializer.SerializeToString(expected);
+            _logger.LogInformation(text);
+            var actual = serializer.Deserialize<object>(text);
+            Assert.Equal(expected, actual);
+        }
     }
 
     [MemoryDiagnoser]
