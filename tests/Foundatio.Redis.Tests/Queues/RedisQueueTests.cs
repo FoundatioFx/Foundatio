@@ -17,6 +17,7 @@ using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using xRetry;
 #pragma warning disable 4014
 
 namespace Foundatio.Redis.Tests.Queues {
@@ -113,7 +114,7 @@ namespace Foundatio.Redis.Tests.Queues {
             return base.CanAutoCompleteWorkerAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task CanHaveMultipleQueueInstancesAsync() {
             return base.CanHaveMultipleQueueInstancesAsync();
         }
