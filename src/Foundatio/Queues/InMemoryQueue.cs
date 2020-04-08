@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -48,6 +49,10 @@ namespace Foundatio.Queues {
                 Errors = _workerErrorCount,
                 Timeouts = _workerItemTimeoutCount
             });
+        }
+
+        public IReadOnlyCollection<QueueEntry<T>> GetEntries() {
+            return new ReadOnlyCollection<QueueEntry<T>>(_queue.ToList());
         }
 
         protected override async Task<string> EnqueueImplAsync(T data) {
