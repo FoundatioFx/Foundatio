@@ -4,9 +4,9 @@
     <PackageTags>$(PackageTags);Amazon;AWS;S3</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.104.19" />
-    <PackageReference Include="AWSSDK.S3" Version="3.3.110.12" />
-    <PackageReference Include="AWSSDK.SQS" Version="3.3.102.55" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.3.107.4" />
+    <PackageReference Include="AWSSDK.S3" Version="3.3.110.50" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.3.102.91" />
     <PackageReference Include="Foundatio" Version="9.0.0" />
   </ItemGroup>
 </Project>
