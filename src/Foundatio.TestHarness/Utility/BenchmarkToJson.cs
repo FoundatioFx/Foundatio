@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Reports;
@@ -24,6 +25,8 @@ namespace Foundatio.TestHarness.Utility {
         }
 
         public void Flush() {}
+        public string Id { get; }
+        public int Priority { get; }
     }
 
     public static class BenchmarkSummaryExtensions {
