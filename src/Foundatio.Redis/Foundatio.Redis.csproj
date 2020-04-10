@@ -2,15 +2,15 @@
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
     <PackageReference Include="Foundatio" Version="9.0.1-alpha.0.7" />
-    <PackageReference Include="StackExchange.Redis" Version="2.1.28" />
+    <PackageReference Include="StackExchange.Redis" Version="2.1.30" />
   </ItemGroup>
 
-	<ItemGroup>
-	  <EmbeddedResource Include="Scripts\*.lua" />
-	</ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Scripts\*.lua" />
+  </ItemGroup>
 
-	<ItemGroup>
-	  <!--ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" /-->
-	</ItemGroup>
+  <ItemGroup>
+    <!--ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" /-->
+  </ItemGroup>
 
 </Project>
