@@ -626,11 +626,7 @@ namespace Foundatio.Tests.Queue {
 
                     await countdown.WaitAsync();
                     await SystemClock.SleepAsync(50);
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}",
-                        info.CompletedCount,
-                        info.AbandonCount,
-                        info.ErrorCount);
-
+                    
                     if (_logger.IsEnabled(LogLevel.Information))
                         _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                     Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
@@ -660,6 +656,8 @@ namespace Foundatio.Tests.Queue {
                         Assert.Equal(info.ErrorCount, workerStats.Sum(s => s.Errors));
                         Assert.Equal(info.AbandonCount, workerStats.Sum(s => s.Abandoned) - info.ErrorCount);
                         Assert.Equal(info.AbandonCount + workerStats.Sum(s => s.Errors), (workerStats.LastOrDefault()?.Deadletter ?? 0));
+                        //Expected: 260
+                        //Actual:   125
                     }
                 }
                 finally {
