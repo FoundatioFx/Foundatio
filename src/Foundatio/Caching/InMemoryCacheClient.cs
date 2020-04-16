@@ -43,6 +43,10 @@ namespace Foundatio.Caching {
         public long Hits => _hits;
         public long Misses => _misses;
 
+        public override string ToString() {
+            return $"Count: {Count} Calls: {Calls} Reads: {Reads} Writes: {Writes} Hits: {Hits} Misses: {Misses}";
+        }
+
         public void ResetStats() {
             _writes = 0;
             _hits = 0;

@@ -15,6 +15,10 @@ namespace Foundatio.Caching {
         public long Writes => _writes;
         public long Reads => _reads;
 
+        public override string ToString() {
+            return $"Calls: {Calls} Reads: {Reads} Writes: {Writes}";
+        }
+
         public void ResetStats() {
             _writes = 0;
             _reads = 0;
