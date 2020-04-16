@@ -8,6 +8,9 @@ namespace Foundatio.TestHarness.Utility {
     public class StringBenchmarkLogger : ILogger {
         private readonly StringBuilder _buffer = new StringBuilder();
 
+        public string Id => Guid.NewGuid().ToString();
+        public int Priority => 1;
+ 
         public void Write(LogKind logKind, string text) {
             _buffer.Append(text);
         }
@@ -25,8 +28,6 @@ namespace Foundatio.TestHarness.Utility {
         }
 
         public void Flush() {}
-        public string Id { get; }
-        public int Priority { get; }
     }
 
     public static class BenchmarkSummaryExtensions {

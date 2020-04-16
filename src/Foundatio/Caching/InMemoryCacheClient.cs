@@ -15,6 +15,7 @@ namespace Foundatio.Caching {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private bool _shouldClone;
         private int? _maxItems;
+        private long _writes;
         private long _hits;
         private long _misses;
         private readonly ILogger _logger;
@@ -36,8 +37,17 @@ namespace Foundatio.Caching {
 
         public int Count => _memory.Count;
         public int? MaxItems => _maxItems;
+        public long Calls => _writes + _hits + _misses;
+        public long Writes => _writes;
+        public long Reads => _hits + _misses;
         public long Hits => _hits;
         public long Misses => _misses;
+
+        public void ResetStats() {
+            _writes = 0;
+            _hits = 0;
+            _misses = 0;
+        }
 
         public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
 
@@ -64,6 +74,16 @@ namespace Foundatio.Caching {
                         .OrderBy(kvp => kvp.Value.LastAccessTicks)
                         .ThenBy(kvp => kvp.Value.InstanceNumber)
                         .Select(kvp => kvp.Key)
+                        .ToList();
+            }
+        }
+
+        public ICollection<KeyValuePair<string, object>> Items {
+            get {
+                return _memory.ToArray()
+                        .OrderBy(kvp => kvp.Value.LastAccessTicks)
+                        .ThenBy(kvp => kvp.Value.InstanceNumber)
+                        .Select(kvp => new KeyValuePair<string, object>(kvp.Key, kvp.Value))
                         .ToList();
             }
         }
@@ -210,6 +230,8 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
+            Interlocked.Increment(ref _writes);
+
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
@@ -246,6 +268,8 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
+            Interlocked.Increment(ref _writes);
+
             long difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) => {
@@ -281,6 +305,8 @@ namespace Foundatio.Caching {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return -1;
             }
+
+            Interlocked.Increment(ref _writes);
 
             double difference = value;
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
@@ -358,6 +384,8 @@ namespace Foundatio.Caching {
                 return default;
             }
 
+            Interlocked.Increment(ref _writes);
+
             if (values is string stringValue) {
                 var items = new HashSet<string>(new[] { stringValue });
                 var entry = new CacheEntry(items, expiresAt, _shouldClone);
@@ -405,6 +433,8 @@ namespace Foundatio.Caching {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return default;
             }
+
+            Interlocked.Increment(ref _writes);
 
             if (values is string stringValue) {
                 var items = new HashSet<string>(new[] { stringValue });
@@ -463,6 +493,8 @@ namespace Foundatio.Caching {
                 return false;
             }
 
+            Interlocked.Increment(ref _writes);
+
             if (addOnly) {
                 if (!_memory.TryAdd(key, entry)) {
                     if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt < SystemClock.UtcNow) {
@@ -514,6 +546,8 @@ namespace Foundatio.Caching {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
+            Interlocked.Increment(ref _writes);
+
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             bool wasExpectedValue = false;
             bool success = _memory.TryUpdate(key, (k, e) => {
@@ -544,6 +578,8 @@ namespace Foundatio.Caching {
                 await RemoveExpiredKeyAsync(key).AnyContext();
                 return -1;
             }
+
+            Interlocked.Increment(ref _writes);
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) => {
@@ -579,6 +615,8 @@ namespace Foundatio.Caching {
                 return -1;
             }
 
+            Interlocked.Increment(ref _writes);
+
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) => {
                 long? currentValue = null;
@@ -607,10 +645,13 @@ namespace Foundatio.Caching {
         public Task<bool> ExistsAsync(string key) {
             if (String.IsNullOrEmpty(key))
                 return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
-            
-            if (!_memory.TryGetValue(key, out var cacheEntry))
-                return Task.FromResult(false);
 
+            if (!_memory.TryGetValue(key, out var cacheEntry)) {
+                Interlocked.Increment(ref _misses);
+                return Task.FromResult(false);
+            }
+
+            Interlocked.Increment(ref _hits);
             if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 return Task.FromResult(false);
 
@@ -621,9 +662,12 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue)
+            if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue) {
+                Interlocked.Increment(ref _misses);
                 return null;
+            }
 
+            Interlocked.Increment(ref _hits);
             if (value.ExpiresAt >= SystemClock.UtcNow)
                 return value.ExpiresAt.Subtract(SystemClock.UtcNow);
 
@@ -642,6 +686,7 @@ namespace Foundatio.Caching {
                 return;
             }
 
+            Interlocked.Increment(ref _writes);
             if (_memory.TryGetValue(key, out var value)) {
                 value.ExpiresAt = expiresAt;
                 await StartMaintenanceAsync().AnyContext();
