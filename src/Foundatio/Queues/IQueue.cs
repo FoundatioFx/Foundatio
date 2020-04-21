@@ -17,7 +17,7 @@ namespace Foundatio.Queues {
         AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
         void AttachBehavior(IQueueBehavior<T> behavior);
-        Task<string> EnqueueAsync(T data);
+        Task<string> EnqueueAsync(T data, QueueOptions options = null);
         Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
         Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
         Task RenewLockAsync(IQueueEntry<T> queueEntry);
@@ -64,9 +64,16 @@ namespace Foundatio.Queues {
         public long Timeouts { get; set; }
     }
 
+    public class QueueOptions {
+        public string CorrelationId { get; set; }
+        public string ParentId { get; set; }
+        public DataDictionary Properties { get; set; }
+    }
+
     public class EnqueuingEventArgs<T> : CancelEventArgs where T : class {
         public IQueue<T> Queue { get; set; }
         public T Data { get; set; }
+        public QueueOptions Options { get; set; }
     }
 
     public class EnqueuedEventArgs<T> : EventArgs where T : class {

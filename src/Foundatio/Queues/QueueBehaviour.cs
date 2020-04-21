@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues {
     public interface IQueueBehavior<T> where T : class {

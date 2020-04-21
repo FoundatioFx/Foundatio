@@ -55,15 +55,17 @@ namespace Foundatio.Queues {
             return new ReadOnlyCollection<QueueEntry<T>>(_queue.ToList());
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data) {
+        protected override async Task<string> EnqueueImplAsync(T data, QueueOptions options = null) {
             string id = Guid.NewGuid().ToString("N");
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
 
-            if (!await OnEnqueuingAsync(data).AnyContext())
+            if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
-            var entry = new QueueEntry<T>(id, data.DeepClone(), this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(id, options?.CorrelationId, options?.ParentId, data.DeepClone(), this, SystemClock.UtcNow, 0);
+            entry.Properties.AddRange(options?.Properties);
+            
             _queue.Enqueue(entry);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue: Set Event");
 
@@ -157,7 +159,9 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _dequeuedCount);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeue: Got Item");
 
-            var entry = new QueueEntry<T>(info.Id, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
+            var entry = new QueueEntry<T>(info.Id, info.CorrelationId, info.ParentId, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
+            entry.Properties.AddRange(info.Properties);
+            
             await entry.RenewLockAsync();
             await OnDequeuedAsync(entry).AnyContext();
             ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
