@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Amazon.SQS.Model;
 using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues {
@@ -30,6 +31,26 @@ namespace Foundatio.Queues {
             return DateTimeOffset.FromUnixTimeMilliseconds(value).DateTime;
         }
 
+        public static string CorrelationId(this IDictionary<string, MessageAttributeValue> attributes) {
+            if (attributes == null)
+                return null;
+
+            if (!attributes.TryGetValue("CorrelationId", out var v))
+                return null;
+
+            return v.StringValue;
+        }
+
+        public static string ParentId(this IDictionary<string, MessageAttributeValue> attributes) {
+            if (attributes == null)
+                return null;
+
+            if (!attributes.TryGetValue("ParentId", out var v))
+                return null;
+
+            return v.StringValue;
+        }
+
         public static string RedrivePolicy(this IDictionary<string, string> attributes) {
             if (attributes == null)
                 return null;
@@ -39,7 +60,6 @@ namespace Foundatio.Queues {
 
             return v;
         }
-
 
         public static string DeadLetterQueue(this IDictionary<string, string> attributes) {
             if (attributes == null)

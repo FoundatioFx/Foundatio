@@ -62,19 +62,39 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data) {
-            if (!await OnEnqueuingAsync(data).AnyContext())
+        protected override async Task<string> EnqueueImplAsync(T data, QueueOptions options = null) {
+            if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
             var message = new SendMessageRequest {
                 QueueUrl = _queueUrl,
-                MessageBody = _serializer.SerializeToString(data),
+                MessageBody = _serializer.SerializeToString(data)
             };
+
+            if (!String.IsNullOrEmpty(options?.CorrelationId))
+                message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue {
+                    DataType = "String",
+                    StringValue = options.CorrelationId
+                });
+
+            if (!String.IsNullOrEmpty(options?.ParentId))
+                message.MessageAttributes.Add("ParentId", new MessageAttributeValue {
+                    DataType = "String",
+                    StringValue = options.ParentId
+                });
+
+            if (options?.Properties != null) {
+                foreach (var property in options.Properties)
+                    message.MessageAttributes.Add(property.Key, new MessageAttributeValue {
+                        DataType = "String",
+                        StringValue = property.Value.ToString() // TODO: Support more than string data types
+                    });
+            }
 
             var response = await _client.Value.SendMessageAsync(message).AnyContext();
 
             Interlocked.Increment(ref _enqueuedCount);
-            var entry = new QueueEntry<T>(response.MessageId, data, this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, options?.ParentId, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
             return response.MessageId;
@@ -90,11 +110,12 @@ namespace Foundatio.Queues {
                 MaxNumberOfMessages = 1,
                 VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
                 WaitTimeSeconds = waitTimeout,
-                AttributeNames = new List<string> { "ApproximateReceiveCount", "SentTimestamp" }
+                AttributeNames = new List<string> { "All" },
+                MessageAttributeNames = new List<string> { "All" }
             };
 
             // receive message local function
-            async Task<ReceiveMessageResponse> receiveMessageAsync() {
+            async Task<ReceiveMessageResponse> ReceiveMessageAsync() {
                 try {
                     return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
                 } catch (OperationCanceledException) {
@@ -102,14 +123,14 @@ namespace Foundatio.Queues {
                 }
             }
 
-            var response = await receiveMessageAsync().AnyContext();
+            var response = await ReceiveMessageAsync().AnyContext();
             // retry loop
             while (response == null && !linkedCancellationToken.IsCancellationRequested) {
                 try {
                     await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
                 } catch (OperationCanceledException) { }
 
-                response = await receiveMessageAsync().AnyContext();
+                response = await ReceiveMessageAsync().AnyContext();
             }
 
             if (response == null || response.Messages.Count == 0)
