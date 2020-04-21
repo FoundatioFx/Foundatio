@@ -12,6 +12,9 @@ namespace Foundatio.Utility {
         }
 
         public static void AddRange<T>(this ICollection<T> list, IEnumerable<T> range) {
+            if (list == null || range == null)
+                return;
+
             foreach (var r in range)
                 list.Add(r);
         }

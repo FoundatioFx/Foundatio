@@ -35,12 +35,12 @@ namespace Foundatio.Queues {
 
         protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
-        protected abstract Task<string> EnqueueImplAsync(T data);
-        public async Task<string> EnqueueAsync(T data) {
+        protected abstract Task<string> EnqueueImplAsync(T data, QueueOptions options = null);
+        public async Task<string> EnqueueAsync(T data, QueueOptions options = null) {
             await EnsureQueueCreatedAsync().AnyContext();
             
             LastEnqueueActivity = SystemClock.UtcNow;
-            return await EnqueueImplAsync(data).AnyContext();
+            return await EnqueueImplAsync(data, options).AnyContext();
         }
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
@@ -89,12 +89,12 @@ namespace Foundatio.Queues {
 
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
-        protected virtual async Task<bool> OnEnqueuingAsync(T data) {
+        protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueOptions options) {
             var enqueueing = Enqueuing;
             if (enqueueing == null)
                 return false;
 
-            var args = new EnqueuingEventArgs<T> { Queue = this, Data = data };
+            var args = new EnqueuingEventArgs<T> { Queue = this, Data = data, Options = options };
             await enqueueing.InvokeAsync(this, args).AnyContext();
             return !args.Cancel;
         }

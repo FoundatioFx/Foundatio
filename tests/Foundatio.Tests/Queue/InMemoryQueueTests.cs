@@ -82,6 +82,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public override Task CanUseQueueOptionsAsync() {
+            return base.CanUseQueueOptionsAsync();
+        }
+
+        [Fact]
         public override Task CanDiscardDuplicateQueueEntriesAsync() {
             return base.CanDiscardDuplicateQueueEntriesAsync();
         }
