@@ -1,12 +1,15 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
+    [SuppressMessage("ReSharper", "InconsistentlySynchronizedField")]
     public class StatsDMetricsClient : IMetricsClient {
         private readonly object _lock = new object();
         private Socket _socket;
@@ -50,25 +53,35 @@ namespace Foundatio.Metrics {
                 var data = Encoding.ASCII.GetBytes(metric);
 
                 EnsureSocket();
-                _socket?.SendTo(data, _endPoint);
+                lock (_lock) {
+                    _logger.LogTrace("Sending metric: {Metric}", metric);
+                    _socket.SendTo(data, _endPoint);
+                }
             } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "An error occurred while sending the metrics: {Message}", ex.Message);
-                ResetUdpClient();
+                _logger.LogError(ex, "An error occurred while sending the metrics: {Message}", ex.Message);
+                CloseSocket();
             }
         }
 
         private void EnsureSocket() {
+            _logger.LogTrace("EnsureSocket");
             if (_socket != null)
                 return;
 
             lock (_lock) {
-                if (_socket == null)
-                    _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                if (_socket != null)
+                    return;
+                
+                _logger.LogTrace("Creating socket");
+                _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    _socket.SendBufferSize = 0;
             }
         }
 
-        private void ResetUdpClient() {
+        private void CloseSocket() {
+            _logger.LogTrace("CloseSocket");
+            
             if (_socket == null)
                 return;
 
@@ -76,6 +89,7 @@ namespace Foundatio.Metrics {
                 if (_socket == null)
                     return;
 
+                _logger.LogTrace("Closing socket");
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
@@ -106,7 +120,7 @@ namespace Foundatio.Metrics {
         }
 
         public void Dispose() {
-            ResetUdpClient();
+            CloseSocket();
         }
     }
 }

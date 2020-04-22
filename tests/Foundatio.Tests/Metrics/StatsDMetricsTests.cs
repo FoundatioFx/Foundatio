@@ -19,8 +19,9 @@ namespace Foundatio.Tests.Metrics {
         private readonly TestUdpListener _listener;
 
         public StatsDMetricsTests(ITestOutputHelper output) : base(output) {
+            Log.MinimumLevel = LogLevel.Trace;
             _listener = new TestUdpListener("224.0.0.1", _port, Log);
-            _client = new StatsDMetricsClient(o => o.Server("224.0.0.1", _port).Prefix("test"));
+            _client = new StatsDMetricsClient(o => o.Server("224.0.0.1", _port).Prefix("test").LoggerFactory(Log));
         }
 
         [Fact]
@@ -104,6 +105,7 @@ namespace Foundatio.Tests.Metrics {
 
         public void Dispose() {
             _listener.Dispose();
+            _client.Dispose();
         }
     }
 }
