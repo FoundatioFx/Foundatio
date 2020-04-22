@@ -35,8 +35,8 @@ namespace Foundatio.Queues {
 
         protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
-        protected abstract Task<string> EnqueueImplAsync(T data, QueueOptions options = null);
-        public async Task<string> EnqueueAsync(T data, QueueOptions options = null) {
+        protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options = null);
+        public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null) {
             await EnsureQueueCreatedAsync().AnyContext();
             
             LastEnqueueActivity = SystemClock.UtcNow;
@@ -89,7 +89,7 @@ namespace Foundatio.Queues {
 
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
 
-        protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueOptions options) {
+        protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueEntryOptions options) {
             var enqueueing = Enqueuing;
             if (enqueueing == null)
                 return false;

@@ -94,9 +94,8 @@ namespace Foundatio.Tests.Queue {
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
-                }, new QueueOptions {
-                    CorrelationId = "123",
-                    ParentId = "456",
+                }, new QueueEntryOptions {
+                    CorrelationId = "123+456",
                     Properties = new DataDictionary {
                         { "hey", "now" }
                     }
@@ -106,8 +105,7 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal("123", workItem.CorrelationId);
-                Assert.Equal("456", workItem.ParentId);
+                Assert.Equal("123+456", workItem.CorrelationId);
                 Assert.Single(workItem.Properties);
                 Assert.Contains(workItem.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
                 if (_assertStats)
@@ -116,6 +114,7 @@ namespace Foundatio.Tests.Queue {
                 await workItem.AbandonAsync();
                 Assert.True(workItem.IsAbandoned);
                 Assert.False(workItem.IsCompleted);
+                Thread.Sleep(100);
 
                 if (_assertStats) {
                     var stats = await queue.GetQueueStatsAsync();
@@ -127,8 +126,7 @@ namespace Foundatio.Tests.Queue {
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                Assert.Equal("123", workItem.CorrelationId);
-                Assert.Equal("456", workItem.ParentId);
+                Assert.Equal("123+456", workItem.CorrelationId);
                 Assert.Equal(2, workItem.Attempts);
                 Assert.Single(workItem.Properties);
                 Assert.Contains(workItem.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");

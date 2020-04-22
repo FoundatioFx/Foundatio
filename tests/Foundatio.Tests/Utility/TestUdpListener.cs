@@ -11,12 +11,12 @@ namespace Foundatio.Tests.Utility {
     public class TestUdpListener : IDisposable {
         private readonly List<string> _messages = new List<string>();
         private UdpClient _listener;
-        private IPEndPoint _localIpEndPoint;
+        private readonly IPEndPoint _localIpEndPoint;
         private IPEndPoint _senderIpEndPoint;
         private readonly ILogger _logger;
         private Task _receiveTask;
         private CancellationTokenSource _cancellationTokenSource;
-        private object _lock = new object();
+        private readonly object _lock = new object();
 
         public TestUdpListener(string server, int port, ILoggerFactory loggerFactory) {
             _logger = loggerFactory.CreateLogger<TestUdpListener>();
@@ -42,8 +42,9 @@ namespace Foundatio.Tests.Utility {
 
                 _logger.LogInformation("StartListening");
                 _cancellationTokenSource = new CancellationTokenSource();
-                _listener = new UdpClient(_localIpEndPoint);
-                _listener.Client.ReceiveTimeout = 1000;
+                _listener = new UdpClient(_localIpEndPoint) {
+                    Client = { ReceiveTimeout = 1000 }
+                };
                 _receiveTask = Task.Factory.StartNew(() => ProcessMessages(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
             }
         }
@@ -58,15 +59,20 @@ namespace Foundatio.Tests.Utility {
                 }
 
                 try {
-                    var result = _listener.Receive(ref _senderIpEndPoint);
-                    if (result.Length == 0)
-                        continue;
-                    
-                    var message = Encoding.UTF8.GetString(result, 0, result.Length);
-                    _logger.LogInformation($"Message: {message}");
-                    _messages.Add(message);
+                    lock (_lock) {
+                        if (_listener == null)
+                            break;
+                        
+                        var result = _listener.Receive(ref _senderIpEndPoint);
+                        if (result.Length == 0)
+                            continue;
+
+                        string message = Encoding.UTF8.GetString(result, 0, result.Length);
+                        _logger.LogInformation("Received message: {Message}", message);
+                        _messages.Add(message);
+                    }
                 } catch (Exception ex) {
-                    _logger.LogError(ex, $"Error during ProcessMessages: {ex.Message}");
+                    _logger.LogError(ex, "Error during ProcessMessages: {Message}", ex.Message);
                 }
             }
         }
@@ -74,7 +80,7 @@ namespace Foundatio.Tests.Utility {
         public void StopListening() {
             try {
                 lock (_lock) {
-                    _logger.LogInformation("StopListening");
+                    _logger.LogInformation("Closing listener socket");
                     _listener?.Close();
                     _listener?.Dispose();
                     _listener = null;
@@ -83,7 +89,7 @@ namespace Foundatio.Tests.Utility {
                     _receiveTask = null;
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, $"Error during StopListening: {ex.Message}");
+                _logger.LogError(ex, "Error during StopListening: {Message}", ex.Message);
             }
         }
         
@@ -92,6 +98,7 @@ namespace Foundatio.Tests.Utility {
         }
 
         public void StopListening(int expectedMessageCount, CancellationToken cancellationToken) {
+            _logger.LogInformation($"StopListening called, waiting for {expectedMessageCount} expected message(s)");
             while (_messages.Count < expectedMessageCount) {
                 if (cancellationToken.IsCancellationRequested) {
                     _logger.LogInformation("Stopped listening due to CancellationToken.IsCancellationRequested");
@@ -105,7 +112,7 @@ namespace Foundatio.Tests.Utility {
                 Thread.Sleep(100);
             }
             
-            _logger.LogInformation($"StopListening Count={_messages.Count}");
+            _logger.LogInformation("StopListening Count={Count}", _messages.Count);
             StopListening();
         }
 
