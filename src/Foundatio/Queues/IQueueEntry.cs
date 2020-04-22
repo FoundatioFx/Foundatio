@@ -6,7 +6,6 @@ namespace Foundatio.Queues {
     public interface IQueueEntry<T> where T : class {
         string Id { get; }
         string CorrelationId { get; }
-        string ParentId { get; }
         DataDictionary Properties { get; }
         bool IsCompleted { get; }
         bool IsAbandoned { get; }
