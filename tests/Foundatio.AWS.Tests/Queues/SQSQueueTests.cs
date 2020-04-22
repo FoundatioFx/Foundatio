@@ -62,13 +62,13 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override async Task CanQueueAndDequeueWorkItemAsync() {
-            await base.CanQueueAndDequeueWorkItemAsync().ConfigureAwait(false);
+        public override Task CanQueueAndDequeueWorkItemAsync() {
+            return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override async Task CanUseQueueOptionsAsync() {
-            await base.CanUseQueueOptionsAsync().ConfigureAwait(false);
+        public override Task CanUseQueueOptionsAsync() {
+            return base.CanUseQueueOptionsAsync();
         }
 
         [Fact]
