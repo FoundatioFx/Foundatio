@@ -56,13 +56,14 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
+            string id = Guid.NewGuid().ToString("N");
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, options.Id);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
 
             if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
-            var entry = new QueueEntry<T>(options.Id, options?.CorrelationId, data.DeepClone(), this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, SystemClock.UtcNow, 0);
             entry.Properties.AddRange(options?.Properties);
             
             _queue.Enqueue(entry);
@@ -74,7 +75,7 @@ namespace Foundatio.Queues {
             await OnEnqueuedAsync(entry).AnyContext();
             if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
 
-            return options.Id;
+            return id;
         }
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
