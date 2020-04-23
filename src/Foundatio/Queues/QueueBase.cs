@@ -41,7 +41,6 @@ namespace Foundatio.Queues {
             
             LastEnqueueActivity = SystemClock.UtcNow;
             options ??= new QueueEntryOptions();
-            options.Id ??= Guid.NewGuid().ToString();
             
             return await EnqueueImplAsync(data, options).AnyContext();
         }
