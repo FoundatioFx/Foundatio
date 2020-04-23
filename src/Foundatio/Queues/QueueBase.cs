@@ -11,7 +11,7 @@ namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
-        protected readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
+        private readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private bool _isDisposed;
 
@@ -35,28 +35,29 @@ namespace Foundatio.Queues {
 
         protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
-        protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options = null);
+        protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);
         public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null) {
             await EnsureQueueCreatedAsync().AnyContext();
             
             LastEnqueueActivity = SystemClock.UtcNow;
+            options ??= new QueueEntryOptions();
+            options.Id ??= Guid.NewGuid().ToString();
+            
             return await EnqueueImplAsync(data, options).AnyContext();
         }
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
-                await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+            await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
                 
-                LastDequeueActivity = SystemClock.UtcNow;
-                return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
-            }
+            LastDequeueActivity = SystemClock.UtcNow;
+            return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
         }
 
-        public virtual async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
-            using (var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30))) {
-                return await DequeueAsync(timeoutCancellationTokenSource.Token).AnyContext();
-            }
+        public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
+            using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
+            return DequeueAsync(timeoutCancellationTokenSource.Token);
         }
 
         public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
