@@ -409,7 +409,7 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected async Task ResetAsync() {
+        protected virtual async Task ResetAsync() {
             var storage = GetStorage();
             if (storage == null)
                 return;
