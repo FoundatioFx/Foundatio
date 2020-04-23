@@ -47,16 +47,17 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-            await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
-                
-            LastDequeueActivity = SystemClock.UtcNow;
-            return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+            using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
+                await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+
+                LastDequeueActivity = SystemClock.UtcNow;
+                return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+            }
         }
 
         public virtual Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
-            using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
-            return DequeueAsync(timeoutCancellationTokenSource.Token);
+            using (var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30)))
+                return DequeueAsync(timeoutCancellationTokenSource.Token);
         }
 
         public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
