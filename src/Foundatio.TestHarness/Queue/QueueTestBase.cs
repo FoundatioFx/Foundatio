@@ -114,7 +114,7 @@ namespace Foundatio.Tests.Queue {
                 await workItem.AbandonAsync();
                 Assert.True(workItem.IsAbandoned);
                 Assert.False(workItem.IsCompleted);
-                Thread.Sleep(100);
+                await Task.Delay(100);
 
                 if (_assertStats) {
                     var stats = await queue.GetQueueStatsAsync();

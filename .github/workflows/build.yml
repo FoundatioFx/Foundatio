@@ -22,12 +22,12 @@ jobs:
       with:
         tag-prefix: v
     - name: Build
-      run: dotnet build --configuration Release
+      run: dotnet build Foundatio.sln --configuration Release
     - name: Run Tests
-      run: dotnet test --configuration Release --results-directory artifacts --no-build --logger:trx
+      run: dotnet test Foundatio.sln --configuration Release --results-directory artifacts --no-build --logger:trx
     - name: Package
       if: github.event_name != 'pull_request'
-      run: dotnet pack --configuration Release --no-build
+      run: dotnet pack Foundatio.sln --configuration Release --no-build
     - name: Publish CI Packages
       if: github.event_name != 'pull_request'
       run: |
