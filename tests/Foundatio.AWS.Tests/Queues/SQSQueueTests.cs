@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
-using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -17,15 +16,8 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            var section = Configuration.GetSection("AWS");
-            string accessKey = section["ACCESS_KEY_ID"];
-            string secretKey = section["SECRET_ACCESS_KEY"];
-            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
-                return null;
-
-            // TODO: Add RetryMultipliers
             var queue = new SQSQueue<SimpleWorkItem>(
-                o => o.Credentials(accessKey, secretKey)
+                o => o.ConnectionString($"serviceurl=http://localhost:4566")
                     .Name(_queueName)
                     .Retries(retries)
                     //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })

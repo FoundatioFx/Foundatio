@@ -9,7 +9,7 @@ namespace Foundatio.Queues {
         public Message UnderlyingMessage { get; }
 
         public SQSQueueEntry(Message message, T value, IQueue<T> queue)
-            : base(message.MessageId, message.CorrelationId(), message.ParentId(), value, queue, message.SentTimestamp(), message.ApproximateReceiveCount()) {
+            : base(message.MessageId, message.CorrelationId(), value, queue, message.SentTimestamp(), message.ApproximateReceiveCount()) {
 
             foreach (var property in message.MessageAttributes.Where(a => a.Key != "CorrelationId" && a.Key != "ParentId"))
                 Properties.Add(property.Key, property.Value.StringValue);

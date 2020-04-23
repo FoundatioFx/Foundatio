@@ -1,25 +1,19 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using Amazon;
+using Amazon.S3;
 using Foundatio.Storage;
-using Foundatio.Tests.Utility;
+using Foundatio.Tests.Storage;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Storage {
+namespace Foundatio.AWS.Tests.Storage {
     public class ScopedS3StorageTests : FileStorageTestsBase {
         public ScopedS3StorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            var section = Configuration.GetSection("AWS");
-            string accessKey = section["ACCESS_KEY_ID"];
-            string secretKey = section["SECRET_ACCESS_KEY"];
-            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
-                return null;
-
-            return new ScopedFileStorage(new S3FileStorage(
-                o => o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio-ci")
-                    .LoggerFactory(Log)), "scope");
+            return new S3FileStorage(
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket=foundatio-ci")
+                    .LoggerFactory(Log));
         }
 
         [Fact]
@@ -90,6 +84,18 @@ namespace Foundatio.Tests.Storage {
         [Fact]
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        }
+        
+        protected override async Task ResetAsync() {
+            var client = new AmazonS3Client(
+                new AmazonS3Config {
+                    RegionEndpoint = RegionEndpoint.USEast1,
+                    ServiceURL = "http://localhost:4566",
+                    ForcePathStyle = true
+                });
+            await client.PutBucketAsync("foundatio-ci");
+
+            await base.ResetAsync();
         }
     }
 }

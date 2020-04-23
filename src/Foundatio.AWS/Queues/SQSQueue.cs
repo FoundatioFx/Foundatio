@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.S3;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Foundatio.Extensions;
@@ -31,8 +32,18 @@ namespace Foundatio.Queues {
             // TODO: Flow through the options like retries and the like.
             _client = new Lazy<AmazonSQSClient>(() => {
                 var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
-                var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint() ?? RegionEndpoint.USEast1;
-                return new AmazonSQSClient(credentials, region);
+
+                if (String.IsNullOrEmpty(options.ServiceUrl)) {
+                    var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
+                    return new AmazonSQSClient(credentials, region);
+                }
+
+                return new AmazonSQSClient(
+                    credentials,
+                    new AmazonSQSConfig {
+                        RegionEndpoint = RegionEndpoint.USEast1,
+                        ServiceURL = options.ServiceUrl
+                    });
             });
         }
 
@@ -62,7 +73,7 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data, QueueOptions options = null) {
+        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
             if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
@@ -77,12 +88,6 @@ namespace Foundatio.Queues {
                     StringValue = options.CorrelationId
                 });
 
-            if (!String.IsNullOrEmpty(options?.ParentId))
-                message.MessageAttributes.Add("ParentId", new MessageAttributeValue {
-                    DataType = "String",
-                    StringValue = options.ParentId
-                });
-
             if (options?.Properties != null) {
                 foreach (var property in options.Properties)
                     message.MessageAttributes.Add(property.Key, new MessageAttributeValue {
@@ -94,7 +99,7 @@ namespace Foundatio.Queues {
             var response = await _client.Value.SendMessageAsync(message).AnyContext();
 
             Interlocked.Increment(ref _enqueuedCount);
-            var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, options?.ParentId, data, this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
             return response.MessageId;

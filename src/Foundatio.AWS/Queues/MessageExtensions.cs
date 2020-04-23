@@ -23,12 +23,5 @@ namespace Foundatio.Queues {
 
             return message.MessageAttributes.CorrelationId();
         }
-
-        public static string ParentId(this Message message) {
-            if (message?.Attributes == null)
-                return null;
-
-            return message.MessageAttributes.ParentId();
-        }
     }
 }

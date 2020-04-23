@@ -4,7 +4,6 @@ using Amazon.S3;
 namespace Foundatio.Storage {
     public class S3FileStorageConnectionStringBuilder : AmazonConnectionStringBuilder {
         private string _bucket;
-        private string _serviceUrl;
         private string _useChunkEncoding;
         private string _cannedAcl;
 
@@ -15,36 +14,27 @@ namespace Foundatio.Storage {
         }
 
         public string Bucket {
-            get => string.IsNullOrEmpty(_bucket) ? "storage" : _bucket;
+            get => String.IsNullOrEmpty(_bucket) ? "storage" : _bucket;
             set => _bucket = value;
         }
 
-        public string ServiceUrl {
-            get => _serviceUrl;
-            set => _serviceUrl = value;
-        }
-
         public bool? UseChunkEncoding {
-            get => string.IsNullOrEmpty(_useChunkEncoding) ? null : (bool?)Convert.ToBoolean(_useChunkEncoding);
+            get => String.IsNullOrEmpty(_useChunkEncoding) ? null : (bool?)Convert.ToBoolean(_useChunkEncoding);
             set => _useChunkEncoding = value.ToString();
         }
 
         public S3CannedACL CannedACL {
-            get => string.IsNullOrEmpty(_cannedAcl) ? null : S3CannedACL.FindValue(_cannedAcl);
+            get => String.IsNullOrEmpty(_cannedAcl) ? null : S3CannedACL.FindValue(_cannedAcl);
             set => _cannedAcl = value.Value;
         }
 
         protected override bool ParseItem(string key, string value) {
             if (String.Equals(key, "Bucket", StringComparison.OrdinalIgnoreCase)) {
-                Bucket = value;
+                _bucket = value;
                 return true;
             }
             if (String.Equals(key, "UseChunkEncoding", StringComparison.OrdinalIgnoreCase)) {
                 _useChunkEncoding = value;
-                return true;
-            }
-            if (String.Equals(key, "ServiceUrl", StringComparison.OrdinalIgnoreCase)) {
-                _serviceUrl = value;
                 return true;
             }
             if (String.Equals(key, "CannedACL", StringComparison.OrdinalIgnoreCase) ||
@@ -57,14 +47,14 @@ namespace Foundatio.Storage {
         }
 
         public override string ToString() {
-            var connectionString = base.ToString();
-            if (!string.IsNullOrEmpty(_bucket))
+            string connectionString = base.ToString();
+            if (!String.IsNullOrEmpty(_bucket))
                 connectionString += "Bucket=" + Bucket + ";";
-            if (!string.IsNullOrEmpty(_useChunkEncoding))
+            if (!String.IsNullOrEmpty(_useChunkEncoding))
                 connectionString += "UseChunkEncoding=" + UseChunkEncoding + ";";
-            if (!string.IsNullOrEmpty(_serviceUrl))
+            if (!String.IsNullOrEmpty(ServiceUrl))
                 connectionString += "ServiceUrl=" + ServiceUrl + ";";
-            if (!string.IsNullOrEmpty(_cannedAcl))
+            if (!String.IsNullOrEmpty(CannedACL))
                 connectionString += "CannedACL=" + CannedACL + ";";
 
             return connectionString;

@@ -11,6 +11,8 @@ namespace Foundatio {
 
         public string Region { get; set; }
 
+        public string ServiceUrl { get; set; }
+
         protected AmazonConnectionStringBuilder() { }
 
         protected AmazonConnectionStringBuilder(string connectionString) {
@@ -25,11 +27,10 @@ namespace Foundatio {
                 .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
                 .Where(kvp => kvp.Contains('='))
                 .Select(kvp => kvp.Split(new[] { '=' }, 2))) {
-                var optionKey = option[0].Trim();
-                var optionValue = option[1].Trim();
-                if (!ParseItem(optionKey, optionValue)) {
+                string optionKey = option[0].Trim();
+                string optionValue = option[1].Trim();
+                if (!ParseItem(optionKey, optionValue))
                     throw new ArgumentException($"The option '{optionKey}' cannot be recognized in connection string.", nameof(connectionString));
-                }
             }
         }
 
@@ -68,17 +69,25 @@ namespace Foundatio {
                 Region = value;
                 return true;
             }
+            if (String.Equals(key, "Service", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "Service Url", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(key, "ServiceUrl", StringComparison.OrdinalIgnoreCase)) {
+                ServiceUrl = value;
+                return true;
+            }
             return false;
         }
 
         public override string ToString() {
-            var connectionString = string.Empty;
-            if (!string.IsNullOrEmpty(AccessKey))
+            string connectionString = String.Empty;
+            if (!String.IsNullOrEmpty(AccessKey))
                 connectionString += "AccessKey=" + AccessKey + ";";
-            if (!string.IsNullOrEmpty(SecretKey))
+            if (!String.IsNullOrEmpty(SecretKey))
                 connectionString += "SecretKey=" + SecretKey + ";";
-            if (!string.IsNullOrEmpty(Region))
+            if (!String.IsNullOrEmpty(Region))
                 connectionString += "Region=" + Region + ";";
+            if (!String.IsNullOrEmpty(ServiceUrl))
+                connectionString += "ServiceUrl=" + ServiceUrl + ";";
             return connectionString;
         }
     }

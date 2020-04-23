@@ -7,6 +7,7 @@ namespace Foundatio.Queues {
         public string ConnectionString { get; set; }
         public AWSCredentials Credentials { get; set; }
         public RegionEndpoint Region { get; set; }
+        public string ServiceUrl { get; set; }
         public bool CanCreateQueue { get; set; } = true;
         public bool SupportDeadLetter { get; set; } = true;
         public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
@@ -100,6 +101,9 @@ namespace Foundatio.Queues {
 
             if (Target.Region == null)
                 Target.Region = connectionString.GetRegion();
+
+            if (String.IsNullOrEmpty(Target.ServiceUrl) && !String.IsNullOrEmpty(connectionString.ServiceUrl))
+                Target.ServiceUrl = connectionString.ServiceUrl;
 
             return Target;
         }

@@ -41,16 +41,6 @@ namespace Foundatio.Queues {
             return v.StringValue;
         }
 
-        public static string ParentId(this IDictionary<string, MessageAttributeValue> attributes) {
-            if (attributes == null)
-                return null;
-
-            if (!attributes.TryGetValue("ParentId", out var v))
-                return null;
-
-            return v.StringValue;
-        }
-
         public static string RedrivePolicy(this IDictionary<string, string> attributes) {
             if (attributes == null)
                 return null;
