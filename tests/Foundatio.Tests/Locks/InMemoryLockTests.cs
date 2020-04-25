@@ -7,6 +7,7 @@ using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using xRetry;
 
 namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase, IDisposable {
@@ -43,7 +44,7 @@ namespace Foundatio.Tests.Locks {
             return base.LockOneAtATimeAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task WillThrottleCallsAsync() {
             Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
             Log.SetLogLevel<InMemoryMessageBus>(LogLevel.Trace);

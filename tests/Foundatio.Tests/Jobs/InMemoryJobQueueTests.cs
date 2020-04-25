@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
+using xRetry;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -19,7 +20,7 @@ namespace Foundatio.Tests.Jobs {
             return base.CanRunMultipleQueueJobsAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task CanRunQueueJobWithLockFailAsync() {
             Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
 
