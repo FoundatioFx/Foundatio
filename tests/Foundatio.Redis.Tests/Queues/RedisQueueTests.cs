@@ -139,7 +139,7 @@ namespace Foundatio.Redis.Tests.Queues {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override async Task CanDequeueWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
             using (var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log })) {
