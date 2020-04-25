@@ -7,6 +7,7 @@ using Xunit.Abstractions;
 using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
+using xRetry;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase, IDisposable {
@@ -38,7 +39,7 @@ namespace Foundatio.Redis.Tests.Locks {
             return base.LockWillTimeoutAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task WillThrottleCallsAsync() {
             return base.WillThrottleCallsAsync();
         }
