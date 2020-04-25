@@ -570,20 +570,22 @@ namespace Foundatio.Redis.Tests.Queues {
             return queue;
         }
 
-        private async Task HandlerCommand1Async() {
+        private Task HandlerCommand1Async() {
             var q = CreateQueue<Command1>();
 
-            await q.StartWorkingAsync((entry, token) => {
+            return q.StartWorkingAsync((entry, token) =>
+            {
                 _logger.LogInformation($"{SystemClock.UtcNow:O}: Handler1\t{entry.Value.GetType().Name} {entry.Value.Id}");
                 Assert.InRange(entry.Value.Id, 100, 199);
                 return Task.CompletedTask;
             });
         }
 
-        private async Task HandlerCommand2Async() {
+        private Task HandlerCommand2Async() {
             var q = CreateQueue<Command2>();
 
-            await q.StartWorkingAsync((entry, token) => {
+            return q.StartWorkingAsync((entry, token) =>
+            {
                 _logger.LogInformation($"{SystemClock.UtcNow:O}: Handler2\t{entry.Value.GetType().Name} {entry.Value.Id}");
                 Assert.InRange(entry.Value.Id, 200, 299);
                 return Task.CompletedTask;

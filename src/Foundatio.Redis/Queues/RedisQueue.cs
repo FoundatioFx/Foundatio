@@ -167,12 +167,12 @@ namespace Foundatio.Queues {
             return String.Concat("q:", _options.Name, ":in");
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data) {
+        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
             string id = Guid.NewGuid().ToString("N");
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} enqueue item: {EntryId}", _options.Name, id);
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (!await OnEnqueuingAsync(data).AnyContext()) {
+            if (!await OnEnqueuingAsync(data, options).AnyContext()) {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Aborting enqueue item: {EntryId}", id);
                 return null;
             }
@@ -195,7 +195,7 @@ namespace Foundatio.Queues {
             }
 
             Interlocked.Increment(ref _enqueuedCount);
-            var entry = new QueueEntry<T>(id, data, this, now, 0);
+            var entry = new QueueEntry<T>(id, null, data, this, now, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
             if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
@@ -316,7 +316,7 @@ namespace Foundatio.Queues {
             var enqueuedTimeTicks = Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger);
             var attemptsValue = Run.WithRetriesAsync(() => _cache.GetAsync(GetAttemptsKey(workId), 0), logger: _logger);
             await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
-            return new QueueEntry<T>(workId, payload.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
+            return new QueueEntry<T>(workId, null, payload.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
         }
 
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
