@@ -21,6 +21,7 @@ namespace Foundatio.Queues {
         public DataDictionary Properties { get; } = new DataDictionary();
         public bool IsCompleted { get; private set; }
         public bool IsAbandoned { get; private set; }
+        public Type EntryType => Value.GetType();
         public T Value { get; set; }
         public DateTime EnqueuedTimeUtc { get; set; }
         public DateTime RenewedTimeUtc { get; set; }
@@ -29,11 +30,11 @@ namespace Foundatio.Queues {
         public TimeSpan ProcessingTime { get; set; }
         public TimeSpan TotalTime { get; set; }
 
-        void IQueueEntry<T>.MarkCompleted() {
+        void IQueueEntry.MarkCompleted() {
             IsCompleted = true;
         }
 
-        void IQueueEntry<T>.MarkAbandoned() {
+        void IQueueEntry.MarkAbandoned() {
             IsAbandoned = true;
         }
 
