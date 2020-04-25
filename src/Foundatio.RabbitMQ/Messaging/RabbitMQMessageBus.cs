@@ -18,7 +18,7 @@ namespace Foundatio.Messaging {
         private IConnection _subscriberClient;
         private IModel _publisherChannel;
         private IModel _subscriberChannel;
-        private bool _delayedExchangePluginEnabled = true;
+        private bool? _delayedExchangePluginEnabled;
 
         public RabbitMQMessageBus(RabbitMQMessageBusOptions options) : base(options) {
             if (String.IsNullOrEmpty(options.ConnectionString))
@@ -91,10 +91,10 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
-            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body.ToArray())) {
+            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body)) {
                 Type = envelope.BasicProperties.Type,
                 ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
-                Data = envelope.Body.ToArray()
+                Data = envelope.Body
             };
         }
 
@@ -145,14 +145,12 @@ namespace Foundatio.Messaging {
             byte[] data = SerializeMessageBody(messageType, message);
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
-            if (!_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (!_delayedExchangePluginEnabled.Value && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 var mappedType = GetMappedMessageType(messageType);
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
                 
-                AddDelayedMessageAsync(mappedType, message, delay.Value);
-
-                return Task.CompletedTask;
+                return AddDelayedMessageAsync(mappedType, message, delay.Value);
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
@@ -164,7 +162,7 @@ namespace Foundatio.Messaging {
                 basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
 
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
-            if (_delayedExchangePluginEnabled && delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (_delayedExchangePluginEnabled.Value && delay.HasValue && delay.Value > TimeSpan.Zero) {
                 // Its necessary to typecast long to int because RabbitMQ on the consumer side is reading the
                 // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
                 // and the data will be delivered immediately.
@@ -195,8 +193,8 @@ namespace Foundatio.Messaging {
         /// <returns>true if the delayed exchange was successfully declared. Which means plugin was installed.</returns>
         private bool CreateDelayedExchange(IModel model) {
             bool success = true;
-            if (!_delayedExchangePluginEnabled)
-                return true;
+            if (_delayedExchangePluginEnabled.HasValue)
+                return _delayedExchangePluginEnabled.Value;
 
             try {
                 // This exchange is a delayed exchange (fanout). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
@@ -207,12 +205,12 @@ namespace Foundatio.Messaging {
             } catch (OperationInterruptedException ex) {
                 if (ex.ShutdownReason.ReplyCode == 503) {
                     if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation(ex, "Not able to create x-delayed-type exchange");
-                    _delayedExchangePluginEnabled = false;
                     success = false;
                 }
             }
 
-            return success;
+            _delayedExchangePluginEnabled = success;
+            return _delayedExchangePluginEnabled.Value;
         }
 
         private void CreateRegularExchange(IModel model) {

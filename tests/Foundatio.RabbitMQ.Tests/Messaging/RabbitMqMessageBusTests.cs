@@ -12,7 +12,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
         protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             return new RabbitMQMessageBus(o => {
-                o.ConnectionString("amqp://localhost");
+                o.ConnectionString("amqp://localhost:5672");
                 o.LoggerFactory(Log);
 
                 config?.Invoke(o.Target);
