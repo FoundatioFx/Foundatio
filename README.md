@@ -13,7 +13,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
 
-Includes implementations in Redis, Azure, AWS and in memory (for development). 
+Includes implementations in Redis, Azure, AWS, RabbitMQ and in memory (for development). 
 
 ## Why Foundatio?
 When building several big cloud applications we found a lack of great solutions (that's not to say there isn't solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
@@ -302,7 +302,6 @@ We provide five implementations that derive from the [`IMetricsClient` interface
 4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 4. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
 5. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
-
 
 We recommend using all of the `IMetricsClient` implementations as singletons.
 
