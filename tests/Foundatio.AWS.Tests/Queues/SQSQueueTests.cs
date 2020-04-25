@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
-using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -11,23 +10,14 @@ namespace Foundatio.AWS.Tests.Queues {
     public class SQSQueueTests : QueueTestBase {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
-        public SQSQueueTests(ITestOutputHelper output) : base(output) {}
+        public SQSQueueTests(ITestOutputHelper output) : base(output) {
+            // SQS queue stats are approximate and unreliable
+            _assertStats = false;
+        }
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
-            // Don't run this as part of the tests yet
-            return null;
-
-#pragma warning disable CS0162 // Unreachable code detected
-            var section = Configuration.GetSection("AWS");
-#pragma warning restore CS0162 // Unreachable code detected
-            string accessKey = section["ACCESS_KEY_ID"];
-            string secretKey = section["SECRET_ACCESS_KEY"];
-            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
-                return null;
-
-            // TODO: Add RetryMultipliers
             var queue = new SQSQueue<SimpleWorkItem>(
-                o => o.Credentials(accessKey, secretKey)
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                     .Name(_queueName)
                     .Retries(retries)
                     //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
@@ -64,8 +54,13 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override async Task CanQueueAndDequeueWorkItemAsync() {
-            await base.CanQueueAndDequeueWorkItemAsync().ConfigureAwait(false);
+        public override Task CanQueueAndDequeueWorkItemAsync() {
+            return base.CanQueueAndDequeueWorkItemAsync();
+        }
+
+        [Fact]
+        public override Task CanUseQueueOptionsAsync() {
+            return base.CanUseQueueOptionsAsync();
         }
 
         [Fact]
@@ -113,7 +108,7 @@ namespace Foundatio.AWS.Tests.Queues {
             return base.CanAutoCompleteWorkerAsync();
         }
 
-        [Fact]
+        [Fact(Skip = "Doesn't work well on SQS")]
         public override Task CanHaveMultipleQueueInstancesAsync() {
             return base.CanHaveMultipleQueueInstancesAsync();
         }

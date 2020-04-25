@@ -15,24 +15,18 @@ namespace Foundatio.AWS.Tests.Metrics {
         }
 
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
-            // Don't run this as part of the tests because it doesn't work reliably since CloudWatch can take a long time for the stats to show up.
-            // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.
+            // Don't run this as part of the tests because it doesn't work reliably since CloudWatch can take a long time for the stats to show up.	
+            // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.	
             return null;
-
+            
 #pragma warning disable CS0162 // Unreachable code detected
-            var section = Configuration.GetSection("AWS");
-#pragma warning restore CS0162 // Unreachable code detected
-            string accessKey = section["ACCESS_KEY_ID"];
-            string secretKey = section["SECRET_ACCESS_KEY"];
-            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
-                return null;
-
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
-            return new CloudWatchMetricsClient(o =>
-                o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio;Test Id={id}")
+            return new CloudWatchMetricsClient(
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;Test Id={id}")
                     .Prefix("foundatio/tests/metrics")
                     .Buffered(buffered)
                     .LoggerFactory(Log));
+#pragma warning restore CS0162 // Unreachable code detected
         }
 
         [Fact]

@@ -7,11 +7,13 @@ namespace Foundatio.Queues {
         public string ConnectionString { get; set; }
         public AWSCredentials Credentials { get; set; }
         public RegionEndpoint Region { get; set; }
+        public string ServiceUrl { get; set; }
         public bool CanCreateQueue { get; set; } = true;
         public bool SupportDeadLetter { get; set; } = true;
         public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
         public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
-        private static Random _random = new Random();
+        
+        private static readonly Random _random = new Random();
         public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => {
             return TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(_random.Next(0, 100));
         };
@@ -99,6 +101,9 @@ namespace Foundatio.Queues {
 
             if (Target.Region == null)
                 Target.Region = connectionString.GetRegion();
+
+            if (String.IsNullOrEmpty(Target.ServiceUrl) && !String.IsNullOrEmpty(connectionString.ServiceUrl))
+                Target.ServiceUrl = connectionString.ServiceUrl;
 
             return Target;
         }

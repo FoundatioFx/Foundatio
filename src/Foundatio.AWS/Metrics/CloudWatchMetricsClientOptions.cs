@@ -9,6 +9,7 @@ namespace Foundatio.Metrics {
         public string ConnectionString { get; set; }
         public AWSCredentials Credentials { get; set; }
         public RegionEndpoint Region { get; set; }
+        public string ServiceUrl { get; set; }
         public string Namespace { get; set; }
         public List<Dimension> Dimensions { get; set; } = new List<Dimension>();
     }
@@ -96,6 +97,9 @@ namespace Foundatio.Metrics {
 
             if (Target.Region == null)
                 Target.Region = connectionString.GetRegion();
+
+            if (String.IsNullOrEmpty(Target.ServiceUrl) && !String.IsNullOrEmpty(connectionString.ServiceUrl))
+                Target.ServiceUrl = connectionString.ServiceUrl;
 
             if (String.IsNullOrEmpty(Target.Namespace) && !String.IsNullOrEmpty(connectionString.Namespace))
                 Target.Namespace = connectionString.Namespace;

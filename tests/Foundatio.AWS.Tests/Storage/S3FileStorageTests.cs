@@ -2,25 +2,19 @@
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.S3;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Tests.Utility;
 
 namespace Foundatio.AWS.Tests.Storage {
     public class S3FileStorageTests : FileStorageTestsBase {
         public S3FileStorageTests(ITestOutputHelper output) : base(output) { }
 
         protected override IFileStorage GetStorage() {
-            var section = Configuration.GetSection("AWS");
-            string accessKey = section["ACCESS_KEY_ID"];
-            string secretKey = section["SECRET_ACCESS_KEY"];
-            if (String.IsNullOrEmpty(accessKey) || String.IsNullOrEmpty(secretKey))
-                return null;
-
             return new S3FileStorage(
-                o => o.ConnectionString($"id={accessKey};secret={secretKey};region={RegionEndpoint.USEast1.SystemName};bucket=foundatio")
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket=foundatio-ci;AccessKey=xxx;SecretKey=xxx")
                     .LoggerFactory(Log));
         }
 
@@ -107,6 +101,19 @@ namespace Foundatio.AWS.Tests.Storage {
         [Fact]
         public override Task WillRespectStreamOffsetAsync() {
             return base.WillRespectStreamOffsetAsync();
+        }
+        
+        protected override async Task ResetAsync() {
+            var client = new AmazonS3Client(
+                new BasicAWSCredentials("xxx", "xxx"),
+                new AmazonS3Config {
+                    RegionEndpoint = RegionEndpoint.USEast1,
+                    ServiceURL = "http://localhost:4566",
+                    ForcePathStyle = true
+                });
+            await client.PutBucketAsync("foundatio-ci");
+
+            await base.ResetAsync();
         }
     }
 }

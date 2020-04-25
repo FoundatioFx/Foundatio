@@ -33,7 +33,7 @@ namespace Foundatio.Storage {
 
             var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
-            if (string.IsNullOrEmpty(options.ServiceUrl)) {
+            if (String.IsNullOrEmpty(options.ServiceUrl)) {
                 var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
                 _client = new AmazonS3Client(credentials, region);
             } else {
