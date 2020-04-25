@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Metrics;
+using xRetry;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -27,7 +28,7 @@ namespace Foundatio.Redis.Tests.Metrics {
             return base.CanIncrementCounterAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task CanWaitForCounterAsync() {
             return base.CanWaitForCounterAsync();
         }
