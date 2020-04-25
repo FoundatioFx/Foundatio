@@ -17,6 +17,7 @@ namespace Foundatio.AWS.Tests.Metrics {
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
             return null;
             
+            // ReSharper disable once HeuristicUnreachableCode
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
             return new CloudWatchMetricsClient(
                 o => o.ConnectionString($"serviceurl=http://localhost:4566;Test Id={id}")

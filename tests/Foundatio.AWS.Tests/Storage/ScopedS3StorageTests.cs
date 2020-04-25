@@ -1,5 +1,6 @@
 ﻿using System.Threading.Tasks;
 using Amazon;
+using Amazon.Runtime;
 using Amazon.S3;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
@@ -88,6 +89,7 @@ namespace Foundatio.AWS.Tests.Storage {
         
         protected override async Task ResetAsync() {
             var client = new AmazonS3Client(
+                new BasicAWSCredentials("xxx", "xxx"),
                 new AmazonS3Config {
                     RegionEndpoint = RegionEndpoint.USEast1,
                     ServiceURL = "http://localhost:4566",
