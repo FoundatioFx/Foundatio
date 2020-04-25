@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Utility;
+using xRetry;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -22,7 +23,7 @@ namespace Foundatio.Tests.Metrics {
             return base.CanIncrementCounterAsync();
         }
 
-        [Fact]
+        [RetryFact]
         public override Task CanWaitForCounterAsync() {
             using (TestSystemClock.Install()) {
                 return base.CanWaitForCounterAsync();
