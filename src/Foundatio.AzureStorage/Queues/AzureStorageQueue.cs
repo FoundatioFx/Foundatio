@@ -60,22 +60,22 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data) {
-            if (!await OnEnqueuingAsync(data).AnyContext())
+        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
+            if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = CloudQueueMessage.CreateCloudQueueMessageFromByteArray(_serializer.SerializeToBytes(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
 
-            var entry = new QueueEntry<T>(message.Id, data, this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(message.Id, null, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
 
             return message.Id;
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null).AnyContext();
+            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, linkedCancellationToken).AnyContext();
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             
             if (message == null) {
@@ -92,7 +92,7 @@ namespace Foundatio.Queues {
                             await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
 
-                    message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout,  null, null).AnyContext();
+                    message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, linkedCancellationToken).AnyContext();
                 }
 
                 sw.Stop();

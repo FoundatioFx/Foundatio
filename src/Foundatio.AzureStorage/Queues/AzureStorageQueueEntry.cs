@@ -6,7 +6,7 @@ namespace Foundatio.Queues {
         public CloudQueueMessage UnderlyingMessage { get; }
 
         public AzureStorageQueueEntry(CloudQueueMessage message, T value, IQueue<T> queue)
-            : base(message.Id, value, queue, message.InsertionTime.GetValueOrDefault().UtcDateTime, message.DequeueCount) {
+            : base(message.Id, null, value, queue, message.InsertionTime.GetValueOrDefault().UtcDateTime, message.DequeueCount) {
 
             UnderlyingMessage = message;
         }
