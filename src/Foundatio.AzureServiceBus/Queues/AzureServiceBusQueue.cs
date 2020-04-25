@@ -102,17 +102,23 @@ namespace Foundatio.Queues {
             throw new NotImplementedException();
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data) {
-            if (!await OnEnqueuingAsync(data).AnyContext())
+        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
+            if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
             var stream = new MemoryStream();
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
-            await _queueSender.SendAsync(brokeredMessage).AnyContext(); // TODO: See if there is a way to send a batch of messages.
+            brokeredMessage.CorrelationId = options.CorrelationId;
+            foreach (var property in options.Properties)
+                brokeredMessage.UserProperties[property.Key] = property.Value;
+            
+            await _queueSender.SendAsync(brokeredMessage).AnyContext();
 
-            var entry = new QueueEntry<T>(brokeredMessage.MessageId, data, this, SystemClock.UtcNow, 0);
+            var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, data, this, SystemClock.UtcNow, 0);
+            foreach (var property in brokeredMessage.UserProperties)
+                entry.Properties.Add(property.Key, property.Value);
             await OnEnqueuedAsync(entry).AnyContext();
 
             return brokeredMessage.MessageId;
@@ -121,8 +127,7 @@ namespace Foundatio.Queues {
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
-
-            // TODO: How do you unsubscribe from this or bail out on queue disposed?
+            
             _logger.LogTrace("WorkerLoop Start {_options.Name}", _options.Name);
             _queueReceiver.RegisterMessageHandler(async (msg, cancellationToken1) => {
                 _logger.LogTrace("WorkerLoop Signaled {_options.Name}", _options.Name);
@@ -152,7 +157,7 @@ namespace Foundatio.Queues {
 
         public override async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
             if (!QueueIsCreated)
-            await EnsureQueueCreatedAsync().AnyContext();
+                await EnsureQueueCreatedAsync().AnyContext();
 
             var msg = await _queueReceiver.ReceiveAsync((timeout == null || timeout.Value.Ticks == 0) ? TimeSpan.FromSeconds(5) : timeout.Value).AnyContext();
             return await HandleDequeueAsync(msg).AnyContext();
@@ -200,7 +205,9 @@ namespace Foundatio.Queues {
 
             var message = _serializer.Deserialize<T>(brokeredMessage.Body);
             Interlocked.Increment(ref _dequeuedCount);
-            var entry = new QueueEntry<T>(brokeredMessage.SystemProperties.LockToken.ToString(), message, this, brokeredMessage.SystemProperties.EnqueuedTimeUtc, brokeredMessage.SystemProperties.DeliveryCount);
+            var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, message, this, brokeredMessage.SystemProperties.EnqueuedTimeUtc, brokeredMessage.SystemProperties.DeliveryCount);
+            foreach (var property in brokeredMessage.UserProperties)
+                entry.Properties.Add(property.Key, property.Value);
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
         }
