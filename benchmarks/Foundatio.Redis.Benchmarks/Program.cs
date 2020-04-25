@@ -6,8 +6,8 @@ using Foundatio.Benchmarks.Caching;
 using Foundatio.Benchmarks.Queues;
 
 namespace Foundatio.Benchmarks {
-    class Program {
-        static void Main(string[] args) {
+    public class Program {
+        public static void Main(string[] args) {
             var summary = BenchmarkRunner.Run<QueueBenchmarks>();
             Console.WriteLine(summary.ToString());
 
@@ -20,9 +20,9 @@ namespace Foundatio.Benchmarks {
         }
     }
 
-    class BenchmarkConfig : ManualConfig {
+    public class BenchmarkConfig : ManualConfig {
         public BenchmarkConfig() {
-            Add(Job.Default.WithWarmupCount(1).WithIterationCount(1));
+            AddJob(Job.Default.WithWarmupCount(1).WithIterationCount(1));
         }
     }
 }

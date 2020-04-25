@@ -1,4 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
   </ItemGroup>
