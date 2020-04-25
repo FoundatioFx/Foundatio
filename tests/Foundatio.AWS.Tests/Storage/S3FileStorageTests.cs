@@ -13,7 +13,7 @@ namespace Foundatio.AWS.Tests.Storage {
 
         protected override IFileStorage GetStorage() {
             return new S3FileStorage(
-                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket=foundatio-ci")
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket=foundatio-ci;AccessKey=xxx;SecretKey=xxx")
                     .LoggerFactory(Log));
         }
 

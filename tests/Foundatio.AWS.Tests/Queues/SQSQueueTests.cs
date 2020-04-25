@@ -17,7 +17,7 @@ namespace Foundatio.AWS.Tests.Queues {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new SQSQueue<SimpleWorkItem>(
-                o => o.ConnectionString($"serviceurl=http://localhost:4566")
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                     .Name(_queueName)
                     .Retries(retries)
                     //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
