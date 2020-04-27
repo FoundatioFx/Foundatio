@@ -28,6 +28,29 @@ namespace Foundatio.DataProtection {
 
             return builder;
         }
+        
+        /// <summary>
+        /// Configures the data protection system to persist keys to file storage.
+        /// </summary>
+        /// <param name="builder">The builder instance to modify.</param>
+        /// <param name="storageFactory">The storage factory to use.</param>
+        /// <param name="loggerFactory">The logger factory to use.</param>
+        /// <returns>The value <paramref name="builder"/>.</returns>
+        public static IDataProtectionBuilder PersistKeysToFileStorage(this IDataProtectionBuilder builder, Func<IServiceProvider, IFileStorage> storageFactory, Func<IServiceProvider, ILoggerFactory> loggerFactory = null) {
+            if (builder == null)
+                throw new ArgumentNullException(nameof(builder));
+
+            builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services => {
+                var storage = storageFactory(services);
+                if (storage == null)
+                    throw new ArgumentNullException(nameof(storage));
+                
+                var logger = loggerFactory?.Invoke(services);
+                return new ConfigureOptions<KeyManagementOptions>(options => options.XmlRepository = new FoundatioStorageXmlRepository(storage, logger));
+            });
+
+            return builder;
+        }
 
         /// <summary>
         /// Configures the data protection system to persist keys to file storage.
