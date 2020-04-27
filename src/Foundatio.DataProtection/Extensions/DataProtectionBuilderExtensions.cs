@@ -34,19 +34,18 @@ namespace Foundatio.DataProtection {
         /// </summary>
         /// <param name="builder">The builder instance to modify.</param>
         /// <param name="storageFactory">The storage factory to use.</param>
-        /// <param name="loggerFactory">The logger factory to use.</param>
         /// <returns>The value <paramref name="builder"/>.</returns>
-        public static IDataProtectionBuilder PersistKeysToFileStorage(this IDataProtectionBuilder builder, Func<IServiceProvider, IFileStorage> storageFactory, Func<IServiceProvider, ILoggerFactory> loggerFactory = null) {
+        public static IDataProtectionBuilder PersistKeysToFileStorage(this IDataProtectionBuilder builder, Func<IServiceProvider, IFileStorage> storageFactory) {
             if (builder == null)
                 throw new ArgumentNullException(nameof(builder));
 
             builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services => {
-                var storage = storageFactory(services);
+                var storage = storageFactory?.Invoke(services);
                 if (storage == null)
-                    throw new ArgumentNullException(nameof(storage));
+                    throw new ArgumentNullException(nameof(storageFactory));
                 
-                var logger = loggerFactory?.Invoke(services);
-                return new ConfigureOptions<KeyManagementOptions>(options => options.XmlRepository = new FoundatioStorageXmlRepository(storage, logger));
+                var loggerFactory = services.GetService<ILoggerFactory>();
+                return new ConfigureOptions<KeyManagementOptions>(options => options.XmlRepository = new FoundatioStorageXmlRepository(storage, loggerFactory));
             });
 
             return builder;
@@ -62,7 +61,7 @@ namespace Foundatio.DataProtection {
                 throw new ArgumentNullException(nameof(builder));
 
             builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services => {
-                var storage = services.GetService<IFileStorage>();
+                var storage = services.GetRequiredService<IFileStorage>();
                 var loggerFactory = services.GetService<ILoggerFactory>();
 
                 return new ConfigureOptions<KeyManagementOptions>(options => options.XmlRepository = new FoundatioStorageXmlRepository(storage, loggerFactory));
