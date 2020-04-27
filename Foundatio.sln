@@ -43,6 +43,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Extensions.Hostin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.MessagePack", "src\Foundatio.MessagePack\Foundatio.MessagePack.csproj", "{1D0CF7B3-D0B3-4739-A280-5C0822169E08}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.DataProtection", "src\Foundatio.DataProtection\Foundatio.DataProtection.csproj", "{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -209,6 +211,18 @@ Global
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Release|x64.Build.0 = Release|Any CPU
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Release|x86.ActiveCfg = Release|Any CPU
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Release|x86.Build.0 = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|x64.Build.0 = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Debug|x86.Build.0 = Debug|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|x64.ActiveCfg = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|x64.Build.0 = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|x86.ActiveCfg = Release|Any CPU
+		{BD5CB540-DFF1-4E5F-8532-7B92935F93D4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
