@@ -8,6 +8,7 @@ using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using xRetry;
 
 namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {
@@ -29,7 +30,7 @@ namespace Foundatio.Tests.Utility {
             }
         }
 
-        [Fact]
+        [RetryFact]
         public Task CanRunAndScheduleConcurrently() {
             return CanRunConcurrentlyAsync();
         }
