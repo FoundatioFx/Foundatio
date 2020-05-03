@@ -13,7 +13,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
 
-Includes implementations in Redis, Azure, AWS and in memory (for development).
+Includes implementations in Redis, Azure, AWS, RabbitMQ and in memory (for development). 
 
 ## Why Foundatio?
 When building several big cloud applications we found a lack of great solutions (that's not to say there isn't solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
@@ -30,7 +30,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
 - [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
-- [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Queues
+- [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Messaging
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
 - [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
 - [SshNet](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) - Storage
@@ -75,6 +75,7 @@ Queues offer First In, First Out (FIFO) message delivery. We provide four differ
 2. [RedisQueue](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
 3. [AzureServiceBusQueue](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
 4. [AzureStorageQueue](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
+4. [SQSQueue](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Queues/SQSQueue.cs): An AWS SQS implementation.
 
 #### Sample
 
@@ -110,7 +111,7 @@ var lock = await locker.AcquireAsync("test");
 // ...
 await lock.ReleaseAsync();
 
-ILockProvider throttledLocker = new ThrottledLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
+ILockProvider throttledLocker = new ThrottlingLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
 var throttledLock = await throttledLocker.AcquireAsync("test");
 // ...
 await throttledLock.ReleaseAsync();
@@ -300,6 +301,7 @@ We provide five implementations that derive from the [`IMetricsClient` interface
 3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
 4. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
+5. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons.
 
