@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock {
-    public class ThrottlingLockProvider : ILockProvider {
+    public class ThrottlingLockProvider : ILockProvider, IHaveLogger {
         private readonly ICacheClient _cacheClient;
         private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
         private readonly int _maxHitsPerPeriod;
@@ -25,6 +25,8 @@ namespace Foundatio.Lock {
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
+        
+        ILogger IHaveLogger.Logger => _logger;
 
         public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);

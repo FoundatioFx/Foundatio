@@ -1,9 +1,11 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock {
-    public class ScopedLockProvider : ILockProvider {
+    public class ScopedLockProvider : ILockProvider, IHaveLogger {
         private string _keyPrefix;
         private bool _isLocked;
         private readonly object _lock = new object();
@@ -17,8 +19,8 @@ namespace Foundatio.Lock {
         }
 
         public ILockProvider UnscopedLockProvider { get; }
-
         public string Scope { get; private set; }
+        ILogger IHaveLogger.Logger => UnscopedLockProvider.GetLogger();
 
         public void SetScope(string scope) {
             if (_isLocked)

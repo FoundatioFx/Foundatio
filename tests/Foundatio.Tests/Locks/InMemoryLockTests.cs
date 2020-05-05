@@ -44,6 +44,11 @@ namespace Foundatio.Tests.Locks {
             return base.LockOneAtATimeAsync();
         }
 
+        [Fact]
+        public override Task CanAcquireMultipleResources() {
+            return base.CanAcquireMultipleResources();
+        }
+
         [RetryFact]
         public override Task WillThrottleCallsAsync() {
             Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);

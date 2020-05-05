@@ -26,7 +26,7 @@ namespace Foundatio.Jobs {
         public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null) {
             int iterations = 0;
             string jobName = job.GetType().Name;
-            var logger = job.GetLogger() ?? NullLogger.Instance;
+            var logger = job.GetLogger();
 
             using (logger.BeginScope(new Dictionary<string, object> {{ "job", jobName }})) {
                 if (logger.IsEnabled(LogLevel.Information))

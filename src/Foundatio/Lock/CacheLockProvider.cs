@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock {
-    public class CacheLockProvider : ILockProvider {
+    public class CacheLockProvider : ILockProvider, IHaveLogger {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
         private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new ConcurrentDictionary<string, ResetEventWithRefCount>();
@@ -24,6 +24,8 @@ namespace Foundatio.Lock {
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
         }
+
+        ILogger IHaveLogger.Logger => _logger;
 
         private async Task EnsureTopicSubscriptionAsync() {
             if (_isSubscribed)
