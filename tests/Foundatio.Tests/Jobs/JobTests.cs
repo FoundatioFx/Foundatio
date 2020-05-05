@@ -10,6 +10,7 @@ using Foundatio.Logging.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using xRetry;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -105,7 +106,7 @@ namespace Foundatio.Tests.Jobs {
             }
         }
 
-        [Fact]
+        [RetryFact]
         public async Task CanRunJobsWithLocks() {
             var job = new WithLockingJob(Log);
             Assert.Equal(0, job.RunCount);
