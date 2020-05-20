@@ -107,9 +107,9 @@ It's worth noting that all lock providers take a `ICacheClient`. This allows you
 using Foundatio.Lock;
 
 ILockProvider locker = new CacheLockProvider(new InMemoryCacheClient(), new InMemoryMessageBus());
-var lock = await locker.AcquireAsync("test");
+var testLock = await locker.AcquireAsync("test");
 // ...
-await lock.ReleaseAsync();
+await testLock.ReleaseAsync();
 
 ILockProvider throttledLocker = new ThrottlingLockProvider(new InMemoryCacheClient(), 1, TimeSpan.FromMinutes(1));
 var throttledLock = await throttledLocker.AcquireAsync("test");
