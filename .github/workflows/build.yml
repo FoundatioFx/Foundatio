@@ -24,7 +24,7 @@ jobs:
     - name: Build
       run: dotnet build Foundatio.sln --configuration Release
     - name: Run Tests
-      run: dotnet test Foundatio.sln --configuration Release --results-directory artifacts --no-build --logger:trx
+      run: dotnet test Foundatio.sln --configuration Release --no-build
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack Foundatio.sln --configuration Release --no-build
@@ -34,8 +34,7 @@ jobs:
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
           
-          # GPR
-          # workaround for GPR push issue
+          # GPR - workaround for GPR not working with API key
           echo "Pushing $package to GPR..."
           STATUSCODE=$(curl -sX --write-out "%{http_code}" PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/)
           if test $STATUSCODE -ne 200; then
@@ -54,8 +53,3 @@ jobs:
           echo "${0##*/}": Pushing $package...
           dotnet nuget push $package --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_KEY }} --skip-duplicate
         done
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v2
-      with:
-        name: artifacts
-        path: artifacts
