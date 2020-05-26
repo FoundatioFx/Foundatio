@@ -12,18 +12,18 @@ namespace Foundatio.Metrics {
             _metrics = metrics;
         }
 
-
         public void Counter(string name, int value = 1) {
-            _metrics.Provider.Counter.Instance(new CounterOptions {Name = name}).Increment(value);
+            _metrics.Provider.Counter.Instance(new CounterOptions { Name = name }).Increment(value);
         }
 
         public void Gauge(string name, double value) {
-            _metrics.Provider.Gauge.Instance(new GaugeOptions {Name = name}).SetValue(value);
+            _metrics.Provider.Gauge.Instance(new GaugeOptions { Name = name }).SetValue(value);
         }
 
         public void Timer(string name, int milliseconds) {
-            _metrics.Provider.Timer.Instance(new TimerOptions {Name = name}).Record(milliseconds, TimeUnit.Milliseconds);
+            _metrics.Provider.Timer.Instance(new TimerOptions { Name = name }).Record(milliseconds, TimeUnit.Milliseconds);
         }
+
         public void Dispose() { }
     }
 }
