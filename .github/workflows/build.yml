@@ -36,9 +36,12 @@ jobs:
           
           # GPR
           # workaround for GPR push issue
+          echo "Pushing $package to GPR..."
           STATUSCODE=$(curl -sX --write-out "%{http_code}" PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/)
           if test $STATUSCODE -ne 200; then
-              echo "Failed to publish NuGet package $package to GPR"
+              echo "Failed to push"
+          else
+              echo "Your package was pushed."
           fi
 
           # feedz (remove once GPR supports anonymous access)
