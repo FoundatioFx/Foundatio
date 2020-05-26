@@ -91,10 +91,10 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
-            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body)) {
+            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body.ToArray())) {
                 Type = envelope.BasicProperties.Type,
                 ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
-                Data = envelope.Body
+                Data = envelope.Body.ToArray()
             };
         }
 
@@ -172,9 +172,11 @@ namespace Foundatio.Messaging {
             } else {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
             }
-
+            
             // The publication occurs with mandatory=false
-            _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
+            lock (_publisherChannel)
+                _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
+            
             return Task.CompletedTask;
         }
 
