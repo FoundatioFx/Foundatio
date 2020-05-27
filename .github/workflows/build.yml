@@ -22,7 +22,9 @@ jobs:
         version=$(minver --tag-prefix v)
         echo "::set-env name=MINVERVERSIONOVERRIDE::$version"
     - name: Build
-      run: dotnet build Foundatio.sln --configuration Release
+      run: |
+        echo $MINVERVERSIONOVERRIDE
+        dotnet build Foundatio.sln --configuration Release
     - name: Run Tests
       run: dotnet test Foundatio.sln --configuration Release --no-build
     - name: Package
