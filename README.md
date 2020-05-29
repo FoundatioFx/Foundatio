@@ -2,7 +2,7 @@
 
 [![Build status](https://github.com/FoundatioFx/Foundatio/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.svg?style=flat)](https://www.nuget.org/packages/Foundatio/)
-![Discord](https://img.shields.io/discord/715744504891703319)
+[![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/2Bn8Dm)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Caching](#caching)
