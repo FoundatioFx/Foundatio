@@ -2,7 +2,7 @@
 
 [![Build status](https://github.com/FoundatioFx/Foundatio.AzureStorage/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.AzureStorage/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureStorage.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureStorage/)
-[![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/2Bn8Dm)
+[![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/6HxgFCx)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Caching](#caching)
@@ -37,7 +37,7 @@ To summarize, if you want pain free development and testing while allowing your 
 
 ## Getting Started (Development)
 
-[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/FoundatioFx/Foundatio/issues/new) or join our [Discord](https://discord.gg/2Bn8Dm) chat room. We’re always here to help if you have any questions!
+[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/FoundatioFx/Foundatio/issues/new) or join our [Discord](https://discord.gg/6HxgFCx) chat room. We’re always here to help if you have any questions!
 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
