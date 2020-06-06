@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using Xunit;

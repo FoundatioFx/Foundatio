@@ -6,7 +6,7 @@ using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Logging.Xunit {
+namespace Foundatio.Xunit {
     internal class TestLogger : ILogger {
         private readonly TestLoggerFactory _loggerFactory;
         private readonly string _categoryName;

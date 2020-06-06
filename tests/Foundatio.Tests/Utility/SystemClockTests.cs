@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;

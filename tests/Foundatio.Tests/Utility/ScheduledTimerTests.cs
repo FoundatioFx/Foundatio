@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using xRetry;
 
 namespace Foundatio.Tests.Utility {
     public class ScheduledTimerTests : TestWithLoggingBase {

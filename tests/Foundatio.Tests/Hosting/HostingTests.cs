@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Hosting.Startup;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;

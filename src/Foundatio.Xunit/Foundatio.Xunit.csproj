@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageTags>$(PackageTags);Logging;Log;Xunit</PackageTags>
+    <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Collections.Immutable" Version="1.7.1" />
-    <PackageReference Include="xunit.abstractions" Version="2.0.3" />
+    <PackageReference Include="xunit.core" Version="2.4.1" />
   </ItemGroup>
 </Project>

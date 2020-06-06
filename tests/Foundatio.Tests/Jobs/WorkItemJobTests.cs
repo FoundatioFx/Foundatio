@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;

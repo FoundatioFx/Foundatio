@@ -7,7 +7,7 @@ using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using xRetry;
+using Foundatio.Xunit;
 
 namespace Foundatio.Tests.Locks {
     public class InMemoryLockTests : LockTestBase, IDisposable {

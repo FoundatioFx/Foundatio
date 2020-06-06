@@ -29,7 +29,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "sr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Tests", "tests\Foundatio.Tests\Foundatio.Tests.csproj", "{99CBF75F-9204-4D7E-A792-4377C0291900}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Logging.Xunit", "src\Foundatio.Logging.Xunit\Foundatio.Logging.Xunit.csproj", "{3DDBC32D-E222-41AD-B2D7-FE9E560948F1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Xunit", "src\Foundatio.Xunit\Foundatio.Xunit.csproj", "{3DDBC32D-E222-41AD-B2D7-FE9E560948F1}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JsonNet", "src\Foundatio.JsonNet\Foundatio.JsonNet.csproj", "{BAC1367C-0C16-4B9B-8965-598EC2733A85}"
 EndProject

@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;

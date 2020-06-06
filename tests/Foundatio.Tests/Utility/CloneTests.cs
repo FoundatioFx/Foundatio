@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Newtonsoft.Json.Linq;

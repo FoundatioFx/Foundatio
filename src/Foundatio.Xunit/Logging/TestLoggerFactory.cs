@@ -5,7 +5,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Logging.Xunit {
+namespace Foundatio.Xunit {
     public class TestLoggerFactory : ILoggerFactory {
         private readonly Dictionary<string, LogLevel> _logLevels = new Dictionary<string, LogLevel>();
         private readonly Queue<LogEntry> _logEntries = new Queue<LogEntry>();

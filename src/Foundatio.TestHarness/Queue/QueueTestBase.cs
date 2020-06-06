@@ -3,7 +3,7 @@ using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;

@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;

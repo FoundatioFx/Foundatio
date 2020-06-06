@@ -6,11 +6,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using xRetry;
+
 using Xunit;
 using Xunit.Abstractions;
 

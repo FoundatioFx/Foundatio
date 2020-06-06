@@ -7,7 +7,7 @@ using Exceptionless;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Utility;

@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Tests.Extensions;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Xunit;
