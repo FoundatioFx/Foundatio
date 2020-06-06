@@ -3,9 +3,10 @@ using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Metrics;
-using xRetry;
+
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Xunit;
 
 namespace Foundatio.Redis.Tests.Metrics {
     public class RedisMetricsTests : MetricsClientTestBase, IDisposable {

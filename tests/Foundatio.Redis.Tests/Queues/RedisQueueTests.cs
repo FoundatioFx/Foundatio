@@ -17,7 +17,8 @@ using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using xRetry;
+using Foundatio.Xunit;
+
 #pragma warning disable 4014
 
 namespace Foundatio.Redis.Tests.Queues {

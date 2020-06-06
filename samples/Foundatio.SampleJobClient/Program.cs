@@ -5,7 +5,7 @@ using Foundatio.Queues;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Foundatio.Logging.Xunit;
+using Foundatio.Xunit;
 using StackExchange.Redis;
 using System.Linq;
 

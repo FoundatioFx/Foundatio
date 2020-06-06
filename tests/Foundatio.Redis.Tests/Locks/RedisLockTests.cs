@@ -7,7 +7,7 @@ using Xunit.Abstractions;
 using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
-using xRetry;
+using Foundatio.Xunit;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase, IDisposable {
