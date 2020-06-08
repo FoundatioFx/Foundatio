@@ -3,7 +3,7 @@
   <ItemGroup>
     <PackageReference Include="Foundatio" Version="10.0.0-beta2" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
-    <PackageReference Include="StackExchange.Redis" Version="2.1.30" />
+    <PackageReference Include="StackExchange.Redis" Version="2.1.50" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Scripts\*.lua" />
