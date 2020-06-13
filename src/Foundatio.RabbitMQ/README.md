@@ -2,6 +2,7 @@
 
 [![Build status](https://github.com/FoundatioFx/Foundatio.RabbitMQ/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.RabbitMQ/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.RabbitMQ.svg?style=flat)](https://www.nuget.org/packages/Foundatio.RabbitMQ/)
+[![feedz.io](https://img.shields.io/badge/endpoint.svg?url=https%3A%2F%2Ff.feedz.io%2Ffoundatio%2Ffoundatio%2Fshield%2FFoundatio.RabbitMQ%2Flatest)](https://f.feedz.io/foundatio/foundatio/packages/Foundatio.RabbitMQ/latest/download)
 [![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/6HxgFCx)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
