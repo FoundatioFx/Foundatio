@@ -2,6 +2,7 @@
 
 [![Build status](https://github.com/FoundatioFx/Foundatio.AzureStorage/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.AzureStorage/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureStorage.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureStorage/)
+[![feedz.io](https://img.shields.io/badge/endpoint.svg?url=https%3A%2F%2Ff.feedz.io%2Ffoundatio%2Ffoundatio%2Fshield%2FFoundatio.AzureStorage%2Flatest)](https://f.feedz.io/foundatio/foundatio/packages/Foundatio.AzureStorage/latest/download)
 [![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/6HxgFCx)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
