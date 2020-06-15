@@ -7,6 +7,7 @@ using Foundatio.Queues;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Collections.Concurrent;
 
 namespace Foundatio.Jobs {
     [Job(Description = "Processes adhoc work item queues entries")]
@@ -51,14 +52,7 @@ namespace Foundatio.Jobs {
                 return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}");
             }
 
-            Type workItemDataType;
-            try {
-                workItemDataType = Type.GetType(queueEntry.Value.Type);
-            } catch (Exception ex) {
-                await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type.");
-            }
-
+            var workItemDataType = GetWorkItemType(queueEntry.Value.Type);
             if (workItemDataType == null) {
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type.");
@@ -131,6 +125,29 @@ namespace Foundatio.Jobs {
             } finally {
                 await lockValue.ReleaseAsync().AnyContext();
             }
+        }
+
+        private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new ConcurrentDictionary<string, Type>();
+        protected virtual Type GetWorkItemType(string workItemType) {
+            return _knownTypesCache.GetOrAdd(workItemType, type => {
+                try {
+                    return Type.GetType(type);
+                } catch (Exception) {
+                    try {
+                        string[] typeParts = type.Split(',');
+                        if (typeParts.Length >= 2)
+                            type = String.Join(",", typeParts[0], typeParts[1]);
+                        
+                        // try resolve type without version
+                        return Type.GetType(type);
+                    } catch (Exception ex) {
+                        if (_logger.IsEnabled(LogLevel.Warning))
+                            _logger.LogWarning(ex, "Error getting work item type: {WorkItemType}", type);
+
+                        return null;
+                    }
+                }
+            });
         }
 
         protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string message = null) {

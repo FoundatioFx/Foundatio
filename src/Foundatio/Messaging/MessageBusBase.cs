@@ -55,14 +55,23 @@ namespace Foundatio.Messaging {
             return _knownMessageTypesCache.GetOrAdd(messageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
-
+                
                 try {
                     return Type.GetType(type);
-                } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+                } catch (Exception) {
+                    try {
+                        string[] typeParts = type.Split(',');
+                        if (typeParts.Length >= 2)
+                            type = String.Join(",", typeParts[0], typeParts[1]);
+                        
+                        // try resolve type without version
+                        return Type.GetType(type);
+                    } catch (Exception ex) {
+                        if (_logger.IsEnabled(LogLevel.Warning))
+                            _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
 
-                    return null;
+                        return null;
+                    }
                 }
             });
         }
