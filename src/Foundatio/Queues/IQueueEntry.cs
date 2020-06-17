@@ -8,6 +8,7 @@ namespace Foundatio.Queues {
         string CorrelationId { get; }
         DataDictionary Properties { get; }
         Type EntryType { get; }
+        object GetValue();
         bool IsCompleted { get; }
         bool IsAbandoned { get; }
         int Attempts { get; }
