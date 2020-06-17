@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -90,14 +91,18 @@ namespace Foundatio.Queues {
         public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
 
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
-
+        
         protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueEntryOptions options) {
+            if (String.IsNullOrEmpty(options.CorrelationId))
+                options.CorrelationId = Activity.Current?.Id;
+
             var enqueueing = Enqueuing;
             if (enqueueing == null)
                 return false;
 
             var args = new EnqueuingEventArgs<T> { Queue = this, Data = data, Options = options };
             await enqueueing.InvokeAsync(this, args).AnyContext();
+
             return !args.Cancel;
         }
 
@@ -116,9 +121,38 @@ namespace Foundatio.Queues {
 
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
+        protected virtual void StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
+            var activity = new Activity("ProcessQueueEntry");
+            activity.AddTag("Id", entry.Id);
+            if (!String.IsNullOrEmpty(entry.CorrelationId))
+                activity.SetParentId(entry.CorrelationId);
+
+            if (QueueDiagnosticSource.QueueLogger.IsEnabled("ProcessQueueEntry")) {
+                QueueDiagnosticSource.QueueLogger.StartActivity(activity, entry);
+            } else {
+                activity.Start();
+            }
+
+            entry.Properties["@Activity"] = activity;
+        }
+
+        protected virtual void StopProcessQueueEntryActivity(IQueueEntry<T> entry) {
+            if (!entry.Properties.TryGetValue("@Activity", out object a) || !(a is Activity activity))
+                return;
+
+            entry.Properties.Remove("@Activity");
+            if (QueueDiagnosticSource.QueueLogger.IsEnabled("ProcessQueueEntry")) {
+                QueueDiagnosticSource.QueueLogger.StopActivity(activity, entry);
+            } else {
+                activity.Stop();
+            }
+        }
+
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
             LastDequeueActivity = SystemClock.UtcNow;
-            
+
+            StartProcessQueueEntryActivity(entry);
+
             var dequeued = Dequeued;
             if (dequeued == null)
                 return Task.CompletedTask;
@@ -142,7 +176,7 @@ namespace Foundatio.Queues {
 
         public AsyncEvent<CompletedEventArgs<T>> Completed { get; } = new AsyncEvent<CompletedEventArgs<T>>(true);
 
-        protected virtual Task OnCompletedAsync(IQueueEntry<T> entry) {
+        protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry) {
             var now = SystemClock.UtcNow;
             LastDequeueActivity = now;
             
@@ -154,28 +188,28 @@ namespace Foundatio.Queues {
                     metadata.ProcessingTime = now.Subtract(metadata.DequeuedTimeUtc);
             }
 
-            var completed = Completed;
-            if (completed == null)
-                return Task.CompletedTask;
+            if (Completed != null) {
+                var args = new CompletedEventArgs<T> { Queue = this, Entry = entry };
+                await Completed.InvokeAsync(this, args).AnyContext();
+            }
 
-            var args = new CompletedEventArgs<T> { Queue = this, Entry = entry };
-            return completed.InvokeAsync(this, args);
+            StopProcessQueueEntryActivity(entry);
         }
 
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
 
-        protected virtual Task OnAbandonedAsync(IQueueEntry<T> entry) {
+        protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry) {
             LastDequeueActivity = SystemClock.UtcNow;
             
             if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
 
-            var abandoned = Abandoned;
-            if (abandoned == null)
-                return Task.CompletedTask;
+            if (Abandoned != null) {
+                var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
+                await Abandoned.InvokeAsync(this, args).AnyContext();
+            }
 
-            var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
-            return abandoned.InvokeAsync(this, args);
+            StopProcessQueueEntryActivity(entry);
         }
 
         public string QueueId { get; protected set; }
