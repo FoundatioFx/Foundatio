@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Diagnostics;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -127,8 +128,8 @@ namespace Foundatio.Queues {
             if (!String.IsNullOrEmpty(entry.CorrelationId))
                 activity.SetParentId(entry.CorrelationId);
 
-            if (QueueDiagnosticSource.QueueLogger.IsEnabled("ProcessQueueEntry")) {
-                QueueDiagnosticSource.QueueLogger.StartActivity(activity, entry);
+            if (QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry")) {
+                QueuesDiagnosticSource.Logger.StartActivity(activity, entry);
             } else {
                 activity.Start();
             }
@@ -141,8 +142,8 @@ namespace Foundatio.Queues {
                 return;
 
             entry.Properties.Remove("@Activity");
-            if (QueueDiagnosticSource.QueueLogger.IsEnabled("ProcessQueueEntry")) {
-                QueueDiagnosticSource.QueueLogger.StopActivity(activity, entry);
+            if (QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry")) {
+                QueuesDiagnosticSource.Logger.StopActivity(activity, entry);
             } else {
                 activity.Stop();
             }
