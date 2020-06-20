@@ -123,30 +123,28 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual void StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
+            if (!QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry") || !QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry", entry))
+                return;
+            
             var activity = new Activity("ProcessQueueEntry");
             activity.AddTag("Id", entry.Id);
             if (!String.IsNullOrEmpty(entry.CorrelationId))
                 activity.SetParentId(entry.CorrelationId);
-
-            if (QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry")) {
-                QueuesDiagnosticSource.Logger.StartActivity(activity, entry);
-            } else {
-                activity.Start();
-            }
+            
+            EnrichProcessQueueEntryActivity(activity, entry);
+            QueuesDiagnosticSource.Logger.StartActivity(activity, entry);
 
             entry.Properties["@Activity"] = activity;
         }
+
+        protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) {}
 
         protected virtual void StopProcessQueueEntryActivity(IQueueEntry<T> entry) {
             if (!entry.Properties.TryGetValue("@Activity", out object a) || !(a is Activity activity))
                 return;
 
             entry.Properties.Remove("@Activity");
-            if (QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry")) {
-                QueuesDiagnosticSource.Logger.StopActivity(activity, entry);
-            } else {
-                activity.Stop();
-            }
+            QueuesDiagnosticSource.Logger.StopActivity(activity, entry);
         }
 
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
