@@ -242,7 +242,7 @@ namespace Foundatio.Storage {
             int pagingLimit = pageSize;
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
-                pagingLimit = pagingLimit + 1;
+                pagingLimit += 1;
 
             foreach (string path in Directory.EnumerateFiles(Folder, searchPattern, SearchOption.AllDirectories).Skip(skip).Take(pagingLimit)) {
                 var info = new FileInfo(path);

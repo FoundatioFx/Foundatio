@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Hosting {
     public static class TestServerExtensions {
         public static async Task WaitForReadyAsync(this TestServer server, TimeSpan? maxWaitTime = null) {
             var startupContext = server.Host.Services.GetService<StartupActionsContext>();
-            maxWaitTime = maxWaitTime ?? TimeSpan.FromSeconds(5);
+            maxWaitTime ??= TimeSpan.FromSeconds(5);
             
             var client = server.CreateClient();
             var startTime = DateTime.Now;

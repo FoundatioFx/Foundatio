@@ -199,7 +199,7 @@ namespace Foundatio.Storage {
             int pagingLimit = pageSize;
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
-                pagingLimit = pagingLimit + 1;
+                pagingLimit += 1;
             
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
 

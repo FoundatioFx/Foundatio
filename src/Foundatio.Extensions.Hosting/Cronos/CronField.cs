@@ -91,7 +91,7 @@ namespace Cronos
             CanDefineInterval = canDefineInterval;
             for (int i = First; i <= Last; i++)
             {
-                AllBits = AllBits | (1L << i);
+                AllBits |= (1L << i);
             }
         }
 

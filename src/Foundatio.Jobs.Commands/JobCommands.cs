@@ -19,7 +19,7 @@ namespace Foundatio.Jobs.Commands {
         }
 
         public static int Run(string[] args, Func<IServiceProvider> getServiceProvider, Action<JobCommandsApplication> configure = null, ILoggerFactory loggerFactory = null) {
-            loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+            loggerFactory ??= NullLoggerFactory.Instance;
             var logger = loggerFactory.CreateLogger("JobCommands");
             var lazyServiceProvider = new Lazy<IServiceProvider>(getServiceProvider);
 
