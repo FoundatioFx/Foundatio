@@ -71,6 +71,11 @@ namespace Foundatio.Tests.Storage {
             return base.CanDeleteEntireFolderWithWildcardAsync();
         }
 
+        [Fact(Skip = "Directory.EnumerateFiles does not support nested folder wildcards")]
+        public override Task CanDeleteFolderWithMultiFolderWildcardsAsync() {
+            return base.CanDeleteFolderWithMultiFolderWildcardsAsync();
+        }
+
         [Fact]
         public override Task CanDeleteSpecificFilesAsync() {
             return base.CanDeleteSpecificFilesAsync();
