@@ -188,14 +188,18 @@ namespace Foundatio.Storage {
         }
 
         public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
+            int count = 0;
+            
             if (searchPattern == null || String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
-                Directory.Delete(Folder, true);
-                return Task.FromResult(0);
+                if (Directory.Exists(Folder)) {
+                    count += Directory.EnumerateFiles(Folder, "*,*", SearchOption.AllDirectories).Count();
+                    Directory.Delete(Folder, true);
+                }
+
+                return Task.FromResult(count);
             }
 
             searchPattern = searchPattern.NormalizePath();
-            int count = 0;
-
             string path = Path.Combine(Folder, searchPattern);
             if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith(Path.DirectorySeparatorChar + "*")) {
                 string directory = Path.GetDirectoryName(path);
@@ -204,7 +208,11 @@ namespace Foundatio.Storage {
                     Directory.Delete(directory, true);
                     return Task.FromResult(count);
                 }
-            } else if (Directory.Exists(path)) {
+
+                return Task.FromResult(0);
+            }
+
+            if (Directory.Exists(path)) {
                 count += Directory.EnumerateFiles(path, "*,*", SearchOption.AllDirectories).Count();
                 Directory.Delete(path, true);
                 return Task.FromResult(count);
