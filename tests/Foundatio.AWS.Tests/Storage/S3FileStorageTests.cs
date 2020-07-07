@@ -94,6 +94,11 @@ namespace Foundatio.AWS.Tests.Storage {
         }
 
         [Fact]
+        public override Task CanDeleteFolderWithMultiFolderWildcardsAsync() {
+            return base.CanDeleteFolderWithMultiFolderWildcardsAsync();
+        }
+
+        [Fact]
         public override Task CanRoundTripSeekableStreamAsync() {
             return base.CanRoundTripSeekableStreamAsync();
         }
