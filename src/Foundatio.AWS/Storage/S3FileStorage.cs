@@ -13,6 +13,8 @@ using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class S3FileStorage : IFileStorage {
@@ -21,6 +23,7 @@ namespace Foundatio.Storage {
         private readonly AmazonS3Client _client;
         private readonly bool _useChunkEncoding;
         private readonly S3CannedACL _cannedAcl;
+        private readonly ILogger _logger;
 
         public S3FileStorage(S3FileStorageOptions options) {
             if (options == null)
@@ -30,6 +33,7 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _useChunkEncoding = options.UseChunkEncoding ?? true;
             _cannedAcl = options.CannedACL;
+            _logger = options.LoggerFactory?.CreateLogger(typeof(S3FileStorage)) ?? NullLogger.Instance;
 
             var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
@@ -37,13 +41,11 @@ namespace Foundatio.Storage {
                 var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
                 _client = new AmazonS3Client(credentials, region);
             } else {
-                _client = new AmazonS3Client(
-                    credentials,
-                    new AmazonS3Config {
-                        RegionEndpoint = RegionEndpoint.USEast1,
-                        ServiceURL = options.ServiceUrl,
-                        ForcePathStyle = true
-                    });
+                _client = new AmazonS3Client(credentials, new AmazonS3Config {
+                    RegionEndpoint = RegionEndpoint.USEast1,
+                    ServiceURL = options.ServiceUrl,
+                    ForcePathStyle = true
+                });
             }
         }
 
@@ -193,13 +195,16 @@ namespace Foundatio.Storage {
             var errors = new List<DeleteError>();
 
             ListObjectsV2Response listResponse;
-            do
-            {
+            do {
                 listResponse = await _client.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
+                listRequest.ContinuationToken = listResponse.NextContinuationToken;
 
-                var keys = listResponse.S3Objects.MatchesPattern(criteria.Pattern).Select(o => new KeyVersion { Key = o.Key });
+                var keys = listResponse.S3Objects.MatchesPattern(criteria.Pattern).Select(o => new KeyVersion { Key = o.Key }).ToArray();
+                if (keys.Length == 0)
+                    continue;
+
                 deleteRequest.Objects.AddRange(keys);
-
+                
                 var deleteResponse = await _client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
                 if (deleteResponse.DeleteErrors.Count > 0) {
                     // retry 1 time, continue on.
@@ -212,9 +217,7 @@ namespace Foundatio.Storage {
 
                 count += deleteResponse.DeletedObjects.Count;
                 deleteRequest.Objects.Clear();
-
-                listRequest.ContinuationToken = listResponse.NextContinuationToken;
-            } while (listResponse.IsTruncated);
+            } while (listResponse.IsTruncated && !cancellationToken.IsCancellationRequested);
 
             if (errors.Count > 0) {
                 int more = errors.Count > 20 ? errors.Count - 20 : 0;
