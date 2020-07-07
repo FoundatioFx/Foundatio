@@ -280,22 +280,21 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                await storage.SaveFileAsync(@"archive\2020\jan\1.txt", "hello");
-                await storage.SaveFileAsync(@"archive\2020\jan\2.txt", "hello");
-                await storage.SaveFileAsync(@"archive\2020\feb\1.txt", "hello");
-                await storage.SaveFileAsync(@"archive\2021\jan\1.txt", "hello");
-                await storage.SaveFileAsync(@"archive\2021\jan\2.txt", "hello");
-                await storage.SaveFileAsync(@"archive\2021\feb\1.txt", "hello");
-                Assert.Equal(6, (await storage.GetFileListAsync(@"archive\*")).Count);
-                Assert.Equal(4, (await storage.GetFileListAsync(@"archive\*jan*")).Count);
-                Assert.Equal(2, (await storage.GetFileListAsync(@"archive\2020\*jan*")).Count);
+                const int filesPerMonth = 5;
+                for (int year = 2020; year <= 2021; year++) {
+                    for (int month = 1; month <= 12; month++) {
+                        for (int index = 0; index < filesPerMonth; index++)
+                            await storage.SaveFileAsync($"archive\\year-{year}\\month-{month:00}\\file-{index:00}.txt", "hello");
+                    }
+                }
 
-                await storage.DeleteFilesAsync(@"archive\*jan*");
+                Assert.Equal(2 * 12 * filesPerMonth, (await storage.GetFileListAsync(@"archive\*")).Count);
+                Assert.Equal(2 * filesPerMonth, (await storage.GetFileListAsync(@"archive\*month-01*")).Count);
+                Assert.Equal(filesPerMonth, (await storage.GetFileListAsync(@"archive\year-2020\*month-01*")).Count);
 
-                Assert.Equal(2, (await storage.GetFileListAsync()).Count);
-                Assert.True(await storage.ExistsAsync(@"archive\2020\feb\1.txt"));
-                Assert.False(await storage.ExistsAsync(@"archive\2020\jan\1.txt"));
-                Assert.False(await storage.ExistsAsync(@"archive\2021\jan\1.txt"));
+                await storage.DeleteFilesAsync(@"archive\*month-01*");
+
+                Assert.Equal(2 * 11 * filesPerMonth, (await storage.GetFileListAsync()).Count);
             }
         }
 
@@ -442,13 +441,7 @@ namespace Foundatio.Tests.Storage {
                 return;
 
             using (storage) {
-                var files = (await storage.GetFileListAsync()).ToList();
-                if (files.Count > 0) {
-                    if (_logger.IsEnabled(LogLevel.Trace))
-                        _logger.LogTrace("Deleting: {0}", String.Join(", ", files.Select(f => f.Path)));
-                    await storage.DeleteFilesAsync(files);
-                }
-
+                await storage.DeleteFilesAsync();
                 Assert.Empty(await storage.GetFileListAsync());
             }
         }
