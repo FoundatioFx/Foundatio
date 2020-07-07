@@ -11,7 +11,7 @@ namespace Foundatio.Redis.Tests.Extensions {
 
             foreach (var endpoint in endpoints) {
                 var server = muxer.GetServer(endpoint);
-                if (!server.IsSlave)
+                if (!server.IsReplica)
                     await server.FlushAllDatabasesAsync();
             }
         }
@@ -24,7 +24,7 @@ namespace Foundatio.Redis.Tests.Extensions {
             long count = 0;
             foreach (var endpoint in endpoints) {
                 var server = muxer.GetServer(endpoint);
-                if (!server.IsSlave)
+                if (!server.IsReplica)
                     count += await server.DatabaseSizeAsync();
             }
 

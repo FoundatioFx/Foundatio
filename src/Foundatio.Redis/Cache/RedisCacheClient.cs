@@ -61,7 +61,7 @@ namespace Foundatio.Caching {
 
                 foreach (var endpoint in endpoints) {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
-                    if (server.IsSlave)
+                    if (server.IsReplica)
                         continue;
 
                     try {
@@ -475,7 +475,7 @@ namespace Foundatio.Caching {
 
                 foreach (var endpoint in _options.ConnectionMultiplexer.GetEndPoints()) {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
-                    if (server.IsSlave)
+                    if (server.IsReplica)
                         continue;
                     
                     _removeByPrefix = await removeByPrefix.LoadAsync(server).AnyContext();
