@@ -57,7 +57,7 @@ namespace Foundatio.Lock {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             bool shouldWait = !cancellationToken.IsCancellationRequested;
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Attempting to acquire lock {Resource}", resource);
+                _logger.LogTrace("Attempting to acquire lock: {Resource}", resource);
 
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
@@ -78,7 +78,7 @@ namespace Foundatio.Lock {
                         break;
 
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Failed to acquire lock {Resource.", resource);
+                        _logger.LogTrace("Failed to acquire lock: {Resource}", resource);
                     
                     if (cancellationToken.IsCancellationRequested) {
                         if (isTraceLogLevelEnabled && shouldWait)
@@ -103,7 +103,7 @@ namespace Foundatio.Lock {
                         delayAmount = TimeSpan.FromSeconds(3);
                     
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock {Resource}", delayAmount, resource);
+                        _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock: {Resource}", delayAmount, resource);
 
                     // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                     using (var maxWaitCancellationTokenSource = new CancellationTokenSource(delayAmount))
@@ -153,13 +153,13 @@ namespace Foundatio.Lock {
 
         public async Task ReleaseAsync(ILock @lock) {
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("ReleaseAsync Start {Resource} ({LockId})", @lock.Resource, @lock.LockId);
+                _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", @lock.Resource, @lock.LockId);
 
             await Run.WithRetriesAsync(() => _cacheClient.RemoveIfEqualAsync(@lock.Resource, @lock.LockId), 15, logger: _logger).AnyContext();
             await _messageBus.PublishAsync(new CacheLockReleased { Resource = @lock.Resource, LockId = @lock.LockId }).AnyContext();
 
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Released lock {Resource} ({LockId})", @lock.Resource, @lock.LockId);
+                _logger.LogDebug("Released lock: {Resource} ({LockId})", @lock.Resource, @lock.LockId);
         }
 
         public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
