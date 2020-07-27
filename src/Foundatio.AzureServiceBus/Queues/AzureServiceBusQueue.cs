@@ -128,9 +128,9 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
             
-            _logger.LogTrace("WorkerLoop Start {_options.Name}", _options.Name);
+            _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
             _queueReceiver.RegisterMessageHandler(async (msg, cancellationToken1) => {
-                _logger.LogTrace("WorkerLoop Signaled {_options.Name}", _options.Name);
+                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
                 var queueEntry = await HandleDequeueAsync(msg).AnyContext();
 
                 try {
@@ -188,7 +188,7 @@ namespace Foundatio.Queues {
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
-            _logger.LogDebug("Queue {_options.Name}:{QueueId} abandon item: {entryId}", _options.Name, QueueId, entry.Id);
+            _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -196,7 +196,7 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
-            _logger.LogTrace("Abandon complete: {entryId}", entry.Id);
+            _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
         }
 
         private async Task<IQueueEntry<T>> HandleDequeueAsync(Message brokeredMessage) {
