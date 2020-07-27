@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
+using Foundatio.AzureServiceBus.Queues;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -111,6 +112,9 @@ namespace Foundatio.Queues {
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
             brokeredMessage.CorrelationId = options.CorrelationId;
+            if (options is AzureServiceBusQueueEntryOptions asbOptions) {
+                brokeredMessage.SessionId = asbOptions.SessionId;
+            }
             foreach (var property in options.Properties)
                 brokeredMessage.UserProperties[property.Key] = property.Value;
             
