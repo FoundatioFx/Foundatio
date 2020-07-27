@@ -318,7 +318,6 @@ metrics.Timer("t1", 50788);
 ## Sample Application
 We have both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/FoundatioFx/Foundatio.Samples) that shows off how to use Foundatio.
 
-## Roadmap
+## Thanks to all the people who have contributed
 
-This is a list of high level things that we are planning to do:
-- [Let us know what you'd like us to work on!](https://github.com/FoundatioFx/Foundatio/issues)
+[![contributors](https://contributors-img.web.app/image?repo=foundatiofx/foundatio)](https://github.com/foundatiofx/foundatio/graphs/contributors)
