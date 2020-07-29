@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -138,6 +138,11 @@ namespace Foundatio.Redis.Tests.Queues {
         [Fact]
         public override Task CanCompleteQueueEntryOnceAsync() {
             return base.CanCompleteQueueEntryOnceAsync();
+        }
+
+        [Fact]
+        public override Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
+            return base.CompleteOnAutoAbandonedHandledProperly_Issue239();
         }
 
         [RetryFact]

@@ -16,8 +16,8 @@ namespace Foundatio.Redis.Tests.Caching {
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override ICacheClient GetCacheClient() {
-            return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log));
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+            return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
         }
 
         [Fact]
@@ -48,6 +48,11 @@ namespace Foundatio.Redis.Tests.Caching {
         [Fact]
         public override Task CanAddConcurrentlyAsync() {
             return base.CanAddConcurrentlyAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAsync() {
+            return base.CanGetAsync();
         }
 
         [Fact]

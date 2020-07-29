@@ -232,8 +232,10 @@ namespace Foundatio.Queues {
                         if (_logger.IsEnabled(LogLevel.Error))
                             _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                            await queueEntry.AbandonAsync().AnyContext();
+                        try {
+                            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                                await queueEntry.AbandonAsync().AnyContext();
+                        } catch (Exception) {}
                     }
                 }
 

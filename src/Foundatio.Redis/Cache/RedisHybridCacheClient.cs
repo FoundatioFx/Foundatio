@@ -1,8 +1,4 @@
-﻿using System;
-using Foundatio.Messaging;
-using Foundatio.Serializer;
-using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
+﻿using Foundatio.Messaging;
 
 namespace Foundatio.Caching {
 
@@ -11,7 +7,8 @@ namespace Foundatio.Caching {
             : base(new RedisCacheClient(o => o
                 .ConnectionMultiplexer(options.ConnectionMultiplexer)
                 .Serializer(options.Serializer)
-                .LoggerFactory(options.LoggerFactory)),
+                .LoggerFactory(options.LoggerFactory)
+                .ShouldThrowOnSerializationError(options.ShouldThrowOnSerializationError)),
             new RedisMessageBus(o => o
                 .Subscriber(options.ConnectionMultiplexer.GetSubscriber())
                 .Topic(options.RedisChannelName)

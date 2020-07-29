@@ -118,6 +118,9 @@ namespace Foundatio.Caching {
                 } catch (Exception ex) {
                     if (_logger.IsEnabled(LogLevel.Error))
                         _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
+                    
+                    if (_options.ShouldThrowOnSerializationError)
+                        throw;
                 }
             }
 
@@ -134,6 +137,10 @@ namespace Foundatio.Caching {
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
+                    
+                if (_options.ShouldThrowOnSerializationError)
+                    throw;
+                
                 return CacheValue<T>.NoValue;
             }
         }

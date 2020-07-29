@@ -17,5 +17,10 @@ namespace Foundatio.Caching {
             Target.RedisChannelName = redisChannelName;
             return this;
         }
+
+        public RedisHybridCacheClientOptionsBuilder ShouldThrowOnSerializationError(bool shouldThrow) {
+            Target.ShouldThrowOnSerializationError = shouldThrow;
+            return this;
+        }
     }
 }
