@@ -206,9 +206,8 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-
-            Task.Run(async () => {
+            _ = Task.Run(async () => {
+                using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
                 if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
@@ -235,13 +234,13 @@ namespace Foundatio.Queues {
                         try {
                             if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                                 await queueEntry.AbandonAsync().AnyContext();
-                        } catch (Exception) {}
+                        } catch (Exception) { }
                     }
                 }
 
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-            }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
+            }, GetLinkedDisposableCancellationTokenSource(cancellationToken).Token);
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
@@ -533,7 +532,7 @@ namespace Foundatio.Queues {
                         continue;
 
                     if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("{WorkId} Auto abandon item renewed: {RenewedTime:o} current: {UtcNow:o} timeout: {WorkItemTimeout:g}", workId, renewedTime, utcNow, _options.WorkItemTimeout);
+                        _logger.LogInformation("{WorkId} Auto abandon item. Renewed: {RenewedTime:o} Current: {UtcNow:o} Timeout: {WorkItemTimeout:g}", workId, renewedTime, utcNow, _options.WorkItemTimeout);
                     var entry = await GetQueueEntryAsync(workId).AnyContext();
                     if (entry == null)
                         continue;

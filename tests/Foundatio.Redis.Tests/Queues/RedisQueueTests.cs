@@ -391,6 +391,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 return;
 
             using (queue) {
+                await queue.DeleteQueueAsync();
+
                 // Start DequeueAsync but allow it to yield.
                 var itemTask = queue.DequeueAsync();
 
@@ -619,19 +621,23 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         public class Command1 {
+            public Command1() { }
+
             public Command1(int id) {
                 Id = id;
             }
 
-            public int Id { get; }
+            public int Id { get; set; }
         }
 
         public class Command2 {
+            public Command2() {}
+
             public Command2(int id) {
                 Id = id;
             }
 
-            public int Id { get; }
+            public int Id { get; set; }
         }
     }
 }
