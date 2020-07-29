@@ -10,8 +10,8 @@ namespace Foundatio.Tests.Caching {
     public class InMemoryCacheClientTests : CacheClientTestsBase {
         public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) {}
 
-        protected override ICacheClient GetCacheClient() {
-            return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true));
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+            return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
         }
 
         [Fact]
@@ -42,6 +42,11 @@ namespace Foundatio.Tests.Caching {
         [Fact]
         public override Task CanAddConcurrentlyAsync() {
             return base.CanAddConcurrentlyAsync();
+        }
+
+        [Fact]
+        public override Task CanGetAsync() {
+            return base.CanGetAsync();
         }
 
         [Fact]

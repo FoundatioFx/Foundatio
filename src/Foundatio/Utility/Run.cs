@@ -7,11 +7,11 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Utility {
     public static class Run {
         public static Task DelayedAsync(TimeSpan delay, Func<Task> action) {
-            return Task.Run(() => {
-                if (delay.Ticks <= 0)
-                    return action();
+            return Task.Run(async () => {
+                if (delay.Ticks > 0)
+                    await SystemClock.SleepAsync(delay).AnyContext();
 
-                return SystemClock.SleepAsync(delay).ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
+                await action().AnyContext();
             });
         }
 
