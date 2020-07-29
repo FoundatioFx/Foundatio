@@ -1,4 +1,4 @@
-using Exceptionless;
+﻿using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
@@ -582,6 +582,9 @@ namespace Foundatio.Tests.Queue {
                 await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
 
                 // wait for the task to be auto abandoned
+
+                // should throw because the item has already been auto abandoned
+                await Assert.ThrowsAsync<InvalidOperationException>(() => workItem.CompleteAsync());
 
                 var sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
@@ -1226,6 +1229,50 @@ namespace Foundatio.Tests.Queue {
             finally {
                 await CleanupQueueAsync(queue);
             }
+        }
+
+        // this test reproduce an issue which cause worker task loop to crash and stop processing items when auto abandoned item is ultimately processed and user call complete on
+        // https://github.com/FoundatioFx/Foundatio/issues/239
+        public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
+            // create queue with short work item timeout so it will be auto abandoned
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(100));
+
+            // completion source to wait for CompleteAsync call before the assert
+            var taskCompletionSource = new TaskCompletionSource<bool>();
+
+            // start handling items
+            await queue.StartWorkingAsync(async (item) => {
+                // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
+                if (item.Value.Data == "Delay") {
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                }
+
+                try {
+                    // call complete on the auto abandoned item
+                    await item.CompleteAsync();
+                } finally {
+                    // completeAsync will currently throw an exception becuase item can not be removed from dequeued list because it was already removed due to auto abandon
+                    // infrastructure handles user exception incorrectly
+                    taskCompletionSource.SetResult(true);
+                }
+            });
+
+            // enqueue item which will be processed after it's auto abandoned
+            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
+
+            // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
+            bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
+            Assert.False(timedout);
+
+            // enqueue another item and make sure it was handled (worker loop didn't crash)
+            taskCompletionSource = new TaskCompletionSource<bool>();
+            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
+
+            // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
+            timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(1)))) != taskCompletionSource.Task;
+            Assert.False(timedout);
+
+            return;
         }
 
         public virtual void Dispose() {

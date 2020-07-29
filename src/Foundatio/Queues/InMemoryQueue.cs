@@ -159,14 +159,13 @@ namespace Foundatio.Queues {
             Interlocked.Increment(ref _dequeuedCount);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeue: Got Item");
 
-            var entry = new QueueEntry<T>(info.Id, info.CorrelationId, info.Value.DeepClone(), this, info.EnqueuedTimeUtc, info.Attempts);
-            entry.Properties.AddRange(info.Properties);
+            info.Reset();
             
-            await entry.RenewLockAsync();
-            await OnDequeuedAsync(entry).AnyContext();
+            await info.RenewLockAsync();
+            await OnDequeuedAsync(info).AnyContext();
             ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
 
-            return entry;
+            return info;
         }
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
