@@ -12,6 +12,7 @@ using Foundatio.Redis;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
+using Foundatio.Redis.Utility;
 #pragma warning disable 4014
 
 namespace Foundatio.Queues {
@@ -30,6 +31,9 @@ namespace Foundatio.Queues {
         private Task _maintenanceTask;
         private bool _isSubscribed;
         private readonly TimeSpan _payloadTimeToLive;
+        private bool _scriptsLoaded;
+
+        private LoadedLuaScript _dequeueId;
 
         public RedisQueue(RedisQueueOptions<T> options) : base(options) {
             if (options.ConnectionMultiplexer == null)
@@ -275,14 +279,7 @@ namespace Foundatio.Queues {
 
             if (value.IsNullOrEmpty)
                 return null;
-
-            var wiTimeoutTtl = GetWorkItemTimeoutTimeTtl();
-            long now = SystemClock.UtcNow.Ticks;
-            await Run.WithRetriesAsync(() => Task.WhenAll(
-                _cache.SetAsync(GetDequeuedTimeKey(value), now, wiTimeoutTtl),
-                _cache.SetAsync(GetRenewedTimeKey(value), now, wiTimeoutTtl)
-            ), logger: _logger).AnyContext();
-
+            
             try {
                 var entry = await GetQueueEntryAsync(value).AnyContext();
                 if (entry == null)
@@ -323,10 +320,41 @@ namespace Foundatio.Queues {
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
             try {
                 return await Run.WithRetriesAsync(async () => {
-                    return await Database.ListRightPopLeftPushAsync(_queueListName, _workListName).AnyContext();
-                }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
-            } catch (Exception) {
+                    var wiTimeoutTtl = GetWorkItemTimeoutTimeTtl();
+                    long now = SystemClock.UtcNow.Ticks;
+
+                    // we must move the item between the in and work queues and set the dequeued & renewed keys in transaction to avoid situations where 
+                    // we have item in the work queue without the keys which will prevent maintainance from handling it
+                    // we can't use transaction as we need to use the result of ListRightPopLeftPushAsync to generate the keys
+                    await LoadScriptsAsync().AnyContext();
+                    var result = await Database.ScriptEvaluateAsync(_dequeueId, new { queueListName = _queueListName, workListName = _workListName, queueName = _options.Name, now, wiTimeoutTtl = wiTimeoutTtl.Ticks }).AnyContext();
+                    return result.ToString();
+                    } , 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();                
+            } catch (Exception ex) {                
+                if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError("Queue {Name} dequeue id async error: {Error}", _options.Name, ex);
                 return RedisValue.Null;
+            }
+        }
+
+        private async Task LoadScriptsAsync() {
+            if (_scriptsLoaded)
+                return;
+
+            using (await _lock.LockAsync().AnyContext()) {
+                if (_scriptsLoaded)
+                    return;
+
+                var dequeueId = LuaScript.Prepare(DequeueIdScript);
+
+                foreach (var endpoint in _options.ConnectionMultiplexer.GetEndPoints()) {
+                    var server = _options.ConnectionMultiplexer.GetServer(endpoint);
+                    if (server.IsReplica)
+                        continue;
+
+                    _dequeueId = await dequeueId.LoadAsync(server).AnyContext();
+                }
+
+                _scriptsLoaded = true;
             }
         }
 
@@ -506,8 +534,9 @@ namespace Foundatio.Queues {
             _autoResetEvent.Set();
         }
 
-        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {
+        private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs) {            
             if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored.");
+            _scriptsLoaded = false;
             _autoResetEvent.Set();
         }
 
@@ -614,5 +643,7 @@ namespace Foundatio.Queues {
 
             _cache.Dispose();
         }
+
+        private static readonly string DequeueIdScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.lua");
     }
 }

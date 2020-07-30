@@ -18,6 +18,9 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 using Foundatio.Xunit;
+using Foundatio.Tests.Utility;
+using StackExchange.Redis;
+using System.Diagnostics;
 
 #pragma warning disable 4014
 
@@ -420,6 +423,82 @@ namespace Foundatio.Redis.Tests.Queues {
             }
         }
 
+        // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
+        // should be skipped by default and run only by demand or 5 sec run is acceptable?
+        //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
+        [Fact]
+        public async Task DatabaseTimeoutDuringDequeueHandledCorectly_Issue64() {
+            // not using GetQueue() here because I need to change the ops timeout in the redis connection string
+            const int OPS_TIMEOUT_MS = 100;
+            string connectionString = Configuration.GetConnectionString("RedisConnectionString") + $",syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}"; ;
+            var muxer = await ConnectionMultiplexer.ConnectAsync(connectionString);
+
+            const string QUEUE_NAME = "Test";
+            var queue = new RedisQueue<SimpleWorkItem>(o => o
+                .ConnectionMultiplexer(muxer)
+                .LoggerFactory(Log)
+                .Name(QUEUE_NAME)
+                .RunMaintenanceTasks(false)
+            );
+
+            // enqueue item to queue, no reader yet
+            await queue.EnqueueAsync(new SimpleWorkItem());
+
+            // create database, we want to cause delay in redis to reproduce the issue            
+            var database = muxer.GetDatabase();
+
+            // sync / async ops timeout is not working as described: https://stackexchange.github.io/StackExchange.Redis/Configuration
+            // it should have timed out after 100 ms but it actually takes a lot more time to time out so we have to use longer delay until this issue is resolved
+            // value can be up to 1,000,000 - 1            
+            //const int DELAY_TIME_USEC = 200000; // 200 msec
+            //string databaseDelayScript = $"local usecnow = tonumber(redis.call(\"time\")[2]); while ((((tonumber(redis.call(\"time\")[2]) - usecnow) + 1000000) % 1000000) < {DELAY_TIME_USEC}) do end";
+
+            const int DELAY_TIME_SEC = 5;
+            string databaseDelayScript = $@"
+local now = tonumber(redis.call(""time"")[1]); 
+while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
+"do end";
+
+            // db will be busy for DELAY_TIME_USEC which will cause timeout on the dequeue to follow
+            database.ScriptEvaluateAsync(databaseDelayScript);
+
+            var completion = new TaskCompletionSource<bool>();
+            await queue.StartWorkingAsync(async (item) => {
+                await item.CompleteAsync();
+                completion.SetResult(true);
+            });
+
+            // wait for the databaseDelayScript to finish
+            await Task.Delay(DELAY_TIME_SEC * 1000);
+
+            // item should've either time out at some iterations and after databaseDelayScript is done be received
+            // or it might have moved to work, in this case we want to make sure the correct keys were created            
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            bool success = false;
+            while (stopwatch.Elapsed.TotalSeconds < 10) {
+                
+                string workListName = $"q:{QUEUE_NAME}:work";
+                long workListLen = await database.ListLengthAsync(new RedisKey(workListName));                
+                var item = await database.ListLeftPopAsync(workListName);
+                string dequeuedItemKey = String.Concat("q:", QUEUE_NAME, ":", item, ":dequeued");
+                bool dequeuedItemKeyExists = await database.KeyExistsAsync(new RedisKey(dequeuedItemKey));
+                if (workListLen == 1) {
+                    Assert.True(dequeuedItemKeyExists);
+                    success = true;
+                    break;
+                }
+
+                var timeoutCancellationTokenSource = new CancellationTokenSource();
+                var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100), timeoutCancellationTokenSource.Token));
+                if (completion.Task == completedTask) {
+                    success = true;
+                    break;
+                }
+            }
+
+            Assert.True(success);
+        }
+        
         // TODO: Need to write tests that verify the cache data is correct after each operation.
 
         [Fact(Skip = "Performance Test")]

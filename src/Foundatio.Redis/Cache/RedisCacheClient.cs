@@ -24,7 +24,7 @@ namespace Foundatio.Caching {
         private LoadedLuaScript _removeIfEqual;
         private LoadedLuaScript _replaceIfEqual;
         private LoadedLuaScript _setIfHigher;
-        private LoadedLuaScript _setIfLower;
+        private LoadedLuaScript _setIfLower;        
 
         public RedisCacheClient(RedisCacheClientOptions options) {
             _options = options;
