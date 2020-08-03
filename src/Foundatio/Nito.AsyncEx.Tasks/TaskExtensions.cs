@@ -1,4 +1,7 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,12 +32,6 @@ namespace Foundatio.AsyncEx {
         {
             using (var cancelTaskSource = new CancellationTokenTaskSource<object>(cancellationToken))
                 await await Task.WhenAny(task, cancelTaskSource.Task).ConfigureAwait(false);
-        }
-
-        private static async Task<TResult> DoWaitAsync<TResult>(Task<TResult> task, CancellationToken cancellationToken)
-        {
-            using (var cancelTaskSource = new CancellationTokenTaskSource<TResult>(cancellationToken))
-                return await await Task.WhenAny(task, cancelTaskSource.Task).ConfigureAwait(false);
         }
     }
 }
