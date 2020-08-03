@@ -565,6 +565,8 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task WorkItemsWillTimeoutAsync() {
+            Log.MinimumLevel = LogLevel.Trace;
+            Log.SetLogLevel("Foundatio.Queues.RedisQueue", LogLevel.Trace);
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
             if (queue == null)
                 return;
@@ -579,14 +581,19 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
-
-                // wait for the task to be auto abandoned
+                
+                // wait for the entry to be auto abandoned
+                var sw = Stopwatch.StartNew();
+                do {
+                    var stats = await queue.GetQueueStatsAsync();
+                    if (stats.Timeouts > 0)
+                        break;
+                } while (sw.Elapsed < TimeSpan.FromSeconds(10));
 
                 // should throw because the item has already been auto abandoned
-                await Assert.ThrowsAsync<InvalidOperationException>(() => workItem.CompleteAsync());
+                await Assert.ThrowsAsync<InvalidOperationException>(async () => await workItem.CompleteAsync().AnyContext());
 
-                var sw = Stopwatch.StartNew();
+                sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
@@ -1236,43 +1243,48 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
             // create queue with short work item timeout so it will be auto abandoned
             var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(100));
+            if (queue == null)
+                return;
+            try {
+                await queue.DeleteQueueAsync();
 
-            // completion source to wait for CompleteAsync call before the assert
-            var taskCompletionSource = new TaskCompletionSource<bool>();
+                // completion source to wait for CompleteAsync call before the assert
+                var taskCompletionSource = new TaskCompletionSource<bool>();
 
-            // start handling items
-            await queue.StartWorkingAsync(async (item) => {
-                // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
-                if (item.Value.Data == "Delay") {
-                    await Task.Delay(TimeSpan.FromSeconds(1));
-                }
+                // start handling items
+                await queue.StartWorkingAsync(async (item) => {
+                    // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
+                    if (item.Value.Data == "Delay") {
+                        await Task.Delay(TimeSpan.FromSeconds(1));
+                    }
 
-                try {
-                    // call complete on the auto abandoned item
-                    await item.CompleteAsync();
-                } finally {
-                    // completeAsync will currently throw an exception becuase item can not be removed from dequeued list because it was already removed due to auto abandon
-                    // infrastructure handles user exception incorrectly
-                    taskCompletionSource.SetResult(true);
-                }
-            });
+                    try {
+                        // call complete on the auto abandoned item
+                        await item.CompleteAsync();
+                    } finally {
+                        // completeAsync will currently throw an exception becuase item can not be removed from dequeued list because it was already removed due to auto abandon
+                        // infrastructure handles user exception incorrectly
+                        taskCompletionSource.SetResult(true);
+                    }
+                });
 
-            // enqueue item which will be processed after it's auto abandoned
-            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
+                // enqueue item which will be processed after it's auto abandoned
+                await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
 
-            // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
-            bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
-            Assert.False(timedout);
+                // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
+                bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
+                Assert.False(timedout);
 
-            // enqueue another item and make sure it was handled (worker loop didn't crash)
-            taskCompletionSource = new TaskCompletionSource<bool>();
-            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
+                // enqueue another item and make sure it was handled (worker loop didn't crash)
+                taskCompletionSource = new TaskCompletionSource<bool>();
+                await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
 
-            // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
-            timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(1)))) != taskCompletionSource.Task;
-            Assert.False(timedout);
-
-            return;
+                // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
+                timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(1)))) != taskCompletionSource.Task;
+                Assert.False(timedout);
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
         }
 
         public virtual void Dispose() {
