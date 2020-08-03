@@ -209,8 +209,8 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public override Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
-            return base.CompleteOnAutoAbandonedHandledProperly_Issue239();
+        public override Task CanHandleAutoAbandonInWorker() {
+            return base.CanHandleAutoAbandonInWorker();
         }
     }
 }
