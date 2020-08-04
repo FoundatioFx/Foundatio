@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.1.301
+        dotnet-version: 3.1.302
     - name: Build Reason
       run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build Version
@@ -29,19 +29,19 @@ jobs:
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack Foundatio.sln --configuration Release --no-build
-    - name: Add GitHub NuGet Source
+    - name: Install GPR Tool
       if: github.event_name != 'pull_request'
-      run: dotnet nuget add source https://nuget.pkg.github.com/foundatiofx/index.json --name GitHub --username foundatiofx --password ${{secrets.GITHUB_TOKEN}} --store-password-in-clear-text
+      run: dotnet tool install gpr -g
     - name: Publish CI Packages
       if: github.event_name != 'pull_request'
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
           
-          # GPR
-          dotnet nuget push $package --source GitHub --skip-duplicate
+          # GitHub
+          gpr push $package -k ${{ secrets.FEEDZ_KEY }}
           
-          # feedz (remove once GPR supports anonymous access)
+          # Feedz (remove once GitHub supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
         done
     - name: Publish Release Packages
