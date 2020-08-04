@@ -39,7 +39,7 @@ jobs:
           echo "${0##*/}": Pushing $package...
           
           # GitHub
-          gpr push $package -k ${{ secrets.FEEDZ_KEY }}
+          gpr push $package -k ${{ secrets.GITHUB_TOKEN }}
           
           # Feedz (remove once GitHub supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
