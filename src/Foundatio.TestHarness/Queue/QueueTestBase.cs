@@ -582,16 +582,19 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
                 
-                // wait for the entry to be auto abandoned
                 var sw = Stopwatch.StartNew();
-                do {
-                    var stats = await queue.GetQueueStatsAsync();
-                    if (stats.Abandoned > 0)
-                        break;
-                } while (sw.Elapsed < TimeSpan.FromSeconds(10));
+                if (_assertStats) {
+                    // wait for the entry to be auto abandoned
+                    do {
+                        var stats = await queue.GetQueueStatsAsync();
+                        if (stats.Abandoned > 0)
+                            break;
+                    } while (sw.Elapsed < TimeSpan.FromSeconds(10));
+                }
 
                 // should throw because the item has already been auto abandoned
-                await Assert.ThrowsAsync<InvalidOperationException>(async () => await workItem.CompleteAsync().AnyContext());
+                if (_assertStats)
+                    await Assert.ThrowsAsync<InvalidOperationException>(async () => await workItem.CompleteAsync().AnyContext());
 
                 sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
