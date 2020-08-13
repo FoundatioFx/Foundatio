@@ -6,13 +6,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class Run {
-        public static Task DelayedAsync(TimeSpan delay, Func<Task> action) {
+        public static Task DelayedAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default) {
+            if (cancellationToken.IsCancellationRequested)
+                return Task.CompletedTask;
+
             return Task.Run(async () => {
                 if (delay.Ticks > 0)
-                    await SystemClock.SleepAsync(delay).AnyContext();
+                    await SystemClock.SleepAsync(delay, cancellationToken).AnyContext();
+
+                if (cancellationToken.IsCancellationRequested)
+                    return;
 
                 await action().AnyContext();
-            });
+            }, cancellationToken);
         }
 
         public static Task InParallelAsync(int iterations, Func<int, Task> work) {
