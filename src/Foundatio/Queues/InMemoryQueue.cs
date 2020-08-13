@@ -184,8 +184,8 @@ namespace Foundatio.Queues {
             if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
-            Interlocked.Increment(ref _completedCount);
             entry.MarkCompleted();
+            Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(entry).AnyContext();
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {Id}", entry.Id);
         }
@@ -199,8 +199,8 @@ namespace Foundatio.Queues {
             if (!_dequeued.TryRemove(entry.Id, out var targetEntry) || targetEntry == null)
                 throw new Exception("Unable to remove item from the dequeued list.");
 
-            Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
+            Interlocked.Increment(ref _abandonedCount);
             try {
                 await OnAbandonedAsync(entry).AnyContext();
             } catch (Exception ex) {
