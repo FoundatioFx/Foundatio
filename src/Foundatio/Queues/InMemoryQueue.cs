@@ -57,8 +57,7 @@ namespace Foundatio.Queues {
 
         protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
             string id = Guid.NewGuid().ToString("N");
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
+            _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
 
             if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
@@ -67,13 +66,13 @@ namespace Foundatio.Queues {
             entry.Properties.AddRange(options?.Properties);
             
             _queue.Enqueue(entry);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue: Set Event");
+            _logger.LogTrace("Enqueue: Set Event");
 
             _autoResetEvent.Set();
             Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(entry).AnyContext();
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
+            _logger.LogTrace("Enqueue done");
 
             return id;
         }
@@ -82,15 +81,14 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Queue {Name} start working", _options.Name);
+            _logger.LogTrace("Queue {Name} start working", _options.Name);
             var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
             Task.Run(async () => {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
+                _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
+                    _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
 
                     IQueueEntry<T> queueEntry = null;
                     try {
@@ -108,8 +106,7 @@ namespace Foundatio.Queues {
                         if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
-                        if (_logger.IsEnabled(LogLevel.Error))
-                            _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                        _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                             await queueEntry.AbandonAsync().AnyContext();
@@ -118,8 +115,7 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+                _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 
@@ -187,7 +183,7 @@ namespace Foundatio.Queues {
             entry.MarkCompleted();
             Interlocked.Increment(ref _completedCount);
             await OnCompletedAsync(entry).AnyContext();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {Id}", entry.Id);
+            _logger.LogTrace("Complete done: {Id}", entry.Id);
         }
 
         public override async Task AbandonAsync(IQueueEntry<T> entry) {
@@ -201,24 +197,23 @@ namespace Foundatio.Queues {
 
             entry.MarkAbandoned();
             Interlocked.Increment(ref _abandonedCount);
-            try {
-                await OnAbandonedAsync(entry).AnyContext();
-            } catch (Exception ex) {
-                _logger.LogError(ex, "Error running queue abandon handler: {Id}", entry.Id);
-            }
             _logger.LogTrace("Abandon complete: {Id}", entry.Id);
 
-            if (targetEntry.Attempts < _options.Retries + 1) {
-                if (_options.RetryDelay > TimeSpan.Zero) {
-                    _logger.LogTrace("Adding item to wait list for future retry: {Id}", entry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _queueDisposedCancellationTokenSource.Token);
+            try {
+                await OnAbandonedAsync(entry).AnyContext();
+            } finally {
+                if (targetEntry.Attempts < _options.Retries + 1) {
+                    if (_options.RetryDelay > TimeSpan.Zero) {
+                        _logger.LogTrace("Adding item to wait list for future retry: {Id}", entry.Id);
+                        var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _queueDisposedCancellationTokenSource.Token);
+                    } else {
+                        _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
+                        var unawaited = Task.Run(() => RetryAsync(targetEntry));
+                    }
                 } else {
-                    _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
-                    var unawaited = Task.Run(() => RetryAsync(targetEntry));
+                    _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", entry.Id);
+                    _deadletterQueue.Enqueue(targetEntry);
                 }
-            } else {
-                _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", entry.Id);
-                _deadletterQueue.Enqueue(targetEntry);
             }
         }
 
