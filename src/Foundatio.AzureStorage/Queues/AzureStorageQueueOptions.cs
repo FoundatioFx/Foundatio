@@ -1,5 +1,5 @@
 ﻿using System;
-using Microsoft.WindowsAzure.Storage.RetryPolicies;
+using Microsoft.Azure.Storage.RetryPolicies;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class {

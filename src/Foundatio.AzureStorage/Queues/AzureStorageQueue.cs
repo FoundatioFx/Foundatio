@@ -8,8 +8,8 @@ using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Queue;
+using Microsoft.Azure.Storage;
+using Microsoft.Azure.Storage.Queue;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Foundatio.Queues {
@@ -65,7 +65,7 @@ namespace Foundatio.Queues {
                 return null;
 
             Interlocked.Increment(ref _enqueuedCount);
-            var message = CloudQueueMessage.CreateCloudQueueMessageFromByteArray(_serializer.SerializeToBytes(data));
+            var message = new CloudQueueMessage(_serializer.SerializeToBytes(data));
             await _queueReference.AddMessageAsync(message).AnyContext();
 
             var entry = new QueueEntry<T>(message.Id, null, data, this, SystemClock.UtcNow, 0);

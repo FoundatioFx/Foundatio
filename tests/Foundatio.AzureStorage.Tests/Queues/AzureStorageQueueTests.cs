@@ -4,7 +4,7 @@ using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
-using Microsoft.WindowsAzure.Storage.RetryPolicies;
+using Microsoft.Azure.Storage.RetryPolicies;
 using Xunit;
 using Xunit.Abstractions;
 

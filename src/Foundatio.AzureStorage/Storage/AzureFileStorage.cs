@@ -9,8 +9,8 @@ using Foundatio.Azure.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.Azure.Storage;
+using Microsoft.Azure.Storage.Blob;
 
 namespace Foundatio.Storage {
     public class AzureFileStorage : IFileStorage {
@@ -104,7 +104,7 @@ namespace Foundatio.Storage {
             var oldBlob = _container.GetBlockBlobReference(path);
             var newBlob = _container.GetBlockBlobReference(targetPath);
 
-            await newBlob.StartCopyAsync(oldBlob, null, null, null, null, cancellationToken).AnyContext();
+            await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
             while (newBlob.CopyState.Status == CopyStatus.Pending)
                 await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
 

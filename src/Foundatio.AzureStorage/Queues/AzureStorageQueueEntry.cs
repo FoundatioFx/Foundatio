@@ -1,5 +1,5 @@
 ﻿using System;
-using Microsoft.WindowsAzure.Storage.Queue;
+using Microsoft.Azure.Storage.Queue;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueueEntry<T> : QueueEntry<T> where T : class {
