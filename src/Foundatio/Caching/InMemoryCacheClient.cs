@@ -14,6 +14,7 @@ namespace Foundatio.Caching {
     public class InMemoryCacheClient : ICacheClient {
         private readonly ConcurrentDictionary<string, CacheEntry> _memory;
         private bool _shouldClone;
+        private bool _shouldThrowOnSerializationErrors;
         private int? _maxItems;
         private long _writes;
         private long _hits;
@@ -26,6 +27,7 @@ namespace Foundatio.Caching {
             if (options == null)
                 options = new InMemoryCacheClientOptions();
             _shouldClone = options.CloneValues;
+            _shouldThrowOnSerializationErrors = options.ShouldThrowOnSerializationError;
             _maxItems = options.MaxItems;
             var loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger<InMemoryCacheClient>();
@@ -195,18 +197,21 @@ namespace Foundatio.Caching {
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", cacheEntry.Value, typeof(T).FullName);
+                
+                if (_shouldThrowOnSerializationErrors)
+                    throw;
+                
                 return CacheValue<T>.NoValue;
             }
         }
 
-        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var map = new Dictionary<string, Task<CacheValue<T>>>();
-            foreach (string key in keys)
-                map[key] = GetAsync<T>(key);
+        public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
+            var map = new Dictionary<string, CacheValue<T>>();
 
-            return Task.WhenAll(map.Values)
-                .ContinueWith<IDictionary<string, CacheValue<T>>>(t => 
-                    map.ToDictionary(k => k.Key, v => v.Value.Result), TaskContinuationOptions.OnlyOnRanToCompletion);
+            foreach (string key in keys)
+                map[key] = await GetAsync<T>(key);
+
+            return map;
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {

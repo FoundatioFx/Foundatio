@@ -1,8 +1,6 @@
 name: "Code scanning - action"
 
 on:
-  push:
-  pull_request:
   schedule:
     - cron: '0 1 * * 2'
 
@@ -32,7 +30,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.1.301
+        dotnet-version: 3.1.302
     
     - name: Build
       run: dotnet build Foundatio.sln --configuration Release

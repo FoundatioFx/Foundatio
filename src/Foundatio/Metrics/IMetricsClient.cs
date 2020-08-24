@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -19,12 +18,9 @@ namespace Foundatio.Metrics {
             return new MetricTimer(name, client);
         }
 
-        public static Task TimeAsync(this IMetricsClient client, Func<Task> action, string name) {
-            var timer = client.StartTimer(name);
-            return action().ContinueWith(t => {
-                timer.Dispose();
-                return t;
-            }).Unwrap();
+        public static async Task TimeAsync(this IMetricsClient client, Func<Task> action, string name) {
+            using (client.StartTimer(name))
+                await action().AnyContext();
         }
 
         public static void Time(this IMetricsClient client, Action action, string name) {
@@ -32,12 +28,9 @@ namespace Foundatio.Metrics {
                 action();
         }
 
-        public static Task<T> TimeAsync<T>(this IMetricsClient client, Func<Task<T>> func, string name) {
-            var timer = client.StartTimer(name);
-            return func().ContinueWith(t => {
-                timer.Dispose();
-                return t;
-            }).Unwrap();
+        public static async Task<T> TimeAsync<T>(this IMetricsClient client, Func<Task<T>> func, string name) {
+            using (client.StartTimer(name))
+                return await func().AnyContext();
         }
     }
 }

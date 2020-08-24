@@ -207,5 +207,10 @@ namespace Foundatio.Tests.Queue {
         public override Task VerifyDelayedRetryAttemptsAsync() {
             return base.VerifyDelayedRetryAttemptsAsync();
         }
+
+        [Fact]
+        public override Task CanHandleAutoAbandonInWorker() {
+            return base.CanHandleAutoAbandonInWorker();
+        }
     }
 }

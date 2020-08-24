@@ -10,8 +10,8 @@ namespace Foundatio.Tests.Caching {
     public class InMemoryHybridCacheClientTests : HybridCacheClientTests {
         public InMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
 
-        protected override ICacheClient GetCacheClient() {
-            return new InMemoryHybridCacheClient(_messageBus, Log);
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+            return new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError);
         }
 
         [Fact]
@@ -82,8 +82,11 @@ namespace Foundatio.Tests.Caching {
     }
     
     public class InMemoryHybridCacheClient : HybridCacheClient {
-        public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory)
-            : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), messageBus, new InMemoryCacheClientOptions { CloneValues = true }, loggerFactory) {
+        public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory, bool shouldThrowOnSerializationError)
+            : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).ShouldThrowOnSerializationError(shouldThrowOnSerializationError)), messageBus, new InMemoryCacheClientOptions {
+                CloneValues = true,
+                ShouldThrowOnSerializationError = shouldThrowOnSerializationError
+            }, loggerFactory) {
         }
 
         public override void Dispose() {

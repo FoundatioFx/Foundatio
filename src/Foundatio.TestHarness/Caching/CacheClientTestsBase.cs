@@ -8,7 +8,6 @@ using Foundatio.Caching;
 using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
-using Newtonsoft.Json;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,7 +16,7 @@ namespace Foundatio.Tests.Caching {
         protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
         }
 
-        protected virtual ICacheClient GetCacheClient() {
+        protected virtual ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
             return null;
         }
 
@@ -42,16 +41,17 @@ namespace Foundatio.Tests.Caching {
                 await cache.SetAsync("obj1", new SimpleModel {Data1 = "data 1", Data2 = 1 });
                 await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
                 await cache.SetAsync("obj3", (SimpleModel)null);
+                await cache.SetAsync("obj4", new SimpleModel { Data1 = "test 1", Data2 = 4 });
 
-                string json = JsonConvert.SerializeObject(new SimpleModel {Data1 = "test 1", Data2 = 4});
-                await cache.SetAsync("obj4", json);
-
-                //await cache.SetAsync("obj4", "{ \"Data1\":\"data 3\", \"Data2\":3 }");
                 var result2 = await cache.GetAllAsync<SimpleModel>(new[] { "obj1", "obj2", "obj3", "obj4", "obj5" });
                 Assert.NotNull(result2);
                 Assert.Equal(5, result2.Count);
                 Assert.True(result2["obj3"].IsNull);
                 Assert.False(result2["obj5"].HasValue);
+
+                var obj4 = result2["obj4"];
+                Assert.NotNull(obj4);
+                Assert.Equal("test 1", obj4.Value.Data1);
 
                 await cache.SetAsync("str1", "string 1");
                 await cache.SetAsync("str2", "string 2");
@@ -203,7 +203,7 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanTryGetAsync() {
+        public virtual async Task CanGetAsync() {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
@@ -216,9 +216,44 @@ namespace Foundatio.Tests.Caching {
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(1L, cacheValue.Value);
 
-                await cache.SetAsync<long>("test", Int64.MaxValue);
+                await cache.SetAsync<long>("test", 1);
                 var cacheValue2 = await cache.GetAsync<int>("test");
-                Assert.False(cacheValue2.HasValue);
+                Assert.True(cacheValue2.HasValue);
+                Assert.Equal(1L, cacheValue2.Value);
+
+                await cache.SetAsync<long>("test", Int64.MaxValue);
+                await Assert.ThrowsAnyAsync<Exception>(async () => {
+                    var cacheValue3 = await cache.GetAsync<int>("test");
+                    Assert.False(cacheValue3.HasValue);
+                });
+
+                cacheValue = await cache.GetAsync<long>("test");
+                Assert.True(cacheValue.HasValue);
+                Assert.Equal(Int64.MaxValue, cacheValue.Value);
+            }
+        }
+
+        public virtual async Task CanTryGetAsync() {
+            var cache = GetCacheClient(false);
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+
+                await cache.SetAsync<int>("test", 1);
+                var cacheValue = await cache.GetAsync<long>("test");
+                Assert.True(cacheValue.HasValue);
+                Assert.Equal(1L, cacheValue.Value);
+
+                await cache.SetAsync<long>("test", 1);
+                var cacheValue2 = await cache.GetAsync<int>("test");
+                Assert.True(cacheValue2.HasValue);
+                Assert.Equal(1L, cacheValue2.Value);
+
+                await cache.SetAsync<long>("test", Int64.MaxValue);
+                var cacheValue3 = await cache.GetAsync<int>("test");
+                Assert.False(cacheValue3.HasValue);
 
                 cacheValue = await cache.GetAsync<long>("test");
                 Assert.True(cacheValue.HasValue);

@@ -5,11 +5,13 @@ using Foundatio.Utility;
 namespace Foundatio.Queues {
     public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposable where T : class {
         private readonly IQueue<T> _queue;
+        private readonly T _original;
 
         public QueueEntry(string id, string correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts) {
             Id = id;
             CorrelationId = correlationId;
-            Value = value;
+            _original = value;
+            Value = value.DeepClone();
             _queue = queue;
             EnqueuedTimeUtc = enqueuedTimeUtc;
             Attempts = attempts;
@@ -55,6 +57,12 @@ namespace Foundatio.Queues {
         public async ValueTask DisposeAsync() {
             if (!IsAbandoned && !IsCompleted)
                 await AbandonAsync();
+        }
+
+        internal void Reset() {
+            IsCompleted = false;
+            IsAbandoned = false;
+            Value = _original.DeepClone();
         }
     }
 

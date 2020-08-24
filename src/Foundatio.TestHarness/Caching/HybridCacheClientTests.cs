@@ -16,8 +16,8 @@ namespace Foundatio.Tests.Caching {
 
         public HybridCacheClientTests(ITestOutputHelper output) : base(output) {}
 
-        protected override ICacheClient GetCacheClient() {
-            return new HybridCacheClient(_distributedCache, _messageBus, new InMemoryCacheClientOptions { CloneValues = true }, Log);
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+            return new HybridCacheClient(_distributedCache, _messageBus, new InMemoryCacheClientOptions { CloneValues = true, ShouldThrowOnSerializationError = shouldThrowOnSerializationError }, Log);
         }
 
         [Fact]

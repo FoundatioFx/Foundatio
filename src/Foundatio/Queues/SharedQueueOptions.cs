@@ -15,7 +15,8 @@ namespace Foundatio.Queues {
         where TOptions : SharedQueueOptions<T>, new()
         where TBuilder : SharedQueueOptionsBuilder<T, TOptions, TBuilder> {
         public TBuilder Name(string name) {
-            Target.Name = name;
+            if (!String.IsNullOrEmpty(name))
+                Target.Name = name;
             return (TBuilder)this;
         }
 

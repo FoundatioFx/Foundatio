@@ -6,21 +6,30 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility {
     public static class Run {
-        public static Task DelayedAsync(TimeSpan delay, Func<Task> action) {
-            return Task.Run(() => {
-                if (delay.Ticks <= 0)
-                    return action();
+        public static Task DelayedAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default) {
+            if (cancellationToken.IsCancellationRequested)
+                return Task.CompletedTask;
 
-                return SystemClock.SleepAsync(delay).ContinueWith(t => action(), TaskContinuationOptions.OnlyOnRanToCompletion);
-            });
+            return Task.Run(async () => {
+                if (delay.Ticks > 0)
+                    await SystemClock.SleepAsync(delay, cancellationToken).AnyContext();
+
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+
+                await action().AnyContext();
+            }, cancellationToken);
         }
 
         public static Task InParallelAsync(int iterations, Func<int, Task> work) {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
 
-        public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
-            return WithRetriesAsync(() => action().ContinueWith(t => Task.CompletedTask, TaskContinuationOptions.OnlyOnRanToCompletion), maxAttempts, retryInterval, cancellationToken, logger);
+        public static async Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
+            await WithRetriesAsync<object>(async () => {
+                await action().AnyContext();
+                return null;
+            }, maxAttempts, retryInterval, cancellationToken, logger);
         }
 
         public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {

@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.1.301
+        dotnet-version: 3.1.302
     - name: Build Reason
       run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build Version
@@ -29,22 +29,19 @@ jobs:
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack Foundatio.sln --configuration Release --no-build
+    - name: Install GitHub Package Tool
+      if: github.event_name != 'pull_request'
+      run: dotnet tool install gpr -g
     - name: Publish CI Packages
       if: github.event_name != 'pull_request'
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
           
-          # GPR - workaround for GPR not working with API key
-          echo "Pushing $package to GPR..."
-          STATUSCODE=$(curl -sX --write-out "%{http_code}" PUT -u "foundatiofx:${{ secrets.GITHUB_TOKEN }}" -F package=@$package https://nuget.pkg.github.com/foundatiofx/)
-          if test $STATUSCODE -ne 200; then
-              echo "Failed to push"
-          else
-              echo "Your package was pushed."
-          fi
-
-          # feedz (remove once GPR supports anonymous access)
+          # GitHub
+          gpr push $package -k ${{ secrets.GITHUB_TOKEN }} || true
+          
+          # Feedz (remove once GitHub supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
         done
     - name: Publish Release Packages

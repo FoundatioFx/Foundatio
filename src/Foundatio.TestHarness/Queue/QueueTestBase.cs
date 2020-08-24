@@ -1,4 +1,4 @@
-using Exceptionless;
+﻿using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
@@ -565,6 +565,8 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task WorkItemsWillTimeoutAsync() {
+            Log.MinimumLevel = LogLevel.Trace;
+            Log.SetLogLevel("Foundatio.Queues.RedisQueue", LogLevel.Trace);
             var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
             if (queue == null)
                 return;
@@ -579,14 +581,25 @@ namespace Foundatio.Tests.Queue {
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
-
-                // wait for the task to be auto abandoned
-
+                
                 var sw = Stopwatch.StartNew();
+                if (_assertStats) {
+                    // wait for the entry to be auto abandoned
+                    do {
+                        var stats = await queue.GetQueueStatsAsync();
+                        if (stats.Abandoned > 0)
+                            break;
+                    } while (sw.Elapsed < TimeSpan.FromSeconds(10));
+                }
+
+                // should throw because the item has already been auto abandoned
+                if (_assertStats)
+                    await Assert.ThrowsAsync<InvalidOperationException>(async () => await workItem.CompleteAsync().AnyContext());
+
+                sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 sw.Stop();
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+                _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 Assert.NotNull(workItem);
                 await workItem.CompleteAsync();
                 if (_assertStats)
@@ -1224,6 +1237,53 @@ namespace Foundatio.Tests.Queue {
                 }
             }
             finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        public virtual async Task CanHandleAutoAbandonInWorker() {
+            // create queue with short work item timeout so it will be auto abandoned
+            var queue = GetQueue(workItemTimeout: TimeSpan.FromMilliseconds(100));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+
+                var successEvent = new AsyncAutoResetEvent();
+                var errorEvent = new AsyncAutoResetEvent();
+
+                await queue.StartWorkingAsync(async (item) => {
+                    if (item.Value.Data == "Delay") {
+                        // wait for queue item to get auto abandoned
+                        var stats = await queue.GetQueueStatsAsync();
+                        var sw = Stopwatch.StartNew();
+                        do {
+                            if (stats.Abandoned > 0)
+                                break;
+
+                            stats = await queue.GetQueueStatsAsync();
+                        } while (sw.Elapsed < TimeSpan.FromSeconds(5));
+
+                        Assert.Equal(1, stats.Abandoned);
+                    }
+
+                    try {
+                        await item.CompleteAsync();
+                    } catch {
+                        errorEvent.Set();
+                        throw;
+                    }
+
+                    successEvent.Set();
+                });
+
+                await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
+                await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
+                
+                await errorEvent.WaitAsync(TimeSpan.FromSeconds(5));
+                await successEvent.WaitAsync(TimeSpan.FromSeconds(5));
+            } finally {
                 await CleanupQueueAsync(queue);
             }
         }
