@@ -212,5 +212,125 @@ namespace Foundatio.Tests.Queue {
         public override Task CanHandleAutoAbandonInWorker() {
             return base.CanHandleAutoAbandonInWorker();
         }
+
+        #region Issue239
+
+        class QueueEntry_Issue239<T> : IQueueEntry<T> where T : class {
+            IQueueEntry<T> _queueEntry;
+
+            public QueueEntry_Issue239(IQueueEntry<T> queueEntry) {
+                    _queueEntry = queueEntry;
+                }
+
+            public T Value => _queueEntry.Value;
+
+            public string Id => _queueEntry.Id;
+
+            public string CorrelationId => _queueEntry.CorrelationId;
+
+            public DataDictionary Properties => _queueEntry.Properties;
+
+            public Type EntryType => _queueEntry.EntryType;
+
+            public bool IsCompleted => _queueEntry.IsCompleted;
+
+            public bool IsAbandoned => _queueEntry.IsAbandoned;
+
+            public int Attempts => _queueEntry.Attempts;
+
+            public Task AbandonAsync() {
+                return _queueEntry.AbandonAsync();
+            }
+
+            public Task CompleteAsync() {
+                return _queueEntry.CompleteAsync();
+            }
+
+            public ValueTask DisposeAsync() {
+                return _queueEntry.DisposeAsync();
+            }
+
+            public object GetValue() {
+                return _queueEntry.GetValue();
+            }
+
+            public void MarkAbandoned() {
+                // we want to simulate timing of user complete call between the maintenance abandon call to _dequeued.TryRemove and entry.MarkAbandoned();
+                Task.Delay(1500).Wait();
+
+                _queueEntry.MarkAbandoned();
+            }
+
+            public void MarkCompleted() {
+                _queueEntry.MarkCompleted();
+            }
+
+            public Task RenewLockAsync() {
+                return _queueEntry.RenewLockAsync();
+            }
+        }
+
+        class InMemoryQueue_Issue239<T> : InMemoryQueue<T> where T : class {
+            public override Task AbandonAsync(IQueueEntry<T> entry) {
+                // delay first abandon from maintenance (simulate timing issues which may occur to demonstrate the problem)
+                return base.AbandonAsync(new QueueEntry_Issue239<T>(entry));                
+            }
+
+            public InMemoryQueue_Issue239(ILoggerFactory loggerFactory) 
+                : base(o => o
+                        .RetryDelay(TimeSpan.FromMinutes(1))
+                        .Retries(1)
+                        .RetryMultipliers(new[] { 1, 3, 5, 10 })
+                        .LoggerFactory(loggerFactory)
+                        .WorkItemTimeout(TimeSpan.FromMilliseconds(100))) {
+            }
+        }
+
+        [Fact]
+        // this test reproduce an issue which cause worker task loop to crash and stop processing items when auto abandoned item is ultimately processed and user call complete on
+        // https://github.com/FoundatioFx/Foundatio/issues/239
+        public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
+            // create queue with short work item timeout so it will be auto abandoned
+            var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
+
+            // completion source to wait for CompleteAsync call before the assert
+            var taskCompletionSource = new TaskCompletionSource<bool>();
+
+            // start handling items
+            await queue.StartWorkingAsync(async (item) => {
+                // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
+                if (item.Value.Data == "Delay") {
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                }
+
+                try {
+                    // call complete on the auto abandoned item
+                    await item.CompleteAsync();
+                } finally {
+                    // completeAsync will currently throw an exception becuase item can not be removed from dequeued list because it was already removed due to auto abandon
+                    // infrastructure handles user exception incorrectly
+                    taskCompletionSource.SetResult(true);
+                }
+            });
+
+            // enqueue item which will be processed after it's auto abandoned
+            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
+
+            // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
+            bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
+            Assert.False(timedout);
+
+            // enqueue another item and make sure it was handled (worker loop didn't crash)
+            taskCompletionSource = new TaskCompletionSource<bool>();
+            await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
+
+            // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
+            timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
+            Assert.False(timedout);
+
+            return;
+        }
+
+        #endregion
     }
 }
