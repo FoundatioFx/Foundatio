@@ -276,11 +276,12 @@ namespace Foundatio.Tests.Queue {
                 return base.AbandonAsync(new QueueEntry_Issue239<T>(entry));                
             }
 
-            public InMemoryQueue_Issue239() 
+            public InMemoryQueue_Issue239(ILoggerFactory loggerFactory) 
                 : base(o => o
                         .RetryDelay(TimeSpan.FromMinutes(1))
                         .Retries(1)
                         .RetryMultipliers(new[] { 1, 3, 5, 10 })
+                        .LoggerFactory(loggerFactory)
                         .WorkItemTimeout(TimeSpan.FromMilliseconds(100))) {
             }
         }
@@ -290,8 +291,8 @@ namespace Foundatio.Tests.Queue {
         // https://github.com/FoundatioFx/Foundatio/issues/239
         public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
             // create queue with short work item timeout so it will be auto abandoned
-            var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(); 
-                
+            var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
+
             // completion source to wait for CompleteAsync call before the assert
             var taskCompletionSource = new TaskCompletionSource<bool>();
 

@@ -94,8 +94,7 @@ namespace Foundatio.Queues {
                     try {
                         queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
                     } catch (Exception ex) {
-                        if (_logger.IsEnabled(LogLevel.Error))
-                            _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
+                        _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                     }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
@@ -103,15 +102,26 @@ namespace Foundatio.Queues {
 
                     try {
                         await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
-                        if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                            await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                            await queueEntry.AbandonAsync().AnyContext();
+                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
+                            try {
+                                await queueEntry.AbandonAsync().AnyContext();
+                            } catch (Exception abandonEx) {
+                                _logger.LogError(abandonEx, "Worker error abandoning queue entry: {Message}", abandonEx.Message);
+                            }
+                        }
 
                         Interlocked.Increment(ref _workerErrorCount);
+                    }
+
+                    if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
+                        try {
+                            await Run.WithRetriesAsync(() => queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token, logger: _logger).AnyContext();
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Worker error attempting to auto complete entry: {Message}", ex.Message);
+                        }
                     }
                 }
 
