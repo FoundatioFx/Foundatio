@@ -594,7 +594,7 @@ namespace Foundatio.Tests.Queue {
 
                 // should throw because the item has already been auto abandoned
                 if (_assertStats)
-                    await Assert.ThrowsAsync<InvalidOperationException>(async () => await workItem.CompleteAsync().AnyContext());
+                    await Assert.ThrowsAnyAsync<Exception>(async () => await workItem.CompleteAsync().AnyContext());
 
                 sw = Stopwatch.StartNew();
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
