@@ -209,6 +209,8 @@ namespace Foundatio.Queues {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
+            _logger.LogTrace("Queue {Name} start working", _options.Name);
+
             _workers.Add(Task.Run(async () => {
                 using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
                 _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
@@ -219,23 +221,34 @@ namespace Foundatio.Queues {
                     IQueueEntry<T> queueEntry = null;
                     try {
                         queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
-                    } catch (TimeoutException) { }
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
+                    }
 
                     if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
                         continue;
 
                     try {
                         await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
-                        if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                            await queueEntry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
                         _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                        try {
-                            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                        if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
+                            try {
                                 await queueEntry.AbandonAsync().AnyContext();
-                        } catch (Exception) { }
+                            } catch (Exception abandonEx) {
+                                _logger.LogError(abandonEx, "Worker error abandoning queue entry: {Message}", abandonEx.Message);
+                            }
+                        }
+                    }
+
+                    if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
+                        try {
+                            await Run.WithRetriesAsync(() => queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token, logger: _logger).AnyContext();
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Worker error attempting to auto complete entry: {Message}", ex.Message);
+                        }
                     }
                 }
 
