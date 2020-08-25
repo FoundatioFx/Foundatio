@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="RabbitMQ.Client" Version="6.1.0" />
-    <PackageReference Include="Foundatio" Version="10.0.0-beta8" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="RabbitMQ.Client" Version="6.2.1" />
+    <PackageReference Include="Foundatio" Version="10.0.0-beta9" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
 
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
