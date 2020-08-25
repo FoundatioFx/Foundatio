@@ -1,6 +1,6 @@
 ﻿using System;
 using Foundatio.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.Azure.Storage.Blob;
 
 namespace Foundatio.Azure.Extensions {
     public static class StorageExtensions {
