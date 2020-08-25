@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="3.1.6" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="3.1.7" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Hosting\Foundatio.Hosting.csproj" />
