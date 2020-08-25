@@ -77,14 +77,16 @@ namespace Foundatio.Queues {
             return id;
         }
 
+        private readonly List<Task> _workers = new List<Task>();
+
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             _logger.LogTrace("Queue {Name} start working", _options.Name);
-            var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
-            Task.Run(async () => {
+            _workers.Add(Task.Run(async () => {
+                using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
                 _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
                 while (!linkedCancellationToken.IsCancellationRequested) {
@@ -126,7 +128,7 @@ namespace Foundatio.Queues {
                 }
 
                 _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-            }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
+            }, GetLinkedDisposableCancellationTokenSource(cancellationToken).Token));
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
@@ -290,6 +292,16 @@ namespace Foundatio.Queues {
             _queue.Clear();
             _deadletterQueue.Clear();
             _dequeued.Clear();
+
+            _logger.LogTrace("Got {WorkerCount} workers to cleanup", _workers.Count);
+            foreach (var worker in _workers) {
+                if (worker.IsCompleted)
+                    continue;
+
+                _logger.LogTrace("Attempting to cleanup worker");
+                if (!worker.Wait(TimeSpan.FromSeconds(5)))
+                    _logger.LogError("Failed waiting for worker to stop");
+            }
         }
     }
 }
