@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Foundatio.Messaging {
     public interface IMessage {
@@ -10,6 +11,7 @@ namespace Foundatio.Messaging {
         IReadOnlyDictionary<string, string> Properties { get; }
     }
 
+    [DebuggerDisplay("Type: {Type}")]
     public class Message : IMessage {
         private Lazy<object> _getBody;
 
