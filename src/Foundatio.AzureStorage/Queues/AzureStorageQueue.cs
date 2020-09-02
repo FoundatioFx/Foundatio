@@ -75,7 +75,7 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
-            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, linkedCancellationToken).AnyContext();
+            var message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, !linkedCancellationToken.IsCancellationRequested ? linkedCancellationToken : CancellationToken.None).AnyContext();
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             
             if (message == null) {
@@ -92,7 +92,7 @@ namespace Foundatio.Queues {
                             await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
                     } catch (OperationCanceledException) { }
 
-                    message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, linkedCancellationToken).AnyContext();
+                    message = await _queueReference.GetMessageAsync(_options.WorkItemTimeout, null, null, !linkedCancellationToken.IsCancellationRequested ? linkedCancellationToken : CancellationToken.None).AnyContext();
                 }
 
                 sw.Stop();
