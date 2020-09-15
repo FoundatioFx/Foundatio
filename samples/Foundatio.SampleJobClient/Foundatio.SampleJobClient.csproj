@@ -6,9 +6,9 @@
     <OutputType>Exe</OutputType>
     <IsPackable>False</IsPackable>
   </PropertyGroup>
-
+  
   <ItemGroup>
-    <PackageReference Include="Foundatio.Xunit" Version="10.0.0-beta9" />
+    <PackageReference Include="Foundatio.Xunit" Version="10.0.0-beta10" />
   </ItemGroup>
 
   <ItemGroup>
