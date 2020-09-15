@@ -22,8 +22,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio", "src\Foundatio\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.MetricsNET", "src\Foundatio.MetricsNET\Foundatio.MetricsNET.csproj", "{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Jobs.Commands", "src\Foundatio.Jobs.Commands\Foundatio.Jobs.Commands.csproj", "{46D368FC-E974-4551-9360-1482E9C0B6B8}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.HostingSample", "samples\Foundatio.HostingSample\Foundatio.HostingSample.csproj", "{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.TestHarness", "src\Foundatio.TestHarness\Foundatio.TestHarness.csproj", "{6A0F1A4B-C0D2-423C-9B9D-7E75B91B41EE}"
@@ -78,18 +76,6 @@ Global
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x64.Build.0 = Release|Any CPU
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9AEEE11-9E18-4FFE-A962-EB7281BCD561}.Release|x86.Build.0 = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|x64.Build.0 = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Debug|x86.Build.0 = Debug|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|Any CPU.Build.0 = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|x64.ActiveCfg = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|x64.Build.0 = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|x86.ActiveCfg = Release|Any CPU
-		{46D368FC-E974-4551-9360-1482E9C0B6B8}.Release|x86.Build.0 = Release|Any CPU
 		{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{39AFF0C0-D64A-4D57-871F-17D9BF2E5A93}.Debug|x64.ActiveCfg = Debug|Any CPU
