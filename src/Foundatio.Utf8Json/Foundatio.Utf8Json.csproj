@@ -1,9 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <PackageTags>$(PackageTags);Utf8Json;Serializer</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Utf8Json" Version="1.3.7" />
+    <PackageReference Include="Utf8Json" Version="1.3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />

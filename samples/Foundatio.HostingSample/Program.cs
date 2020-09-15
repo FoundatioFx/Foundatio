@@ -1,8 +1,6 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Foundatio.Hosting.Jobs;
-using Foundatio.Hosting.Startup;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,7 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
+using Foundatio.Extensions.Hosting.Startup;
 using Serilog.Events;
+using Foundatio.Extensions.Hosting.Jobs;
 
 namespace Foundatio.HostingSample {
     public class Program {

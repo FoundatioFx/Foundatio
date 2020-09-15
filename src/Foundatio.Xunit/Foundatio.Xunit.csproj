@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
     <IsTestProject>false</IsTestProject>
@@ -7,7 +7,7 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="1.7.1" />
-    <PackageReference Include="xunit.core" Version="2.4.1" />
+    <PackageReference Include="System.Collections.Immutable" Version="1.4" />
+    <PackageReference Include="xunit.core" Version="2.4" />
   </ItemGroup>
 </Project>
