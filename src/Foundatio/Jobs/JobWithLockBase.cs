@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -17,7 +17,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
+        public async virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             var lockValue = await GetLockAsync(cancellationToken).AnyContext();
             if (lockValue == null) {
                 _logger.LogTrace("Unable to acquire job lock.");

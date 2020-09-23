@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
@@ -26,7 +26,7 @@ namespace Foundatio.Jobs {
         IQueue<T> IQueueJob<T>.Queue => _queue.Value;
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
+        public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             IQueueEntry<T> queueEntry;
 
             using (var timeoutCancellationTokenSource = new CancellationTokenSource(30000))

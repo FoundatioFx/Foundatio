@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -16,7 +16,7 @@ namespace Foundatio.Jobs {
         public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
         ILogger IHaveLogger.Logger => _logger;
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
+        public virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             return RunInternalAsync(new JobContext(cancellationToken));
         }
 
