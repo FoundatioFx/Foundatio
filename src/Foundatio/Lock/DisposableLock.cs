@@ -54,7 +54,7 @@ namespace Foundatio.Lock {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Renewing lock {Resource}", Resource);
 
-            await _lockProvider.RenewAsync(this, lockExtension).AnyContext();
+            await _lockProvider.RenewAsync(Resource, LockId, lockExtension).AnyContext();
             _renewalCount++;
 
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -75,7 +75,7 @@ namespace Foundatio.Lock {
                 if (_logger.IsEnabled(LogLevel.Debug))
                     _logger.LogDebug("Releasing lock {Resource} after {Duration:g}", Resource, _duration.Elapsed);
 
-                return _lockProvider.ReleaseAsync(this);
+                return _lockProvider.ReleaseAsync(Resource, LockId);
             }
         }
     }
