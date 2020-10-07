@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -12,8 +12,9 @@ namespace Foundatio.Lock {
         private int _renewalCount;
         private readonly object _lock = new object();
         private readonly Stopwatch _duration;
+        private readonly bool _shouldReleaseOnDispose;
 
-        public DisposableLock(string resource, string lockId, TimeSpan timeWaitedForLock, ILockProvider lockProvider, ILogger logger) {
+        public DisposableLock(string resource, string lockId, TimeSpan timeWaitedForLock, ILockProvider lockProvider, ILogger logger, bool shouldReleaseOnDispose) {
             Resource = resource;
             LockId = lockId;
             TimeWaitedForLock = timeWaitedForLock;
@@ -21,6 +22,7 @@ namespace Foundatio.Lock {
             _duration = Stopwatch.StartNew();
             _logger = logger;
             _lockProvider = lockProvider;
+            _shouldReleaseOnDispose = shouldReleaseOnDispose;
         }
 
         public string LockId { get; }
@@ -30,6 +32,9 @@ namespace Foundatio.Lock {
         public int RenewalCount => _renewalCount;
 
         public async ValueTask DisposeAsync() {
+            if (!_shouldReleaseOnDispose)
+                return;
+
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Disposing lock {Resource}", Resource);

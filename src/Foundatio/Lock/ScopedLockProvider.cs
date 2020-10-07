@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -40,20 +40,20 @@ namespace Foundatio.Lock {
             return String.Concat(_keyPrefix, key);
         }
 
-        public Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
-            return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, cancellationToken);
+        public Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
+            return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, releaseOnDispose, cancellationToken);
         }
 
         public Task<bool> IsLockedAsync(string resource) {
             return UnscopedLockProvider.IsLockedAsync(GetScopedLockProviderKey(resource));
         }
 
-        public Task ReleaseAsync(ILock @lock) {
-            return UnscopedLockProvider.ReleaseAsync(@lock);
+        public Task ReleaseAsync(string resource, string lockId) {
+            return UnscopedLockProvider.ReleaseAsync(resource, lockId);
         }
 
-        public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
-            return UnscopedLockProvider.RenewAsync(@lock, lockExtension);
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
+            return UnscopedLockProvider.RenewAsync(resource, lockId, timeUntilExpires);
         }
     }
 }

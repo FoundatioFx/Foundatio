@@ -53,7 +53,7 @@ namespace Foundatio.Lock {
             return Task.CompletedTask;
         }
 
-        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             bool shouldWait = !cancellationToken.IsCancellationRequested;
             if (isTraceLogLevelEnabled)
@@ -143,7 +143,7 @@ namespace Foundatio.Lock {
             else if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
             
-            return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger);
+            return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
         }
 
         public async Task<bool> IsLockedAsync(string resource) {
@@ -151,25 +151,25 @@ namespace Foundatio.Lock {
             return result;
         }
 
-        public async Task ReleaseAsync(ILock @lock) {
+        public async Task ReleaseAsync(string resource, string lockId) {
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", @lock.Resource, @lock.LockId);
+                _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
-            await Run.WithRetriesAsync(() => _cacheClient.RemoveIfEqualAsync(@lock.Resource, @lock.LockId), 15, logger: _logger).AnyContext();
-            await _messageBus.PublishAsync(new CacheLockReleased { Resource = @lock.Resource, LockId = @lock.LockId }).AnyContext();
+            await Run.WithRetriesAsync(() => _cacheClient.RemoveIfEqualAsync(resource, lockId), 15, logger: _logger).AnyContext();
+            await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
 
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Released lock: {Resource} ({LockId})", @lock.Resource, @lock.LockId);
+                _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
         }
 
-        public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
-            if (!lockExtension.HasValue)
-                lockExtension = TimeSpan.FromMinutes(20);
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
+            if (!timeUntilExpires.HasValue)
+                timeUntilExpires = TimeSpan.FromMinutes(20);
 
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", @lock.Resource, @lock.LockId, lockExtension);
+                _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
 
-            return Run.WithRetriesAsync(() => _cacheClient.ReplaceIfEqualAsync(@lock.Resource, @lock.LockId, @lock.LockId, lockExtension.Value));
+            return Run.WithRetriesAsync(() => _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value));
         }
 
         private class ResetEventWithRefCount {

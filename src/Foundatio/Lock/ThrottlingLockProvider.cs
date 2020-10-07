@@ -28,7 +28,7 @@ namespace Foundatio.Lock {
         
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) {
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 
@@ -94,7 +94,7 @@ namespace Foundatio.Lock {
                 _logger.LogTrace("Allowing lock: {Resource}", resource);
             
             sw.Stop();
-            return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger);
+            return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
         }
 
         public async Task<bool> IsLockedAsync(string resource) {
@@ -103,11 +103,11 @@ namespace Foundatio.Lock {
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public Task ReleaseAsync(ILock @lock) {
+        public Task ReleaseAsync(string resource, string lockId) {
             return Task.CompletedTask;
         }
         
-        public Task RenewAsync(ILock @lock, TimeSpan? lockExtension = null) {
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
             return Task.CompletedTask;
         }
 
