@@ -42,6 +42,29 @@ namespace Foundatio.Tests.Jobs {
             }
         }
 
+        public virtual async Task CanRunQueueWithFailingItems() {
+            const int workItemCount = 20;
+            using (var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.FromMilliseconds(50))) {
+                await queue.DeleteQueueAsync();
+
+                for (int index = 0; index < workItemCount; index++) {
+                    await queue.EnqueueAsync(new SampleQueueWorkItem {
+                        Created = SystemClock.UtcNow,
+                        Path = "somepath" + index,
+                        ShouldFail = true
+                    });
+                }
+                
+                var job = new SampleQueueJob(queue, null, Log);
+                await job.RunUntilAsync(s => s.Deadletter < workItemCount);
+
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(80, stats.Abandoned);
+                var deadLetterItems = (await queue.GetDeadletterItemsAsync()).ToList();
+                Assert.Equal(workItemCount, deadLetterItems.Count);
+            }
+        }
+
         public virtual async Task CanRunQueueJobWithLockFailAsync() {
             const int workItemCount = 10;
             const int allowedLockCount = 5;

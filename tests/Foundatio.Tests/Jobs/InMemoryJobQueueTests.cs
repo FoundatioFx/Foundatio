@@ -20,6 +20,11 @@ namespace Foundatio.Tests.Jobs {
         public override Task CanRunMultipleQueueJobsAsync() {
             return base.CanRunMultipleQueueJobsAsync();
         }
+        
+        [Fact]
+        public override Task CanRunQueueWithFailingItems() {
+            return base.CanRunQueueWithFailingItems();
+        }
 
         [RetryFact]
         public override Task CanRunQueueJobWithLockFailAsync() {
