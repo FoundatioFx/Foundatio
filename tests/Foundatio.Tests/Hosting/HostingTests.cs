@@ -9,6 +9,7 @@ using Foundatio.Xunit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -114,8 +115,31 @@ namespace Foundatio.Tests.Hosting {
             Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
         }
 
+        [Fact]
+        public async Task WillHandleNoRegisteredStartupActions() {
+            var builder = new WebHostBuilder()
+                .UseEnvironment(Environments.Development)
+                .CaptureStartupErrors(true)
+                .ConfigureServices(s => {
+                    s.AddSingleton<ILoggerFactory>(Log);
+                    s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                })
+                .Configure(app => {
+                    app.UseReadyHealthChecks("Critical");
+                    app.UseWaitForStartupActionsBeforeServingRequests();
+                });
+
+            var server = new TestServer(builder);
+
+            var sw = Stopwatch.StartNew();
+            await server.WaitForReadyAsync();
+            sw.Stop();
+
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
+        }
+
     }
-    
+
     public class TestStartupAction : IStartupAction {
         public static bool HasRun { get; private set; }
 
