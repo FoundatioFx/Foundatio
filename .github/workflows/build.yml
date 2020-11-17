@@ -37,7 +37,6 @@ jobs:
           
           # GitHub
           dotnet nuget push $package --source https://nuget.pkg.github.com/foundatiofx/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
-          #gpr push $package -k ${{ secrets.GITHUB_TOKEN }} || true
           
           # Feedz (remove once GitHub supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
