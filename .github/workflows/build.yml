@@ -36,7 +36,7 @@ jobs:
           echo "${0##*/}": Pushing $package...
           
           # GitHub
-          dotnet nuget push $package --source https://nuget.pkg.github.com/foundatiofx/index.jsont --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+          dotnet nuget push $package --source https://nuget.pkg.github.com/foundatiofx/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
           #gpr push $package -k ${{ secrets.GITHUB_TOKEN }} || true
           
           # Feedz (remove once GitHub supports anonymous access)
