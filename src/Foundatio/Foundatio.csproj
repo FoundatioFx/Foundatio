@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="4.6" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="1.0" />
+    <PackageReference Include="System.Text.Json" Version="5.0.0" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="3.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.0" />
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="4.6" />
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="5.0.0" />
   </ItemGroup>
 </Project>

@@ -1,30 +1,37 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Foundatio.Serializer {
     public class SystemTextJsonSerializer : ITextSerializer {
-        private readonly JsonSerializerOptions _options;
+        private readonly JsonSerializerOptions _serializeOptions;
+        private readonly JsonSerializerOptions _deserializeOptions;
 
-        public SystemTextJsonSerializer(JsonSerializerOptions options = null) {
-            if (options != null) {
-                _options = options;
+        public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null) {
+            if (serializeOptions != null) {
+                _serializeOptions = serializeOptions;
             } else {
-                _options = new JsonSerializerOptions();
-                _options.Converters.Add(new ObjectToInferredTypesConverter());
+                _serializeOptions = new JsonSerializerOptions();
+            }
+
+            if (deserializeOptions != null) {
+                _deserializeOptions = deserializeOptions;
+            } else {
+                _deserializeOptions = new JsonSerializerOptions();
+                _deserializeOptions.Converters.Add(new ObjectToInferredTypesConverter());
             }
         }
 
         public void Serialize(object data, Stream outputStream) {
             var writer = new Utf8JsonWriter(outputStream);
-            JsonSerializer.Serialize(writer, data, data.GetType(), _options);
+            JsonSerializer.Serialize(writer, data, data.GetType(), _serializeOptions);
             writer.Flush();
         }
 
         public object Deserialize(Stream inputStream, Type objectType) {
-            using (var reader = new StreamReader(inputStream))
-                return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _options);
+            using var reader = new StreamReader(inputStream);
+            return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
         }
     }
 
@@ -36,24 +43,19 @@ namespace Foundatio.Serializer {
             if (reader.TokenType == JsonTokenType.False)
                 return false;
 
-            if (reader.TokenType == JsonTokenType.Number) {
-                if (reader.TryGetInt64(out long l))
-                    return l;
+            if (reader.TokenType == JsonTokenType.Number)
+                return reader.TryGetInt64(out long number) ? number : (object)reader.GetDouble();
 
-                return reader.GetDouble();
-            }
+            if (reader.TokenType == JsonTokenType.String)
+                return reader.TryGetDateTime(out var datetime) ? datetime : (object)reader.GetString();
 
-            if (reader.TokenType == JsonTokenType.String) {
-                if (reader.TryGetDateTime(out DateTime datetime))
-                    return datetime;
+            using var document = JsonDocument.ParseValue(ref reader);
 
-                return reader.GetString();
-            }
-
-            using JsonDocument document = JsonDocument.ParseValue(ref reader);
             return document.RootElement.Clone();
         }
 
-        public override void Write(Utf8JsonWriter writer, object objectToWrite, JsonSerializerOptions options) => throw new InvalidOperationException("Should not get here.");
+        public override void Write(Utf8JsonWriter writer, object objectToWrite, JsonSerializerOptions options) {
+            throw new InvalidOperationException();
+        }
     }
 }
