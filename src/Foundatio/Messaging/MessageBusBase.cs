@@ -270,7 +270,7 @@ namespace Foundatio.Messaging {
         protected class Subscriber {
             private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new ConcurrentDictionary<Type, bool>();
 
-            public string Id { get; private set; } = Guid.NewGuid().ToString();
+            public string Id { get; private set; } = Guid.NewGuid().ToString("N");
             public CancellationToken CancellationToken { get; set; }
             public Type Type { get; set; }
             public Func<object, CancellationToken, Task> Action { get; set; }
