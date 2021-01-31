@@ -1,6 +1,8 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Serializer {
     public interface ISerializer {
@@ -9,6 +11,13 @@ namespace Foundatio.Serializer {
     }
 
     public interface ITextSerializer : ISerializer {}
+
+#nullable enable
+    public interface IAsyncTextSerializer {
+        ValueTask<object?> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken);
+        Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken);
+    }
+#nullable disable
 
     public static class DefaultSerializer {
         public static ISerializer Instance { get; set; } = new SystemTextJsonSerializer();

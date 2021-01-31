@@ -91,12 +91,23 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
-        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default) {
+        public static async Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
+            var serializer = storage.Serializer;
+            if (serializer is IAsyncTextSerializer asyncSerializer) {
+                using (var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
+                    if (stream != null) {
+                        await asyncSerializer.SerializeAsync(data, stream, cancellationToken).AnyContext();
+                        return true;
+                    }
+                    return false;
+                }
+            }
+
             var bytes = storage.Serializer.SerializeToBytes(data);
-            return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
+            return await storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default) {
@@ -104,8 +115,12 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             using (var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
-                if (stream != null)
-                    return storage.Serializer.Deserialize<T>(stream);
+                if (stream != null) {
+                    var serializer = storage.Serializer;
+                    return serializer is IAsyncTextSerializer asyncSerializer
+                        ? (T)await asyncSerializer.DeserializeAsync(stream, typeof(T), cancellationToken).AnyContext()
+                        : storage.Serializer.Deserialize<T>(stream);
+                }
             }
 
             return default;

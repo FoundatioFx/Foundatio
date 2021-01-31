@@ -13,6 +13,11 @@ namespace Foundatio.Utility {
         }
 
         [DebuggerStepThrough]
+        public static ConfiguredValueTaskAwaitable<TResult> AnyContext<TResult>(this ValueTask<TResult> task) {
+            return task.ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        [DebuggerStepThrough]
         public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> source) {
             return source.ConfigureAwait(continueOnCapturedContext: false);
         }
