@@ -21,6 +21,9 @@ namespace Foundatio.Storage {
         Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
         Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default);
     }
+    public interface IWritableStream : IFileStorage {
+        Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default);
+    }
 
     public interface IHasNextPageFunc {
         Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
@@ -96,13 +99,13 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             var serializer = storage.Serializer;
-            if (serializer is IAsyncTextSerializer asyncSerializer) {
-                using (var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
+            if (storage is IWritableStream writable && serializer is IAsyncTextSerializer asyncSerializer) {
+                using (var stream = await writable.GetWritableStreamAsync(path, cancellationToken).AnyContext()) {
                     if (stream != null) {
                         await asyncSerializer.SerializeAsync(data, stream, cancellationToken).AnyContext();
                         return true;
                     }
-                    return false;
+                    // Can't write to stream, fallback to SaveFileAsync
                 }
             }
 

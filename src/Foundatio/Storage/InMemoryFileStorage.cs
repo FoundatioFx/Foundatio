@@ -10,7 +10,7 @@ using Foundatio.Extensions;
 using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
-    public class InMemoryFileStorage : IFileStorage {
+    public class InMemoryFileStorage : IWritableStream {
         private readonly Dictionary<string, Tuple<FileSpec, byte[]>> _storage = new Dictionary<string, Tuple<FileSpec, byte[]>>(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
@@ -33,6 +33,35 @@ namespace Foundatio.Storage {
         public long MaxFiles { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
+        class RegisteringMemoryStream : MemoryStream, IDisposable {
+            string _path;
+            InMemoryFileStorage _memoryStorage;
+            public RegisteringMemoryStream(InMemoryFileStorage storage, string path) {
+                _memoryStorage = storage;
+                _path = path;
+            }
+
+            void IDisposable.Dispose() {
+                if (Length > 0) {
+                    var contents = ToArray();
+
+                    lock (_memoryStorage._lock) {
+                        _memoryStorage._storage[_path] = Tuple.Create(new FileSpec {
+                            Created = SystemClock.UtcNow,
+                            Modified = SystemClock.UtcNow,
+                            Path = _path,
+                            Size = contents.Length
+                        }, contents);
+
+                        if (_memoryStorage._storage.Count > _memoryStorage.MaxFiles)
+                            _memoryStorage._storage.Remove(_memoryStorage._storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                    }
+                }
+
+                base.Dispose();
+            }
+        }
+
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
@@ -44,6 +73,14 @@ namespace Foundatio.Storage {
 
                 return Task.FromResult<Stream>(new MemoryStream(_storage[path].Item2));
             }
+        }
+
+        public Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
+            path = path.NormalizePath();
+            return Task.FromResult<Stream>(new RegisteringMemoryStream(this, path));
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
