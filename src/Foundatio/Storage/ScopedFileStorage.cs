@@ -8,7 +8,7 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 
 namespace Foundatio.Storage {
-    public class ScopedFileStorage : IFileStorage {
+    public class ScopedFileStorage : IWritableStream {
         private readonly string _pathPrefix;
 
         public ScopedFileStorage(IFileStorage storage, string scope) {
@@ -27,6 +27,16 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), cancellationToken);
+        }
+
+        public Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
+            if (UnscopedStorage is IWritableStream writable)
+                return writable.GetWritableStreamAsync(String.Concat(_pathPrefix, path), cancellationToken);
+
+            return null;
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
