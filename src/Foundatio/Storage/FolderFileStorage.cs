@@ -46,14 +46,23 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
+            path = Path.Combine(Folder, path);
 
             try {
                 if (access == FileAccess.Read) {
-                    return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
+                    return Task.FromResult<Stream>(File.OpenRead(path));
                 } else if (access == FileAccess.Write) {
-                    return Task.FromResult<Stream>(File.OpenWrite(Path.Combine(Folder, path)));
+                    string directory = Path.GetDirectoryName(path);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+
+                    return Task.FromResult<Stream>(File.OpenWrite(path));
                 } else {
-                    return Task.FromResult<Stream>(File.Open(Path.Combine(Folder, path), FileMode.OpenOrCreate, FileAccess.ReadWrite));
+                    string directory = Path.GetDirectoryName(path);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+
+                    return Task.FromResult<Stream>(File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite));
                 }
             } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
                 if (_logger.IsEnabled(LogLevel.Trace))
