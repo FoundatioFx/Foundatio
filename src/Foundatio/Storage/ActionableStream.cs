@@ -5,12 +5,12 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Storage {
     public class ActionableStream : Stream {
-        private readonly Action _disposeAction;
+        private readonly Action<Stream> _disposeAction;
         private readonly Stream _stream;
 
         protected override void Dispose(bool disposing) {
             try {
-                _disposeAction.Invoke();
+                _disposeAction.Invoke(_stream);
             } catch { /* ignore if these are already disposed;  this is to make sure they are */ }
             
             _stream.Dispose();
@@ -18,6 +18,11 @@ namespace Foundatio.Storage {
         }
 
         public ActionableStream(Stream stream, Action disposeAction) {
+            _stream = stream ?? throw new ArgumentNullException();
+            _disposeAction = s => disposeAction();
+        }
+
+        public ActionableStream(Stream stream, Action<Stream> disposeAction) {
             _stream = stream ?? throw new ArgumentNullException();
             _disposeAction = disposeAction;
         }

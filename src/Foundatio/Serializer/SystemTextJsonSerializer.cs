@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace Foundatio.Serializer {
-    public class SystemTextJsonSerializer : IAsyncTextSerializer, ITextSerializer {
+    public class SystemTextJsonSerializer : ITextSerializer {
         private readonly JsonSerializerOptions _serializeOptions;
         private readonly JsonSerializerOptions _deserializeOptions;
 
@@ -35,15 +35,14 @@ namespace Foundatio.Serializer {
             using var reader = new StreamReader(inputStream);
             return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
         }
-#nullable enable
+
         public Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken) {
             return JsonSerializer.SerializeAsync(outputStream, data, data.GetType(), _serializeOptions, cancellationToken);
         }
 
-        public ValueTask<object?> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken) {
+        public ValueTask<object> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken) {
             return JsonSerializer.DeserializeAsync(inputStream, objectType, _deserializeOptions, cancellationToken);
         }
-#nullable disable
     }
 
     public class ObjectToInferredTypesConverter : JsonConverter<object> {

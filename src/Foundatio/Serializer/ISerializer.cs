@@ -6,18 +6,16 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Serializer {
     public interface ISerializer {
-        object Deserialize(Stream data, Type objectType);
-        void Serialize(object value, Stream output);
-    }
-
-    public interface ITextSerializer : ISerializer {}
-
-#nullable enable
-    public interface IAsyncTextSerializer {
-        ValueTask<object?> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken);
+        void Serialize(object value, Stream outputStream);
+        object Deserialize(Stream inputStream, Type objectType);
         Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken);
+        ValueTask<object> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken);
     }
-#nullable disable
+
+    /// <summary>
+    /// Marker interface indicating that the underlying serialization format is text based (ie. JSON)
+    /// </summary>
+    public interface ITextSerializer : ISerializer {}
 
     public static class DefaultSerializer {
         public static ISerializer Instance { get; set; } = new SystemTextJsonSerializer();

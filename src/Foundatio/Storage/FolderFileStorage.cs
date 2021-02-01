@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
-    public class FolderFileStorage : IWritableStream {
+    public class FolderFileStorage : IFileStorage {
         private readonly object _lockObject = new object();
         private readonly ISerializer _serializer;
         protected readonly ILogger _logger;
@@ -41,32 +41,24 @@ namespace Foundatio.Storage {
         public string Folder { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
 
             try {
-                return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
+                if (access == FileAccess.Read) {
+                    return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
+                } else if (access == FileAccess.Write) {
+                    return Task.FromResult<Stream>(File.OpenWrite(Path.Combine(Folder, path)));
+                } else {
+                    return Task.FromResult<Stream>(File.Open(Path.Combine(Folder, path), FileMode.OpenOrCreate, FileAccess.ReadWrite));
+                }
             } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
-                return Task.FromResult<Stream>(null);
-            }
-        }
 
-        public Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default) {
-            if (String.IsNullOrEmpty(path))
-                throw new ArgumentNullException(nameof(path));
-
-            path = path.NormalizePath();
-
-            try {
-                return Task.FromResult<Stream>(File.OpenWrite(Path.Combine(Folder, path)));
-            } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
-                if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
                 return Task.FromResult<Stream>(null);
             }
         }

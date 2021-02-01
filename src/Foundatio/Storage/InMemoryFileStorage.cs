@@ -10,7 +10,7 @@ using Foundatio.Extensions;
 using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
-    public class InMemoryFileStorage : IWritableStream {
+    public class InMemoryFileStorage : IFileStorage {
         private readonly Dictionary<string, Tuple<FileSpec, byte[]>> _storage = new Dictionary<string, Tuple<FileSpec, byte[]>>(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
@@ -33,54 +33,55 @@ namespace Foundatio.Storage {
         public long MaxFiles { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        class RegisteringMemoryStream : MemoryStream, IDisposable {
-            string _path;
-            InMemoryFileStorage _memoryStorage;
-            public RegisteringMemoryStream(InMemoryFileStorage storage, string path) {
-                _memoryStorage = storage;
-                _path = path;
-            }
-
-            void IDisposable.Dispose() {
-                if (Length > 0) {
-                    var contents = ToArray();
-
-                    lock (_memoryStorage._lock) {
-                        _memoryStorage._storage[_path] = Tuple.Create(new FileSpec {
-                            Created = SystemClock.UtcNow,
-                            Modified = SystemClock.UtcNow,
-                            Path = _path,
-                            Size = contents.Length
-                        }, contents);
-
-                        if (_memoryStorage._storage.Count > _memoryStorage.MaxFiles)
-                            _memoryStorage._storage.Remove(_memoryStorage._storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
-                    }
-                }
-
-                base.Dispose();
-            }
-        }
-
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
             lock (_lock) {
-                if (!_storage.ContainsKey(path))
-                    return Task.FromResult<Stream>(null);
+                if (access == FileAccess.Read) {
+                    if (!_storage.ContainsKey(path))
+                        return Task.FromResult<Stream>(null);
 
-                return Task.FromResult<Stream>(new MemoryStream(_storage[path].Item2));
+                    return Task.FromResult<Stream>(new MemoryStream(_storage[path].Item2));
+                } else if (access == FileAccess.Write) {
+                    return Task.FromResult<Stream>(new ActionableStream(new MemoryStream(), s => {
+                        var memoryStream = (MemoryStream)s;
+                        if (memoryStream.Length > 0) {
+                            var contents = memoryStream.ToArray();
+
+                            _storage[path] = Tuple.Create(new FileSpec {
+                                Created = SystemClock.UtcNow,
+                                Modified = SystemClock.UtcNow,
+                                Path = path,
+                                Size = contents.Length
+                            }, contents);
+
+                            if (_storage.Count > MaxFiles)
+                                _storage.Remove(_storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                        }
+                    }));
+                } else {
+                    var ms = _storage.ContainsKey(path) ? new MemoryStream(_storage[path].Item2) : new MemoryStream();
+
+                    return Task.FromResult<Stream>(new ActionableStream(ms, s => {
+                        var memoryStream = (MemoryStream)s;
+                        if (memoryStream.Length > 0) {
+                            var contents = memoryStream.ToArray();
+
+                            _storage[path] = Tuple.Create(new FileSpec {
+                                Created = SystemClock.UtcNow,
+                                Modified = SystemClock.UtcNow,
+                                Path = path,
+                                Size = contents.Length
+                            }, contents);
+
+                            if (_storage.Count > MaxFiles)
+                                _storage.Remove(_storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                        }
+                    }));
+                }
             }
-        }
-
-        public Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default) {
-            if (String.IsNullOrEmpty(path))
-                throw new ArgumentNullException(nameof(path));
-
-            path = path.NormalizePath();
-            return Task.FromResult<Stream>(new RegisteringMemoryStream(this, path));
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {

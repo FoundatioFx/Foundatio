@@ -11,18 +11,14 @@ using Foundatio.Utility;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IHaveSerializer, IDisposable {
-        Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
+        Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default);
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
-        Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default);
         Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default);
         Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default);
         Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
         Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
         Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default);
-    }
-    public interface IWritableStream : IFileStorage {
-        Task<Stream> GetWritableStreamAsync(string path, CancellationToken cancellationToken = default);
     }
 
     public interface IHasNextPageFunc {
@@ -94,23 +90,31 @@ namespace Foundatio.Storage {
     }
 
     public static class FileStorageExtensions {
+        public static Task<Stream> GetFileStreamAsync(this IFileStorage storage, string path, CancellationToken cancellationToken = default) {
+            return storage.GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
+        }
+
+        public static async Task<bool> SaveFileAsync(this IFileStorage storage, string path, Stream inputStream, CancellationToken cancellationToken = default) {
+            using (var stream = await storage.GetFileStreamAsync(path, FileAccess.Write, cancellationToken).AnyContext()) {
+                if (stream == null)
+                    throw new IOException("Unable to get writable file stream from storage.");
+
+                await inputStream.CopyToAsync(stream);
+                return true;
+            }
+        }
+
         public static async Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            var serializer = storage.Serializer;
-            if (storage is IWritableStream writable && serializer is IAsyncTextSerializer asyncSerializer) {
-                using (var stream = await writable.GetWritableStreamAsync(path, cancellationToken).AnyContext()) {
-                    if (stream != null) {
-                        await asyncSerializer.SerializeAsync(data, stream, cancellationToken).AnyContext();
-                        return true;
-                    }
-                    // Can't write to stream, fallback to SaveFileAsync
-                }
-            }
+            using (var stream = await storage.GetFileStreamAsync(path, FileAccess.Write, cancellationToken).AnyContext()) {
+                if (stream == null)
+                    throw new IOException("Unable to get writable file stream from storage.");
 
-            var bytes = storage.Serializer.SerializeToBytes(data);
-            return await storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
+                await storage.Serializer.SerializeAsync(data, stream, cancellationToken).AnyContext();
+                return true;
+            }
         }
 
         public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default) {
@@ -118,12 +122,8 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             using (var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
-                if (stream != null) {
-                    var serializer = storage.Serializer;
-                    return serializer is IAsyncTextSerializer asyncSerializer
-                        ? (T)await asyncSerializer.DeserializeAsync(stream, typeof(T), cancellationToken).AnyContext()
-                        : storage.Serializer.Deserialize<T>(stream);
-                }
+                if (stream != null)
+                    return (T)await storage.Serializer.DeserializeAsync(stream, typeof(T), cancellationToken).AnyContext();
             }
 
             return default;
