@@ -32,7 +32,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
             // TODO: Add more logging throughout
-            var startupContext = _serviceProvider.GetRequiredService<StartupActionsContext>();
+            var startupContext = _serviceProvider.GetService<StartupActionsContext>();
             if (startupContext != null) {
                 var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
                 if (!result.Success) {
