@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Diagnostics;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -123,16 +122,15 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual void StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            if (!QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry") || !QueuesDiagnosticSource.Logger.IsEnabled("ProcessQueueEntry", entry))
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal);
+            if (activity == null)
                 return;
             
-            var activity = new Activity("ProcessQueueEntry");
             activity.AddTag("Id", entry.Id);
             if (!String.IsNullOrEmpty(entry.CorrelationId))
                 activity.SetParentId(entry.CorrelationId);
             
             EnrichProcessQueueEntryActivity(activity, entry);
-            QueuesDiagnosticSource.Logger.StartActivity(activity, entry);
 
             entry.Properties["@Activity"] = activity;
         }
@@ -144,7 +142,7 @@ namespace Foundatio.Queues {
                 return;
 
             entry.Properties.Remove("@Activity");
-            QueuesDiagnosticSource.Logger.StopActivity(activity, entry);
+            activity.Stop();
         }
 
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {

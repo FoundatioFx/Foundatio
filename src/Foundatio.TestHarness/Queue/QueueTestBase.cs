@@ -9,7 +9,6 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
-using Foundatio.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -90,7 +89,14 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             try {
-                QueuesDiagnosticSource.ListenToProcessQueueEntry(o => _logger.LogInformation("OnStart"), o => _logger.LogInformation("OnStop"));
+                using var listener = new ActivityListener {
+                    ShouldListenTo = s => s.Name == "Foundatio",
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                    ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
+                    ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
+                };
+
+                ActivitySource.AddActivityListener(listener);
 
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
