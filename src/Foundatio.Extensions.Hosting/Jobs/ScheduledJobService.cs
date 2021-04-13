@@ -60,7 +60,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
             private readonly CronExpression _cronSchedule;
             private readonly ILockProvider _lockProvider;
             private readonly ILogger _logger;
-            private readonly DateTime _baseDate = new DateTime(2010, 1, 1);
+            private readonly DateTime _baseDate = new(2010, 1, 1);
             private string _cacheKeyPrefix;
 
             public ScheduledJobRunner(Func<IJob> jobFactory, string schedule, ICacheClient cacheClient, ILoggerFactory loggerFactory = null) {
@@ -106,10 +106,10 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 return true;
             }
 
-            public async Task<bool> StartAsync(CancellationToken cancellationToken = default) {
+            public Task<bool> StartAsync(CancellationToken cancellationToken = default) {
                 // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
                 // TODO: provide ability to run cron jobs on a per host isolated schedule
-                return await _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t => {
+                return _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t => {
                     // start running the job in a thread
                     RunTask = Task.Factory.StartNew(async () => {
                         var job = _jobFactory();
@@ -124,7 +124,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                     NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
 
                     return Task.CompletedTask;
-                }, TimeSpan.Zero, TimeSpan.Zero).AnyContext();
+                }, TimeSpan.Zero, TimeSpan.Zero);
             }
 
             private string GetLockKey(DateTime date) {

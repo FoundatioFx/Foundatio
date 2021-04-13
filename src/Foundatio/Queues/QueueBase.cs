@@ -12,7 +12,7 @@ namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         protected readonly ISerializer _serializer;
-        private readonly List<IQueueBehavior<T>> _behaviors = new List<IQueueBehavior<T>>();
+        private readonly List<IQueueBehavior<T>> _behaviors = new();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
         private bool _isDisposed;
 
@@ -48,18 +48,16 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using (var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken)) {
-                await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+            await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
 
-                LastDequeueActivity = SystemClock.UtcNow;
-                return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
-            }
+            LastDequeueActivity = SystemClock.UtcNow;
+            return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
         }
 
         public virtual async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null) {
-            using (var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30))) {
-                return await DequeueAsync(timeoutCancellationTokenSource.Token).AnyContext();
-            }
+            using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
+            return await DequeueAsync(timeoutCancellationTokenSource.Token).AnyContext();
         }
 
         public abstract Task RenewLockAsync(IQueueEntry<T> queueEntry);
@@ -138,7 +136,7 @@ namespace Foundatio.Queues {
         protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) {}
 
         protected virtual void StopProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            if (!entry.Properties.TryGetValue("@Activity", out object a) || !(a is Activity activity))
+            if (!entry.Properties.TryGetValue("@Activity", out object a) || a is not Activity activity)
                 return;
 
             entry.Properties.Remove("@Activity");

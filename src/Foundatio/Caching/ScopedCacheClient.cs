@@ -40,112 +40,112 @@ namespace Foundatio.Caching {
             }
         }
 
-        protected string GetScopedCacheKey(string key) {
+        protected string GetUnscopedCacheKey(string key) {
             return String.Concat(_keyPrefix, key);
         }
 
-        protected IEnumerable<string> GetScopedCacheKeys(IEnumerable<string> keys) {
-            return keys?.Select(GetScopedCacheKey);
+        protected IEnumerable<string> GetUnscopedCacheKeys(IEnumerable<string> keys) {
+            return keys?.Select(GetUnscopedCacheKey);
         }
 
-        protected string UnscopeCacheKey(string scopedKey) {
-            return scopedKey?.Substring(_keyPrefix.Length);
+        protected string GetScopedCacheKey(string unscopedKey) {
+            return unscopedKey?.Substring(_keyPrefix.Length);
         }
 
         public Task<bool> RemoveAsync(string key) {
-            return UnscopedCache.RemoveAsync(GetScopedCacheKey(key));
+            return UnscopedCache.RemoveAsync(GetUnscopedCacheKey(key));
         }
 
         public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
-            return UnscopedCache.RemoveIfEqualAsync(GetScopedCacheKey(key), expected);
+            return UnscopedCache.RemoveIfEqualAsync(GetUnscopedCacheKey(key), expected);
         }
 
         public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) {
             if (keys == null)
                 return RemoveByPrefixAsync(String.Empty);
 
-            return UnscopedCache.RemoveAllAsync(GetScopedCacheKeys(keys));
+            return UnscopedCache.RemoveAllAsync(GetUnscopedCacheKeys(keys));
         }
 
         public Task<int> RemoveByPrefixAsync(string prefix) {
-            return UnscopedCache.RemoveByPrefixAsync(GetScopedCacheKey(prefix));
+            return UnscopedCache.RemoveByPrefixAsync(GetUnscopedCacheKey(prefix));
         }
 
         public Task<CacheValue<T>> GetAsync<T>(string key) {
-            return UnscopedCache.GetAsync<T>(GetScopedCacheKey(key));
+            return UnscopedCache.GetAsync<T>(GetUnscopedCacheKey(key));
         }
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
-            var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetScopedCacheKeys(keys)).AnyContext();
-            return scopedDictionary.ToDictionary(kvp => UnscopeCacheKey(kvp.Key), kvp => kvp.Value);
+            var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetUnscopedCacheKeys(keys)).AnyContext();
+            return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
         }
 
         public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.AddAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.AddAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetAllAsync(values?.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
+            return UnscopedCache.SetAllAsync(values?.ToDictionary(kvp => GetUnscopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
         }
 
         public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.ReplaceAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.ReplaceAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
-            return UnscopedCache.ReplaceIfEqualAsync(GetScopedCacheKey(key), value, expected, expiresIn);
+            return UnscopedCache.ReplaceIfEqualAsync(GetUnscopedCacheKey(key), value, expected, expiresIn);
         }
 
         public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
-            return UnscopedCache.IncrementAsync(GetScopedCacheKey(key), amount, expiresIn);
+            return UnscopedCache.IncrementAsync(GetUnscopedCacheKey(key), amount, expiresIn);
         }
 
         public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
-            return UnscopedCache.IncrementAsync(GetScopedCacheKey(key), amount, expiresIn);
+            return UnscopedCache.IncrementAsync(GetUnscopedCacheKey(key), amount, expiresIn);
         }
         
         public Task<bool> ExistsAsync(string key) {
-            return UnscopedCache.ExistsAsync(GetScopedCacheKey(key));
+            return UnscopedCache.ExistsAsync(GetUnscopedCacheKey(key));
         }
 
         public Task<TimeSpan?> GetExpirationAsync(string key) {
-            return UnscopedCache.GetExpirationAsync(GetScopedCacheKey(key));
+            return UnscopedCache.GetExpirationAsync(GetUnscopedCacheKey(key));
         }
 
         public Task SetExpirationAsync(string key, TimeSpan expiresIn) {
-            return UnscopedCache.SetExpirationAsync(GetScopedCacheKey(key), expiresIn);
+            return UnscopedCache.SetExpirationAsync(GetUnscopedCacheKey(key), expiresIn);
         }
 
         public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetIfHigherAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetIfHigherAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetIfHigherAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetIfHigherAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetIfLowerAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetIfLowerAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
-            return UnscopedCache.SetIfLowerAsync(GetScopedCacheKey(key), value, expiresIn);
+            return UnscopedCache.SetIfLowerAsync(GetUnscopedCacheKey(key), value, expiresIn);
         }
 
         public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.ListAddAsync(GetScopedCacheKey(key), values, expiresIn);
+            return UnscopedCache.ListAddAsync(GetUnscopedCacheKey(key), values, expiresIn);
         }
 
         public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
-            return UnscopedCache.ListRemoveAsync(GetScopedCacheKey(key), values, expiresIn);
+            return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values, expiresIn);
         }
 
         public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
-            return UnscopedCache.GetListAsync<T>(GetScopedCacheKey(key), page, pageSize);
+            return UnscopedCache.GetListAsync<T>(GetUnscopedCacheKey(key), page, pageSize);
         }
 
         public void Dispose() {}

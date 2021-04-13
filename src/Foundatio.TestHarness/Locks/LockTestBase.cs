@@ -176,8 +176,8 @@ namespace Foundatio.Tests.Locks {
             Assert.Equal(2, successCount);
         }
 
-        private async Task<bool> DoLockedWorkAsync(ILockProvider locker) {
-            return await locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
+        private Task<bool> DoLockedWorkAsync(ILockProvider locker) {
+            return locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
         }
 
         public virtual async Task WillThrottleCallsAsync() {
@@ -192,7 +192,7 @@ namespace Foundatio.Tests.Locks {
             if (locker == null)
                 return;
 
-            string lockName = Guid.NewGuid().ToString("N").Substring(10);
+            string lockName = Guid.NewGuid().ToString("N").Substring(0, 10);
 
             // sleep until start of throttling period
             while (SystemClock.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)

@@ -304,31 +304,30 @@ namespace Foundatio.Tests.Queue {
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Initialize queue to create more accurate metrics" });
                 Assert.NotNull(await queue.DequeueAsync(TimeSpan.FromSeconds(1)));
 
-                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions())) {
-                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+                using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+                queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
-                    Task.Run(async () => {
-                        _logger.LogTrace("Starting enqueue loop.");
-                        for (int index = 0; index < iterations; index++) {
-                            await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
-                            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-                        }
-                        _logger.LogTrace("Finished enqueuing.");
-                    });
-
-                    _logger.LogTrace("Starting dequeue loop.");
+                Task.Run(async () => {
+                    _logger.LogTrace("Starting enqueue loop.");
                     for (int index = 0; index < iterations; index++) {
-                        var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
-                        Assert.NotNull(item);
-                        await item.CompleteAsync();
+                        await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
+                        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                     }
-                    _logger.LogTrace("Finished dequeuing.");
+                    _logger.LogTrace("Finished enqueuing.");
+                });
 
-                    await metrics.FlushAsync();
-                    var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("AverageDuration: {AverageDuration}", timing.AverageDuration);
-                    Assert.InRange(timing.AverageDuration, 0, 75);
+                _logger.LogTrace("Starting dequeue loop.");
+                for (int index = 0; index < iterations; index++) {
+                    var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
+                    Assert.NotNull(item);
+                    await item.CompleteAsync();
                 }
+                _logger.LogTrace("Finished dequeuing.");
+
+                await metrics.FlushAsync();
+                var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("AverageDuration: {AverageDuration}", timing.AverageDuration);
+                Assert.InRange(timing.AverageDuration, 0, 75);
             }
             finally {
                 await CleanupQueueAsync(queue);
@@ -346,29 +345,27 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions())) {
-                    for (int index = 0; index < iterations; index++)
-                        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+                
+                for (int index = 0; index < iterations; index++)
+                    await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
-                    using (var secondQueue = GetQueue(runQueueMaintenance: false)) {
-                        secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+                using var secondQueue = GetQueue(runQueueMaintenance: false);
+                secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
-                        _logger.LogTrace("Starting dequeue loop.");
-                        for (int index = 0; index < iterations; index++) {
-                            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("[{Index}] Calling Dequeue", index);
-                            var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));
-                            Assert.NotNull(item);
-                            await item.CompleteAsync();
-                        }
-
-                        await metrics.FlushAsync(); // This won't flush metrics queue behaviors
-                        var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("TotalDuration: {TotalDuration} AverageDuration: {AverageDuration}", timing.TotalDuration, timing.AverageDuration);
-                        Assert.InRange(timing.AverageDuration, 0, 75);
-                    }
+                _logger.LogTrace("Starting dequeue loop.");
+                for (int index = 0; index < iterations; index++) {
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("[{Index}] Calling Dequeue", index);
+                    var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));
+                    Assert.NotNull(item);
+                    await item.CompleteAsync();
                 }
-            }
-            finally {
+
+                await metrics.FlushAsync(); // This won't flush metrics queue behaviors
+                var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("TotalDuration: {TotalDuration} AverageDuration: {AverageDuration}", timing.TotalDuration, timing.AverageDuration);
+                Assert.InRange(timing.AverageDuration, 0, 75);
+            } finally {
                 await CleanupQueueAsync(queue);
             }
         }
@@ -540,29 +537,29 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
-                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
-                    await queue.StartWorkingAsync(w => {
-                        _logger.LogDebug("WorkAction");
-                        Assert.Equal("Hello", w.Value.Data);
-                        throw new Exception();
-                    });
+                using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
+                
+                queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+                await queue.StartWorkingAsync(w => {
+                    _logger.LogDebug("WorkAction");
+                    Assert.Equal("Hello", w.Value.Data);
+                    throw new Exception();
+                });
 
-                    var resetEvent = new AsyncManualResetEvent(false);
-                    using (queue.Abandoned.AddSyncHandler((o, args) => resetEvent.Set())) {
-                        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-                        await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
+                var resetEvent = new AsyncManualResetEvent(false);
+                using (queue.Abandoned.AddSyncHandler((o, args) => resetEvent.Set())) {
+                    await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                    await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
 
-                        await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
+                    await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
 
-                        if (_assertStats) {
-                            var stats = await queue.GetQueueStatsAsync();
-                            if (_logger.IsEnabled(LogLevel.Information))
-                                _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
-                            Assert.Equal(0, stats.Completed);
-                            Assert.Equal(1, stats.Errors);
-                            Assert.Equal(1, stats.Deadletter);
-                        }
+                    if (_assertStats) {
+                        var stats = await queue.GetQueueStatsAsync();
+                        if (_logger.IsEnabled(LogLevel.Information))
+                            _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                        Assert.Equal(0, stats.Completed);
+                        Assert.Equal(1, stats.Errors);
+                        Assert.Equal(1, stats.Deadletter);
                     }
                 }
             } finally {
@@ -799,79 +796,79 @@ namespace Foundatio.Tests.Queue {
         public virtual async Task CanRunWorkItemWithMetricsAsync() {
             int completedCount = 0;
 
-            using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
-                var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
-                var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
-                using (var queue = new InMemoryQueue<WorkItemData>(options)) {
-                    Task Handler(object sender, CompletedEventArgs<WorkItemData> e) {
-                        completedCount++;
-                        return Task.CompletedTask;
-                    }
+            using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
+            
+            var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
+            var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
+            using var queue = new InMemoryQueue<WorkItemData>(options);
+            
+            Task Handler(object sender, CompletedEventArgs<WorkItemData> e) {
+                completedCount++;
+                return Task.CompletedTask;
+            }
 
-                    using (queue.Completed.AddHandler(Handler)) {
-                        _logger.LogTrace("Before enqueue");
-                        await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
-                        await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
-                        await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
+            using (queue.Completed.AddHandler(Handler)) {
+                _logger.LogTrace("Before enqueue");
+                await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "Testing" });
+                await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
+                await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-                        await SystemClock.SleepAsync(100);
+                await SystemClock.SleepAsync(100);
 
-                        _logger.LogTrace("Before dequeue");
-                        var item = await queue.DequeueAsync();
-                        await item.CompleteAsync();
+                _logger.LogTrace("Before dequeue");
+                var item = await queue.DequeueAsync();
+                await item.CompleteAsync();
 
-                        item = await queue.DequeueAsync();
-                        await item.CompleteAsync();
+                item = await queue.DequeueAsync();
+                await item.CompleteAsync();
 
-                        item = await queue.DequeueAsync();
-                        await item.AbandonAsync();
+                item = await queue.DequeueAsync();
+                await item.AbandonAsync();
 
-                        _logger.LogTrace("Before asserts");
-                        Assert.Equal(2, completedCount);
+                _logger.LogTrace("Before asserts");
+                Assert.Equal(2, completedCount);
 
-                        await SystemClock.SleepAsync(100); // flush metrics queue behaviors
-                        await metrics.FlushAsync();
-                        Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
-                        Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
+                await SystemClock.SleepAsync(100); // flush metrics queue behaviors
+                await metrics.FlushAsync();
+                Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
+                Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
 
-                        Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
-                        Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.enqueued"));
+                Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
+                Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.enqueued"));
 
-                        Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
-                        Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.dequeued"));
+                Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
+                Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.dequeued"));
 
-                        Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.simple.completed"));
-                        Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.completed"));
+                Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.simple.completed"));
+                Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.completed"));
 
-                        Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
-                        Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.abandoned"));
+                Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
+                Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.abandoned"));
 
-                        var queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
-                        Assert.Equal(3, queueTiming.Count);
-                        queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.queuetime");
-                        Assert.Equal(3, queueTiming.Count);
+                var queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
+                Assert.Equal(3, queueTiming.Count);
+                queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.queuetime");
+                Assert.Equal(3, queueTiming.Count);
 
-                        var processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
-                        Assert.Equal(3, processTiming.Count);
-                        processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.processtime");
-                        Assert.Equal(3, processTiming.Count);
+                var processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
+                Assert.Equal(3, processTiming.Count);
+                processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.processtime");
+                Assert.Equal(3, processTiming.Count);
 
-                        if (_assertStats) {
-                            var queueStats = await metrics.GetQueueStatsAsync("metric.workitemdata");
-                            Assert.Equal(3, queueStats.Enqueued.Count);
-                            Assert.Equal(3, queueStats.Dequeued.Count);
-                            Assert.Equal(2, queueStats.Completed.Count);
-                            Assert.Equal(1, queueStats.Abandoned.Count);
-                            Assert.InRange(queueStats.Count.Max, 1, 3);
-                            Assert.InRange(queueStats.Working.Max, 0, 1);
+                if (_assertStats) {
+                    var queueStats = await metrics.GetQueueStatsAsync("metric.workitemdata");
+                    Assert.Equal(3, queueStats.Enqueued.Count);
+                    Assert.Equal(3, queueStats.Dequeued.Count);
+                    Assert.Equal(2, queueStats.Completed.Count);
+                    Assert.Equal(1, queueStats.Abandoned.Count);
+                    Assert.InRange(queueStats.Count.Max, 1, 3);
+                    Assert.InRange(queueStats.Working.Max, 0, 1);
 
-                            var subQueueStats = await metrics.GetQueueStatsAsync("metric.workitemdata", "simple");
-                            Assert.Equal(3, subQueueStats.Enqueued.Count);
-                            Assert.Equal(3, subQueueStats.Dequeued.Count);
-                            Assert.Equal(2, subQueueStats.Completed.Count);
-                            Assert.Equal(1, subQueueStats.Abandoned.Count);
-                        }
-                    }
+                    var subQueueStats = await metrics.GetQueueStatsAsync("metric.workitemdata", "simple");
+                    Assert.Equal(3, subQueueStats.Enqueued.Count);
+                    Assert.Equal(3, subQueueStats.Dequeued.Count);
+                    Assert.Equal(2, subQueueStats.Completed.Count);
+                    Assert.Equal(1, subQueueStats.Abandoned.Count);
                 }
             }
         }
@@ -1018,12 +1015,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanDequeueWithLockingAsync() {
-            using (var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
-                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
-                    await CanDequeueWithLockingImpAsync(distributedLock);
-                }
-            }
+            using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
+            using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            
+            var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+            await CanDequeueWithLockingImpAsync(distributedLock);
         }
 
         protected async Task CanDequeueWithLockingImpAsync(CacheLockProvider distributedLock) {
@@ -1036,32 +1032,32 @@ namespace Foundatio.Tests.Queue {
                 await AssertEmptyQueueAsync(queue);
 
                 Log.MinimumLevel = LogLevel.Trace;
-                using (var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log })) {
-                    queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
+                using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
+                
+                queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
 
-                    var resetEvent = new AsyncAutoResetEvent();
-                    await queue.StartWorkingAsync(async w => {
-                        _logger.LogInformation("Acquiring distributed lock in work item");
-                        var l = await distributedLock.AcquireAsync("test");
-                        Assert.NotNull(l);
-                        _logger.LogInformation("Acquired distributed lock");
-                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
-                        await l.ReleaseAsync();
-                        _logger.LogInformation("Released distributed lock");
+                var resetEvent = new AsyncAutoResetEvent();
+                await queue.StartWorkingAsync(async w => {
+                    _logger.LogInformation("Acquiring distributed lock in work item");
+                    var l = await distributedLock.AcquireAsync("test");
+                    Assert.NotNull(l);
+                    _logger.LogInformation("Acquired distributed lock");
+                    await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
+                    await l.ReleaseAsync();
+                    _logger.LogInformation("Released distributed lock");
 
-                        await w.CompleteAsync();
-                        resetEvent.Set();
-                    });
+                    await w.CompleteAsync();
+                    resetEvent.Set();
+                });
 
-                    await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-                    await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+                await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
 
-                    if (_assertStats) {
-                        await SystemClock.SleepAsync(1);
-                        var stats = await queue.GetQueueStatsAsync();
-                        _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
-                        Assert.Equal(1, stats.Completed);
-                    }
+                if (_assertStats) {
+                    await SystemClock.SleepAsync(1);
+                    var stats = await queue.GetQueueStatsAsync();
+                    _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    Assert.Equal(1, stats.Completed);
                 }
             } finally {
                 await CleanupQueueAsync(queue);
@@ -1069,12 +1065,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
-            using (var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log })) {
-                using (var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log })) {
-                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
-                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
-                }
-            }
+            using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
+            using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+            
+            var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+            await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
         }
 
         protected async Task CanHaveMultipleQueueInstancesWithLockingImplAsync(CacheLockProvider distributedLock) {
@@ -1302,6 +1297,8 @@ namespace Foundatio.Tests.Queue {
             using (queue) {
                 queue.DeleteQueueAsync().GetAwaiter().GetResult();
             }
+
+            GC.SuppressFinalize(this);
         }
     }
 
