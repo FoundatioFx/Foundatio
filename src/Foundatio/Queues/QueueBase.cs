@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -120,14 +121,21 @@ namespace Foundatio.Queues {
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
         protected virtual void StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal);
+            var tags = new Dictionary<string, object> {
+                { "Id", entry.Id },
+                { "QueueEntry", entry },
+                { "CorrelationId", entry.CorrelationId }
+            };
+
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, null, tags);
             if (activity == null)
                 return;
-            
-            activity.AddTag("Id", entry.Id);
-            if (!String.IsNullOrEmpty(entry.CorrelationId))
-                activity.SetParentId(entry.CorrelationId);
-            
+
+            // TODO: In 6.0, we will be able to delay activity creation and set display name before starting the activity
+            activity.DisplayName = $"Queue: {entry.EntryType.Name}";
+            if (entry.GetValue() is WorkItemData workItem && !String.IsNullOrEmpty(workItem.SubMetricName))
+                activity.DisplayName = $"Queue Work Item: {workItem.SubMetricName}";
+
             EnrichProcessQueueEntryActivity(activity, entry);
 
             entry.Properties["@Activity"] = activity;

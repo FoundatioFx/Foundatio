@@ -96,6 +96,8 @@ namespace Foundatio.Tests.Queue {
                     ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
                 };
 
+                Activity.Current = new Activity("Parent");
+
                 ActivitySource.AddActivityListener(listener);
 
                 await queue.DeleteQueueAsync();
