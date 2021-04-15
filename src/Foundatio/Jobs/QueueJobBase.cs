@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
@@ -44,6 +46,8 @@ namespace Foundatio.Jobs {
         public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken) {
             if (queueEntry == null)
                 return JobResult.Success;
+
+            using var activity = StartProcessQueueEntryActivity(queueEntry);
 
             using (_logger.BeginScope(s => s
                     .Property("QueueEntryId", queueEntry.Id)
@@ -105,6 +109,34 @@ namespace Foundatio.Jobs {
                 }
             }
         }
+
+        protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
+            var tags = new Dictionary<string, object> {
+                { "Id", entry.Id },
+                { "QueueEntry", entry },
+                { "CorrelationId", entry.CorrelationId }
+            };
+
+            Activity activity;
+            if (!String.IsNullOrEmpty(entry.CorrelationId) && ActivityContext.TryParse(entry.CorrelationId, null, out var context))
+                activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, context, tags);
+            else
+                activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, null, tags);
+
+            if (activity == null)
+                return activity;
+
+            // TODO: In 6.0, we will be able to delay activity creation and set display name before starting the activity
+            activity.DisplayName = $"Queue: {entry.EntryType.Name}";
+            if (entry.GetValue() is WorkItemData workItem && !String.IsNullOrEmpty(workItem.SubMetricName))
+                activity.DisplayName = $"Queue Work Item: {workItem.SubMetricName}";
+
+            EnrichProcessQueueEntryActivity(activity, entry);
+
+            return activity;
+        }
+
+        protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) { }
 
         protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry) {
             if (_logger.IsEnabled(LogLevel.Information))

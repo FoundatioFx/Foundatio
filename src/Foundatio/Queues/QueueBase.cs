@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -120,41 +120,8 @@ namespace Foundatio.Queues {
 
         public AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; } = new AsyncEvent<DequeuedEventArgs<T>>(true);
 
-        protected virtual void StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            var tags = new Dictionary<string, object> {
-                { "Id", entry.Id },
-                { "QueueEntry", entry },
-                { "CorrelationId", entry.CorrelationId }
-            };
-
-            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, null, tags);
-            if (activity == null)
-                return;
-
-            // TODO: In 6.0, we will be able to delay activity creation and set display name before starting the activity
-            activity.DisplayName = $"Queue: {entry.EntryType.Name}";
-            if (entry.GetValue() is WorkItemData workItem && !String.IsNullOrEmpty(workItem.SubMetricName))
-                activity.DisplayName = $"Queue Work Item: {workItem.SubMetricName}";
-
-            EnrichProcessQueueEntryActivity(activity, entry);
-
-            entry.Properties["@Activity"] = activity;
-        }
-
-        protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) {}
-
-        protected virtual void StopProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            if (!entry.Properties.TryGetValue("@Activity", out object a) || a is not Activity activity)
-                return;
-
-            entry.Properties.Remove("@Activity");
-            activity.Stop();
-        }
-
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
             LastDequeueActivity = SystemClock.UtcNow;
-
-            StartProcessQueueEntryActivity(entry);
 
             var dequeued = Dequeued;
             if (dequeued == null)
@@ -195,8 +162,6 @@ namespace Foundatio.Queues {
                 var args = new CompletedEventArgs<T> { Queue = this, Entry = entry };
                 await Completed.InvokeAsync(this, args).AnyContext();
             }
-
-            StopProcessQueueEntryActivity(entry);
         }
 
         public AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; } = new AsyncEvent<AbandonedEventArgs<T>>(true);
@@ -211,8 +176,6 @@ namespace Foundatio.Queues {
                 var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
                 await Abandoned.InvokeAsync(this, args).AnyContext();
             }
-
-            StopProcessQueueEntryActivity(entry);
         }
 
         public string QueueId { get; protected set; }
