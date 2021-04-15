@@ -117,9 +117,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
                 Assert.Equal("123+456", workItem.CorrelationId);
-                Assert.Equal(2, workItem.Properties.Count);
+                Assert.Single(workItem.Properties);
                 Assert.Contains(workItem.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
-                Assert.Contains(workItem.Properties, i => i.Key == "@Activity");
                 if (_assertStats)
                     Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -140,9 +139,8 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal("Hello", workItem.Value.Data);
                 Assert.Equal("123+456", workItem.CorrelationId);
                 Assert.Equal(2, workItem.Attempts);
-                Assert.Equal(2, workItem.Properties.Count);
+                Assert.Single(workItem.Properties);
                 Assert.Contains(workItem.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
-                Assert.Contains(workItem.Properties, i => i.Key == "@Activity");
             } finally {
                 await CleanupQueueAsync(queue);
             }
