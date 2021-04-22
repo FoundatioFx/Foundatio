@@ -66,7 +66,7 @@ namespace Foundatio.Queues {
     
     public class QueueEntryOptions {
         public string CorrelationId { get; set; }
-        public DataDictionary Properties { get; set; }
+        public DataDictionary Properties { get; set; } = new DataDictionary();
     }
 
     public class EnqueuingEventArgs<T> : CancelEventArgs where T : class {

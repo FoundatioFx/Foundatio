@@ -91,7 +91,7 @@ namespace Foundatio.Tests.Queue {
             try {
                 using var listener = new ActivityListener {
                     ShouldListenTo = s => s.Name == "Foundatio",
-                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
                     ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
                     ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
                 };

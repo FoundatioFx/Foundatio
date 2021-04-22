@@ -111,22 +111,14 @@ namespace Foundatio.Jobs {
         }
 
         protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry) {
-            var tags = new Dictionary<string, object> {
-                { "Id", entry.Id },
-                { "QueueEntry", entry },
-                { "CorrelationId", entry.CorrelationId }
-            };
-
-            Activity activity;
-            if (!String.IsNullOrEmpty(entry.CorrelationId) && ActivityContext.TryParse(entry.CorrelationId, null, out var context))
-                activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, context, tags);
-            else
-                activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, null, tags);
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
 
             if (activity == null)
                 return activity;
 
-            // TODO: In 6.0, we will be able to delay activity creation and set display name before starting the activity
+            if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
+                activity.TraceStateString = traceState.ToString();
+
             activity.DisplayName = $"Queue: {entry.EntryType.Name}";
             if (entry.GetValue() is WorkItemData workItem && !String.IsNullOrEmpty(workItem.SubMetricName))
                 activity.DisplayName = $"Queue Work Item: {workItem.SubMetricName}";
@@ -136,8 +128,23 @@ namespace Foundatio.Jobs {
             return activity;
         }
 
-        protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) { }
+        protected virtual void EnrichProcessQueueEntryActivity(Activity activity, IQueueEntry<T> entry) {
+            if (!activity.IsAllDataRequested)
+                return;
 
+            activity.AddTag("EntryType", entry.EntryType.FullName);
+            activity.AddTag("Id", entry.Id);
+            activity.AddTag("CorrelationId", entry.CorrelationId);
+
+            if (entry.Properties == null || entry.Properties.Count <= 0)
+                return;
+            
+            foreach (var p in entry.Properties) {
+                if (p.Key != "TraceState")
+                    activity.AddTag(p.Key, p.Value);
+            }
+        }
+        
         protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry) {
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation("Processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);

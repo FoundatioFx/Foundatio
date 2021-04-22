@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Jobs;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -92,8 +91,11 @@ namespace Foundatio.Queues {
         public AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; } = new AsyncEvent<EnqueuingEventArgs<T>>();
         
         protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueEntryOptions options) {
-            if (String.IsNullOrEmpty(options.CorrelationId))
+            if (String.IsNullOrEmpty(options.CorrelationId)) {
                 options.CorrelationId = Activity.Current?.Id;
+                if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
+                    options.Properties.Add("TraceState", Activity.Current.TraceStateString);
+            }
 
             var enqueueing = Enqueuing;
             if (enqueueing == null)

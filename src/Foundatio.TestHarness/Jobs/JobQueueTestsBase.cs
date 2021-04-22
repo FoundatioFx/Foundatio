@@ -14,12 +14,55 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using System.Diagnostics;
 
 namespace Foundatio.Tests.Jobs {
     public abstract class JobQueueTestsBase: TestWithLoggingBase {
+        private readonly ActivitySource _activitySource = new ActivitySource(nameof(JobQueueTestsBase));
+
         public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
 
         protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
+
+        public virtual async Task ActivityWillFlowThroughQueueJobAsync() {
+            using (var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero)) {
+                await queue.DeleteQueueAsync();
+
+                Activity parentActivity = null;
+                using var listener = new ActivityListener {
+                    ShouldListenTo = s => s.Name == nameof(JobQueueTestsBase) || s.Name == "Foundatio",
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStarted = a => {
+                        if (a.OperationName != "ProcessQueueEntry")
+                            return;
+
+                        Assert.Equal(parentActivity.RootId, a.RootId);
+                        Assert.Equal(parentActivity.SpanId, a.ParentSpanId);
+                    },
+                    ActivityStopped = a => {}
+                };
+                ActivitySource.AddActivityListener(listener);
+
+                parentActivity = _activitySource.StartActivity("Parent");
+                Assert.NotNull(parentActivity);
+
+                var enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem {
+                    Created = SystemClock.UtcNow,
+                    Path = "somepath"
+                });
+
+                // clear activity and then verify that 
+                Activity.Current = null;
+
+                var job = new SampleQueueJob(queue, null, Log);
+                await job.RunAsync();
+
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(1, stats.Enqueued);
+                Assert.Equal(1, stats.Dequeued);
+            }
+        }
 
         public virtual async Task CanRunQueueJobAsync() {
             const int workItemCount = 100;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Queues;
@@ -31,6 +31,11 @@ namespace Foundatio.Tests.Jobs {
         [Fact]
         public override Task CanRunQueueJobAsync() {
             return base.CanRunQueueJobAsync();
+        }
+
+        [Fact]
+        public override Task ActivityWillFlowThroughQueueJobAsync() {
+            return base.ActivityWillFlowThroughQueueJobAsync();
         }
     }
 }
