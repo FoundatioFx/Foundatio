@@ -18,7 +18,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>
     <PackageIcon>foundatio-icon.png</PackageIcon>
-    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>$(PackageProjectUrl)</RepositoryUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -38,8 +39,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../../LICENSE.txt" Pack="true" Visible="false" PackagePath="$(PackageLicenseFile)" />
     <None Include="../../build/foundatio-icon.png" Pack="true" PackagePath="$(PackageIcon)" />
+    <None Include="../../README.md" Pack="true" PackagePath="\$(PackageReadmeFile)" />
   </ItemGroup>
 
 </Project>
