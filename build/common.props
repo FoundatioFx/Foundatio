@@ -40,7 +40,7 @@
 
   <ItemGroup>
     <None Include="../../build/foundatio-icon.png" Pack="true" PackagePath="$(PackageIcon)" />
-    <None Include="../../README.md" Pack="true" PackagePath="\$(PackageReadmeFile)" />
+    <None Include="../../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
