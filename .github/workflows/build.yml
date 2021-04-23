@@ -20,6 +20,7 @@ jobs:
         dotnet tool install --global minver-cli --version 2.5.0
         version=$(minver --tag-prefix v)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
+        dotnet --version
     - name: Build
       run: dotnet build Foundatio.sln --configuration Release
     - name: Run Tests
