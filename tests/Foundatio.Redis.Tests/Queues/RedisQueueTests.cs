@@ -148,6 +148,11 @@ namespace Foundatio.Redis.Tests.Queues {
             return base.CanHandleAutoAbandonInWorker();
         }
 
+        [Fact]
+        public override Task CanUseQueueOptionsAsync() {
+            return base.CanUseQueueOptionsAsync();
+        }
+
         [RetryFact]
         public override async Task CanDequeueWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();

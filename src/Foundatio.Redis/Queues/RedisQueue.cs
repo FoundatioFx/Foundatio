@@ -179,7 +179,12 @@ namespace Foundatio.Queues {
             }
 
             var now = SystemClock.UtcNow;
-            bool success = await Run.WithRetriesAsync(() => _cache.AddAsync(GetPayloadKey(id), data, _payloadTimeToLive), logger: _logger).AnyContext();
+            var envelope = new RedisPayloadEnvelope<T> {
+                Properties = options.Properties,
+                CorrelationId = options.CorrelationId,
+                Value = data
+            };
+            bool success = await Run.WithRetriesAsync(() => _cache.AddAsync(GetPayloadKey(id), envelope, _payloadTimeToLive), logger: _logger).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Attempt to set payload failed.");
 
@@ -312,7 +317,7 @@ namespace Foundatio.Queues {
         }
 
         private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId) {
-            var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<T>(GetPayloadKey(workId)), logger: _logger).AnyContext();
+            var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<RedisPayloadEnvelope<T>>(GetPayloadKey(workId)), logger: _logger).AnyContext();
             if (payload.IsNull) {
                 if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError("Error getting queue payload: {WorkId}", workId);
                 await Database.ListRemoveAsync(_workListName, workId).AnyContext();
@@ -322,7 +327,15 @@ namespace Foundatio.Queues {
             var enqueuedTimeTicks = Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger);
             var attemptsValue = Run.WithRetriesAsync(() => _cache.GetAsync(GetAttemptsKey(workId), 0), logger: _logger);
             await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
-            return new QueueEntry<T>(workId, null, payload.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
+            
+            var queueEntry = new QueueEntry<T>(workId, payload.Value.CorrelationId, payload.Value.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
+
+            if (payload.Value.Properties != null) {
+                foreach (var property in payload.Value.Properties)
+                    queueEntry.Properties.Add(property.Key, property.Value);
+            }
+
+            return queueEntry;
         }
 
         private async Task<RedisValue> DequeueIdAsync(CancellationToken linkedCancellationToken) {
@@ -681,5 +694,11 @@ namespace Foundatio.Queues {
         }
 
         private static readonly string DequeueIdScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.lua");
+    }
+
+    public class RedisPayloadEnvelope<T> {
+        public string CorrelationId { get; set; }
+        public DataDictionary Properties { get; set; }
+        public T Value { get; set; }
     }
 }
