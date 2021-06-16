@@ -82,6 +82,11 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
+        public override Task CanQueueAndDequeueWorkItemWithDelayAsync() {
+            return base.CanQueueAndDequeueWorkItemWithDelayAsync();
+        }
+
+        [Fact]
         public override Task CanUseQueueOptionsAsync() {
             return base.CanUseQueueOptionsAsync();
         }

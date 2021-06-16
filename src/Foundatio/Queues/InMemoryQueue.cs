@@ -64,12 +64,26 @@ namespace Foundatio.Queues {
 
             var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, SystemClock.UtcNow, 0);
             entry.Properties.AddRange(options?.Properties);
+
+            Interlocked.Increment(ref _enqueuedCount);
+
+            if (options?.DeliveryDelay != null && options.DeliveryDelay.Value > TimeSpan.Zero) {
+                _ = Run.DelayedAsync(options.DeliveryDelay.Value, async () => {
+                    _queue.Enqueue(entry);
+                    _logger.LogTrace("Enqueue: Set Event");
+
+                    _autoResetEvent.Set();
+
+                    await OnEnqueuedAsync(entry).AnyContext();
+                    _logger.LogTrace("Enqueue done");
+                }, _queueDisposedCancellationTokenSource.Token);
+                return id;
+            }
             
             _queue.Enqueue(entry);
             _logger.LogTrace("Enqueue: Set Event");
 
             _autoResetEvent.Set();
-            Interlocked.Increment(ref _enqueuedCount);
 
             await OnEnqueuedAsync(entry).AnyContext();
             _logger.LogTrace("Enqueue done");

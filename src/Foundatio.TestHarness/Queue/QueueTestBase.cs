@@ -83,6 +83,43 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
+        public virtual async Task CanQueueAndDequeueWorkItemWithDelayAsync() {
+            var queue = GetQueue();
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                await AssertEmptyQueueAsync(queue);
+
+                await queue.EnqueueAsync(new SimpleWorkItem {
+                    Data = "Hello"
+                }, new QueueEntryOptions { DeliveryDelay = TimeSpan.FromSeconds(1) });
+                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+
+                var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+                Assert.Null(workItem);
+
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                if (_assertStats)
+                    Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+
+                await workItem.CompleteAsync();
+                Assert.False(workItem.IsAbandoned);
+                Assert.True(workItem.IsCompleted);
+                
+                if (_assertStats) {
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(1, stats.Completed);
+                    Assert.Equal(0, stats.Queued);
+                }
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
         public virtual async Task CanUseQueueOptionsAsync() {
             var queue = GetQueue(retryDelay: TimeSpan.Zero);
             if (queue == null)
