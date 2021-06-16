@@ -172,6 +172,9 @@ namespace Foundatio.Queues {
             string id = Guid.NewGuid().ToString("N");
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} enqueue item: {EntryId}", _options.Name, id);
 
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+                throw new NotSupportedException("DeliveryDelay is not supported in the Redis queue implementation.");
+
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (!await OnEnqueuingAsync(data, options).AnyContext()) {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Aborting enqueue item: {EntryId}", id);
