@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
-using Amazon.S3;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Foundatio.Extensions;
@@ -77,8 +76,13 @@ namespace Foundatio.Queues {
             if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
+            int delaySeconds = (int)options.DeliveryDelay.GetValueOrDefault().TotalSeconds;
+            if (delaySeconds < 0)
+                delaySeconds = 0;
+            
             var message = new SendMessageRequest {
                 QueueUrl = _queueUrl,
+                DelaySeconds = delaySeconds,
                 MessageBody = _serializer.SerializeToString(data)
             };
 
