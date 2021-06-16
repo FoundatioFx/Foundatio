@@ -66,7 +66,7 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _enqueuedCount);
             var message = new CloudQueueMessage(_serializer.SerializeToBytes(data));
-            await _queueReference.AddMessageAsync(message).AnyContext();
+            await _queueReference.AddMessageAsync(message, null, options.DeliveryDelay, null, null).AnyContext();
 
             var entry = new QueueEntry<T>(message.Id, null, data, this, SystemClock.UtcNow, 0);
             await OnEnqueuedAsync(entry).AnyContext();
