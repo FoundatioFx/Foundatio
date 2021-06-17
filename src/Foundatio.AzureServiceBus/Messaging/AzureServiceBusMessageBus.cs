@@ -42,11 +42,11 @@ namespace Foundatio.Messaging {
 
                 var sw = Stopwatch.StartNew();
                 try {
-                    await _managementClient.CreateSubscriptionAsync(CreateSubscriptionDescription()).AnyContext();
+                    await _managementClient.CreateSubscriptionAsync(CreateSubscriptionDescription(), cancellationToken).AnyContext();
                 } catch (MessagingEntityAlreadyExistsException) { }
 
                 // Look into message factory with multiple receivers so more than one connection is made and managed....
-                _subscriptionClient = new SubscriptionClient(_options.ConnectionString, _options.Topic, _subscriptionName, ReceiveMode.ReceiveAndDelete, _options.SubscriptionRetryPolicy);
+                _subscriptionClient = new SubscriptionClient(_options.ConnectionString, _options.Topic, _subscriptionName, _options.SubscriptionReceiveMode, _options.SubscriptionRetryPolicy);
                 _subscriptionClient.RegisterMessageHandler(OnMessageAsync, new MessageHandlerOptions(MessageHandlerException) {
                     /* AutoComplete = true, // Don't run with receive and delete */ MaxConcurrentCalls = 6 /* calculate this based on the the thread count. */ });
                 if (_options.PrefetchCount.HasValue)
@@ -59,7 +59,7 @@ namespace Foundatio.Messaging {
         private Task OnMessageAsync(Microsoft.Azure.ServiceBus.Message brokeredMessage, CancellationToken cancellationToken) {
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
-            
+
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
             var message = new Message(() => DeserializeMessageBody(brokeredMessage.ContentType, brokeredMessage.Body)) {
                 Data = brokeredMessage.Body,
@@ -141,7 +141,7 @@ namespace Foundatio.Messaging {
 
             if (!String.IsNullOrEmpty(_options.TopicUserMetadata))
                 td.UserMetadata = _options.TopicUserMetadata;
-            
+
             return td;
         }
 
