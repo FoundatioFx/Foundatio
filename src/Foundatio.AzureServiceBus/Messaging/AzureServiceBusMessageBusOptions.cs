@@ -143,16 +143,18 @@ namespace Foundatio.Messaging {
         public string SubscriptionUserMetadata { get; set; }
 
         public RetryPolicy SubscriptionRetryPolicy { get; set; }
+
+        public ReceiveMode SubscriptionReceiveMode { get; set; } = ReceiveMode.ReceiveAndDelete;
     }
 
     public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<
         AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder> {
-        
+
         public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString) {
             Target.ConnectionString = connectionString;
             return this;
         }
-        
+
         public AzureServiceBusMessageBusOptionsBuilder PrefetchCount(int prefetchCount) {
             Target.PrefetchCount = prefetchCount;
             return this;
@@ -290,6 +292,11 @@ namespace Foundatio.Messaging {
 
         public AzureServiceBusMessageBusOptionsBuilder SubscriptionRetryPolicy(RetryPolicy subscriptionRetryPolicy) {
             Target.SubscriptionRetryPolicy = subscriptionRetryPolicy ?? throw new ArgumentNullException(nameof(subscriptionRetryPolicy));
+            return this;
+        }
+
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionReceiveMode(ReceiveMode receiveMode) {
+            Target.SubscriptionReceiveMode = receiveMode;
             return this;
         }
     }
