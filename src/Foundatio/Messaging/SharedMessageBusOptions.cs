@@ -12,6 +12,11 @@ namespace Foundatio.Messaging {
         /// Controls which types messages are mapped to.
         /// </summary>
         public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
+
+        /// <summary>
+        /// Controls the way the messages are sent to subscribers
+        /// </summary>
+        public bool SendMessagesSynchronously { get; set; } = true;
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -27,7 +32,7 @@ namespace Foundatio.Messaging {
         public TBuilder MapMessageType<T>(string name) {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
+
             Target.MessageTypeMappings[name] = typeof(T);
             return (TBuilder)this;
         }
@@ -35,7 +40,7 @@ namespace Foundatio.Messaging {
         public TBuilder MapMessageTypeToClassName<T>() {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
+
             Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
             return (TBuilder)this;
         }

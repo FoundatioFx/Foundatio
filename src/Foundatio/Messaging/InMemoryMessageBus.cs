@@ -31,31 +31,31 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
-            Type mappedType = GetMappedMessageType(messageType);
+            var mappedType = GetMappedMessageType(messageType);
 
             if (_subscribers.IsEmpty)
-                return Task.CompletedTask;
+                return;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
                 SendDelayedMessage(mappedType, message, delay.Value);
-                return Task.CompletedTask;
+                return;
             }
-            
-            var body = SerializeMessageBody(messageType, message);
+
+            byte[] body = SerializeMessageBody(messageType, message);
             var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
                 Type = messageType,
                 ClrType = mappedType,
                 Data = body
             };
 
-            SendMessageToSubscribers(messageData);
-            return Task.CompletedTask;
+            await SendMessageToSubscribers(messageData);
+            return;
         }
     }
 }
