@@ -55,7 +55,6 @@ namespace Foundatio.Messaging {
             };
 
             await SendMessageToSubscribers(messageData);
-            return;
         }
     }
 }
