@@ -16,7 +16,7 @@ namespace Foundatio.Messaging {
         /// <summary>
         /// Controls the way the messages are sent to subscribers
         /// </summary>
-        public bool SendMessagesSynchronously { get; set; } = true;
+        public bool SendMessagesSynchronously { get; set; } = false;
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
