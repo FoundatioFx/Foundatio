@@ -34,7 +34,7 @@ namespace Foundatio.Messaging {
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
-            var mappedType = GetMappedMessageType(messageType);
+            Type mappedType = GetMappedMessageType(messageType);
 
             if (_subscribers.IsEmpty)
                 return Task.CompletedTask;
@@ -47,7 +47,7 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
             }
 
-            byte[] body = SerializeMessageBody(messageType, message);
+            var body = SerializeMessageBody(messageType, message);
             var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
                 Type = messageType,
                 ClrType = mappedType,

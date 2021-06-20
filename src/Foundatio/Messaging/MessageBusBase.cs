@@ -31,6 +31,7 @@ namespace Foundatio.Messaging {
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
+
         public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
@@ -40,6 +41,7 @@ namespace Foundatio.Messaging {
         }
 
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
+
         protected string GetMappedMessageType(Type messageType) {
             return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
                 var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
@@ -51,6 +53,7 @@ namespace Foundatio.Messaging {
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
+
         protected virtual Type GetMappedMessageType(string messageType) {
             return _knownMessageTypesCache.GetOrAdd(messageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
@@ -77,6 +80,7 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
@@ -167,8 +171,6 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            // static void LaunchTask(Func<Task> task) => Task.Factory.StartNew(task);
-
             var subscriberTasks = subscribers.Select(subscriber => Task.Run(async () => {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
                     if (_subscribers.TryRemove(subscriber.Id, out var _)) {
@@ -191,19 +193,13 @@ namespace Foundatio.Messaging {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
 
-                try {
-                    if (subscriber.Type == typeof(IMessage))
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                    else
-                        await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
+                if (subscriber.Type == typeof(IMessage))
+                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                else
+                    await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
 
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
-                } catch (Exception ex) {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error sending message to subscriber: {ErrorMessage}", ex.Message);
-                    if (_options.SendMessagesSynchronously) throw;
-                }
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
             }));
 
             try {

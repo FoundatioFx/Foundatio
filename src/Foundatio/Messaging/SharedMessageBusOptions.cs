@@ -12,11 +12,6 @@ namespace Foundatio.Messaging {
         /// Controls which types messages are mapped to.
         /// </summary>
         public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
-
-        /// <summary>
-        /// Controls the way the messages are sent to subscribers
-        /// </summary>
-        public bool SendMessagesSynchronously { get; set; } = false;
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
