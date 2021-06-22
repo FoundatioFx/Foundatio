@@ -46,7 +46,7 @@ namespace Foundatio.Messaging {
                 SendDelayedMessage(mappedType, message, delay.Value);
                 return Task.CompletedTask;
             }
-
+            
             var body = SerializeMessageBody(messageType, message);
             var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
                 Type = messageType,

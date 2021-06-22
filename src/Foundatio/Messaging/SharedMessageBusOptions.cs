@@ -27,7 +27,7 @@ namespace Foundatio.Messaging {
         public TBuilder MapMessageType<T>(string name) {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-
+            
             Target.MessageTypeMappings[name] = typeof(T);
             return (TBuilder)this;
         }
@@ -35,7 +35,7 @@ namespace Foundatio.Messaging {
         public TBuilder MapMessageTypeToClassName<T>() {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-
+            
             Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
             return (TBuilder)this;
         }

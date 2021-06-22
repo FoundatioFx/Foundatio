@@ -31,7 +31,6 @@ namespace Foundatio.Messaging {
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
-
         public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
@@ -39,26 +38,24 @@ namespace Foundatio.Messaging {
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
         }
-
+ 
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
-
         protected string GetMappedMessageType(Type messageType) {
             return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
                 var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
                 if (reversedMap.ContainsKey(type))
                     return reversedMap[type];
-
+                
                 return String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name);
             });
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
-
         protected virtual Type GetMappedMessageType(string messageType) {
             return _knownMessageTypesCache.GetOrAdd(messageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
-
+                
                 try {
                     return Type.GetType(type);
                 } catch (Exception) {
@@ -66,7 +63,7 @@ namespace Foundatio.Messaging {
                         string[] typeParts = type.Split(',');
                         if (typeParts.Length >= 2)
                             type = String.Join(",", typeParts[0], typeParts[1]);
-
+                        
                         // try resolve type without version
                         return Type.GetType(type);
                     } catch (Exception ex) {
@@ -80,7 +77,6 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
         protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
@@ -118,24 +114,24 @@ namespace Foundatio.Messaging {
                 return true;
 
             var clrType = GetMappedMessageType(message.Type);
-
+            
             if (subscriber.IsAssignableFrom(clrType))
                 return true;
-
+            
             return false;
         }
 
         protected virtual byte[] SerializeMessageBody(string messageType, object body) {
             if (body == null)
                 return new byte[0];
-
+            
             return _serializer.SerializeToBytes(body);
         }
 
         protected virtual object DeserializeMessageBody(string messageType, byte[] data) {
             if (data == null || data.Length == 0)
                 return null;
-
+            
             object body = null;
             try {
                 var clrType = GetMappedMessageType(messageType);
@@ -146,7 +142,7 @@ namespace Foundatio.Messaging {
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
-
+                
                 return null;
             }
 
@@ -159,7 +155,7 @@ namespace Foundatio.Messaging {
 
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
-
+            
             if (subscribers.Count == 0)
                 return;
 
@@ -216,7 +212,7 @@ namespace Foundatio.Messaging {
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
         }
-
+       
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
@@ -229,7 +225,7 @@ namespace Foundatio.Messaging {
         protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
-
+            
             if (delay <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(delay));
 
@@ -243,7 +239,7 @@ namespace Foundatio.Messaging {
                         _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
                     return;
                 }
-
+                
                 if (isTraceLevelEnabled)
                     _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
 
@@ -258,9 +254,9 @@ namespace Foundatio.Messaging {
                 _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;
             }
-
+            
             _isDisposed = true;
-
+            
             _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
             _subscribers?.Clear();
             _messageBusDisposedCancellationTokenSource?.Cancel();
