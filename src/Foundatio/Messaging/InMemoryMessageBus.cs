@@ -57,7 +57,7 @@ namespace Foundatio.Messaging {
             try {
                 SendMessageToSubscribers(messageData);
             } catch {
-                // swallow exceptions from subscribers
+                // swallow exceptions from subscriber handlers for the in memory bus
             }
 
             return Task.CompletedTask;
