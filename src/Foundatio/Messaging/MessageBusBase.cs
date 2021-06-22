@@ -167,41 +167,47 @@ namespace Foundatio.Messaging {
                 return;
             }
 
-            var subscriberHandlers = subscribers.Select(subscriber => {
-                if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out var _)) {
+            async Task RunSubscriberHandler(Subscriber subscriber)
+            {
+                if (subscriber.CancellationToken.IsCancellationRequested)
+                {
+                    if (_subscribers.TryRemove(subscriber.Id, out var _))
+                    {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
-                    } else if (isTraceLogLevelEnabled) {
+                    }
+                    else if (isTraceLogLevelEnabled)
+                    {
                         _logger.LogTrace("Unable to remove cancelled subscriber: {SubscriberId}", subscriber.Id);
                     }
 
-                    return Task.CompletedTask;
+                    return;
                 }
 
-                return Task.Factory.StartNew(async () => {
-                    if (subscriber.CancellationToken.IsCancellationRequested) {
-                        if (isTraceLogLevelEnabled)
-                            _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
-
-                        return;
-                    }
-
+                if (subscriber.CancellationToken.IsCancellationRequested)
+                {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
+                        _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
 
-                    if (subscriber.Type == typeof(IMessage))
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                    else
-                        await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
+                    return;
+                }
 
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
-                });
-            });
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
+
+                if (subscriber.Type == typeof(IMessage))
+                    await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                else
+                    await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
+
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
+            }
+
+            var subscriberHandlers = subscribers.Select(RunSubscriberHandler).ToArray();
 
             try {
-                Task.WaitAll(subscriberHandlers.ToArray());
+                Task.WaitAll(subscriberHandlers);
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
