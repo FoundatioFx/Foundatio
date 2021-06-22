@@ -54,7 +54,12 @@ namespace Foundatio.Messaging {
                 Data = body
             };
 
-            SendMessageToSubscribers(messageData);
+            try {
+                SendMessageToSubscribers(messageData);
+            } catch {
+                // swallow exceptions from subscribers
+            }
+
             return Task.CompletedTask;
         }
     }

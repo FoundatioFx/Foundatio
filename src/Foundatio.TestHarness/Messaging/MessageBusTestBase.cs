@@ -304,7 +304,15 @@ namespace Foundatio.Tests.Messaging {
                 return;
 
             try {
-                var countdown = new AsyncCountdownEvent(2);
+                var countdown = new AsyncCountdownEvent(4);
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                });
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                });
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     throw new Exception();
                 });

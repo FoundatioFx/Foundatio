@@ -161,15 +161,9 @@ namespace Foundatio.Messaging {
             
             var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
-            if (body == null) {
-                if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
-                return;
-            }
-
             var subscriberHandlers = subscribers.Select(subscriber => {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out var _)) {
+                    if (_subscribers.TryRemove(subscriber.Id, out _)) {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
                     } else if (isTraceLogLevelEnabled) {
