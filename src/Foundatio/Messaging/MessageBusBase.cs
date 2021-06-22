@@ -158,7 +158,7 @@ namespace Foundatio.Messaging {
             
             if (subscribers.Count == 0)
                 return;
-
+            
             var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
             if (body == null) {
