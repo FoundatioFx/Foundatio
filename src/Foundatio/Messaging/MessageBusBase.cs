@@ -149,7 +149,7 @@ namespace Foundatio.Messaging {
             return body;
         }
 
-        protected void SendMessageToSubscribers(IMessage message) {
+        protected async Task SendMessageToSubscribers(IMessage message) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             var subscribers = GetMessageSubscribers(message);
 
@@ -201,7 +201,7 @@ namespace Foundatio.Messaging {
             });
 
             try {
-                Task.WaitAll(subscriberHandlers.ToArray());
+                await Task.WhenAll(subscriberHandlers.ToArray());
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
