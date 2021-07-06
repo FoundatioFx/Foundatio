@@ -112,9 +112,13 @@ namespace Foundatio.Queues {
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
             brokeredMessage.CorrelationId = options.CorrelationId;
-            if (options is AzureServiceBusQueueEntryOptions asbOptions) {
+
+            if (options is AzureServiceBusQueueEntryOptions asbOptions)
                 brokeredMessage.SessionId = asbOptions.SessionId;
-            }
+
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+                brokeredMessage.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(options.DeliveryDelay.Value);
+
             foreach (var property in options.Properties)
                 brokeredMessage.UserProperties[property.Key] = property.Value;
             
