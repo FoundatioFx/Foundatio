@@ -56,8 +56,9 @@ namespace Foundatio.Messaging {
 
             try {
                 await SendMessageToSubscribers(messageData);
-            } catch {
+            } catch (Exception ex) {
                 // swallow exceptions from subscriber handlers for the in memory bus
+                _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
             }
         }
     }
