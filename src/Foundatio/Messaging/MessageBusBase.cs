@@ -149,7 +149,7 @@ namespace Foundatio.Messaging {
             return body;
         }
 
-        protected async Task SendMessageToSubscribers(IMessage message) {
+        protected async Task SendMessageToSubscribersAsync(IMessage message) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             var subscribers = GetMessageSubscribers(message);
 
@@ -158,14 +158,13 @@ namespace Foundatio.Messaging {
             
             if (subscribers.Count == 0)
                 return;
-            
-            var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
-            if (body == null) {
-                if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
+            if (message.Data == null || message.Data.Length == 0) {
+                _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
                 return;
             }
+            
+            var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
             var subscriberHandlers = subscribers.Select(subscriber => {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
@@ -203,8 +202,7 @@ namespace Foundatio.Messaging {
             try {
                 await Task.WhenAll(subscriberHandlers.ToArray());
             } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
+                _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
 
                 throw;
             }
