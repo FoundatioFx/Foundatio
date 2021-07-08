@@ -5,7 +5,7 @@
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="10.1.4" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="Foundatio" Version="10.2.0" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="11.0" />
     <PackageReference Include="Microsoft.Azure.Storage.Queue" Version="11.0" />
 
