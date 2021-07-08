@@ -7,7 +7,7 @@
     <PackageReference Include="AWSSDK.CloudWatch" Version="3.5" />
     <PackageReference Include="AWSSDK.S3" Version="3.5" />
     <PackageReference Include="AWSSDK.SQS" Version="3.5" />
-    <PackageReference Include="Foundatio" Version="10.1.4" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="Foundatio" Version="10.2.0" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>
