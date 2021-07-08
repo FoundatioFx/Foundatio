@@ -56,7 +56,7 @@ namespace Foundatio.Messaging {
                 }
                 
                 var queueName = CreateQueue(_subscriberChannel);
-                var consumer = new EventingBasicConsumer(_subscriberChannel);
+                var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
                 consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
 
@@ -66,12 +66,14 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private void OnConsumerShutdown(object sender, ShutdownEventArgs e) {
+        private Task OnConsumerShutdown(object sender, ShutdownEventArgs e) {
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
+
+            return Task.CompletedTask;
         }
 
-        private void OnMessage(object sender, BasicDeliverEventArgs e) {
+        private async Task OnMessage(object sender, BasicDeliverEventArgs e) {
             if (_subscribers.IsEmpty)
                 return;
 
@@ -79,7 +81,7 @@ namespace Foundatio.Messaging {
                 _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
             
             var message = ConvertToMessage(e);
-            SendMessageToSubscribers(message);
+            await SendMessageToSubscribersAsync(message).AnyContext();
             
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 _subscriberChannel.BasicAck(e.DeliveryTag, false);
