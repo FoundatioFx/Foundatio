@@ -7,12 +7,15 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.AzureServiceBus.Queues;
 using Foundatio.Extensions;
+using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.ServiceBus;
 using Microsoft.Azure.ServiceBus.Management;
 using Microsoft.Azure.ServiceBus.Core;
+using Message = Microsoft.Azure.ServiceBus.Message;
+
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<T>> where T : class {
         private readonly AsyncLock _lock = new AsyncLock();
@@ -111,6 +114,10 @@ namespace Foundatio.Queues {
             var stream = new MemoryStream();
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
+            if (data is IUniqueMessage uniqueMessage)
+            {
+                brokeredMessage.MessageId = uniqueMessage.MessageId;
+            }
             brokeredMessage.CorrelationId = options.CorrelationId;
 
             if (options is AzureServiceBusQueueEntryOptions asbOptions)
