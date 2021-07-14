@@ -125,6 +125,7 @@ namespace Foundatio.Queues {
             await _queueSender.SendAsync(brokeredMessage).AnyContext();
 
             var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, data, this, SystemClock.UtcNow, 0);
+            entry.SetLockToken(brokeredMessage);
             foreach (var property in brokeredMessage.UserProperties)
                 entry.Properties.Add(property.Key, property.Value);
             await OnEnqueuedAsync(entry).AnyContext();
@@ -178,7 +179,7 @@ namespace Foundatio.Queues {
 
         public override async Task RenewLockAsync(IQueueEntry<T> entry) {
             _logger.LogDebug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
-            await _queueReceiver.RenewLockAsync(entry.Id).AnyContext();
+            await _queueReceiver.RenewLockAsync(entry.LockToken()).AnyContext();
             await OnLockRenewedAsync(entry).AnyContext();
             _logger.LogTrace("Renew lock done: {0}", entry.Id);
         }
@@ -188,7 +189,7 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            await _queueReceiver.CompleteAsync(entry.Id).AnyContext();
+            await _queueReceiver.CompleteAsync(entry.LockToken()).AnyContext();
             Interlocked.Increment(ref _completedCount);
             entry.MarkCompleted();
             await OnCompletedAsync(entry).AnyContext();
@@ -200,7 +201,7 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
-            await _queueReceiver.AbandonAsync(entry.Id).AnyContext();
+            await _queueReceiver.AbandonAsync(entry.LockToken()).AnyContext();
             Interlocked.Increment(ref _abandonedCount);
             entry.MarkAbandoned();
             await OnAbandonedAsync(entry).AnyContext();
@@ -214,6 +215,7 @@ namespace Foundatio.Queues {
             var message = _serializer.Deserialize<T>(brokeredMessage.Body);
             Interlocked.Increment(ref _dequeuedCount);
             var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, message, this, brokeredMessage.SystemProperties.EnqueuedTimeUtc, brokeredMessage.SystemProperties.DeliveryCount);
+            entry.SetLockToken(brokeredMessage);
             foreach (var property in brokeredMessage.UserProperties)
                 entry.Properties.Add(property.Key, property.Value);
             await OnDequeuedAsync(entry).AnyContext();
