@@ -52,6 +52,9 @@ namespace Foundatio.Messaging {
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
         protected virtual Type GetMappedMessageType(string messageType) {
+            if (String.IsNullOrEmpty(messageType))
+                return null;
+            
             return _knownMessageTypesCache.GetOrAdd(messageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
