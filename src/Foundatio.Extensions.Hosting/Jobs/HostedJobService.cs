@@ -34,7 +34,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 if (startupContext != null) {
                     var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
                     if (!result.Success) {
-                        _logger.LogError("Unable to start {JobName} job due to startup actions failure.", _jobOptions.Name);
+                        _logger.LogError("Unable to start {JobName} job due to startup actions failure", _jobOptions.Name);
                         return;
                     }
                 }
@@ -46,7 +46,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 await runner.RunAsync(stoppingToken).AnyContext();
                 _stoppingCts.Cancel();
             } finally {
-                _logger.LogInformation("{JobName} job completed.", _jobOptions.Name);
+                _logger.LogInformation("{JobName} job completed", _jobOptions.Name);
             }
         }
 

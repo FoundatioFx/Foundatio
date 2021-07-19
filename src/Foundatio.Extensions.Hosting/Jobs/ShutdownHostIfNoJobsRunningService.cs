@@ -56,13 +56,12 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 return;
             
             int runningJobCount = _jobs.Count(s => s.IsRunning);
-            if (runningJobCount == 0) {
-                _timer?.Change(Timeout.Infinite, 0);
-
-                _logger.LogInformation("Stopping host due to no running jobs.");
-
-                _lifetime.StopApplication();
-            }
+            if (runningJobCount != 0)
+                return;
+            
+            _timer?.Change(Timeout.Infinite, 0);
+            _logger.LogInformation("Stopping host due to no running jobs");
+            _lifetime.StopApplication();
         }
 
         public void Dispose() {
