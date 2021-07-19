@@ -123,7 +123,7 @@ namespace Foundatio.Tests.Storage {
                 Assert.True(fileInfo.Size > 0, "Incorrect file size");
                 Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
                 // NOTE: File creation time might not be accurate: http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
-                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time");
                 Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
                 Assert.True(startTime <= fileInfo.Modified, $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}.");
 

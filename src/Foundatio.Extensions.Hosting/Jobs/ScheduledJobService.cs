@@ -37,7 +37,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
                 if (!result.Success) {
                     IsRunning = false;
-                    throw new ApplicationException("Failed to wait for startup actions to complete.");
+                    throw new ApplicationException("Failed to wait for startup actions to complete");
                 }
             }
 

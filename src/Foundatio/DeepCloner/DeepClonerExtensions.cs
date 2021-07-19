@@ -49,7 +49,7 @@ namespace Foundatio.Force.DeepCloner
 		{
 			if (!PermissionCheck())
 			{
-				throw new SecurityException("DeepCloner should have enough permissions to run. Grant FullTrust or Reflection permission.");
+				throw new SecurityException("DeepCloner should have enough permissions to run. Grant FullTrust or Reflection permission");
 			}
 		}
 

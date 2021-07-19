@@ -229,9 +229,9 @@ Allows you to run a long running process (in process or out of process) without 
       await Task.Delay(TimeSpan.FromSeconds(2.5));
       await ctx.ReportProgressAsync(50, "Reading value");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(70, "Reading value.");
+      await ctx.ReportProgressAsync(70, "Reading value");
       await Task.Delay(TimeSpan.FromSeconds(.5));
-      await ctx.ReportProgressAsync(90, "Reading value..");
+      await ctx.ReportProgressAsync(90, "Reading value.");
       await Task.Delay(TimeSpan.FromSeconds(.5));
 
       await ctx.ReportProgressAsync(100, workItem.Message);

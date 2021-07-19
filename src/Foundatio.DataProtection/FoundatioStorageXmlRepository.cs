@@ -41,7 +41,7 @@ namespace Foundatio.DataProtection {
             _logger.LogTrace("Loading elements...");
             var files = (await _storage.GetFileListAsync("*.xml").AnyContext()).ToList();
             if (files.Count == 0) {
-                _logger.LogTrace("No elements were found.");
+                _logger.LogTrace("No elements were found");
                 return new XElement[0];
             }
 

@@ -69,7 +69,7 @@ namespace Foundatio.Lock {
                         if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - SystemClock.UtcNow);
                         await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
                     } else {
-                        if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep.");
+                        if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep");
                         await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                     }
                 } catch (OperationCanceledException) {
@@ -85,7 +85,7 @@ namespace Foundatio.Lock {
             } while (!cancellationToken.IsCancellationRequested);
 
             if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
-                _logger.LogTrace("Cancellation requested.");
+                _logger.LogTrace("Cancellation requested");
 
             if (!allowLock)
                 return null;
