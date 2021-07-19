@@ -3,7 +3,7 @@
     <PackageTags>$(PackageTags);AppMetrics;Logging;Log</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="App.Metrics.Abstractions" Version="4.2.0" />
+    <PackageReference Include="App.Metrics.Abstractions" Version="4.2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
