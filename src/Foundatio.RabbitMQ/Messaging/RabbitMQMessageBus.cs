@@ -29,7 +29,11 @@ namespace Foundatio.Messaging {
             // Topology ( queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
             // by default so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
             // it can always be fine tuned if needed.
-            _factory = new ConnectionFactory { Uri = new Uri(options.ConnectionString), AutomaticRecoveryEnabled = true };
+            _factory = new ConnectionFactory {
+                Uri = new Uri(options.ConnectionString),
+                AutomaticRecoveryEnabled = true,
+                DispatchConsumersAsync = true
+            };
         }
 
         public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
