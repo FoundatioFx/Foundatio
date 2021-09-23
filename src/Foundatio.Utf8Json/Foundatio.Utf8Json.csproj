@@ -3,7 +3,7 @@
     <PackageTags>$(PackageTags);Utf8Json;Serializer</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Utf8Json" Version="1.3" />
+    <PackageReference Include="Utf8Json" Version="1.3.7" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
