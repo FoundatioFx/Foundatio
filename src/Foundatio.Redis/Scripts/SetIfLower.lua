@@ -3,7 +3,7 @@ if c then
   if tonumber(@value) < c then
     redis.call('set', @key, @value)
     if (@expires ~= nil and @expires ~= '') then
-      redis.call('expire', @key, math.ceil(@expires))
+      redis.call('pexpire', @key, math.ceil(@expires))
     end
     return c - tonumber(@value)
   else
@@ -12,7 +12,7 @@ if c then
 else
   redis.call('set', @key, @value)
   if (@expires ~= nil and @expires ~= '') then
-    redis.call('expire', @key, math.ceil(@expires))
+    redis.call('pexpire', @key, math.ceil(@expires))
   end
   return tonumber(@value)
 end

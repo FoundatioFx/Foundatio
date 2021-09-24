@@ -2,8 +2,8 @@
 if item then
     local dequeuedTimeKey = 'q:' .. @queueName .. ':' .. item .. ':dequeued';
     local renewedTimeKey = 'q:' .. @queueName .. ':' .. item .. ':renewed';
-    redis.call('SET', dequeuedTimeKey, @now, 'EX', @timeout);
-    redis.call('SET', renewedTimeKey, @now, 'EX', @timeout);
+    redis.call('SET', dequeuedTimeKey, @now, 'PX', @timeout);
+    redis.call('SET', renewedTimeKey, @now, 'PX', @timeout);
     return item;
 else
     return nil;

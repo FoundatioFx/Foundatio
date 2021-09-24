@@ -8,6 +8,9 @@ using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
+using Foundatio.Utility;
+using System.Diagnostics;
 
 namespace Foundatio.Redis.Tests.Locks {
     public class RedisLockTests : LockTestBase, IDisposable {
@@ -37,6 +40,41 @@ namespace Foundatio.Redis.Tests.Locks {
         [Fact]
         public override Task LockWillTimeoutAsync() {
             return base.LockWillTimeoutAsync();
+        }
+
+        [Fact]
+        public async Task LockWontTimeoutEarly() {
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
+
+            _logger.LogInformation("Acquiring lock #1");
+            var testLock = await locker.AcquireAsync("test", timeUntilExpires: TimeSpan.FromSeconds(1));
+            _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+            Assert.NotNull(testLock);
+
+            _logger.LogInformation("Acquiring lock #2");
+            var testLock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(500));
+            Assert.Null(testLock2);
+
+            _logger.LogInformation("Renew lock #1");
+            await testLock.RenewAsync(timeUntilExpires: TimeSpan.FromSeconds(1));
+
+            _logger.LogInformation("Acquiring lock #3");
+            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(500));
+            Assert.Null(testLock);
+
+            var sw = Stopwatch.StartNew();
+            _logger.LogInformation("Acquiring lock #4");
+            testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(5));
+            sw.Stop();
+            _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #4");
+            Assert.NotNull(testLock);
+            Assert.True(sw.ElapsedMilliseconds > 400);
         }
 
         [RetryFact]

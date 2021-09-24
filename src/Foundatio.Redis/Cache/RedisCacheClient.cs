@@ -307,7 +307,7 @@ namespace Foundatio.Caching {
             await LoadScriptsAsync().AnyContext();
 
             if (expiresIn.HasValue) {
-                var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (double)result;
             } else {
                 var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
@@ -322,7 +322,7 @@ namespace Foundatio.Caching {
             await LoadScriptsAsync().AnyContext();
 
             if (expiresIn.HasValue) {
-                var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (long)result;
             } else {
                 var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
@@ -337,7 +337,7 @@ namespace Foundatio.Caching {
             await LoadScriptsAsync().AnyContext();
 
             if (expiresIn.HasValue) {
-                var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (double)result;
             } else {
                 var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
@@ -352,7 +352,7 @@ namespace Foundatio.Caching {
             await LoadScriptsAsync().AnyContext();
 
             if (expiresIn.HasValue) {
-                var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (long)result;
             } else {
                 var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
@@ -394,7 +394,7 @@ namespace Foundatio.Caching {
             var expectedValue = expected.ToRedisValue(_options.Serializer);
             RedisResult redisResult;
             if (expiresIn.HasValue)
-                redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
             else
                 redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = "" }).AnyContext();
             
@@ -414,7 +414,7 @@ namespace Foundatio.Caching {
 
             if (expiresIn.HasValue) {
                 await LoadScriptsAsync().AnyContext();
-                var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (double)result;
             }
 
@@ -432,7 +432,7 @@ namespace Foundatio.Caching {
 
             if (expiresIn.HasValue) {
                 await LoadScriptsAsync().AnyContext();
-                var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresIn.Value.TotalSeconds }).AnyContext();
+                var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
                 return (long)result;
             }
 
