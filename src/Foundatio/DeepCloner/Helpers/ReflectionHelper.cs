@@ -1,5 +1,4 @@
 ﻿#define NETCORE
-
 using System;
 using System.Linq;
 using System.Reflection;
@@ -122,6 +121,15 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			return t.GetTypeInfo().GetDeclaredField(fieldName);
 #else
 			return t.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+#endif
+		}
+
+		public static FieldInfo GetPrivateStaticField(this Type t, string fieldName)
+		{
+#if NETCORE
+			return t.GetTypeInfo().GetDeclaredField(fieldName);
+#else
+			return t.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
 #endif
 		}
 

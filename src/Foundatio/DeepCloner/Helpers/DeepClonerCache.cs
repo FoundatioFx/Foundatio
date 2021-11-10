@@ -22,8 +22,13 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			// this implementation is slightly faster than getoradd
 			object value;
 			if (_typeCache.TryGetValue(type, out value)) return value;
-			value = adder(type);
-			_typeCache.TryAdd(type, value);
+
+			// will lock by type object to ensure only one type generator is generated simultaneously
+			lock (type)
+			{
+				value = _typeCache.GetOrAdd(type, t => adder(t));
+			}
+
 			return value;
 		}
 
@@ -31,8 +36,13 @@ namespace Foundatio.Force.DeepCloner.Helpers
 		{
 			object value;
 			if (_typeCacheDeepTo.TryGetValue(type, out value)) return value;
-			value = adder(type);
-			_typeCacheDeepTo.TryAdd(type, value);
+			
+			// will lock by type object to ensure only one type generator is generated simultaneously
+			lock (type)
+			{
+				value = _typeCacheDeepTo.GetOrAdd(type, t => adder(t));
+			}
+
 			return value;
 		}
 
@@ -40,8 +50,13 @@ namespace Foundatio.Force.DeepCloner.Helpers
 		{
 			object value;
 			if (_typeCacheShallowTo.TryGetValue(type, out value)) return value;
-			value = adder(type);
-			_typeCacheShallowTo.TryAdd(type, value);
+			
+			// will lock by type object to ensure only one type generator is generated simultaneously
+			lock (type)
+			{
+				value = _typeCacheShallowTo.GetOrAdd(type, t => adder(t));
+			}
+
 			return value;
 		}
 
@@ -52,8 +67,13 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			// this implementation is slightly faster than getoradd
 			object value;
 			if (_structAsObjectCache.TryGetValue(type, out value)) return value;
-			value = adder(type);
-			_structAsObjectCache.TryAdd(type, value);
+			
+			// will lock by type object to ensure only one type generator is generated simultaneously
+			lock (type)
+			{
+				value = _structAsObjectCache.GetOrAdd(type, t => adder(t));
+			}
+
 			return value;
 		}
 

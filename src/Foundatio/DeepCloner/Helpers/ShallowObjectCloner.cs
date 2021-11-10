@@ -1,5 +1,4 @@
 ﻿#define NETCORE
-
 using System;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -7,10 +6,10 @@ using System.Reflection.Emit;
 
 namespace Foundatio.Force.DeepCloner.Helpers
 {
-	/// <summary>
-	/// Internal class but due implementation restriction should be public
-	/// </summary>
-	internal abstract class ShallowObjectCloner
+    /// <summary>
+    /// Internal class but due implementation restriction should be public
+    /// </summary>
+    internal abstract class ShallowObjectCloner
 	{
 		/// <summary>
 		/// Abstract method for real object cloning
