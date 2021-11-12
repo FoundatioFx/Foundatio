@@ -53,6 +53,8 @@ namespace Foundatio.Storage {
             : this(builder(new S3FileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
+        
+        public AmazonS3Client Client => _client;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrEmpty(path))
