@@ -32,6 +32,8 @@ namespace Foundatio.Metrics {
 
         public CloudWatchMetricsClient(Builder<CloudWatchMetricsClientOptionsBuilder, CloudWatchMetricsClientOptions> builder) 
             : this(builder(new CloudWatchMetricsClientOptionsBuilder()).Build()) { }
+        
+        public AmazonCloudWatchClient Client => _client.Value;
 
         protected override async Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
             var metrics = new List<MetricDatum>();
