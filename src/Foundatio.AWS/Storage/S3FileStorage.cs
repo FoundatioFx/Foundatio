@@ -55,6 +55,8 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
         
         public AmazonS3Client Client => _client;
+        public string Bucket => _bucket;
+        public S3CannedACL CannedACL => _cannedAcl;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
             if (String.IsNullOrEmpty(path))
