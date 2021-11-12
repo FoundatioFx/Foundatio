@@ -48,6 +48,8 @@ namespace Foundatio.Queues {
 
         public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
             : this(builder(new SQSQueueOptionsBuilder<T>()).Build()) { }
+        
+        public AmazonSQSClient Client => _client.Value;
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (!String.IsNullOrEmpty(_queueUrl))
