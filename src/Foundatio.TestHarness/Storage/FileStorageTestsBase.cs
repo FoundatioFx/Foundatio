@@ -58,6 +58,23 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
+        public virtual async Task CanGetFileListForSingleFileAsync() {
+            await ResetAsync();
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            using (storage) {
+                await storage.SaveFileAsync(@"archived\archived.txt", "archived");
+                await storage.SaveFileAsync(@"archived\archived.csv", "archived");
+                await storage.SaveFileAsync(@"q\new.txt", "new");
+                await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
+
+                Assert.Equal(1, (await storage.GetFileListAsync(@"archived\archived.txt")).Count);
+            }
+        }
+
         public virtual async Task CanGetPagedFileListForSingleFolderAsync() {
             await ResetAsync();
 
@@ -114,7 +131,7 @@ namespace Foundatio.Tests.Storage {
                 var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
                 Assert.Null(fileInfo);
 
-                var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
+                var startTime = SystemClock.UtcNow.Subtract(TimeSpan.FromMinutes(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
                 fileInfo = await storage.GetFileInfoAsync(path);
@@ -246,7 +263,7 @@ namespace Foundatio.Tests.Storage {
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 Assert.Equal(2, (await storage.GetFileListAsync()).Count);
 
-                await storage.DeleteFilesAsync(@"x");
+                await storage.DeleteFilesAsync(@"x\*");
                 Assert.Empty(await storage.GetFileListAsync());
             }
         }
@@ -341,7 +358,7 @@ namespace Foundatio.Tests.Storage {
                 Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count);
                 Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count);
 
-                await storage.DeleteFilesAsync(@"x\nested");
+                await storage.DeleteFilesAsync(@"x\nested\*");
 
                 Assert.Single(await storage.GetFileListAsync());
                 Assert.True(await storage.ExistsAsync(@"x\hello.txt"));

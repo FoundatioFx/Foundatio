@@ -4,11 +4,11 @@ using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
-    public class ScopedFolderFileStorageTests : FileStorageTestsBase {
-        public ScopedFolderFileStorageTests(ITestOutputHelper output) : base(output) {}
+    public class ScopedInMemoryFileStorageTests : FileStorageTestsBase {
+        public ScopedInMemoryFileStorageTests(ITestOutputHelper output) : base(output) {}
 
         protected override IFileStorage GetStorage() {
-            return new ScopedFileStorage(new FolderFileStorage(o => o.Folder("|DataDirectory|\\temp")), "scoped");
+            return new ScopedFileStorage(new InMemoryFileStorage { MaxFiles = 2000 }, "scoped");
         }
 
         [Fact]
@@ -76,7 +76,7 @@ namespace Foundatio.Tests.Storage {
             return base.CanDeleteEntireFolderWithWildcardAsync();
         }
 
-        [Fact(Skip = "Directory.EnumerateFiles does not support nested folder wildcards")]
+        [Fact]
         public override Task CanDeleteFolderWithMultiFolderWildcardsAsync() {
             return base.CanDeleteFolderWithMultiFolderWildcardsAsync();
         }

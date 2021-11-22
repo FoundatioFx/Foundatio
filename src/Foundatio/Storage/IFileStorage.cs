@@ -160,14 +160,11 @@ namespace Foundatio.Storage {
 
         public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
             var files = new List<FileSpec>();
-            var result = await storage.GetPagedFileListAsync(100, searchPattern, cancellationToken).AnyContext();
+            limit ??= Int32.MaxValue;
+            var result = await storage.GetPagedFileListAsync(Math.Min(limit.Value, 100), searchPattern, cancellationToken).AnyContext();
             do {
-                foreach (var file in result.Files) {
-                    files.Add(file);
-                    if (limit.HasValue && limit.Value == files.Count)
-                        return files;
-                }
-            } while (result.HasMore && await result.NextPageAsync().AnyContext());
+                files.AddRange(result.Files);
+            } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync().AnyContext());
             
             return files;
         }
