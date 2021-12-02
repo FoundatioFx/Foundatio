@@ -135,20 +135,18 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            using (var stream = await storage.GetFileStreamAsync(path).AnyContext()) {
-                if (stream == null)
-                    return null;
+            using var stream = await storage.GetFileStreamAsync(path).AnyContext();
+            if (stream == null)
+                return null;
 
-                var buffer = new byte[16 * 1024];
-                using (var ms = new MemoryStream()) {
-                    int read;
-                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
-                        await ms.WriteAsync(buffer, 0, read).AnyContext();
-                    }
-
-                    return ms.ToArray();
-                }
+            var buffer = new byte[16 * 1024];
+            using var ms = new MemoryStream();
+            int read;
+            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
+                await ms.WriteAsync(buffer, 0, read).AnyContext();
             }
+
+            return ms.ToArray();
         }
 
         public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
@@ -161,7 +159,7 @@ namespace Foundatio.Storage {
         public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
             var files = new List<FileSpec>();
             limit ??= Int32.MaxValue;
-            var result = await storage.GetPagedFileListAsync(Math.Min(limit.Value, 100), searchPattern, cancellationToken).AnyContext();
+            var result = await storage.GetPagedFileListAsync(limit.Value, searchPattern, cancellationToken).AnyContext();
             do {
                 files.AddRange(result.Files);
             } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync().AnyContext());
