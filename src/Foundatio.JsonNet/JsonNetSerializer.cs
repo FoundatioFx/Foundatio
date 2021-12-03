@@ -1,5 +1,7 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 namespace Foundatio.Serializer {
@@ -20,6 +22,15 @@ namespace Foundatio.Serializer {
             using (var sr = new StreamReader(inputStream))
             using (var reader = new JsonTextReader(sr))
                 return _serializer.Deserialize(reader, objectType);
+        }
+
+        public Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken) {
+            Serialize(data, outputStream);
+            return Task.CompletedTask;
+        }
+
+        public ValueTask<object> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken) {
+            return new ValueTask<object>(Deserialize(inputStream, objectType));
         }
     }
 }

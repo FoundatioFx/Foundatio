@@ -1,13 +1,20 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Serializer {
     public interface ISerializer {
-        object Deserialize(Stream data, Type objectType);
-        void Serialize(object value, Stream output);
+        void Serialize(object value, Stream outputStream);
+        object Deserialize(Stream inputStream, Type objectType);
+        Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken);
+        ValueTask<object> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken);
     }
 
+    /// <summary>
+    /// Marker interface indicating that the underlying serialization format is text based (ie. JSON)
+    /// </summary>
     public interface ITextSerializer : ISerializer {}
 
     public static class DefaultSerializer {

@@ -41,17 +41,33 @@ namespace Foundatio.Storage {
         public string Folder { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
+            path = Path.Combine(Folder, path);
 
             try {
-                return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, path)));
+                if (access == FileAccess.Read) {
+                    return Task.FromResult<Stream>(File.OpenRead(path));
+                } else if (access == FileAccess.Write) {
+                    string directory = Path.GetDirectoryName(path);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+
+                    return Task.FromResult<Stream>(File.OpenWrite(path));
+                } else {
+                    string directory = Path.GetDirectoryName(path);
+                    if (directory != null)
+                        Directory.CreateDirectory(directory);
+
+                    return Task.FromResult<Stream>(File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite));
+                }
             } catch (IOException ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException) {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace(ex, "Error trying to get file stream: {Path}", path);
+
                 return Task.FromResult<Stream>(null);
             }
         }

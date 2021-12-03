@@ -2,6 +2,8 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Foundatio.Serializer {
     public class SystemTextJsonSerializer : ITextSerializer {
@@ -32,6 +34,14 @@ namespace Foundatio.Serializer {
         public object Deserialize(Stream inputStream, Type objectType) {
             using var reader = new StreamReader(inputStream);
             return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
+        }
+
+        public Task SerializeAsync(object data, Stream outputStream, CancellationToken cancellationToken) {
+            return JsonSerializer.SerializeAsync(outputStream, data, data.GetType(), _serializeOptions, cancellationToken);
+        }
+
+        public ValueTask<object> DeserializeAsync(Stream inputStream, Type objectType, CancellationToken cancellationToken) {
+            return JsonSerializer.DeserializeAsync(inputStream, objectType, _deserializeOptions, cancellationToken);
         }
     }
 

@@ -20,11 +20,11 @@ namespace Foundatio.Storage {
         public string Scope { get; private set; }
         ISerializer IHaveSerializer.Serializer => UnscopedStorage.Serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), cancellationToken);
+            return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), access, cancellationToken);
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {

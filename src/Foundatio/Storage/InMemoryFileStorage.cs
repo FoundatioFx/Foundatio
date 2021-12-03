@@ -15,7 +15,7 @@ namespace Foundatio.Storage {
         private readonly object _lock = new object();
         private readonly ISerializer _serializer;
 
-        public InMemoryFileStorage() : this(o => o) {}
+        public InMemoryFileStorage() : this(o => o) { }
 
         public InMemoryFileStorage(InMemoryFileStorageOptions options) {
             if (options == null)
@@ -26,23 +26,68 @@ namespace Foundatio.Storage {
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
         }
 
-        public InMemoryFileStorage(Builder<InMemoryFileStorageOptionsBuilder, InMemoryFileStorageOptions> config) 
+        public InMemoryFileStorage(Builder<InMemoryFileStorageOptionsBuilder, InMemoryFileStorageOptions> config)
             : this(config(new InMemoryFileStorageOptionsBuilder()).Build()) { }
 
         public long MaxFileSize { get; set; }
         public long MaxFiles { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess access, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
-            lock (_lock) {
+            if (access == FileAccess.Read) {
                 if (!_storage.ContainsKey(path))
                     return Task.FromResult<Stream>(null);
 
-                return Task.FromResult<Stream>(new MemoryStream(_storage[path].Item2));
+                lock (_lock) {
+                    return Task.FromResult<Stream>(new MemoryStream(_storage[path].Item2));
+                }
+            } else if (access == FileAccess.Write) {
+                return Task.FromResult<Stream>(new ActionableStream(new MemoryStream(), s => {
+                    lock (_lock) {
+                        var memoryStream = (MemoryStream)s;
+                        if (memoryStream.Length > 0) {
+                            var contents = memoryStream.ToArray();
+
+                            _storage[path] = Tuple.Create(new FileSpec {
+                                Created = SystemClock.UtcNow,
+                                Modified = SystemClock.UtcNow,
+                                Path = path,
+                                Size = contents.Length
+                            }, contents);
+
+                            if (_storage.Count > MaxFiles)
+                                _storage.Remove(_storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                        }
+                    }
+                }));
+            } else {
+                MemoryStream ms;
+                lock (_lock) {
+                    ms = _storage.ContainsKey(path) ? new MemoryStream(_storage[path].Item2) : new MemoryStream();
+                }
+
+                return Task.FromResult<Stream>(new ActionableStream(ms, s => {
+                    lock (_lock) {
+                        var memoryStream = (MemoryStream)s;
+                        if (memoryStream.Length > 0) {
+                            var contents = memoryStream.ToArray();
+
+                            _storage[path] = Tuple.Create(new FileSpec {
+                                Created = SystemClock.UtcNow,
+                                Modified = SystemClock.UtcNow,
+                                Path = path,
+                                Size = contents.Length
+                            }, contents);
+
+                            if (_storage.Count > MaxFiles)
+                                _storage.Remove(_storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                        }
+                    }
+                }));
             }
         }
 
@@ -154,7 +199,7 @@ namespace Foundatio.Storage {
 
         public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
-                lock(_lock)
+                lock (_lock)
                     _storage.Clear();
 
                 return Task.FromResult(0);
@@ -163,7 +208,7 @@ namespace Foundatio.Storage {
             searchPattern = searchPattern.NormalizePath();
             int count = 0;
 
-            if (searchPattern[searchPattern.Length - 1] == Path.DirectorySeparatorChar) 
+            if (searchPattern[searchPattern.Length - 1] == Path.DirectorySeparatorChar)
                 searchPattern = $"{searchPattern}*";
             else if (!searchPattern.EndsWith(Path.DirectorySeparatorChar + "*") && !Path.HasExtension(searchPattern))
                 searchPattern = Path.Combine(searchPattern, "*");
@@ -200,12 +245,12 @@ namespace Foundatio.Storage {
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
                 pagingLimit += 1;
-            
+
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
 
             lock (_lock)
                 list.AddRange(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip).Take(pagingLimit).ToList());
-            
+
             bool hasMore = false;
             if (list.Count == pagingLimit) {
                 hasMore = true;
@@ -213,10 +258,10 @@ namespace Foundatio.Storage {
             }
 
             return new NextPageResult {
-                Success = true, 
-                HasMore = hasMore, 
+                Success = true,
+                HasMore = hasMore,
                 Files = list,
-                NextPageFunc = hasMore ? s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : (Func<PagedFileListResult, Task<NextPageResult>>)null 
+                NextPageFunc = hasMore ? s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : (Func<PagedFileListResult, Task<NextPageResult>>)null
             };
         }
 
