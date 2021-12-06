@@ -100,13 +100,13 @@ namespace Foundatio.Queues {
                 throw new ArgumentNullException(nameof(kmsMasterKeyId));
             Target.KmsMasterKeyId = kmsMasterKeyId;
             Target.KmsDataKeyReusePeriodSeconds = kmsKeyReusePeriodSeconds; // Default kms key reuse period is 300 seconds
-            Target.SqsManagedSseEnabled = false; // Must set Sqs Managed SSE to false, as it is one or the other
+            Target.SqsManagedSseEnabled = false; // Must set Sqs Managed SSE to false, as it is either KMS or Sqs Managed - can't have both
             return this;
         }
 
         public SQSQueueOptionsBuilder<T> UseSqsManagedEncryption() {
             Target.SqsManagedSseEnabled = true;
-            Target.KmsMasterKeyId = null; // Must set Sqs Managed SSE to false, as it is one or the other
+            Target.KmsMasterKeyId = null; // Must set KmsMasterKeyId to null, as it is either KMS or Sqs Managed - can't have both
             return this;
         }
 
