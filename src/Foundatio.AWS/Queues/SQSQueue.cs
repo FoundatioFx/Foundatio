@@ -46,9 +46,9 @@ namespace Foundatio.Queues {
             });
         }
 
-        public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder) 
+        public SQSQueue(Builder<SQSQueueOptionsBuilder<T>, SQSQueueOptions<T>> builder)
             : this(builder(new SQSQueueOptionsBuilder<T>()).Build()) { }
-        
+
         public AmazonSQSClient Client => _client.Value;
 
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
@@ -81,7 +81,7 @@ namespace Foundatio.Queues {
             int delaySeconds = (int)options.DeliveryDelay.GetValueOrDefault().TotalSeconds;
             if (delaySeconds < 0)
                 delaySeconds = 0;
-            
+
             var message = new SendMessageRequest {
                 QueueUrl = _queueUrl,
                 DelaySeconds = delaySeconds,
@@ -334,7 +334,18 @@ namespace Foundatio.Queues {
 
         protected virtual async Task CreateQueueAsync() {
             // step 1, create queue
-            var createQueueRequest = new CreateQueueRequest { QueueName = _options.Name };
+            var createQueueRequest = new CreateQueueRequest {
+                QueueName = _options.Name,
+                Attributes = new Dictionary<string, string>()
+            };
+
+            if (_options.SqsManagedSseEnabled) {
+                createQueueRequest.Attributes[QueueAttributeName.SqsManagedSseEnabled] = "true";
+            } else if (!String.IsNullOrEmpty(_options.KmsMasterKeyId)) {
+                createQueueRequest.Attributes[QueueAttributeName.KmsMasterKeyId] = _options.KmsMasterKeyId;
+                createQueueRequest.Attributes[QueueAttributeName.KmsDataKeyReusePeriodSeconds] = _options.KmsDataKeyReusePeriodSeconds.ToString();
+            }
+
             var createQueueResponse = await _client.Value.CreateQueueAsync(createQueueRequest).AnyContext();
             _queueUrl = createQueueResponse.QueueUrl;
 
