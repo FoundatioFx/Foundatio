@@ -12,7 +12,11 @@ namespace Foundatio.Queues {
         public bool SupportDeadLetter { get; set; } = true;
         public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
         public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
-        
+        public string KmsMasterKeyId { get; set; }
+        public int KmsDataKeyReusePeriodSeconds { get; set; }
+        public bool SqsManagedSseEnabled { get; set; } = false;
+
+
         private static readonly Random _random = new Random();
         public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => {
             return TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(_random.Next(0, 100));
@@ -88,6 +92,21 @@ namespace Foundatio.Queues {
             if (String.IsNullOrEmpty(region))
                 throw new ArgumentNullException(nameof(region));
             Target.Region = RegionEndpoint.GetBySystemName(region);
+            return this;
+        }
+
+        public SQSQueueOptionsBuilder<T> UseKmsEncryption(string kmsMasterKeyId, int kmsKeyReusePeriodSeconds = 300) {
+            if (String.IsNullOrEmpty(kmsMasterKeyId))
+                throw new ArgumentNullException(nameof(kmsMasterKeyId));
+            Target.KmsMasterKeyId = kmsMasterKeyId;
+            Target.KmsDataKeyReusePeriodSeconds = kmsKeyReusePeriodSeconds; // Default kms key reuse period is 300 seconds
+            Target.SqsManagedSseEnabled = false; // Must set Sqs Managed SSE to false, as it is either KMS or Sqs Managed - can't have both
+            return this;
+        }
+
+        public SQSQueueOptionsBuilder<T> UseSqsManagedEncryption() {
+            Target.SqsManagedSseEnabled = true;
+            Target.KmsMasterKeyId = null; // Must set KmsMasterKeyId to null, as it is either KMS or Sqs Managed - can't have both
             return this;
         }
 
