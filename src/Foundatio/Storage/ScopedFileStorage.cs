@@ -91,7 +91,7 @@ namespace Foundatio.Storage {
 
             searchPattern = !String.IsNullOrEmpty(searchPattern) ? String.Concat(_pathPrefix, searchPattern) : String.Concat(_pathPrefix, "*");
             var unscopedResult = await UnscopedStorage.GetPagedFileListAsync(pageSize, searchPattern, cancellationToken).AnyContext();
-            unscopedResult = unscopedResult.DeepClone();
+            
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
@@ -100,7 +100,7 @@ namespace Foundatio.Storage {
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {
             var success = await result.NextPageAsync().AnyContext();
-            result = result.DeepClone();
+            
             foreach (var file in result.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
