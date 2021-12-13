@@ -114,7 +114,7 @@ namespace Foundatio.Queues {
             var stream = new MemoryStream();
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
-            brokeredMessage.MessageId = options.Id;
+            brokeredMessage.MessageId = options.UniqueId;
             brokeredMessage.CorrelationId = options.CorrelationId;
 
             if (options is AzureServiceBusQueueEntryOptions asbOptions)

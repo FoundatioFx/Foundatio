@@ -97,7 +97,7 @@ namespace Foundatio.Messaging {
 
         protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, QueueEntryOptions options, CancellationToken cancellationToken) {
             var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message));
-            brokeredMessage.MessageId = options.Id;
+            brokeredMessage.MessageId = options.UniqueId;
             brokeredMessage.ContentType = messageType;
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
