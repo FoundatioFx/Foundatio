@@ -118,6 +118,8 @@ namespace Foundatio.Queues {
             {
                 brokeredMessage.MessageId = uniqueMessage.MessageId;
             }
+
+            brokeredMessage.MessageId = options.Id;
             brokeredMessage.CorrelationId = options.CorrelationId;
 
             if (options is AzureServiceBusQueueEntryOptions asbOptions)

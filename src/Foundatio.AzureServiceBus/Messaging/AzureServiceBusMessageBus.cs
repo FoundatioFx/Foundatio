@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
+using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -66,7 +67,7 @@ namespace Foundatio.Messaging {
                 Type = brokeredMessage.ContentType
             };
 
-            SendMessageToSubscribers(message);
+            SendMessageToSubscribersAsync(message);
             return Task.CompletedTask;
         }
 
@@ -95,12 +96,9 @@ namespace Foundatio.Messaging {
             }
         }
 
-        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, QueueEntryOptions options, CancellationToken cancellationToken) {
             var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message));
-            if (message is IUniqueMessage uniqueMessage)
-            {
-                brokeredMessage.MessageId = uniqueMessage.MessageId;
-            }
+            brokeredMessage.MessageId = options.Id;
             brokeredMessage.ContentType = messageType;
 
             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
