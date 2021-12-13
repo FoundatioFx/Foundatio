@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -32,7 +33,7 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, QueueEntryOptions options, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
             var mappedType = GetMappedMessageType(messageType);
