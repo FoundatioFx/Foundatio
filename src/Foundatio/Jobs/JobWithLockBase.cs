@@ -20,7 +20,7 @@ namespace Foundatio.Jobs {
         public async virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default) {
             var lockValue = await GetLockAsync(cancellationToken).AnyContext();
             if (lockValue == null) {
-                _logger.LogTrace("Unable to acquire job lock.");
+                _logger.LogTrace("Unable to acquire job lock");
                 return JobResult.Success;
             }
 

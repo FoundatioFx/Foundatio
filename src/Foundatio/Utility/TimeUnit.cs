@@ -10,7 +10,7 @@ namespace Foundatio.Utility {
             if (time.HasValue)
                 return time.Value;
 
-            throw new ArgumentException($"Unable to parse value '{value}' as a valid time value.");
+            throw new ArgumentException($"Unable to parse value '{value}' as a valid time value");
         }
 
         public static bool TryParse(string value, out TimeSpan? time) {

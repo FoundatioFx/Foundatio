@@ -91,13 +91,13 @@ namespace Foundatio.HostingSample {
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
                     s.AddStartupAction("Test1", async sp => {
                         var logger = sp.GetRequiredService<ILogger<Program>>();
-                        logger.LogTrace("Running startup 1 action.");
+                        logger.LogTrace("Running startup 1 action");
                         for (int i = 0; i < 3; i++) {
                             await Task.Delay(1000);
                             logger.LogTrace("Running startup 1 action...");
                         }
 
-                        logger.LogTrace("Done running startup 1 action.");
+                        logger.LogTrace("Done running startup 1 action");
                     });
 
                     // then these startup actions will run concurrently since they both have the same priority
@@ -106,13 +106,13 @@ namespace Foundatio.HostingSample {
 
                     s.AddStartupAction("Test2", async sp => {
                         var logger = sp.GetRequiredService<ILogger<Program>>();
-                        logger.LogTrace("Running startup 2 action.");
+                        logger.LogTrace("Running startup 2 action");
                         for (int i = 0; i < 2; i++) {
                             await Task.Delay(1500);
                             logger.LogTrace("Running startup 2 action...");
                         }
-                        //throw new ApplicationException("Boom goes the startup.");
-                        logger.LogTrace("Done running startup 2 action.");
+                        //throw new ApplicationException("Boom goes the startup");
+                        logger.LogTrace("Done running startup 2 action");
                     });
                     
                     //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));

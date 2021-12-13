@@ -93,7 +93,7 @@ namespace Foundatio.Jobs {
 
         public async Task<bool> RunAsync(CancellationToken cancellationToken = default) {
             if (_options.JobFactory == null) {
-                _logger.LogError("JobFactory must be specified.");
+                _logger.LogError("JobFactory must be specified");
                 return false;
             }
 
@@ -101,12 +101,12 @@ namespace Foundatio.Jobs {
             try {
                 job = _options.JobFactory();
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error creating job instance from JobFactory.");
+                _logger.LogError(ex, "Error creating job instance from JobFactory");
                 return false;
             }
 
             if (job == null) {
-                _logger.LogError("JobFactory returned null job instance.");
+                _logger.LogError("JobFactory returned null job instance");
                 return false;
             }
 
@@ -195,7 +195,7 @@ namespace Foundatio.Jobs {
                         return;
 
                     _jobShutdownCancellationTokenSource.Cancel();
-                    logger?.LogInformation("Job shutdown signaled.");
+                    logger?.LogInformation("Job shutdown signaled");
                 });
 
                 var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));

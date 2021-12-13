@@ -45,10 +45,10 @@ namespace Foundatio.Tests.Utility {
             var countdown = new AsyncCountdownEvent(iterations);
 
             async Task<DateTime?> Callback() {
-                _logger.LogInformation("Starting work.");
+                _logger.LogInformation("Starting work");
                 await SystemClock.SleepAsync(250);
                 countdown.Signal();
-                _logger.LogInformation("Finished work.");
+                _logger.LogInformation("Finished work");
                 return null;
             }
 

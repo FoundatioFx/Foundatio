@@ -23,11 +23,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 Assert.Empty(await storage.GetFileListAsync(Guid.NewGuid() + "\\*"));
@@ -35,11 +35,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanGetFileListForSingleFolderAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
@@ -58,12 +58,29 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanGetPagedFileListForSingleFolderAsync() {
-            await ResetAsync();
-
+        public virtual async Task CanGetFileListForSingleFileAsync() {
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
+
+            using (storage) {
+                await storage.SaveFileAsync(@"archived\archived.txt", "archived");
+                await storage.SaveFileAsync(@"archived\archived.csv", "archived");
+                await storage.SaveFileAsync(@"q\new.txt", "new");
+                await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
+
+                Assert.Equal(1, (await storage.GetFileListAsync(@"archived\archived.txt")).Count);
+            }
+        }
+
+        public virtual async Task CanGetPagedFileListForSingleFolderAsync() {
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 var result = await storage.GetPagedFileListAsync(1);
@@ -104,17 +121,17 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanGetFileInfoAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
                 Assert.Null(fileInfo);
 
-                var startTime = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
+                var startTime = SystemClock.UtcNow.Subtract(TimeSpan.FromMinutes(1));
                 string path = $"folder\\{Guid.NewGuid()}-nested.txt";
                 Assert.True(await storage.SaveFileAsync(path, "test"));
                 fileInfo = await storage.GetFileInfoAsync(path);
@@ -123,7 +140,7 @@ namespace Foundatio.Tests.Storage {
                 Assert.True(fileInfo.Size > 0, "Incorrect file size");
                 Assert.Equal(DateTimeKind.Utc, fileInfo.Created.Kind);
                 // NOTE: File creation time might not be accurate: http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
-                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time.");
+                Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time");
                 Assert.Equal(DateTimeKind.Utc, fileInfo.Modified.Kind);
                 Assert.True(startTime <= fileInfo.Modified, $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}.");
 
@@ -141,11 +158,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanGetNonExistentFileInfoAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
@@ -154,11 +171,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanManageFilesAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync("test.txt", "test");
@@ -175,11 +192,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanRenameFilesAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 Assert.True(await storage.SaveFileAsync("test.txt", "test"));
@@ -209,11 +226,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanSaveFilesAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             string readmeFile = GetTestFilePath();
             using (storage) {
@@ -235,28 +252,28 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanDeleteEntireFolderAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 Assert.Equal(2, (await storage.GetFileListAsync()).Count);
 
-                await storage.DeleteFilesAsync(@"x");
+                await storage.DeleteFilesAsync(@"x\*");
                 Assert.Empty(await storage.GetFileListAsync());
             }
         }
 
         public virtual async Task CanDeleteEntireFolderWithWildcardAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
@@ -273,11 +290,11 @@ namespace Foundatio.Tests.Storage {
         }
         
         public virtual async Task CanDeleteFolderWithMultiFolderWildcardsAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 const int filesPerMonth = 5;
@@ -288,10 +305,14 @@ namespace Foundatio.Tests.Storage {
                     }
                 }
 
+                _logger.LogInformation(@"List by pattern: archive\*");
                 Assert.Equal(2 * 12 * filesPerMonth, (await storage.GetFileListAsync(@"archive\*")).Count);
+                _logger.LogInformation(@"List by pattern: archive\*month-01*");
                 Assert.Equal(2 * filesPerMonth, (await storage.GetFileListAsync(@"archive\*month-01*")).Count);
+                _logger.LogInformation(@"List by pattern: archive\year-2020\*month-01*");
                 Assert.Equal(filesPerMonth, (await storage.GetFileListAsync(@"archive\year-2020\*month-01*")).Count);
 
+                _logger.LogInformation(@"Delete by pattern: archive\*month-01*");
                 await storage.DeleteFilesAsync(@"archive\*month-01*");
 
                 Assert.Equal(2 * 11 * filesPerMonth, (await storage.GetFileListAsync()).Count);
@@ -299,11 +320,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanDeleteSpecificFilesAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
@@ -325,11 +346,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanDeleteNestedFolderAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
@@ -341,7 +362,7 @@ namespace Foundatio.Tests.Storage {
                 Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count);
                 Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count);
 
-                await storage.DeleteFilesAsync(@"x\nested");
+                await storage.DeleteFilesAsync(@"x\nested\*");
 
                 Assert.Single(await storage.GetFileListAsync());
                 Assert.True(await storage.ExistsAsync(@"x\hello.txt"));
@@ -351,11 +372,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanDeleteSpecificFilesInNestedFolderAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
@@ -381,11 +402,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task CanRoundTripSeekableStreamAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 const string path = "user.xml";
@@ -409,11 +430,11 @@ namespace Foundatio.Tests.Storage {
         }
 
         public virtual async Task WillRespectStreamOffsetAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 string path = "blake.txt";
@@ -435,23 +456,22 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected virtual async Task ResetAsync() {
-            var storage = GetStorage();
+        protected virtual async Task ResetAsync(IFileStorage storage) {
             if (storage == null)
                 return;
 
-            using (storage) {
-                await storage.DeleteFilesAsync();
-                Assert.Empty(await storage.GetFileListAsync());
-            }
+            _logger.LogInformation("Deleting all files...");
+            await storage.DeleteFilesAsync();
+            _logger.LogInformation("Asserting empty files...");
+            Assert.Empty(await storage.GetFileListAsync(limit: 10000));
         }
 
         public virtual async Task CanConcurrentlyManageFilesAsync() {
-            await ResetAsync();
-
             var storage = GetStorage();
             if (storage == null)
                 return;
+
+            await ResetAsync(storage);
 
             using (storage) {
                 const string queueFolder = "q";

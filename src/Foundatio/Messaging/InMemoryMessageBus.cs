@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
@@ -34,7 +35,7 @@ namespace Foundatio.Messaging {
         protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
-            Type mappedType = GetMappedMessageType(messageType);
+            var mappedType = GetMappedMessageType(messageType);
 
             if (_subscribers.IsEmpty)
                 return;
@@ -47,7 +48,7 @@ namespace Foundatio.Messaging {
                 return;
             }
             
-            var body = SerializeMessageBody(messageType, message);
+            byte[] body = SerializeMessageBody(messageType, message);
             var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
                 Type = messageType,
                 ClrType = mappedType,
@@ -55,7 +56,7 @@ namespace Foundatio.Messaging {
             };
 
             try {
-                await SendMessageToSubscribers(messageData);
+                await SendMessageToSubscribersAsync(messageData).AnyContext();
             } catch (Exception ex) {
                 // swallow exceptions from subscriber handlers for the in memory bus
                 _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);

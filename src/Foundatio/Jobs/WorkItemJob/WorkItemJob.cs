@@ -55,7 +55,7 @@ namespace Foundatio.Jobs {
             var workItemDataType = GetWorkItemType(queueEntry.Value.Type);
             if (workItemDataType == null) {
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type.");
+                return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
             }
 
             object workItemData;
@@ -63,13 +63,13 @@ namespace Foundatio.Jobs {
                 workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
             } catch (Exception ex) {
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data.");
+                return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
             }
 
             var handler = _handlers.GetHandler(workItemDataType);
             if (handler == null) {
                 await queueEntry.CompleteAsync().AnyContext();
-                return JobResult.FailedWithMessage($"Completing {queueEntry.Value.Type} work item: {queueEntry.Id}: Handler for type {workItemDataType.Name} not registered.");
+                return JobResult.FailedWithMessage($"Completing {queueEntry.Value.Type} work item: {queueEntry.Id}: Handler for type {workItemDataType.Name} not registered");
             }
 
             if (queueEntry.Value.SendProgressReports)
@@ -118,7 +118,7 @@ namespace Foundatio.Jobs {
             } catch (Exception ex) {
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.AbandonAsync().AnyContext();
-                    return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}.");
+                    return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
                 }
 
                 return JobResult.FromException(ex, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");

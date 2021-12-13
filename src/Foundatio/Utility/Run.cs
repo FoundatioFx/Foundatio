@@ -63,7 +63,7 @@ namespace Foundatio.Utility {
                 attempts++;
             } while (attempts <= maxAttempts && !cancellationToken.IsCancellationRequested);
 
-            throw new TaskCanceledException("Should not get here.");
+            throw new TaskCanceledException("Should not get here");
         }
 
         private static readonly int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };

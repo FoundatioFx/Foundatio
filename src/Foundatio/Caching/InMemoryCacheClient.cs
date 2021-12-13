@@ -104,7 +104,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
@@ -176,7 +176,7 @@ namespace Foundatio.Caching {
 
         public async Task<CacheValue<T>> GetAsync<T>(string key) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (!_memory.TryGetValue(key, out var cacheEntry)) {
                 Interlocked.Increment(ref _misses);
@@ -232,7 +232,7 @@ namespace Foundatio.Caching {
 
         public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -248,7 +248,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -270,7 +270,7 @@ namespace Foundatio.Caching {
 
         public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -286,7 +286,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value) {
@@ -308,7 +308,7 @@ namespace Foundatio.Caching {
 
         public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -324,7 +324,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -346,7 +346,7 @@ namespace Foundatio.Caching {
 
         public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -360,7 +360,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value) {
@@ -382,7 +382,7 @@ namespace Foundatio.Caching {
 
         public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
@@ -400,7 +400,7 @@ namespace Foundatio.Caching {
                 var entry = new CacheEntry(items, expiresAt, _shouldClone);
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
                     if (!(cacheEntry.Value is ICollection<string> collection))
-                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
+                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
                     collection.Add(stringValue);
                     cacheEntry.Value = collection;
@@ -416,7 +416,7 @@ namespace Foundatio.Caching {
                 var entry = new CacheEntry(items, expiresAt, _shouldClone);
                 _memory.AddOrUpdate(key, entry, (k, cacheEntry) => {
                     if (!(cacheEntry.Value is ICollection<T> collection))
-                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set.");
+                        throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
                     collection.AddRange(items);
                     cacheEntry.Value = collection;
@@ -432,7 +432,7 @@ namespace Foundatio.Caching {
 
         public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (values == null)
                 throw new ArgumentNullException(nameof(values));
@@ -482,7 +482,7 @@ namespace Foundatio.Caching {
 
         public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             var list = await GetAsync<ICollection<T>>(key);
             if (!list.HasValue || !page.HasValue)
@@ -495,7 +495,7 @@ namespace Foundatio.Caching {
 
         private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty");
 
             if (entry.ExpiresAt < SystemClock.UtcNow) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -550,7 +550,7 @@ namespace Foundatio.Caching {
 
         public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
@@ -581,7 +581,7 @@ namespace Foundatio.Caching {
 
         public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -596,7 +596,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<double?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue)
@@ -617,7 +617,7 @@ namespace Foundatio.Caching {
 
         public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (expiresIn?.Ticks < 0) {
                 await RemoveExpiredKeyAsync(key).AnyContext();
@@ -632,7 +632,7 @@ namespace Foundatio.Caching {
                 try {
                     currentValue = entry.GetValue<long?>();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "Unable to increment value, expected integer type.");
+                    _logger.LogError(ex, "Unable to increment value, expected integer type");
                 }
 
                 if (currentValue.HasValue)
@@ -669,7 +669,7 @@ namespace Foundatio.Caching {
 
         public async Task<TimeSpan?> GetExpirationAsync(string key) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue) {
                 Interlocked.Increment(ref _misses);
@@ -687,7 +687,7 @@ namespace Foundatio.Caching {
 
         public async Task SetExpirationAsync(string key, TimeSpan expiresIn) {
             if (String.IsNullOrEmpty(key))
-                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             var expiresAt = SystemClock.UtcNow.SafeAdd(expiresIn);
             if (expiresAt < SystemClock.UtcNow) {
@@ -744,7 +744,7 @@ namespace Foundatio.Caching {
                         await RemoveExpiredKeyAsync(kvp.Key).AnyContext();
                 }
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error trying to find expired cache items.");
+                _logger.LogError(ex, "Error trying to find expired cache items");
             }
 
             await CompactAsync().AnyContext();

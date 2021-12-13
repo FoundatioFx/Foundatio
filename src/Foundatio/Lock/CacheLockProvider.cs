@@ -36,10 +36,10 @@ namespace Foundatio.Lock {
                     return;
 
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to cache lock released.");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to cache lock released");
                 await _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleasedAsync).AnyContext();
                 _isSubscribed = true;
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to cache lock released.");
+                if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to cache lock released");
             }
         }
 

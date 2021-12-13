@@ -21,7 +21,7 @@ namespace Foundatio.Tests.Hosting {
                     break;
 
                 if (DateTime.Now.Subtract(startTime) > maxWaitTime)
-                    throw new TimeoutException("Failed waiting for server to be ready.");
+                    throw new TimeoutException("Failed waiting for server to be ready");
 
                 await Task.Delay(TimeSpan.FromMilliseconds(100));
             } while (true);

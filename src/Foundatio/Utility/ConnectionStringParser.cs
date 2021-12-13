@@ -42,7 +42,7 @@ namespace Foundatio.Utility {
             
             var match = _connectionStringRegex.Match(connectionString);
             if (!match.Success || (match.Length != connectionString.Length))
-                throw new ArgumentException($"Format of the initialization string does not conform to specification starting at index {match.Length}.");
+                throw new ArgumentException($"Format of the initialization string does not conform to specification starting at index {match.Length}");
 
             int indexValue = 0;
             var keyValues = match.Groups[valueIndex].Captures;
@@ -65,7 +65,7 @@ namespace Foundatio.Utility {
                 string realKeyName = synonyms != null ? (synonyms.TryGetValue(keyName, out string synonym) ? synonym : null) : keyName;
 
                 if (!IsKeyNameValid(realKeyName))
-                    throw new ArgumentException($"Keyword not supported: '{keyName}'.");
+                    throw new ArgumentException($"Keyword not supported: '{keyName}'");
                     
                 if (!parseTable.ContainsKey(realKeyName))
                     parseTable[realKeyName] = keyValue; // last key-value pair wins (or first)

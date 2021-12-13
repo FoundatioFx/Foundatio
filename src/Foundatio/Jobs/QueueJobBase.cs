@@ -66,7 +66,7 @@ namespace Foundatio.Jobs {
                 var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
                 if (lockValue == null) {
                     await queueEntry.AbandonAsync().AnyContext();
-                    _logger.LogTrace("Unable to acquire queue entry lock.");
+                    _logger.LogTrace("Unable to acquire queue entry lock");
                     return JobResult.Success;
                 }
 
