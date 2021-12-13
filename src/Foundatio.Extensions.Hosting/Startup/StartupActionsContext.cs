@@ -21,12 +21,13 @@ namespace Foundatio.Extensions.Hosting.Startup {
             Result = result;
         }
 
-        public async Task<RunStartupActionsResult> WaitForStartupAsync(CancellationToken cancellationToken) {
+        public async Task<RunStartupActionsResult> WaitForStartupAsync(CancellationToken cancellationToken, TimeSpan? maxTimeToWait = null) {
             bool isFirstWaiter = Interlocked.Increment(ref _waitCount) == 1;
             var startTime = SystemClock.UtcNow;
             var lastStatus = SystemClock.UtcNow;
+            maxTimeToWait ??= TimeSpan.FromMinutes(5);
 
-            while (!cancellationToken.IsCancellationRequested) {
+            while (!cancellationToken.IsCancellationRequested && SystemClock.UtcNow.Subtract(startTime) < maxTimeToWait) {
                 if (IsStartupComplete)
                     return Result;
 
@@ -37,7 +38,7 @@ namespace Foundatio.Extensions.Hosting.Startup {
 
                 await Task.Delay(1000, cancellationToken).AnyContext();
             }
-
+            
             if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", SystemClock.UtcNow.Subtract(startTime));
 

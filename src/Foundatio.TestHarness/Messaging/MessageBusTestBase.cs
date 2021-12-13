@@ -343,7 +343,7 @@ namespace Foundatio.Tests.Messaging {
             try {
                 var countdown = new AsyncCountdownEvent(1);
                 await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
-                    Assert.True(false, "Received wrong message type.");
+                    Assert.True(false, "Received wrong message type");
                 });
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);

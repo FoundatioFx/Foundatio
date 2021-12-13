@@ -13,11 +13,11 @@ namespace Foundatio.Messaging {
 
     [DebuggerDisplay("Type: {Type}")]
     public class Message : IMessage {
-        private Lazy<object> _getBody;
+        private readonly Lazy<object> _getBody;
 
         public Message(Func<object> getBody) {
             if (getBody == null)
-                throw new ArgumentNullException("getBody");
+                throw new ArgumentNullException(nameof(getBody));
             
             _getBody = new Lazy<object>(getBody);
         }

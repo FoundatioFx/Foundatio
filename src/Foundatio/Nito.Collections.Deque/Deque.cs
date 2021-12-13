@@ -34,7 +34,7 @@ namespace Foundatio.Collections
         public Deque(int capacity)
         {
             if (capacity < 0)
-                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity may not be negative.");
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity may not be negative");
             _buffer = new T[capacity];
         }
 
@@ -293,7 +293,7 @@ namespace Foundatio.Collections
         int System.Collections.IList.Add(object value)
         {
             if (value == null && default(T) != null)
-                throw new ArgumentNullException(nameof(value), "Value cannot be null.");
+                throw new ArgumentNullException(nameof(value), "Value cannot be null");
             if (!IsT(value))
                 throw new ArgumentException("Value is of incorrect type.", nameof(value));
             AddToBack((T)value);
@@ -313,7 +313,7 @@ namespace Foundatio.Collections
         void System.Collections.IList.Insert(int index, object value)
         {
             if (value == null && default(T) != null)
-                throw new ArgumentNullException("value", "Value cannot be null.");
+                throw new ArgumentNullException("value", "Value cannot be null");
             if (!IsT(value))
                 throw new ArgumentException("Value is of incorrect type.", "value");
             Insert(index, (T)value);
@@ -345,7 +345,7 @@ namespace Foundatio.Collections
             set
             {
                 if (value == null && default(T) != null)
-                    throw new ArgumentNullException(nameof(value), "Value cannot be null.");
+                    throw new ArgumentNullException(nameof(value), "Value cannot be null");
                 if (!IsT(value))
                     throw new ArgumentException("Value is of incorrect type.", nameof(value));
                 this[index] = (T)value;
@@ -355,7 +355,7 @@ namespace Foundatio.Collections
         void System.Collections.ICollection.CopyTo(Array array, int index)
         {
             if (array == null)
-                throw new ArgumentNullException(nameof(array), "Destination array cannot be null.");
+                throw new ArgumentNullException(nameof(array), "Destination array cannot be null");
             CheckRangeArguments(array.Length, index, Count);
 
             try
@@ -824,7 +824,7 @@ namespace Foundatio.Collections
         public T RemoveFromBack()
         {
             if (IsEmpty)
-                throw new InvalidOperationException("The deque is empty.");
+                throw new InvalidOperationException("The deque is empty");
 
             return DoRemoveFromBack();
         }
@@ -837,7 +837,7 @@ namespace Foundatio.Collections
         public T RemoveFromFront()
         {
             if (IsEmpty)
-                throw new InvalidOperationException("The deque is empty.");
+                throw new InvalidOperationException("The deque is empty");
 
             return DoRemoveFromFront();
         }

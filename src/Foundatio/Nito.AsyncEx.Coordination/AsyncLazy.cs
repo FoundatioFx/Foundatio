@@ -195,7 +195,7 @@ namespace Foundatio.AsyncEx
                 get
                 {
                     if (!_lazy._instance.IsValueCreated)
-                        throw new InvalidOperationException("Not yet created.");
+                        throw new InvalidOperationException("Not yet created");
                     return _lazy._instance.Value;
                 }
             }
@@ -205,7 +205,7 @@ namespace Foundatio.AsyncEx
                 get
                 {
                     if (!_lazy._instance.IsValueCreated || !_lazy._instance.Value.IsCompleted)
-                        throw new InvalidOperationException("Not yet created.");
+                        throw new InvalidOperationException("Not yet created");
                     return _lazy._instance.Value.Result;
                 }
             }

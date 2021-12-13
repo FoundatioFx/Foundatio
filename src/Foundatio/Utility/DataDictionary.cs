@@ -26,7 +26,7 @@ namespace Foundatio.Utility {
 
         public T GetValue<T>(string key) {
             if (!ContainsKey(key))
-                throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary.");
+                throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary");
 
             return GetValueOrDefault<T>(key);
         }

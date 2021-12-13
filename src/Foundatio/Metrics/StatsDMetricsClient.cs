@@ -93,7 +93,7 @@ namespace Foundatio.Metrics {
                 try {
                     _socket.Close();
                 } catch (Exception ex) {
-                    _logger.LogError(ex, "An error occurred while calling Close() on the socket.");
+                    _logger.LogError(ex, "An error occurred while calling Close() on the socket");
                 } finally {
                     _socket = null;
                 }

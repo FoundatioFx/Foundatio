@@ -373,7 +373,7 @@ namespace Foundatio.Tests.Caching {
                 var cachedValue = await cache.GetAsync<MyData>("test");
                 Assert.NotNull(cachedValue);
                 Assert.Equal(dt, cachedValue.Value.Date);
-                Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object.");
+                Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object");
                 Assert.Equal("Hello World", cachedValue.Value.Message);
                 Assert.Equal("test", cachedValue.Value.Type);
             }

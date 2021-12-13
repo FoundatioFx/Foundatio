@@ -174,7 +174,7 @@ namespace Foundatio.Queues {
             entry.DequeuedTimeUtc = SystemClock.UtcNow;
 
             if (!_dequeued.TryAdd(entry.Id, entry))
-                throw new Exception("Unable to add item to the dequeued list.");
+                throw new Exception("Unable to add item to the dequeued list");
 
             Interlocked.Increment(ref _dequeuedCount);
             _logger.LogTrace("Dequeue: Got Item");
@@ -201,10 +201,10 @@ namespace Foundatio.Queues {
         public override async Task CompleteAsync(IQueueEntry<T> entry) {
             _logger.LogDebug("Queue {Name} complete item: {Id}", _options.Name, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
-                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
             if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
-                throw new Exception("Unable to remove item from the dequeued list.");
+                throw new Exception("Unable to remove item from the dequeued list");
 
             entry.MarkCompleted();
             Interlocked.Increment(ref _completedCount);
@@ -216,10 +216,10 @@ namespace Foundatio.Queues {
             _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {Id}", _options.Name, QueueId, entry.Id);
 
             if (entry.IsAbandoned || entry.IsCompleted)
-                throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+                throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
             if (!_dequeued.TryRemove(entry.Id, out var targetEntry) || targetEntry == null)
-                throw new Exception("Unable to remove item from the dequeued list.");
+                throw new Exception("Unable to remove item from the dequeued list");
 
             entry.MarkAbandoned();
             Interlocked.Increment(ref _abandonedCount);

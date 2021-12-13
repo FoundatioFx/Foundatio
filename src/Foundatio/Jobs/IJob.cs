@@ -68,7 +68,7 @@ namespace Foundatio.Jobs {
 
                 logger.LogInformation("Finished continuous job type {JobName}: {IterationLimit} {Iterations}", jobName, Environment.MachineName, iterationLimit, iterations);
                 if (cancellationToken.IsCancellationRequested && logger.IsEnabled(LogLevel.Trace))
-                    logger.LogTrace("Job cancellation requested.");
+                    logger.LogTrace("Job cancellation requested");
 
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Stopping continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);

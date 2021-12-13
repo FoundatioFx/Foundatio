@@ -80,7 +80,7 @@ namespace Foundatio.Utility {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (_isRunning) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Exiting run callback because its already running, will run again immediately.");
+                    _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
 
                 _shouldRunAgainImmediately = true;
                 return;
@@ -90,7 +90,7 @@ namespace Foundatio.Utility {
             using (await _lock.LockAsync().AnyContext()) {
                 if (_isRunning) {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Exiting run callback because its already running, will run again immediately.");
+                        _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
 
                     _shouldRunAgainImmediately = true;
                     return;

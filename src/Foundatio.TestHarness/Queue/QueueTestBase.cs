@@ -345,21 +345,21 @@ namespace Foundatio.Tests.Queue {
                 queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
                 Task.Run(async () => {
-                    _logger.LogTrace("Starting enqueue loop.");
+                    _logger.LogTrace("Starting enqueue loop");
                     for (int index = 0; index < iterations; index++) {
                         await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
                         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                     }
-                    _logger.LogTrace("Finished enqueuing.");
+                    _logger.LogTrace("Finished enqueuing");
                 });
 
-                _logger.LogTrace("Starting dequeue loop.");
+                _logger.LogTrace("Starting dequeue loop");
                 for (int index = 0; index < iterations; index++) {
                     var item = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
                     Assert.NotNull(item);
                     await item.CompleteAsync();
                 }
-                _logger.LogTrace("Finished dequeuing.");
+                _logger.LogTrace("Finished dequeuing");
 
                 await metrics.FlushAsync();
                 var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
@@ -390,7 +390,7 @@ namespace Foundatio.Tests.Queue {
                 using var secondQueue = GetQueue(runQueueMaintenance: false);
                 secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
-                _logger.LogTrace("Starting dequeue loop.");
+                _logger.LogTrace("Starting dequeue loop");
                 for (int index = 0; index < iterations; index++) {
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("[{Index}] Calling Dequeue", index);
                     var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));

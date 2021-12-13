@@ -24,11 +24,11 @@ namespace Foundatio.Lock {
 
         public void SetScope(string scope) {
             if (_isLocked)
-                throw new InvalidOperationException("Scope can't be changed after it has been set.");
+                throw new InvalidOperationException("Scope can't be changed after it has been set");
 
             lock (_lock) {
                 if (_isLocked)
-                    throw new InvalidOperationException("Scope can't be changed after it has been set.");
+                    throw new InvalidOperationException("Scope can't be changed after it has been set");
 
                 _isLocked = true;
                 Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;

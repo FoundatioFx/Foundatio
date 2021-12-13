@@ -38,7 +38,7 @@ namespace Foundatio.Queues {
                 _metricsClient.Gauge(GetFullMetricName("working"), stats.Working);
                 _metricsClient.Gauge(GetFullMetricName("deadletter"), stats.Deadletter);
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error reporting queue metrics.");
+                _logger.LogError(ex, "Error reporting queue metrics");
             }
 
             return null;

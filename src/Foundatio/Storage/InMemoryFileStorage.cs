@@ -51,7 +51,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
 
             path = path.NormalizePath();
-            return await ExistsAsync(path).AnyContext() ? _storage[path].Item1 : null;
+            return await ExistsAsync(path).AnyContext() ? _storage[path].Item1.DeepClone() : null;
         }
 
         public Task<bool> ExistsAsync(string path) {
@@ -204,7 +204,7 @@ namespace Foundatio.Storage {
             var regex = new Regex("^" + Regex.Escape(searchPattern).Replace("\\*", ".*?") + "$");
 
             lock (_lock)
-                list.AddRange(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1).Skip(skip).Take(pagingLimit).ToList());
+                list.AddRange(_storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Item1.DeepClone()).Skip(skip).Take(pagingLimit).ToList());
             
             bool hasMore = false;
             if (list.Count == pagingLimit) {
@@ -216,7 +216,7 @@ namespace Foundatio.Storage {
                 Success = true, 
                 HasMore = hasMore, 
                 Files = list,
-                NextPageFunc = hasMore ? s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : (Func<PagedFileListResult, Task<NextPageResult>>)null 
+                NextPageFunc = hasMore ? s => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : null
             };
         }
 
