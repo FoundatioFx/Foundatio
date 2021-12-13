@@ -114,11 +114,6 @@ namespace Foundatio.Queues {
             var stream = new MemoryStream();
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
-            if (data is IUniqueMessage uniqueMessage)
-            {
-                brokeredMessage.MessageId = uniqueMessage.MessageId;
-            }
-
             brokeredMessage.MessageId = options.Id;
             brokeredMessage.CorrelationId = options.CorrelationId;
 
