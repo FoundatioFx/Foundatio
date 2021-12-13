@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -30,13 +31,13 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
+        protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, QueueEntryOptions options, CancellationToken cancellationToken);
+        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, QueueEntryOptions options = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, delay, options ?? new QueueEntryOptions(), cancellationToken).AnyContext();
         }
  
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
