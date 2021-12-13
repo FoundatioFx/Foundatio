@@ -67,8 +67,7 @@ namespace Foundatio.Messaging {
                 Type = brokeredMessage.ContentType
             };
 
-            SendMessageToSubscribersAsync(message);
-            return Task.CompletedTask;
+            return SendMessageToSubscribersAsync(message);
         }
 
         private Task MessageHandlerException(ExceptionReceivedEventArgs e) {
