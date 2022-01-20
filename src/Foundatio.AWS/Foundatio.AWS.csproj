@@ -4,10 +4,10 @@
     <PackageTags>$(PackageTags);Amazon;AWS;S3</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.2.25" />
-    <PackageReference Include="AWSSDK.S3" Version="3.7.3.2" />
-    <PackageReference Include="AWSSDK.SQS" Version="3.7.2.2" />
-    <PackageReference Include="Foundatio" Version="10.2.2" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.3.16" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.7.14" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.7.2.14" />
+    <PackageReference Include="Foundatio" Version="10.3.1" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>

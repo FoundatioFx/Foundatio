@@ -91,8 +91,8 @@ namespace Foundatio.AWS.Tests.Storage {
         public override Task CanDeleteSpecificFilesInNestedFolderAsync() {
             return base.CanDeleteSpecificFilesInNestedFolderAsync();
         }
-        
-        protected override async Task ResetAsync() {
+
+        protected override async Task ResetAsync(IFileStorage storage) {
             var client = new AmazonS3Client(
                 new BasicAWSCredentials("xxx", "xxx"),
                 new AmazonS3Config {
@@ -102,7 +102,7 @@ namespace Foundatio.AWS.Tests.Storage {
                 });
             await client.PutBucketAsync("foundatio-ci");
 
-            await base.ResetAsync();
+            await base.ResetAsync(storage);
         }
     }
 }
