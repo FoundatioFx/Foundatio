@@ -7,7 +7,7 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" Version="5.0" />
+    <PackageReference Include="System.Collections.Immutable" Version="6.0" />
     <PackageReference Include="xunit.core" Version="2.4.1" />
   </ItemGroup>
 </Project>
