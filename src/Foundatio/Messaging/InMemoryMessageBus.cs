@@ -33,7 +33,7 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, QueueEntryOptions options, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, MessageOptions options, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
             var mappedType = GetMappedMessageType(messageType);

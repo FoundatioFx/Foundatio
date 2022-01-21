@@ -7,7 +7,7 @@ namespace Foundatio.Messaging {
     public class NullMessageBus : IMessageBus {
         public static readonly NullMessageBus Instance = new NullMessageBus();
 
-        public Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, QueueEntryOptions options = null, CancellationToken cancellationToken = default) {
+        public Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, MessageOptions options = null, CancellationToken cancellationToken = default) {
             return Task.CompletedTask;
         }
 
