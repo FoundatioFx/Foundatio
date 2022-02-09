@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Utility;
@@ -151,6 +152,17 @@ namespace Foundatio.Tests.Caching {
                     Assert.Equal(2, cache.Misses);
                 }
             }
+        }
+
+        [Fact]
+        public async Task SetAllShouldExpire() {
+            var client = GetCacheClient();
+
+            var expiry = TimeSpan.FromMilliseconds(50);
+            await client.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
+            await Task.Delay(expiry);
+
+            Assert.False(await client.ExistsAsync("test"));
         }
     }
 }
