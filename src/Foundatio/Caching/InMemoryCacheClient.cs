@@ -532,7 +532,7 @@ namespace Foundatio.Caching {
 
             var tasks = new List<Task<bool>>();
             foreach (var entry in values)
-                tasks.Add(SetAsync(entry.Key, entry.Value));
+                tasks.Add(SetAsync(entry.Key, entry.Value, expiresIn));
 
             bool[] results = await Task.WhenAll(tasks).AnyContext();
             return results.Count(r => r);
