@@ -12,7 +12,7 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Foundatio.Messaging {
     public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions> {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private readonly ConnectionFactory _factory;
         private IConnection _publisherClient;
         private IConnection _subscriberClient;
@@ -58,8 +58,8 @@ namespace Foundatio.Messaging {
                     _subscriberChannel = _subscriberClient.CreateModel();
                     CreateRegularExchange(_subscriberChannel);
                 }
-                
-                var queueName = CreateQueue(_subscriberChannel);
+
+                string queueName = CreateQueue(_subscriberChannel);
                 var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
                 consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
@@ -141,22 +141,22 @@ namespace Foundatio.Messaging {
         /// </summary>
         /// <param name="messageType"></param>
         /// <param name="message"></param>
-        /// <param name="delay">Along with the delay value, _delayExchange should also be set to true</param>
+        /// <param name="options">Message options</param>
         /// <param name="cancellationToken"></param>
         /// <remarks>RabbitMQ has an upper limit of 2GB for messages.BasicPublish blocking AMQP operations.
         /// The rule of thumb is: avoid sharing channels across threads.
         /// Publishers in your application that publish from separate threads should use their own channels.
         /// The same is a good idea for consumers.</remarks>
-        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
             byte[] data = SerializeMessageBody(messageType, message);
 
             // if the RabbitMQ plugin is not available then use the base class delay mechanism
-            if (!_delayedExchangePluginEnabled.Value && delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (!_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
                 var mappedType = GetMappedMessageType(messageType);
                 if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
                 
-                return AddDelayedMessageAsync(mappedType, message, delay.Value);
+                return AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value);
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
@@ -168,13 +168,13 @@ namespace Foundatio.Messaging {
                 basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
 
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
-            if (_delayedExchangePluginEnabled.Value && delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
                 // Its necessary to typecast long to int because RabbitMQ on the consumer side is reading the
                 // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
                 // and the data will be delivered immediately.
-                basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(delay.Value.TotalMilliseconds) } };
+                basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds) } };
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             } else {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
             }
@@ -237,7 +237,7 @@ namespace Foundatio.Messaging {
             // Durable (the queue will survive a broker restart)
             // Arguments (some brokers use it to implement additional features like message TTL)
             var result = model.QueueDeclare(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, _options.SubscriptionQueueAutoDelete, _options.Arguments);
-            var queueName = result.QueueName;
+            string queueName = result.QueueName;
 
             // bind the queue with the exchange.
             model.QueueBind(queueName, _options.Topic, "");
