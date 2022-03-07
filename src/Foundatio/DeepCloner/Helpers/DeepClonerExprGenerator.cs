@@ -1,6 +1,6 @@
 ﻿#define NETCORE
-
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -10,11 +10,40 @@ namespace Foundatio.Force.DeepCloner.Helpers
 {
 	internal static class DeepClonerExprGenerator
 	{
+		private static readonly ConcurrentDictionary<FieldInfo, bool> _readonlyFields = new ConcurrentDictionary<FieldInfo, bool>();
+
+		private static readonly bool _canFastCopyReadonlyFields = false;
+
+		private static readonly MethodInfo _fieldSetMethod;
+		static DeepClonerExprGenerator()
+		{
+			try
+			{
+				typeof(DeepClonerExprGenerator).GetPrivateStaticField(nameof(_canFastCopyReadonlyFields)).SetValue(null, true);
+#if NETCORE13
+				_fieldSetMethod = typeof(FieldInfo).GetRuntimeMethod("SetValue", new[] { typeof(object), typeof(object) });
+#else
+				_fieldSetMethod = typeof(FieldInfo).GetMethod("SetValue", new[] {typeof(object), typeof(object)});
+#endif
+				
+				if (_fieldSetMethod == null)
+					throw new ArgumentNullException();
+			}
+			catch (Exception)
+			{
+				// cannot
+			}
+		}
+		
 		internal static object GenerateClonerInternal(Type realType, bool asObject)
 		{
 			return GenerateProcessMethod(realType, asObject && realType.IsValueType());
 		}
 
+		private static FieldInfo _attributesFieldInfo = typeof(FieldInfo).GetPrivateField("m_fieldAttributes");
+		
+		// today, I found that it not required to do such complex things. Just SetValue is enough
+		// is it new runtime changes, or I made incorrect assumptions eariler
 		// slow, but hardcore method to set readonly field
 		internal static void ForceSetField(FieldInfo field, object obj, object value)
 		{
@@ -29,9 +58,13 @@ namespace Foundatio.Force.DeepCloner.Helpers
 				return;
 			var v = (FieldAttributes)ov;
 
-			fieldInfo.SetValue(field, v & ~FieldAttributes.InitOnly);
-			field.SetValue(obj, value);
-			fieldInfo.SetValue(field, v);
+			// protect from parallel execution, when first thread set field readonly back, and second set it to write value
+			lock (fieldInfo)
+			{
+				fieldInfo.SetValue(field, v & ~FieldAttributes.InitOnly);
+				field.SetValue(obj, value);
+				fieldInfo.SetValue(field, v | FieldAttributes.InitOnly);
+			}
 		}
 
 		private static object GenerateProcessMethod(Type type, bool unboxStruct)
@@ -132,12 +165,22 @@ namespace Foundatio.Force.DeepCloner.Helpers
 
 					// should handle specially
 					// todo: think about optimization, but it rare case
-					if (fieldInfo.IsInitOnly)
+					var isReadonly = _readonlyFields.GetOrAdd(fieldInfo, f => f.IsInitOnly);
+					if (isReadonly)
 					{
-						// var setMethod = fieldInfo.GetType().GetMethod("SetValue", new[] { typeof(object), typeof(object) });
-						// expressionList.Add(Expression.Call(Expression.Constant(fieldInfo), setMethod, toLocal, call));
-						var setMethod = typeof(DeepClonerExprGenerator).GetPrivateStaticMethod("ForceSetField");
-						expressionList.Add(Expression.Call(setMethod, Expression.Constant(fieldInfo), Expression.Convert(toLocal, typeof(object)), Expression.Convert(call, typeof(object))));
+						if (_canFastCopyReadonlyFields)
+						{
+							expressionList.Add(Expression.Call(
+								Expression.Constant(fieldInfo),
+								_fieldSetMethod,
+								Expression.Convert(toLocal, typeof(object)),
+								Expression.Convert(call, typeof(object))));
+						}
+						else
+						{
+							var setMethod = typeof(DeepClonerExprGenerator).GetPrivateStaticMethod("ForceSetField");
+							expressionList.Add(Expression.Call(setMethod, Expression.Constant(fieldInfo), Expression.Convert(toLocal, typeof(object)), Expression.Convert(call, typeof(object))));							
+						}
 					}
 					else
 					{
@@ -167,7 +210,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			// multidim or not zero-based arrays
 			if (rank != 1 || type != elementType.MakeArrayType())
 			{
-				if (rank == 2 && type == elementType.MakeArrayType())
+				if (rank == 2 && type == elementType.MakeArrayType(2))
 				{
 					// small optimization for 2 dim arrays
 					methodInfo = typeof(DeepClonerGenerator).GetPrivateStaticMethod("Clone2DimArrayInternal").MakeGenericMethod(elementType);

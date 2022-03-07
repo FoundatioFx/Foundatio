@@ -1,5 +1,4 @@
 ﻿#define NETCORE
-
 using System;
 using System.Linq;
 
@@ -45,7 +44,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 
 			var cloner = (Func<object, DeepCloneState, object>)DeepClonerCache.GetOrAddClass(obj.GetType(), t => GenerateCloner(t, true));
 
-			// safe ojbect
+			// safe object
 			if (cloner == null) 
 				return obj;
 
@@ -111,6 +110,14 @@ namespace Foundatio.Force.DeepCloner.Helpers
 		{
 			// not null from called method, but will check it anyway
 			if (obj == null) return null;
+			
+			// we cannot determine by type multidim arrays (one dimension is possible)
+			// so, will check for index here
+			var lb1 = obj.GetLowerBound(0);
+			var lb2 = obj.GetLowerBound(1);
+			if (lb1 != 0 || lb2 != 0)
+				return (T[,]) CloneAbstractArrayInternal(obj, state);
+			
 			var l1 = obj.GetLength(0);
 			var l2 = obj.GetLength(1);
 			var outArray = new T[l1, l2];
@@ -145,27 +152,43 @@ namespace Foundatio.Force.DeepCloner.Helpers
 			if (obj == null) return null;
 			var rank = obj.Rank;
 
-			var lowerBounds = Enumerable.Range(0, rank).Select(obj.GetLowerBound).ToArray();
 			var lengths = Enumerable.Range(0, rank).Select(obj.GetLength).ToArray();
+
+			var lowerBounds = Enumerable.Range(0, rank).Select(obj.GetLowerBound).ToArray();
 			var idxes = Enumerable.Range(0, rank).Select(obj.GetLowerBound).ToArray();
 
-			var outArray = Array.CreateInstance(obj.GetType().GetElementType(), lengths, lowerBounds);
+			var elementType = obj.GetType().GetElementType();
+			var outArray = Array.CreateInstance(elementType, lengths, lowerBounds);
+
 			state.AddKnownRef(obj, outArray);
+
+			// we're unable to set any value to this array, so, just return it
+			if (lengths.Any(x => x == 0))
+				return outArray;
+
+			if (DeepClonerSafeTypes.CanReturnSameObject(elementType))
+			{
+				Array.Copy(obj, outArray, obj.Length);
+				return outArray;
+			}
+
+			var ofs = rank - 1;
 			while (true)
 			{
 				outArray.SetValue(CloneClassInternal(obj.GetValue(idxes), state), idxes);
-				var ofs = rank - 1;
-				while (true)
+				idxes[ofs]++;
+
+				if (idxes[ofs] >= lowerBounds[ofs] + lengths[ofs])
 				{
-					idxes[ofs]++;
-					if (idxes[ofs] >= lowerBounds[ofs] + lengths[ofs])
+					do
 					{
+						if (ofs == 0) return outArray;
 						idxes[ofs] = lowerBounds[ofs];
 						ofs--;
-						if (ofs < 0) return outArray;
-					}
-					else
-						break;
+						idxes[ofs]++;
+					} while (idxes[ofs] >= lowerBounds[ofs] + lengths[ofs]);
+
+					ofs = rank - 1;
 				}
 			}
 		}

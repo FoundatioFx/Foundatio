@@ -7,24 +7,6 @@ namespace Foundatio.Force.DeepCloner.Helpers
 {
 	internal class DeepCloneState
 	{
-		private class CustomEqualityComparer : IEqualityComparer<object>, IEqualityComparer
-		{
-			bool IEqualityComparer<object>.Equals(object x, object y)
-			{
-				return ReferenceEquals(x, y);
-			}
-
-			bool IEqualityComparer.Equals(object x, object y)
-			{
-				return ReferenceEquals(x, y);
-			}
-
-			public int GetHashCode(object obj)
-			{
-				return RuntimeHelpers.GetHashCode(obj);
-			}
-		}
-
 		private MiniDictionary _loops;
 
 		private readonly object[] _baseFromTo = new object[6];
@@ -33,7 +15,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 
 		public object GetKnownRef(object from)
 		{
-			// this is faster than call Diectionary from begin
+			// this is faster than call Dictionary from begin
 			// also, small poco objects does not have a lot of references
 			var baseFromTo = _baseFromTo;
 			if (ReferenceEquals(from, baseFromTo[0])) return baseFromTo[3];

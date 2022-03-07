@@ -1,5 +1,4 @@
 ﻿#define NETCORE
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -15,9 +14,7 @@ namespace Foundatio.Force.DeepCloner.Helpers
 	{
 		internal static readonly ConcurrentDictionary<Type, bool> KnownTypes = new();
 
-		internal static readonly ConcurrentDictionary<Type, bool> KnownClasses = new();
-
-		static DeepClonerSafeTypes()
+    static DeepClonerSafeTypes()
 		{
 			foreach (
 				var x in
