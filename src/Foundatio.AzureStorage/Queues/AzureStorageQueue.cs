@@ -14,7 +14,7 @@ using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Foundatio.Queues {
     public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> where T : class {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private readonly CloudQueue _queueReference;
         private readonly CloudQueue _deadletterQueueReference;
         private long _enqueuedCount;
