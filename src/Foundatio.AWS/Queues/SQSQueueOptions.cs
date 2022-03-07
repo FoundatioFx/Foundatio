@@ -17,7 +17,7 @@ namespace Foundatio.Queues {
         public bool SqsManagedSseEnabled { get; set; } = false;
 
 
-        private static readonly Random _random = new Random();
+        private static readonly Random _random = new();
         public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => {
             return TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(_random.Next(0, 100));
         };

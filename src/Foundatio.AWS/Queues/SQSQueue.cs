@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private readonly Lazy<AmazonSQSClient> _client;
         private string _queueUrl;
         private string _deadUrl;
