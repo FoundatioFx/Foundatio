@@ -16,7 +16,7 @@ namespace Foundatio.Caching {
         private readonly RedisCacheClientOptions _options;
         private readonly ILogger _logger;
 
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private bool _scriptsLoaded;
 
         private LoadedLuaScript _removeByPrefix;

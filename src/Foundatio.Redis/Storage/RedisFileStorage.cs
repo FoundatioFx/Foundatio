@@ -60,23 +60,22 @@ namespace Foundatio.Storage {
             path = NormalizePath(path);
             try {
                 var database = Database;
-                using (var memory = new MemoryStream()) {
-                    await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
-                    var saveFileTask = database.HashSetAsync(_options.ContainerName, path, memory.ToArray());
-                    long fileSize = memory.Length;
-                    memory.Seek(0, SeekOrigin.Begin);
-                    memory.SetLength(0);
-                    Serializer.Serialize(new FileSpec {
-                        Path = path,
-                        Created = DateTime.UtcNow,
-                        Modified = DateTime.UtcNow,
-                        Size = fileSize
-                    }, memory);
-                    var saveSpecTask = database.HashSetAsync(_fileSpecContainer, path, memory.ToArray());
-                    await Run.WithRetriesAsync(() => Task.WhenAll(saveFileTask, saveSpecTask),
-                        cancellationToken: cancellationToken, logger: _logger).AnyContext();
-                    return true;
-                }
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
+                var saveFileTask = database.HashSetAsync(_options.ContainerName, path, memory.ToArray());
+                long fileSize = memory.Length;
+                memory.Seek(0, SeekOrigin.Begin);
+                memory.SetLength(0);
+                Serializer.Serialize(new FileSpec {
+                    Path = path,
+                    Created = DateTime.UtcNow,
+                    Modified = DateTime.UtcNow,
+                    Size = fileSize
+                }, memory);
+                var saveSpecTask = database.HashSetAsync(_fileSpecContainer, path, memory.ToArray());
+                await Run.WithRetriesAsync(() => Task.WhenAll(saveFileTask, saveSpecTask),
+                    cancellationToken: cancellationToken, logger: _logger).AnyContext();
+                return true;
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);

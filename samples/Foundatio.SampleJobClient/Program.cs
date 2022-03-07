@@ -18,7 +18,7 @@ namespace Foundatio.SampleJobClient
         private static TestLoggerFactory _loggerFactory;
         private static ILogger _logger;
         private static bool _isRunning = true;
-        private static CancellationTokenSource _continuousEnqueueTokenSource = new CancellationTokenSource();
+        private static CancellationTokenSource _continuousEnqueueTokenSource = new();
 
         public static void Main(string[] args)
         {

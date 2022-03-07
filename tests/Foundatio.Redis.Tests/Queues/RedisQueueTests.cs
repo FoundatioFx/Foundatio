@@ -156,23 +156,19 @@ namespace Foundatio.Redis.Tests.Queues {
         [RetryFact]
         public override async Task CanDequeueWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
-            using (var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log })) {
-                using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
-                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
-                    await CanDequeueWithLockingImpAsync(distributedLock);
-                }
-            }
+            using var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log });
+            using var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log });
+            var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+            await CanDequeueWithLockingImpAsync(distributedLock);
         }
 
         [Fact]
         public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
             var muxer = SharedConnection.GetMuxer();
-            using (var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log })) {
-                using (var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log })) {
-                    var distributedLock = new CacheLockProvider(cache, messageBus, Log);
-                    await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
-                }
-            }
+            using var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log });
+            using var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log });
+            var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+            await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
         }
 
         [Fact]

@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Channels;
-using System.Threading.Tasks;
+using System.Threading;using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -11,7 +9,7 @@ using StackExchange.Redis;
 
 namespace Foundatio.Messaging {
     public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions> {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private bool _isSubscribed;
         private ChannelMessageQueue _channelMessageQueue = null;
 
@@ -60,16 +58,16 @@ namespace Foundatio.Messaging {
             await SendMessageToSubscribersAsync(message).AnyContext();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
             var mappedType = GetMappedMessageType(messageType);
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                await AddDelayedMessageAsync(mappedType, message, delay.Value).AnyContext();
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+                await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
                 return;
             }
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
-            var bodyData = SerializeMessageBody(messageType, message);
+            byte[] bodyData = SerializeMessageBody(messageType, message);
             byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope() {
                 Type = messageType,
                 Data = bodyData

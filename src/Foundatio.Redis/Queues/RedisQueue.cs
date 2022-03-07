@@ -17,8 +17,8 @@ using Foundatio.Redis.Utility;
 
 namespace Foundatio.Queues {
     public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class {
-        private readonly AsyncLock _lock = new AsyncLock();
-        private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
+        private readonly AsyncLock _lock = new();
+        private readonly AsyncAutoResetEvent _autoResetEvent = new();
         private readonly ISubscriber _subscriber;
         private readonly RedisCacheClient _cache;
         private long _enqueuedCount;
@@ -211,7 +211,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        private readonly List<Task> _workers = new List<Task>();
+        private readonly List<Task> _workers = new();
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
@@ -280,10 +280,9 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
-                    using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token)) {
-                        await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
-                    }
+                    using var timeoutCancellationTokenSource = new CancellationTokenSource(10000);
+                    using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token);
+                    await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();
