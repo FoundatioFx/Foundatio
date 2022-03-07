@@ -12,7 +12,7 @@ using Microsoft.Azure.ServiceBus.Management;
 
 namespace Foundatio.Messaging {
     public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBusOptions> {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private readonly ManagementClient _managementClient;
         private TopicClient _topicClient;
         private SubscriptionClient _subscriptionClient;
@@ -94,13 +94,14 @@ namespace Foundatio.Messaging {
             }
         }
 
-        protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken) {
-            var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message));
-            brokeredMessage.ContentType = messageType;
+        protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
+            var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message)) {
+                ContentType = messageType
+            };
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
-                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(delay.Value);
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+                _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+                brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(options.DeliveryDelay.Value);
             } else {
                 _logger.LogTrace("Message Publish: {messageType}", messageType);
             }

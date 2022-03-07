@@ -15,7 +15,7 @@ using Microsoft.Azure.ServiceBus.Management;
 using Microsoft.Azure.ServiceBus.Core;
 namespace Foundatio.Queues {
     public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<T>> where T : class {
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private readonly ManagementClient _managementClient;
         private MessageSender _queueSender;
         private MessageReceiver _queueReceiver;
