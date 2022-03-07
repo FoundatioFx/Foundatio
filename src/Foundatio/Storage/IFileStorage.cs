@@ -35,7 +35,7 @@ namespace Foundatio.Storage {
 
     public class PagedFileListResult : IHasNextPageFunc {
         private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(new FileSpec[0]);
-        public static PagedFileListResult Empty = new PagedFileListResult(_empty);
+        public static PagedFileListResult Empty = new(_empty);
 
         public PagedFileListResult(IReadOnlyCollection<FileSpec> files) {
             Files = files;

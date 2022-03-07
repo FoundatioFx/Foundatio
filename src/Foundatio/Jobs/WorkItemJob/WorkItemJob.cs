@@ -127,7 +127,7 @@ namespace Foundatio.Jobs {
             }
         }
 
-        private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new ConcurrentDictionary<string, Type>();
+        private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new();
         protected virtual Type GetWorkItemType(string workItemType) {
             return _knownTypesCache.GetOrAdd(workItemType, type => {
                 try {

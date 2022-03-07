@@ -14,8 +14,8 @@ namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider, IHaveLogger {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
-        private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new ConcurrentDictionary<string, ResetEventWithRefCount>();
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new();
+        private readonly AsyncLock _lock = new();
         private bool _isSubscribed;
         private readonly ILogger _logger;
 
@@ -178,7 +178,7 @@ namespace Foundatio.Lock {
         }
 
         private static string _allowedChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-        private static Random _rng = new Random();
+        private static Random _rng = new();
 
         private string GenerateNewLockId() {
             char[] chars = new char[16];

@@ -28,7 +28,7 @@ namespace Foundatio.Utility {
             + "[\\s;]*[\u0000\\s]*"                                     // trailing whitespace/semicolons (DataSourceLocator), embedded nulls are allowed only in the end
         ;
 
-        private static readonly Regex _connectionStringRegex = new Regex(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
+        private static readonly Regex _connectionStringRegex = new(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
 
         private static Dictionary<string, string> Parse(string connectionString, IDictionary<string, string> synonyms) {
             var parseTable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

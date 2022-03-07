@@ -6,7 +6,7 @@ using BenchmarkDotNet.Reports;
 
 namespace Foundatio.TestHarness.Utility {
     public class StringBenchmarkLogger : ILogger {
-        private readonly StringBuilder _buffer = new StringBuilder();
+        private readonly StringBuilder _buffer = new();
 
         public string Id => Guid.NewGuid().ToString();
         public int Priority => 1;

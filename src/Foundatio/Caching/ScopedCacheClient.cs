@@ -12,7 +12,7 @@ namespace Foundatio.Caching {
     public class ScopedCacheClient : ICacheClient {
         private string _keyPrefix;
         private bool _isLocked;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
 
         public ScopedCacheClient(ICacheClient client, string scope = null) {
             UnscopedCache = client ?? new NullCacheClient();

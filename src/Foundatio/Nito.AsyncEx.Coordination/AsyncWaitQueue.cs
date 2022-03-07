@@ -89,7 +89,7 @@ namespace Foundatio.AsyncEx
     [DebuggerTypeProxy(typeof(DefaultAsyncWaitQueue<>.DebugView))]
     internal sealed class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
     {
-        private readonly Deque<TaskCompletionSource<T>> _queue = new Deque<TaskCompletionSource<T>>();
+        private readonly Deque<TaskCompletionSource<T>> _queue = new();
 
         private int Count
         {

@@ -40,39 +40,38 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public async Task TestAsyncEvents() {
-            using (var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log))) {
-                var disposables = new List<IDisposable>(5);
-                try {
-                    disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
-                        _logger.LogInformation("First Enqueuing");
-                    }));
-                    disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
-                        _logger.LogInformation("Second Enqueuing");
-                    }));
-                    disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
-                        _logger.LogInformation("First");
-                    }));
-                    disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
-                        await SystemClock.SleepAsync(250);
-                        _logger.LogInformation("Second");
-                    }));
+            using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+            var disposables = new List<IDisposable>(5);
+            try {
+                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
+                    await SystemClock.SleepAsync(250);
+                    _logger.LogInformation("First Enqueuing");
+                }));
+                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
+                    await SystemClock.SleepAsync(250);
+                    _logger.LogInformation("Second Enqueuing");
+                }));
+                disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
+                    await SystemClock.SleepAsync(250);
+                    _logger.LogInformation("First");
+                }));
+                disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
+                    await SystemClock.SleepAsync(250);
+                    _logger.LogInformation("Second");
+                }));
 
-                    var sw = Stopwatch.StartNew();
-                    await q.EnqueueAsync(new SimpleWorkItem());
-                    sw.Stop();
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+                var sw = Stopwatch.StartNew();
+                await q.EnqueueAsync(new SimpleWorkItem());
+                sw.Stop();
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
 
-                    sw.Restart();
-                    await q.EnqueueAsync(new SimpleWorkItem());
-                    sw.Stop();
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
-                } finally {
-                    foreach (var disposable in disposables)
-                        disposable.Dispose();
-                }
+                sw.Restart();
+                await q.EnqueueAsync(new SimpleWorkItem());
+                sw.Stop();
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            } finally {
+                foreach (var disposable in disposables)
+                    disposable.Dispose();
             }
         }
 

@@ -19,7 +19,7 @@ namespace Foundatio.Disposables
         /// </summary>
         private readonly BoundActionField<T> _context;
 
-        private readonly TaskCompletionSource<object> _tcs = new TaskCompletionSource<object>();
+        private readonly TaskCompletionSource<object> _tcs = new();
 
         /// <summary>
         /// Creates a disposable for the specified context.

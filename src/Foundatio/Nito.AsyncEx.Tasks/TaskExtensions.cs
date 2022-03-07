@@ -30,8 +30,8 @@ namespace Foundatio.AsyncEx {
 
         private static async Task DoWaitAsync(Task task, CancellationToken cancellationToken)
         {
-            using (var cancelTaskSource = new CancellationTokenTaskSource<object>(cancellationToken))
-                await await Task.WhenAny(task, cancelTaskSource.Task).ConfigureAwait(false);
+            using var cancelTaskSource = new CancellationTokenTaskSource<object>(cancellationToken);
+            await await Task.WhenAny(task, cancelTaskSource.Task).ConfigureAwait(false);
         }
     }
 }

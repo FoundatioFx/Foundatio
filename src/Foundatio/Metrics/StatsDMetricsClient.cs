@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Metrics {
     [SuppressMessage("ReSharper", "InconsistentlySynchronizedField")]
     public class StatsDMetricsClient : IMetricsClient {
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
         private Socket _socket;
         private readonly IPEndPoint _endPoint;
         private readonly StatsDMetricsClientOptions _options;

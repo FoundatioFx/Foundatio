@@ -9,7 +9,7 @@ namespace Foundatio.Queues {
 
     public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable where T : class {
         protected IQueue<T> _queue;
-        private readonly List<IDisposable> _disposables = new List<IDisposable>();
+        private readonly List<IDisposable> _disposables = new();
 
         public virtual void Attach(IQueue<T> queue) {
             _queue = queue;

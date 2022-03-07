@@ -7,6 +7,7 @@ namespace Foundatio.Messaging {
     public class MessageOptions {
         public string UniqueId { get; set; }
         public string CorrelationId { get; set; }
+        public TimeSpan? DeliveryDelay { get; set; }
         public DataDictionary Properties { get; set; } = new DataDictionary();
     }
 }

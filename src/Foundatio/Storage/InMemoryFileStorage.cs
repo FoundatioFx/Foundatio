@@ -11,8 +11,8 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Storage {
     public class InMemoryFileStorage : IFileStorage {
-        private readonly Dictionary<string, Tuple<FileSpec, byte[]>> _storage = new Dictionary<string, Tuple<FileSpec, byte[]>>(StringComparer.OrdinalIgnoreCase);
-        private readonly object _lock = new object();
+        private readonly Dictionary<string, Tuple<FileSpec, byte[]>> _storage = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _lock = new();
         private readonly ISerializer _serializer;
 
         public InMemoryFileStorage() : this(o => o) {}
@@ -63,10 +63,9 @@ namespace Foundatio.Storage {
         }
 
         private static byte[] ReadBytes(Stream input) {
-            using (var ms = new MemoryStream()) {
-                input.CopyTo(ms);
-                return ms.ToArray();
-            }
+            using var ms = new MemoryStream();
+            input.CopyTo(ms);
+            return ms.ToArray();
         }
 
         public Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default) {

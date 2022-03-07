@@ -13,9 +13,9 @@ namespace Foundatio.Force.DeepCloner.Helpers
 	/// </summary>
 	internal static class DeepClonerSafeTypes
 	{
-		internal static readonly ConcurrentDictionary<Type, bool> KnownTypes = new ConcurrentDictionary<Type, bool>();
+		internal static readonly ConcurrentDictionary<Type, bool> KnownTypes = new();
 
-		internal static readonly ConcurrentDictionary<Type, bool> KnownClasses = new ConcurrentDictionary<Type, bool>();
+		internal static readonly ConcurrentDictionary<Type, bool> KnownClasses = new();
 
 		static DeepClonerSafeTypes()
 		{

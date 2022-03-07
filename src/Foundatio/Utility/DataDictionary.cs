@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Foundatio.Utility {
     public class DataDictionary : Dictionary<string, object> {
-        public static readonly DataDictionary Empty = new DataDictionary();
+        public static readonly DataDictionary Empty = new();
 
         public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) {}
 

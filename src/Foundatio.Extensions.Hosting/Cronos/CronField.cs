@@ -38,13 +38,13 @@ namespace Cronos
         private static readonly int[] DayOfWeekNamesArray = new int[DayOfWeekNames.Length];
 
         // 0 and 7 are both Sunday, for compatibility reasons.
-        public static readonly CronField DaysOfWeek = new CronField("Days of week", 0, 7, DayOfWeekNamesArray, false);
+        public static readonly CronField DaysOfWeek = new("Days of week", 0, 7, DayOfWeekNamesArray, false);
 
-        public static readonly CronField Months = new CronField("Months", 1, 12, MonthNamesArray, false);
-        public static readonly CronField DaysOfMonth = new CronField("Days of month", 1, 31, null, false);
-        public static readonly CronField Hours = new CronField("Hours", 0, 23, null, true);
-        public static readonly CronField Minutes = new CronField("Minutes", 0, 59, null, true);
-        public static readonly CronField Seconds = new CronField("Seconds", 0, 59, null, true);
+        public static readonly CronField Months = new("Months", 1, 12, MonthNamesArray, false);
+        public static readonly CronField DaysOfMonth = new("Days of month", 1, 31, null, false);
+        public static readonly CronField Hours = new("Hours", 0, 23, null, true);
+        public static readonly CronField Minutes = new("Minutes", 0, 59, null, true);
+        public static readonly CronField Seconds = new("Seconds", 0, 59, null, true);
 
         static CronField()
         {

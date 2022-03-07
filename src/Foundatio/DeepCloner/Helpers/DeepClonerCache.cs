@@ -5,15 +5,15 @@ namespace Foundatio.Force.DeepCloner.Helpers
 {
 	internal static class DeepClonerCache
 	{
-		private static readonly ConcurrentDictionary<Type, object> _typeCache = new ConcurrentDictionary<Type, object>();
+		private static readonly ConcurrentDictionary<Type, object> _typeCache = new();
 
-		private static readonly ConcurrentDictionary<Type, object> _typeCacheDeepTo = new ConcurrentDictionary<Type, object>();
+		private static readonly ConcurrentDictionary<Type, object> _typeCacheDeepTo = new();
 
-		private static readonly ConcurrentDictionary<Type, object> _typeCacheShallowTo = new ConcurrentDictionary<Type, object>();
+		private static readonly ConcurrentDictionary<Type, object> _typeCacheShallowTo = new();
 
-		private static readonly ConcurrentDictionary<Type, object> _structAsObjectCache = new ConcurrentDictionary<Type, object>();
+		private static readonly ConcurrentDictionary<Type, object> _structAsObjectCache = new();
 
-		private static readonly ConcurrentDictionary<Tuple<Type, Type>, object> _typeConvertCache = new ConcurrentDictionary<Tuple<Type, Type>, object>();
+		private static readonly ConcurrentDictionary<Tuple<Type, Type>, object> _typeConvertCache = new();
 
 		public static object GetOrAddClass<T>(Type type, Func<Type, T> adder)
 		{

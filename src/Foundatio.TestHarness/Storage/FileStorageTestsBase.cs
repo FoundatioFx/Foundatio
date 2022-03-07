@@ -422,10 +422,9 @@ namespace Foundatio.Tests.Storage {
                     _logger.LogTrace("Saved contents with position {Position}.", memoryStream.Position);
                 }
 
-                using (var stream = await storage.GetFileStreamAsync(path)) {
-                    var actual = XElement.Load(stream);
-                    Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
-                }
+                using var stream = await storage.GetFileStreamAsync(path);
+                var actual = XElement.Load(stream);
+                Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
             }
         }
 

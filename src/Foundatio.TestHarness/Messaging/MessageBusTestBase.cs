@@ -158,7 +158,7 @@ namespace Foundatio.Tests.Messaging {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello",
                         Count = i
-                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)));
+                    }, new MessageOptions { DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)) });
                     if (i % 500 == 0)
                         _logger.LogTrace("Published 500 messages...");
                 });
@@ -218,43 +218,27 @@ namespace Foundatio.Tests.Messaging {
                 });
                 var subscribe = Run.InParallelAsync(iterations,
                     i => {
-#pragma warning disable AsyncFixer02 // Long running or blocking operations under an async method
                         SystemClock.Sleep(RandomData.GetInt(0, 10));
-#pragma warning restore AsyncFixer02 // Long running or blocking operations under an async method
                         return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
                     });
 
                 var publish = Run.InParallelAsync(iterations + 3, i => {
-                    switch (i) {
-                        case 1:
-                            return messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" });
-                        case 2:
-                            return messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" });
-                        case 3:
-                            return messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" });
-                        case 4:
-                            return messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" });
-                        case 5:
-                            return messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" });
-                        case 6:
-                            return messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" });
-                        case 7:
-                            return messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" });
-                        case 8:
-                            return messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" });
-                        case 9:
-                            return messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" });
-                        case 10:
-                            return messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" });
-                        case iterations + 1:
-                            return messageBus.PublishAsync(new { Data = "Hello" });
-                        case iterations + 2:
-                            return messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" });
-                        case iterations + 3:
-                            return messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" });
-                        default:
-                            return messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" });
-                    }
+                    return i switch {
+                        1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }),
+                        2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }),
+                        3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }),
+                        4 => messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" }),
+                        5 => messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" }),
+                        6 => messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" }),
+                        7 => messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" }),
+                        8 => messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" }),
+                        9 => messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" }),
+                        10 => messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" }),
+                        iterations + 1 => messageBus.PublishAsync(new { Data = "Hello" }),
+                        iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }),
+                        iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }),
+                        _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }),
+                    };
                 });
 
                 await Task.WhenAll(subscribe, publish);

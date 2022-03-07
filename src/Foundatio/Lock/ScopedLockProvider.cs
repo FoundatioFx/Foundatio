@@ -8,7 +8,7 @@ namespace Foundatio.Lock {
     public class ScopedLockProvider : ILockProvider, IHaveLogger {
         private string _keyPrefix;
         private bool _isLocked;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
 
         public ScopedLockProvider(ILockProvider lockProvider, string scope = null) {
             UnscopedLockProvider = lockProvider;

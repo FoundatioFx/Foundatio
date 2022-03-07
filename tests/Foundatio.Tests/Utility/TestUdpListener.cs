@@ -9,14 +9,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Utility {
     public class TestUdpListener : IDisposable {
-        private readonly List<string> _messages = new List<string>();
+        private readonly List<string> _messages = new();
         private UdpClient _listener;
         private readonly IPEndPoint _localIpEndPoint;
         private IPEndPoint _senderIpEndPoint;
         private readonly ILogger _logger;
         private Task _receiveTask;
         private CancellationTokenSource _cancellationTokenSource;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
 
         public TestUdpListener(string server, int port, ILoggerFactory loggerFactory) {
             _logger = loggerFactory.CreateLogger<TestUdpListener>();

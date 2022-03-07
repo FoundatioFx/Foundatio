@@ -2,13 +2,12 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging {
     public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {
-        private readonly ConcurrentDictionary<string, long> _messageCounts = new ConcurrentDictionary<string, long>();
+        private readonly ConcurrentDictionary<string, long> _messageCounts = new();
         private long _messagesSent;
 
         public InMemoryMessageBus() : this(o => o) {}
@@ -21,11 +20,11 @@ namespace Foundatio.Messaging {
         public long MessagesSent => _messagesSent;
 
         public long GetMessagesSent(Type messageType) {
-            return _messageCounts.TryGetValue(GetMappedMessageType(messageType), out var count) ? count : 0;
+            return _messageCounts.TryGetValue(GetMappedMessageType(messageType), out long count) ? count : 0;
         }
 
         public long GetMessagesSent<T>() {
-            return _messageCounts.TryGetValue(GetMappedMessageType(typeof(T)), out var count) ? count : 0;
+            return _messageCounts.TryGetValue(GetMappedMessageType(typeof(T)), out long count) ? count : 0;
         }
 
         public void ResetMessagesSent() {
@@ -33,7 +32,7 @@ namespace Foundatio.Messaging {
             _messageCounts.Clear();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, TimeSpan? delay, MessageOptions options, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
             var mappedType = GetMappedMessageType(messageType);
@@ -42,10 +41,10 @@ namespace Foundatio.Messaging {
                 return;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, delay.Value.TotalMilliseconds);
-                SendDelayedMessage(mappedType, message, delay.Value);
+                    _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+                SendDelayedMessage(mappedType, message, options.DeliveryDelay.Value);
                 return;
             }
             
