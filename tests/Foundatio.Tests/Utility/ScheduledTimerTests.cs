@@ -23,10 +23,9 @@ namespace Foundatio.Tests.Utility {
                 return null;
             }
 
-            using (var timer = new ScheduledTimer(Callback, loggerFactory: Log)) {
-                timer.ScheduleNext();
-                await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
-            }
+            using var timer = new ScheduledTimer(Callback, loggerFactory: Log);
+            timer.ScheduleNext();
+            await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
         }
 
         [RetryFact]
@@ -52,25 +51,24 @@ namespace Foundatio.Tests.Utility {
                 return null;
             }
 
-            using (var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log)) {
-                timer.ScheduleNext();
-                var t = Task.Run(async () => {
-                    for (int i = 0; i < iterations; i++) {
-                        await SystemClock.SleepAsync(10);
-                        timer.ScheduleNext();
-                    }
-                });
+            using var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log);
+            timer.ScheduleNext();
+            var t = Task.Run(async () => {
+                for (int i = 0; i < iterations; i++) {
+                    await SystemClock.SleepAsync(10);
+                    timer.ScheduleNext();
+                }
+            });
 
-                _logger.LogInformation("Waiting for 300ms");
-                await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
-                _logger.LogInformation("Finished waiting for 300ms");
-                Assert.Equal(iterations - 1, countdown.CurrentCount);
+            _logger.LogInformation("Waiting for 300ms");
+            await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
+            _logger.LogInformation("Finished waiting for 300ms");
+            Assert.Equal(iterations - 1, countdown.CurrentCount);
 
-                _logger.LogInformation("Waiting for 1.5 seconds");
-                await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
-                _logger.LogInformation("Finished waiting for 1.5 seconds");
-                Assert.Equal(0, countdown.CurrentCount);
-            }
+            _logger.LogInformation("Waiting for 1.5 seconds");
+            await countdown.WaitAsync(TimeSpan.FromSeconds(1.5));
+            _logger.LogInformation("Finished waiting for 1.5 seconds");
+            Assert.Equal(0, countdown.CurrentCount);
         }
 
         [Fact]
@@ -89,11 +87,10 @@ namespace Foundatio.Tests.Utility {
                 return Task.FromResult<DateTime?>(null);
             }
 
-            using (var timer = new ScheduledTimer(Callback, loggerFactory: Log)) {
-                timer.ScheduleNext();
-                await resetEvent.WaitAsync(new CancellationTokenSource(800).Token);
-                Assert.Equal(2, hits);
-            }
+            using var timer = new ScheduledTimer(Callback, loggerFactory: Log);
+            timer.ScheduleNext();
+            await resetEvent.WaitAsync(new CancellationTokenSource(800).Token);
+            Assert.Equal(2, hits);
         }
     }
 }

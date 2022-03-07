@@ -14,7 +14,7 @@ namespace Foundatio.Utility {
         private readonly ILogger _logger;
         private readonly Func<Task<DateTime?>> _timerCallback;
         private readonly TimeSpan _minimumInterval;
-        private readonly AsyncLock _lock = new AsyncLock();
+        private readonly AsyncLock _lock = new();
         private bool _isRunning = false;
         private bool _shouldRunAgainImmediately = false;
 

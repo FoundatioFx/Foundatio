@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Utility {
     public class AsyncEvent<TEventArgs> : IObservable<TEventArgs>, IDisposable where TEventArgs : EventArgs {
-        private readonly List<Func<object, TEventArgs, Task>> _invocationList = new List<Func<object, TEventArgs, Task>>();
-        private readonly object _lockObject = new object();
+        private readonly List<Func<object, TEventArgs, Task>> _invocationList = new();
+        private readonly object _lockObject = new();
         private readonly bool _parallelInvoke;
 
         public AsyncEvent(bool parallelInvoke = false) {

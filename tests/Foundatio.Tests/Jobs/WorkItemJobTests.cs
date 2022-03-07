@@ -23,94 +23,92 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                    var handlerRegistry = new WorkItemHandlers();
-                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-                    handlerRegistry.Register<MyWorkItem>(async ctx => {
-                        var jobData = ctx.GetData<MyWorkItem>();
-                        Assert.Equal("Test", jobData.SomeData);
+            handlerRegistry.Register<MyWorkItem>(async ctx => {
+                var jobData = ctx.GetData<MyWorkItem>();
+                Assert.Equal("Test", jobData.SomeData);
 
-                        for (int i = 0; i < 10; i++) {
-                            await SystemClock.SleepAsync(100);
-                            await ctx.ReportProgressAsync(10 * i);
-                        }
-                    });
-
-                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
-
-
-                    var countdown = new AsyncCountdownEvent(12);
-                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        _logger.LogInformation("Progress: {Progress}", status.Progress);
-                        Assert.Equal(jobId, status.WorkItemId);
-                        countdown.Signal();
-                    });
-
-                    await job.RunAsync();
-                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-                    Assert.Equal(0, countdown.CurrentCount);
+                for (int i = 0; i < 10; i++) {
+                    await SystemClock.SleepAsync(100);
+                    await ctx.ReportProgressAsync(10 * i);
                 }
-            }
+            });
+
+            string jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
+
+
+            var countdown = new AsyncCountdownEvent(12);
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                _logger.LogInformation("Progress: {Progress}", status.Progress);
+                Assert.Equal(jobId, status.WorkItemId);
+                countdown.Signal();
+            });
+
+            await job.RunAsync();
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
         }
 
         [Fact]
         public async Task CanHandleMultipleWorkItemInstances() {
             const int workItemCount = 1000;
 
-            using (var metrics = new InMemoryMetricsClient(o => o.LoggerFactory(Log))) {
-                using (var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log))) {
-                    queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
-                    using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                        var handlerRegistry = new WorkItemHandlers();
-                        var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
-                        var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
-                        var j3 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
-                        int errors = 0;
+            using var metrics = new InMemoryMetricsClient(o => o.LoggerFactory(Log));
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+            queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            var j2 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            var j3 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            int errors = 0;
 
-                        var jobIds = new ConcurrentDictionary<string, int>();
+            var jobIds = new ConcurrentDictionary<string, int>();
 
-                        handlerRegistry.Register<MyWorkItem>(async ctx => {
-                            var jobData = ctx.GetData<MyWorkItem>();
-                            Assert.Equal("Test", jobData.SomeData);
+            handlerRegistry.Register<MyWorkItem>(async ctx => {
+                var jobData = ctx.GetData<MyWorkItem>();
+                Assert.Equal("Test", jobData.SomeData);
 
-                            int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-                            if (jobData.Index % 100 == 0 && _logger.IsEnabled(LogLevel.Trace))
-                                _logger.LogTrace("Job {JobId} processing work item #: {JobWorkTotal}", ctx.JobId, jobWorkTotal);
+                int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
+                if (jobData.Index % 100 == 0 && _logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Job {JobId} processing work item #: {JobWorkTotal}", ctx.JobId, jobWorkTotal);
 
-                            for (int i = 0; i < 10; i++)
-                                await ctx.ReportProgressAsync(10 * i);
+                for (int i = 0; i < 10; i++)
+                    await ctx.ReportProgressAsync(10 * i);
 
-                            if (RandomData.GetBool(1)) {
-                                Interlocked.Increment(ref errors);
-                                throw new Exception("Boom!");
-                            }
-                        });
+                if (RandomData.GetBool(1)) {
+                    Interlocked.Increment(ref errors);
+                    throw new Exception("Boom!");
+                }
+            });
 
-                        for (int i = 0; i < workItemCount; i++)
-                            await queue.EnqueueAsync(new MyWorkItem {
-                                SomeData = "Test",
-                                Index = i
-                            }, true);
+            for (int i = 0; i < workItemCount; i++)
+                await queue.EnqueueAsync(new MyWorkItem {
+                    SomeData = "Test",
+                    Index = i
+                }, true);
 
-                        var completedItems = new List<string>();
-                        object completedItemsLock = new object();
-                        await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                            if (status.Progress == 100 && _logger.IsEnabled(LogLevel.Trace))
-                                _logger.LogTrace("Progress: {Progress}", status.Progress);
+            var completedItems = new List<string>();
+            object completedItemsLock = new();
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                if (status.Progress == 100 && _logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Progress: {Progress}", status.Progress);
 
-                            if (status.Progress < 100)
-                                return;
+                if (status.Progress < 100)
+                    return;
 
-                            lock (completedItemsLock)
-                                completedItems.Add(status.WorkItemId);
-                        });
+                lock (completedItemsLock)
+                    completedItems.Add(status.WorkItemId);
+            });
 
-                        var cancellationTokenSource = new CancellationTokenSource(10000);
-                        var tasks = new List<Task> {
+            var cancellationTokenSource = new CancellationTokenSource(10000);
+            var tasks = new List<Task> {
                             Task.Run(async () => {
                                 await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
                                 cancellationTokenSource.Cancel();
@@ -125,141 +123,130 @@ namespace Foundatio.Tests.Jobs {
                             }, cancellationTokenSource.Token)
                         };
 
-                        try {
-                            await Task.WhenAll(tasks);
-                        } catch (OperationCanceledException ex) {
-                            if (_logger.IsEnabled(LogLevel.Error))
-                                _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
-                        }
-
-                        await SystemClock.SleepAsync(100);
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
-                        Assert.Equal(workItemCount, completedItems.Count + errors);
-                        Assert.Equal(3, jobIds.Count);
-                        Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
-                    }
-                }
+            try {
+                await Task.WhenAll(tasks);
+            } catch (OperationCanceledException ex) {
+                if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
             }
+
+            await SystemClock.SleepAsync(100);
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
+            Assert.Equal(workItemCount, completedItems.Count + errors);
+            Assert.Equal(3, jobIds.Count);
+            Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
         }
 
         [Fact]
         public async Task CanRunWorkItemWithClassHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                    var handlerRegistry = new WorkItemHandlers();
-                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-                    handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
+            handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
 
-                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
+            string jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
 
-                    var countdown = new AsyncCountdownEvent(11);
-                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
-                        Assert.Equal(jobId, status.WorkItemId);
-                        countdown.Signal();
-                    });
+            var countdown = new AsyncCountdownEvent(11);
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+                Assert.Equal(jobId, status.WorkItemId);
+                countdown.Signal();
+            });
 
-                    await job.RunUntilEmptyAsync();
-                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-                    Assert.Equal(0, countdown.CurrentCount);
-                }
-            }
+            await job.RunUntilEmptyAsync();
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
         }
 
         [Fact]
         public async Task CanRunWorkItemWithDelegateHandler() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                    var handlerRegistry = new WorkItemHandlers();
-                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-                    handlerRegistry.Register<MyWorkItem>(async ctx => {
-                        var jobData = ctx.GetData<MyWorkItem>();
-                        Assert.Equal("Test", jobData.SomeData);
+            handlerRegistry.Register<MyWorkItem>(async ctx => {
+                var jobData = ctx.GetData<MyWorkItem>();
+                Assert.Equal("Test", jobData.SomeData);
 
-                        for (int i = 1; i < 10; i++) {
-                            await SystemClock.SleepAsync(100);
-                            await ctx.ReportProgressAsync(10 * i);
-                        }
-                    }, Log.CreateLogger("MyWorkItem"));
-
-                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
-
-                    var countdown = new AsyncCountdownEvent(11);
-                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
-                        Assert.Equal(jobId, status.WorkItemId);
-                        countdown.Signal();
-                    });
-
-                    await job.RunUntilEmptyAsync();
-                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-                    Assert.Equal(0, countdown.CurrentCount);
+                for (int i = 1; i < 10; i++) {
+                    await SystemClock.SleepAsync(100);
+                    await ctx.ReportProgressAsync(10 * i);
                 }
-            }
+            }, Log.CreateLogger("MyWorkItem"));
+
+            string jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
+
+            var countdown = new AsyncCountdownEvent(11);
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+                Assert.Equal(jobId, status.WorkItemId);
+                countdown.Signal();
+            });
+
+            await job.RunUntilEmptyAsync();
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
         }
 
         [Fact]
         public async Task CanRunWorkItemJobUntilEmpty() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                    var handlerRegistry = new WorkItemHandlers();
-                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-                    handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
+            handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
 
-                    await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
+            await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
 
-                    await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
+            await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
 
-                    await job.RunUntilEmptyAsync();
-                    var stats = await queue.GetQueueStatsAsync();
-                    Assert.Equal(2, stats.Enqueued);
-                    Assert.Equal(2, stats.Dequeued);
-                    Assert.Equal(2, stats.Completed);
-                }
-            }
+            await job.RunUntilEmptyAsync();
+            var stats = await queue.GetQueueStatsAsync();
+            Assert.Equal(2, stats.Enqueued);
+            Assert.Equal(2, stats.Dequeued);
+            Assert.Equal(2, stats.Completed);
         }
 
         [Fact]
         public async Task CanRunBadWorkItem() {
-            using (var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.FromMilliseconds(500)).LoggerFactory(Log))) {
-                using (var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log))) {
-                    var handlerRegistry = new WorkItemHandlers();
-                    var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+            using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.FromMilliseconds(500)).LoggerFactory(Log));
+            using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+            var handlerRegistry = new WorkItemHandlers();
+            var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
 
-                    handlerRegistry.Register<MyWorkItem>(ctx => {
-                        var jobData = ctx.GetData<MyWorkItem>();
-                        Assert.Equal("Test", jobData.SomeData);
-                        throw new Exception();
-                    });
+            handlerRegistry.Register<MyWorkItem>(ctx => {
+                var jobData = ctx.GetData<MyWorkItem>();
+                Assert.Equal("Test", jobData.SomeData);
+                throw new Exception();
+            });
 
-                    string jobId = await queue.EnqueueAsync(new MyWorkItem {
-                        SomeData = "Test"
-                    }, true);
+            string jobId = await queue.EnqueueAsync(new MyWorkItem {
+                SomeData = "Test"
+            }, true);
 
-                    var countdown = new AsyncCountdownEvent(1);
-                    await messageBus.SubscribeAsync<WorkItemStatus>(status => {
-                        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
-                        Assert.Equal(jobId, status.WorkItemId);
-                        countdown.Signal();
-                    });
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<WorkItemStatus>(status => {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+                Assert.Equal(jobId, status.WorkItemId);
+                countdown.Signal();
+            });
 
-                    await job.RunUntilEmptyAsync();
-                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-                    Assert.Equal(0, countdown.CurrentCount);
-                }
-            }
+            await job.RunUntilEmptyAsync();
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
         }
     }
 

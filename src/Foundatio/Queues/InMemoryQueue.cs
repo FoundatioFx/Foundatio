@@ -12,10 +12,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues {
     public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : class {
-        private readonly ConcurrentQueue<QueueEntry<T>> _queue = new ConcurrentQueue<QueueEntry<T>>();
-        private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new ConcurrentDictionary<string, QueueEntry<T>>();
-        private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new ConcurrentQueue<QueueEntry<T>>();
-        private readonly AsyncAutoResetEvent _autoResetEvent = new AsyncAutoResetEvent();
+        private readonly ConcurrentQueue<QueueEntry<T>> _queue = new();
+        private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new();
+        private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new();
+        private readonly AsyncAutoResetEvent _autoResetEvent = new();
 
         private int _enqueuedCount;
         private int _dequeuedCount;
@@ -91,7 +91,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        private readonly List<Task> _workers = new List<Task>();
+        private readonly List<Task> _workers = new();
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
@@ -153,10 +153,9 @@ namespace Foundatio.Queues {
                 var sw = Stopwatch.StartNew();
 
                 try {
-                    using (var timeoutCancellationTokenSource = new CancellationTokenSource(10000))
-                    using (var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token)) {
-                        await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
-                    }
+                    using var timeoutCancellationTokenSource = new CancellationTokenSource(10000);
+                    using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token);
+                    await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
                 } catch (OperationCanceledException) { }
 
                 sw.Stop();

@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
@@ -83,25 +81,35 @@ namespace Foundatio.Storage {
         }
 
         public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
-            return UnscopedStorage.DeleteFilesAsync(String.Concat(_pathPrefix, searchPattern), cancellation);
+            searchPattern = !String.IsNullOrEmpty(searchPattern) ? String.Concat(_pathPrefix, searchPattern) : String.Concat(_pathPrefix, "*");
+            return UnscopedStorage.DeleteFilesAsync(searchPattern, cancellation);
         }
 
         public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
             if (pageSize <= 0)
                 return PagedFileListResult.Empty;
 
-            var unscopedResult = await UnscopedStorage.GetPagedFileListAsync(pageSize, String.Concat(_pathPrefix, searchPattern), cancellationToken).AnyContext();
+            searchPattern = !String.IsNullOrEmpty(searchPattern) ? String.Concat(_pathPrefix, searchPattern) : String.Concat(_pathPrefix, "*");
+            var unscopedResult = await UnscopedStorage.GetPagedFileListAsync(pageSize, searchPattern, cancellationToken).AnyContext();
+            
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, unscopedResult.HasMore ? s => NextPage(unscopedResult) : (Func<PagedFileListResult, Task<NextPageResult>>)null);
+            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, unscopedResult.HasMore ? s => NextPage(unscopedResult) : null);
         }
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {
             var success = await result.NextPageAsync().AnyContext();
+            
             foreach (var file in result.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
-            return new NextPageResult { Success = success, HasMore = result.HasMore, Files = result.Files, NextPageFunc = s => NextPage(result) };
+
+            return new NextPageResult {
+                Success = success,
+                HasMore = result.HasMore,
+                Files = result.Files,
+                NextPageFunc = s => NextPage(result)
+            };
         }
 
         public void Dispose() { }

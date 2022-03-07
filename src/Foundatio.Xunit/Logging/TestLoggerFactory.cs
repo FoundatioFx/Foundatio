@@ -7,8 +7,8 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Xunit {
     public class TestLoggerFactory : ILoggerFactory {
-        private readonly Dictionary<string, LogLevel> _logLevels = new Dictionary<string, LogLevel>();
-        private readonly Queue<LogEntry> _logEntries = new Queue<LogEntry>();
+        private readonly Dictionary<string, LogLevel> _logLevels = new();
+        private readonly Queue<LogEntry> _logEntries = new();
         private readonly Action<LogEntry> _writeLogEntryFunc;
 
         public TestLoggerFactory() {

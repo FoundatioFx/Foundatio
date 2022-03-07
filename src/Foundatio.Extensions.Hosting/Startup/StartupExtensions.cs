@@ -23,61 +23,62 @@ namespace Foundatio.Extensions.Hosting.Startup {
     
     public static partial class StartupExtensions {
         public static async Task<RunStartupActionsResult> RunStartupActionsAsync(this IServiceProvider serviceProvider, CancellationToken shutdownToken = default) {
-            using (var startupActionsScope = serviceProvider.CreateScope()) {
-                var sw = Stopwatch.StartNew();
-                var logger = startupActionsScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
-                var startupActions = startupActionsScope.ServiceProvider.GetServices<StartupActionRegistration>().ToArray();
-                logger.LogInformation("Found {StartupActionCount} registered startup action(s).", startupActions.Length);
+            using var startupActionsScope = serviceProvider.CreateScope();
+            var sw = Stopwatch.StartNew();
+            var logger = startupActionsScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
+            var startupActions = startupActionsScope.ServiceProvider.GetServices<StartupActionRegistration>().ToArray();
+            logger.LogInformation("Found {StartupActionCount} registered startup action(s).", startupActions.Length);
 
-                var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
-                foreach (var startupActionGroup in startupActionPriorityGroups) {
-                    int startupActionsCount = startupActionGroup.Count();
-                    string[] startupActionsNames = startupActionGroup.Select(a => a.Name).ToArray();
-                    var swGroup = Stopwatch.StartNew();
-                    string failedActionName = null;
-                    string errorMessage = null;
-                    try {
-                        if (startupActionsCount == 1)
-                            logger.LogInformation("Running {StartupActions} (priority {Priority}) startup action...",
-                                startupActionsNames, startupActionGroup.Key);
-                        else
-                            logger.LogInformation(
-                                "Running {StartupActions} (priority {Priority}) startup actions in parallel...",
-                                startupActionsNames, startupActionGroup.Key);
+            var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
+            foreach (var startupActionGroup in startupActionPriorityGroups) {
+                int startupActionsCount = startupActionGroup.Count();
+                string[] startupActionsNames = startupActionGroup.Select(a => a.Name).ToArray();
+                var swGroup = Stopwatch.StartNew();
+                string failedActionName = null;
+                string errorMessage = null;
+                try {
+                    if (startupActionsCount == 1)
+                        logger.LogInformation("Running {StartupActions} (priority {Priority}) startup action...",
+                            startupActionsNames, startupActionGroup.Key);
+                    else
+                        logger.LogInformation(
+                            "Running {StartupActions} (priority {Priority}) startup actions in parallel...",
+                            startupActionsNames, startupActionGroup.Key);
 
-                        await Task.WhenAll(startupActionGroup.Select(async a => {
-                            try {
-                                // ReSharper disable once AccessToDisposedClosure
-                                await a.RunAsync(startupActionsScope.ServiceProvider, shutdownToken).AnyContext();
-                            } catch (Exception ex) {
-                                failedActionName = a.Name;
-                                errorMessage = ex.Message;
-                                logger.LogError(ex, "Error running {StartupAction} startup action: {Message}", a.Name,
-                                    ex.Message);
-                                throw;
-                            }
-                        })).AnyContext();
-                        swGroup.Stop();
+                    await Task.WhenAll(startupActionGroup.Select(async a => {
+                        try {
+                            // ReSharper disable once AccessToDisposedClosure
+                            await a.RunAsync(startupActionsScope.ServiceProvider, shutdownToken).AnyContext();
+                        } catch (Exception ex) {
+                            failedActionName = a.Name;
+                            errorMessage = ex.Message;
+                            logger.LogError(ex, "Error running {StartupAction} startup action: {Message}", a.Name,
+                                ex.Message);
+                            throw;
+                        }
+                    })).AnyContext();
+                    swGroup.Stop();
 
-                        if (startupActionsCount == 1)
-                            logger.LogInformation("Completed {StartupActions} startup action in {Duration:mm\\:ss}.",
-                                startupActionsNames, swGroup.Elapsed);
-                        else
-                            logger.LogInformation("Completed {StartupActions} startup actions in {Duration:mm\\:ss}.",
-                                startupActionsNames, swGroup.Elapsed);
-                    } catch {
-                        return new RunStartupActionsResult {
-                            Success = false, FailedActionName = failedActionName, ErrorMessage = errorMessage
-                        };
-                    }
+                    if (startupActionsCount == 1)
+                        logger.LogInformation("Completed {StartupActions} startup action in {Duration:mm\\:ss}.",
+                            startupActionsNames, swGroup.Elapsed);
+                    else
+                        logger.LogInformation("Completed {StartupActions} startup actions in {Duration:mm\\:ss}.",
+                            startupActionsNames, swGroup.Elapsed);
+                } catch {
+                    return new RunStartupActionsResult {
+                        Success = false,
+                        FailedActionName = failedActionName,
+                        ErrorMessage = errorMessage
+                    };
                 }
-
-                sw.Stop();
-                logger.LogInformation("Completed all {StartupActionCount} startup action(s) in {Duration:mm\\:ss}.",
-                    startupActions.Length, sw.Elapsed);
-
-                return new RunStartupActionsResult {Success = true};
             }
+
+            sw.Stop();
+            logger.LogInformation("Completed all {StartupActionCount} startup action(s) in {Duration:mm\\:ss}.",
+                startupActions.Length, sw.Elapsed);
+
+            return new RunStartupActionsResult { Success = true };
         }
 
         public static void AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction {

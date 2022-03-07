@@ -8,11 +8,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock {
     internal class DisposableLockCollection : ILock {
-        private readonly List<ILock> _locks = new List<ILock>();
+        private readonly List<ILock> _locks = new();
         private readonly ILogger _logger;
         private bool _isReleased;
         private int _renewalCount;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
         private readonly Stopwatch _duration;
        
         public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, TimeSpan timeWaitedForLock, ILogger logger) {

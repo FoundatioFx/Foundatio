@@ -17,9 +17,9 @@ namespace Foundatio.Serializer {
         }
 
         public object Deserialize(Stream inputStream, Type objectType) {
-            using (var sr = new StreamReader(inputStream))
-            using (var reader = new JsonTextReader(sr))
-                return _serializer.Deserialize(reader, objectType);
+            using var sr = new StreamReader(inputStream);
+            using var reader = new JsonTextReader(sr);
+            return _serializer.Deserialize(reader, objectType);
         }
     }
 }

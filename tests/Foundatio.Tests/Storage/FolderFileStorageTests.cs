@@ -25,6 +25,11 @@ namespace Foundatio.Tests.Storage {
         public override Task CanGetPagedFileListForSingleFolderAsync() {
             return base.CanGetPagedFileListForSingleFolderAsync();
         }
+        
+        [Fact]
+        public override Task CanGetFileListForSingleFileAsync() {
+            return base.CanGetFileListForSingleFileAsync();
+        }
 
         [Fact]
         public override Task CanGetFileInfoAsync() {

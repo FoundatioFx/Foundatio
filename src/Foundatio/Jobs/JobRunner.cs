@@ -169,7 +169,7 @@ namespace Foundatio.Jobs {
         }
 
         private static CancellationTokenSource _jobShutdownCancellationTokenSource;
-        private static readonly object _lock = new object();
+        private static readonly object _lock = new();
         public static CancellationToken GetShutdownCancellationToken(ILogger logger = null) {
             if (_jobShutdownCancellationTokenSource != null)
                 return _jobShutdownCancellationTokenSource.Token;

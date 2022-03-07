@@ -48,7 +48,7 @@ namespace Foundatio.Utility {
             return type;
         }
 
-        private static readonly Dictionary<Type, string> _builtInTypeNames = new Dictionary<Type, string> {
+        private static readonly Dictionary<Type, string> _builtInTypeNames = new() {
             { StringType, "string" },
             { BoolType, "bool" },
             { ByteType, "byte" },

@@ -8,16 +8,16 @@ namespace Foundatio.Jobs {
         public string Message { get; set; }
         public bool IsSuccess { get; set; }
 
-        public static readonly JobResult None = new JobResult {
+        public static readonly JobResult None = new() {
             IsSuccess = true,
             Message = String.Empty
         };
 
-        public static readonly JobResult Cancelled = new JobResult {
+        public static readonly JobResult Cancelled = new() {
             IsCancelled = true
         };
 
-        public static readonly JobResult Success = new JobResult {
+        public static readonly JobResult Success = new() {
             IsSuccess = true
         };
 

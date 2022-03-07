@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Caching {
     public class NullCacheClient : ICacheClient {
-        public static readonly NullCacheClient Instance = new NullCacheClient();
+        public static readonly NullCacheClient Instance = new();
 
         private long _writes;
         private long _reads;

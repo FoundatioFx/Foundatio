@@ -76,7 +76,7 @@ namespace Foundatio.Xunit {
             return Push(scopeFactory(state));
         }
         
-        private static readonly AsyncLocal<Wrapper> _currentScopeStack = new AsyncLocal<Wrapper>();
+        private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();
 
         private sealed class Wrapper {
             public ImmutableStack<object> Value { get; set; }

@@ -9,7 +9,7 @@ namespace Foundatio.Xunit {
     /// </summary>
     public class DelayedMessageBus : IMessageBus {
         private readonly IMessageBus innerBus;
-        private readonly List<IMessageSinkMessage> messages = new List<IMessageSinkMessage>();
+        private readonly List<IMessageSinkMessage> messages = new();
 
         public DelayedMessageBus(IMessageBus innerBus) {
             this.innerBus = innerBus;

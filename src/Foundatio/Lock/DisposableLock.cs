@@ -10,7 +10,7 @@ namespace Foundatio.Lock {
         private readonly ILogger _logger;
         private bool _isReleased;
         private int _renewalCount;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
         private readonly Stopwatch _duration;
         private readonly bool _shouldReleaseOnDispose;
 

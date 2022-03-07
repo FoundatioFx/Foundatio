@@ -14,7 +14,7 @@ namespace Foundatio.Utility {
     }
 
     public class RealSystemClock : ISystemClock {
-        public static readonly RealSystemClock Instance = new RealSystemClock();
+        public static readonly RealSystemClock Instance = new();
 
         public DateTime Now() => DateTime.Now;
         public DateTime UtcNow() => DateTime.UtcNow;
@@ -39,9 +39,9 @@ namespace Foundatio.Utility {
         }
 
         public DateTime UtcNow() => (_fixedUtc ?? DateTime.UtcNow).Add(_offset);
-        public DateTime Now() => new DateTime(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
-        public DateTimeOffset OffsetNow() => new DateTimeOffset(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
-        public DateTimeOffset OffsetUtcNow() => new DateTimeOffset(UtcNow().Ticks, TimeSpan.Zero);
+        public DateTime Now() => new(UtcNow().Ticks + TimeZoneOffset().Ticks, DateTimeKind.Local);
+        public DateTimeOffset OffsetNow() => new(UtcNow().Ticks + TimeZoneOffset().Ticks, TimeZoneOffset());
+        public DateTimeOffset OffsetUtcNow() => new(UtcNow().Ticks, TimeSpan.Zero);
         public TimeSpan TimeZoneOffset() => _timeZoneOffset;
 
         public void SetTimeZoneOffset(TimeSpan offset) => _timeZoneOffset = offset;

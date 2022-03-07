@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
         private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
-        protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new ConcurrentDictionary<string, Subscriber>();
+        protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
         protected readonly TOptions _options;
         protected readonly ILogger _logger;
         protected readonly ISerializer _serializer;
@@ -30,16 +31,16 @@ namespace Foundatio.Messaging {
         }
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(string messageType, object message, TimeSpan? delay, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, TimeSpan? delay = null, CancellationToken cancellationToken = default) {
+        protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
+        public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, delay, cancellationToken).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
         }
  
-        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
         protected string GetMappedMessageType(Type messageType) {
             return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
                 var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
@@ -50,7 +51,7 @@ namespace Foundatio.Messaging {
             });
         }
 
-        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new ConcurrentDictionary<string, Type>();
+        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
         protected virtual Type GetMappedMessageType(string messageType) {
             if (String.IsNullOrEmpty(messageType))
                 return null;
@@ -85,7 +86,7 @@ namespace Foundatio.Messaging {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
                 Action = (message, token) => {
-                    if (!(message is T)) {
+                    if (message is not T) {
                         if (_logger.IsEnabled(LogLevel.Trace))
                             _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                         return Task.CompletedTask;
@@ -134,8 +135,8 @@ namespace Foundatio.Messaging {
         protected virtual object DeserializeMessageBody(string messageType, byte[] data) {
             if (data == null || data.Length == 0)
                 return null;
-            
-            object body = null;
+
+            object body;
             try {
                 var clrType = GetMappedMessageType(messageType);
                 if (clrType != null)
@@ -273,7 +274,7 @@ namespace Foundatio.Messaging {
 
         [DebuggerDisplay("Id: {Id} Type: {Type} CancellationToken: {CancellationToken}")]
         protected class Subscriber {
-            private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new ConcurrentDictionary<Type, bool>();
+            private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new();
 
             public string Id { get; private set; } = Guid.NewGuid().ToString("N");
             public CancellationToken CancellationToken { get; set; }

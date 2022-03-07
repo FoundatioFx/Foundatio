@@ -81,7 +81,7 @@ namespace Foundatio.Tests.Serializer {
     [ShortRunJob]
     public abstract class SerializerBenchmarkBase {
         private ISerializer _serializer;
-        private readonly SerializeModel _data = new SerializeModel {
+        private readonly SerializeModel _data = new() {
             IntProperty = 1,
             StringProperty = "test",
             ListProperty = new List<int> { 1 },

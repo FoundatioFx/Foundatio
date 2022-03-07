@@ -12,11 +12,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Metrics {
     public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
-        protected readonly List<TimeBucket> _timeBuckets = new List<TimeBucket> {
+        protected readonly List<TimeBucket> _timeBuckets = new() {
             new TimeBucket { Size = TimeSpan.FromMinutes(1) }
         };
 
-        private readonly ConcurrentQueue<MetricEntry> _queue = new ConcurrentQueue<MetricEntry>();
+        private readonly ConcurrentQueue<MetricEntry> _queue = new();
         private readonly Timer _flushTimer;
         private readonly SharedMetricsClientOptions _options;
         protected readonly ILogger _logger;
@@ -189,9 +189,8 @@ namespace Foundatio.Metrics {
         protected abstract Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
 
         public async Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
-            using (var cancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(10))) {
-                return await WaitForCounterAsync(statName, () => Task.CompletedTask, count, cancellationTokenSource.Token).AnyContext();
-            }
+            using var cancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await WaitForCounterAsync(statName, () => Task.CompletedTask, count, cancellationTokenSource.Token).AnyContext();
         }
 
         public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default) {

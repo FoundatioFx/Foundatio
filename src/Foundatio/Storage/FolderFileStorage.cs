@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class FolderFileStorage : IFileStorage {
-        private readonly object _lockObject = new object();
+        private readonly object _lockObject = new();
         private readonly ISerializer _serializer;
         protected readonly ILogger _logger;
 
@@ -93,10 +93,9 @@ namespace Foundatio.Storage {
             string file = Path.Combine(Folder, path);
 
             try {
-                using (var fileStream = CreateFileStream(file)) {
-                    await stream.CopyToAsync(fileStream).AnyContext();
-                    return true;
-                }
+                using var fileStream = CreateFileStream(file);
+                await stream.CopyToAsync(fileStream).AnyContext();
+                return true;
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error trying to save file: {Path}", path);
                 return false;
