@@ -123,7 +123,7 @@ namespace Foundatio.Queues {
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                             try {
-                                await queueEntry.AbandonAsync().AnyContext();
+                                await Run.WithRetriesAsync(() => queueEntry.AbandonAsync()).AnyContext();
                             } catch (Exception abandonEx) {
                                 _logger.LogError(abandonEx, "Worker error abandoning queue entry: {Message}", abandonEx.Message);
                             }
@@ -217,8 +217,18 @@ namespace Foundatio.Queues {
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
-            if (!_dequeued.TryRemove(entry.Id, out var targetEntry) || targetEntry == null)
+            if (!_dequeued.TryRemove(entry.Id, out var targetEntry) || targetEntry == null) {
+                foreach (var kvp in _queue) {
+                    if (kvp.Id == entry.Id)
+                        throw new Exception("Unable to remove item from the dequeued list (item is in queue)");
+                }
+                foreach (var kvp in _deadletterQueue) {
+                    if (kvp.Id == entry.Id)
+                        throw new Exception("Unable to remove item from the dequeued list (item is in dead letter)");
+                }
+
                 throw new Exception("Unable to remove item from the dequeued list");
+            }
 
             entry.MarkAbandoned();
             Interlocked.Increment(ref _abandonedCount);
