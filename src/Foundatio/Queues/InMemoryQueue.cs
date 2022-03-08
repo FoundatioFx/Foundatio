@@ -262,8 +262,7 @@ namespace Foundatio.Queues {
         }
 
         public override Task DeleteQueueAsync() {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Deleting queue: {Name}", _options.Name);
+            _logger.LogTrace("Deleting queue: {Name}", _options.Name);
 
             _queue.Clear();
             _deadletterQueue.Clear();
@@ -285,7 +284,7 @@ namespace Foundatio.Queues {
                 foreach (var entry in _dequeued.Values.ToList()) {
                     var abandonAt = entry.RenewedTimeUtc.Add(_options.WorkItemTimeout);
                     if (abandonAt < utcNow) {
-                        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("DoMaintenance Abandon: {Id}", entry.Id);
+                        _logger.LogInformation("DoMaintenance Abandon: {Id}", entry.Id);
 
                         await AbandonAsync(entry).AnyContext();
                         Interlocked.Increment(ref _workerItemTimeoutCount);

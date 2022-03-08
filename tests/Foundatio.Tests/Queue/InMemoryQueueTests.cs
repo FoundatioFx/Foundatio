@@ -214,6 +214,7 @@ namespace Foundatio.Tests.Queue {
 
         [Fact]
         public override Task CanHandleAutoAbandonInWorker() {
+            Log.MinimumLevel = LogLevel.Trace;
             return base.CanHandleAutoAbandonInWorker();
         }
 

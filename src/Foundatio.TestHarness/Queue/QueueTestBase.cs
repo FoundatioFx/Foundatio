@@ -1301,7 +1301,7 @@ namespace Foundatio.Tests.Queue {
                                 break;
 
                             stats = await queue.GetQueueStatsAsync();
-                        } while (sw.Elapsed < TimeSpan.FromSeconds(5));
+                        } while (sw.Elapsed < TimeSpan.FromSeconds(10));
 
                         Assert.Equal(1, stats.Abandoned);
                     }
@@ -1319,8 +1319,8 @@ namespace Foundatio.Tests.Queue {
                 await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
                 await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
                 
-                await errorEvent.WaitAsync(TimeSpan.FromSeconds(5));
-                await successEvent.WaitAsync(TimeSpan.FromSeconds(5));
+                await errorEvent.WaitAsync(TimeSpan.FromSeconds(10));
+                await successEvent.WaitAsync(TimeSpan.FromSeconds(10));
             } finally {
                 await CleanupQueueAsync(queue);
             }
