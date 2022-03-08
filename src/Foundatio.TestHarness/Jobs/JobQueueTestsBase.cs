@@ -118,7 +118,7 @@ namespace Foundatio.Tests.Jobs {
             const int jobCount = 5;
             const int workItemCount = 100;
 
-            Log.SetLogLevel<SampleQueueJob>(LogLevel.Information);
+            Log.SetLogLevel<SampleQueueWithRandomErrorsAndAbandonsJob>(LogLevel.Information);
             Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.None);
 
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log, Buffered = true });
@@ -144,7 +144,7 @@ namespace Foundatio.Tests.Jobs {
                 var cancellationTokenSource = new CancellationTokenSource();
                 await Run.InParallelAsync(jobCount, async index => {
                     var queue = queues[index - 1];
-                    var job = new SampleQueueJob(queue, metrics, Log);
+                    var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, metrics, Log);
                     await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                     cancellationTokenSource.Cancel();
                 });

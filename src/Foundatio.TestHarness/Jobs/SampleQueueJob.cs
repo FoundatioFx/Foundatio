@@ -9,10 +9,10 @@ using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs {
-    public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem> {
+    public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueueWorkItem> {
         private readonly IMetricsClient _metrics;
 
-        public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
+        public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
             _metrics = metrics ?? NullMetricsClient.Instance;
         }
 
@@ -29,6 +29,20 @@ namespace Foundatio.Tests.Jobs {
                 return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
             }
             
+            _metrics.Counter("completed");
+            return Task.FromResult(JobResult.Success);
+        }
+    }
+    
+    public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem> {
+        private readonly IMetricsClient _metrics;
+
+        public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) {
+            _metrics = metrics ?? NullMetricsClient.Instance;
+        }
+
+        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context) {
+            _metrics.Counter("dequeued");
             _metrics.Counter("completed");
             return Task.FromResult(JobResult.Success);
         }

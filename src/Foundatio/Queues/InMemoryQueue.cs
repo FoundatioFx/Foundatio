@@ -123,7 +123,7 @@ namespace Foundatio.Queues {
 
                         if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                             try {
-                                await Run.WithRetriesAsync(() => queueEntry.AbandonAsync()).AnyContext();
+                                await Run.WithRetriesAsync(() => queueEntry.AbandonAsync(), 3, TimeSpan.Zero, cancellationToken).AnyContext();
                             } catch (Exception abandonEx) {
                                 _logger.LogError(abandonEx, "Worker error abandoning queue entry: {Message}", abandonEx.Message);
                             }
