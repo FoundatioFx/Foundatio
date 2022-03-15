@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Metrics {
+    [Obsolete("IMetricsClient will be removed, use System.Diagnostics.Metrics.Meter instead.")]
     public interface IMetricsClient : IDisposable {
         void Counter(string name, int value = 1);
         void Gauge(string name, double value);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Utility;
@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Queues {
+    [Obsolete("MetricsQueueBehavior is no longer needed. Metrics are built into queues.")]
     public class MetricsQueueBehavior<T> : QueueBehaviorBase<T> where T : class {
         private readonly string _metricsPrefix;
         private readonly IMetricsClient _metricsClient;

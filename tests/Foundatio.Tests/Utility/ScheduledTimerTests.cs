@@ -16,7 +16,7 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanRun() {
+        public Task CanRun() {
             var resetEvent = new AsyncAutoResetEvent();
             Task<DateTime?> Callback() {
                 resetEvent.Set();
@@ -25,7 +25,7 @@ namespace Foundatio.Tests.Utility {
 
             using var timer = new ScheduledTimer(Callback, loggerFactory: Log);
             timer.ScheduleNext();
-            await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+            return resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
         }
 
         [RetryFact]

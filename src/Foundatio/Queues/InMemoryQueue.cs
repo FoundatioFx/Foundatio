@@ -51,6 +51,18 @@ namespace Foundatio.Queues {
             });
         }
 
+        protected override long GetQueueCount() {
+            return _queue.Count;
+        }
+
+        protected override long GetWorkingCount() {
+            return _dequeued.Count;
+        }
+
+        protected override long GetDeadletterCount() {
+            return _deadletterQueue.Count;
+        }
+
         public IReadOnlyCollection<QueueEntry<T>> GetEntries() {
             return new ReadOnlyCollection<QueueEntry<T>>(_queue.ToList());
         }

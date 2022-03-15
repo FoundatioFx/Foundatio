@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using Foundatio.Tests.Metrics;
 #pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue {
@@ -54,12 +55,15 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
+
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
-                    Data = "Hello"
+                    Data = "Hello",
+                    SubMetricName = "myitem"
                 });
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
 
@@ -77,6 +81,19 @@ namespace Foundatio.Tests.Queue {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(1, stats.Completed);
                     Assert.Equal(0, stats.Queued);
+
+                    metricsCollector.RecordObservableInstruments();
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.completed"));
+
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.count"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.working"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.deadletter"));
+
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.myitem.enqueued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.myitem.dequeued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.myitem.completed"));
                 }
             } finally {
                 await CleanupQueueAsync(queue);
@@ -87,6 +104,8 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue();
             if (queue == null)
                 return;
+
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
 
             try {
                 await queue.DeleteQueueAsync();
@@ -114,6 +133,15 @@ namespace Foundatio.Tests.Queue {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(1, stats.Completed);
                     Assert.Equal(0, stats.Queued);
+
+                    metricsCollector.RecordObservableInstruments();
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.completed"));
+
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.count"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.working"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.deadletter"));
                 }
             } finally {
                 await CleanupQueueAsync(queue);
@@ -124,6 +152,8 @@ namespace Foundatio.Tests.Queue {
             var queue = GetQueue(retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
+
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
 
             try {
                 using var listener = new ActivityListener {
@@ -156,8 +186,10 @@ namespace Foundatio.Tests.Queue {
                 Assert.Equal("123+456", workItem.CorrelationId);
                 Assert.Single(workItem.Properties);
                 Assert.Contains(workItem.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
-                if (_assertStats)
+                if (_assertStats) {
                     Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                }
 
                 await workItem.AbandonAsync();
                 Assert.True(workItem.IsAbandoned);
@@ -169,6 +201,11 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(1, stats.Abandoned);
                     Assert.Equal(0, stats.Completed);
                     Assert.Equal(1, stats.Queued);
+
+                    metricsCollector.RecordObservableInstruments();
+                    Assert.Equal(0, metricsCollector.GetIntSum("simpleworkitem.completed"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.abandoned"));
+                    Assert.Equal(1, metricsCollector.GetLongSum("simpleworkitem.count"));
                 }
 
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
@@ -188,6 +225,8 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
+
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
@@ -197,25 +236,36 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello",
                     UniqueIdentifier = "123"
                 });
-                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                if (_assertStats) {
+                    Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                }
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello",
                     UniqueIdentifier = "123"
                 });
-                Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                
+                if (_assertStats) {
+                    Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                }
+
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                if (_assertStats)
+                if (_assertStats) {
                     Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                }
 
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello",
                     UniqueIdentifier = "123"
                 });
-                Assert.Equal(2, (await queue.GetQueueStatsAsync()).Enqueued);
+                if (_assertStats) {
+                    Assert.Equal(2, (await queue.GetQueueStatsAsync()).Enqueued);
+                    Assert.Equal(2, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                }
 
                 await workItem.CompleteAsync();
                 Assert.False(workItem.IsAbandoned);
@@ -224,6 +274,16 @@ namespace Foundatio.Tests.Queue {
                 if (_assertStats) {
                     Assert.Equal(1, stats.Completed);
                     Assert.Equal(1, stats.Queued);
+
+                    metricsCollector.RecordObservableInstruments();
+                    Assert.Equal(2, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.completed"));
+                    Assert.Equal(0, metricsCollector.GetIntSum("simpleworkitem.abandoned"));
+
+                    Assert.Equal(1, metricsCollector.GetLongSum("simpleworkitem.count"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.working"));
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.deadletter"));
                 }
 
             } finally {
@@ -253,6 +313,8 @@ namespace Foundatio.Tests.Queue {
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
+
+                using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
 
                 var countdown = new AsyncCountdownEvent(retryCount + 1);
                 int attempts = 0;
@@ -285,6 +347,13 @@ namespace Foundatio.Tests.Queue {
                     Assert.Equal(0, stats.Errors);
                     Assert.Equal(retryCount + 1, stats.Dequeued);
                     Assert.Equal(retryCount + 1, stats.Abandoned);
+
+                    metricsCollector.RecordObservableInstruments();
+                    Assert.Equal(retryCount + 1, metricsCollector.GetIntSum("simpleworkitem.dequeued"));
+                    Assert.Equal(0, metricsCollector.GetIntSum("simpleworkitem.completed"));
+                    Assert.Equal(retryCount + 1, metricsCollector.GetIntSum("simpleworkitem.abandoned"));
+
+                    Assert.Equal(0, metricsCollector.GetLongSum("simpleworkitem.count"));
                 }
             } finally {
                 await CleanupQueueAsync(queue);
@@ -300,6 +369,8 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
+
             try {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
@@ -307,8 +378,10 @@ namespace Foundatio.Tests.Queue {
                 await queue.EnqueueAsync(new SimpleWorkItem {
                     Data = "Hello"
                 });
-                if (_assertStats)
+                if (_assertStats) {
                     Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.enqueued"));
+                }
 
                 var workItem = await queue.DequeueAsync(new CancellationToken(true));
                 Assert.NotNull(workItem);
@@ -322,6 +395,7 @@ namespace Foundatio.Tests.Queue {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(1, stats.Completed);
                     Assert.Equal(0, stats.Queued);
+                    Assert.Equal(1, metricsCollector.GetIntSum("simpleworkitem.completed"));
                 }
             } finally {
                 await CleanupQueueAsync(queue);
@@ -340,6 +414,8 @@ namespace Foundatio.Tests.Queue {
                 await AssertEmptyQueueAsync(queue);
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Initialize queue to create more accurate metrics" });
                 Assert.NotNull(await queue.DequeueAsync(TimeSpan.FromSeconds(1)));
+
+                using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name);
 
                 using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
@@ -365,8 +441,8 @@ namespace Foundatio.Tests.Queue {
                 var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("AverageDuration: {AverageDuration}", timing.AverageDuration);
                 Assert.InRange(timing.AverageDuration, 0, 75);
-            }
-            finally {
+                Assert.InRange(metricsCollector.GetIntAvg("simpleworkitem.queuetime"), 0, 75);
+            } finally {
                 await CleanupQueueAsync(queue);
             }
         }
