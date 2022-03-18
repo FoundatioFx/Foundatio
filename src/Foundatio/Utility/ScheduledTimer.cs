@@ -72,7 +72,10 @@ namespace Foundatio.Utility {
                     _last = _next;
 
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Scheduling next: delay={Delay}", delay);
-                _timer.Change(delay, Timeout.Infinite);
+                if (delay > 0)
+                    _timer.Change(delay, Timeout.Infinite);
+                else
+                    _ = Task.Run(RunCallbackAsync);
             }
         }
 

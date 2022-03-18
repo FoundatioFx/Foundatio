@@ -711,7 +711,7 @@ namespace Foundatio.Caching {
 
             if (TimeSpan.FromMilliseconds(100) < now - _lastMaintenance) {
                 _lastMaintenance = now;
-                var _ = Task.Factory.StartNew(s => DoMaintenanceAsync(), this, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+                _ = Task.Run(DoMaintenanceAsync);
             }
         }
 

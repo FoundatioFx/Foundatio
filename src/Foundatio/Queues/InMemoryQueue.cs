@@ -255,7 +255,7 @@ namespace Foundatio.Queues {
                         var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _queueDisposedCancellationTokenSource.Token);
                     } else {
                         _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
-                        var unawaited = Task.Run(() => RetryAsync(targetEntry));
+                        _ = Task.Run(() => RetryAsync(targetEntry));
                     }
                 } else {
                     _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", entry.Id);

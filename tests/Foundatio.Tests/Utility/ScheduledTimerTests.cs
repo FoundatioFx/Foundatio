@@ -53,7 +53,7 @@ namespace Foundatio.Tests.Utility {
 
             using var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log);
             timer.ScheduleNext();
-            var t = Task.Run(async () => {
+            _ = Task.Run(async () => {
                 for (int i = 0; i < iterations; i++) {
                     await SystemClock.SleepAsync(10);
                     timer.ScheduleNext();

@@ -76,7 +76,7 @@ namespace Foundatio.Jobs {
 
         public void RunInBackground(CancellationToken cancellationToken = default) {
             if (_options.InstanceCount == 1) {
-                Task.Run(async () => {
+                _ = Task.Run(async () => {
                     try {
                         await RunAsync(cancellationToken).AnyContext();
                     } catch (TaskCanceledException) {

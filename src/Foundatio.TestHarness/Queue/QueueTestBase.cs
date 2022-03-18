@@ -420,7 +420,7 @@ namespace Foundatio.Tests.Queue {
                 using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
 
-                Task.Run(async () => {
+                _ = Task.Run(async () => {
                     _logger.LogTrace("Starting enqueue loop");
                     for (int index = 0; index < iterations; index++) {
                         await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
@@ -559,7 +559,7 @@ namespace Foundatio.Tests.Queue {
                 Assert.Null(workItem);
                 Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(5000));
 
-                Task.Run(async () => {
+                _ = Task.Run(async () => {
                     await SystemClock.SleepAsync(500);
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
@@ -589,7 +589,7 @@ namespace Foundatio.Tests.Queue {
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
-                Task.Run(async () => {
+                _ = Task.Run(async () => {
                     await SystemClock.SleepAsync(250);
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
@@ -1407,9 +1407,8 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return;
 
-            using (queue) {
-                queue.DeleteQueueAsync().GetAwaiter().GetResult();
-            }
+            using (queue)
+                _ = Task.Run(queue.DeleteQueueAsync);
 
             GC.SuppressFinalize(this);
         }

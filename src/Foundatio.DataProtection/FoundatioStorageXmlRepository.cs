@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -34,7 +34,7 @@ namespace Foundatio.DataProtection {
 
         /// <inheritdoc />
         public IReadOnlyCollection<XElement> GetAllElements() {
-            return Task.Run(GetAllElementsAsync).AnyContext().GetAwaiter().GetResult();
+            return GetAllElementsAsync().GetAwaiter().GetResult();
         }
 
         private async Task<IReadOnlyCollection<XElement>> GetAllElementsAsync() {
@@ -64,7 +64,7 @@ namespace Foundatio.DataProtection {
             if (element == null)
                 throw new ArgumentNullException(nameof(element));
 
-            Task.Run(() => StoreElementAsync(element, friendlyName)).AnyContext().GetAwaiter().GetResult();
+            StoreElementAsync(element, friendlyName).GetAwaiter().GetResult();
         }
 
         private Task StoreElementAsync(XElement element, string friendlyName) {
@@ -72,13 +72,12 @@ namespace Foundatio.DataProtection {
             _logger.LogTrace("Saving element: {File}.", path);
 
             return Run.WithRetriesAsync(async () => {
-                using (var memoryStream = new MemoryStream()) {
-                    element.Save(memoryStream, SaveOptions.DisableFormatting);
-                    memoryStream.Seek(0, SeekOrigin.Begin);
+                using var memoryStream = new MemoryStream();
+                element.Save(memoryStream, SaveOptions.DisableFormatting);
+                memoryStream.Seek(0, SeekOrigin.Begin);
 
-                    await _storage.SaveFileAsync(path, memoryStream).AnyContext();
-                    _logger.LogTrace("Saved element: {File}.", path);
-                }
+                await _storage.SaveFileAsync(path, memoryStream).AnyContext();
+                _logger.LogTrace("Saved element: {File}.", path);
             });
         }
     }
