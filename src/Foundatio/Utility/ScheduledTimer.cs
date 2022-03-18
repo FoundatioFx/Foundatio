@@ -24,7 +24,7 @@ namespace Foundatio.Utility {
             _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
             int dueTimeMs = dueTime.HasValue ? (int)dueTime.Value.TotalMilliseconds : Timeout.Infinite;
-            _timer = new Timer(s => RunCallbackAsync().AnyContext().GetAwaiter().GetResult(), null, dueTimeMs, Timeout.Infinite);
+            _timer = new Timer(s => Task.Run(RunCallbackAsync), null, dueTimeMs, Timeout.Infinite);
         }
 
         public void ScheduleNext(DateTime? utcDate = null) {
