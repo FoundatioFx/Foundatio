@@ -96,11 +96,12 @@ namespace Foundatio.Messaging {
         }
 
          protected override Task PublishImplAsync(string messageType, object message, TimeSpan? delay, MessageOptions options, CancellationToken cancellationToken) {
-             var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message));
-             brokeredMessage.MessageId = options.UniqueId;
-             brokeredMessage.ContentType = messageType;
+             var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message)) {
+                 MessageId = options.UniqueId,
+                 ContentType = messageType
+             };
 
-            if (delay.HasValue && delay.Value > TimeSpan.Zero) {
+             if (delay.HasValue && delay.Value > TimeSpan.Zero) {
                 _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, delay.Value.TotalMilliseconds);
                 brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(delay.Value);
             } else {
