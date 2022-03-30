@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -139,7 +138,7 @@ namespace Foundatio.Extensions.Hosting.Startup {
             return builder.UseMiddleware<WaitForStartupActionsBeforeServingRequestsMiddleware>();
         }
 
-        public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder builder, PathString path, params string[] tags) {
+        public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder builder, string path, params string[] tags) {
             if (tags == null)
                 tags = new string[0];
             
