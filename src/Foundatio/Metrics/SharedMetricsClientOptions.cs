@@ -15,8 +15,6 @@ namespace Foundatio.Metrics {
         }
 
         public TBuilder Prefix(string prefix) {
-            if (String.IsNullOrEmpty(prefix))
-                throw new ArgumentNullException(nameof(prefix));
             Target.Prefix = prefix;
             return (TBuilder)this;
         }
