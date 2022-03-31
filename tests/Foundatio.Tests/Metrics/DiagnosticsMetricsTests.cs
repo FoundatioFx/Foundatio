@@ -12,7 +12,7 @@ namespace Foundatio.Tests.Metrics {
 
         public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output) {
             Log.MinimumLevel = LogLevel.Trace;
-            _client = new DiagnosticsMetricsClient("Test");
+            _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
         }
 
         [Fact]
@@ -67,6 +67,7 @@ namespace Foundatio.Tests.Metrics {
 
         public void Dispose() {
             _client.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }
