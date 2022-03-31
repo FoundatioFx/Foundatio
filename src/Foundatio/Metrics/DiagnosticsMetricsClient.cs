@@ -13,7 +13,7 @@ namespace Foundatio.Metrics {
         public DiagnosticsMetricsClient() : this(o => o) { }
 
         public DiagnosticsMetricsClient(DiagnosticsMetricsClientOptions options) {
-            _prefix = !String.IsNullOrEmpty(options.Prefix) ? (!options.Prefix.EndsWith(":") ? options.Prefix + ":" : options.Prefix) : String.Empty;
+            _prefix = !String.IsNullOrEmpty(options.Prefix) ? (!options.Prefix.EndsWith(".") ? options.Prefix + "." : options.Prefix) : String.Empty;
             _meter = new Meter(options.MeterName ?? "Foundatio.MetricsClient", options.MeterVersion ?? FoundatioDiagnostics.AssemblyName.Version.ToString());
         }
 
