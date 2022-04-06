@@ -63,8 +63,8 @@ namespace Foundatio.Tests.Metrics {
             _client.Timer("timer", 450);
             _client.Timer("timer", 220);
 
-            Assert.Equal(670, metricsCollector.GetSum<int>("timer"));
-            Assert.Equal(2, metricsCollector.GetCount<int>("timer"));
+            Assert.Equal(670, metricsCollector.GetSum<double>("timer"));
+            Assert.Equal(2, metricsCollector.GetCount<double>("timer"));
         }
 
         [Fact]
