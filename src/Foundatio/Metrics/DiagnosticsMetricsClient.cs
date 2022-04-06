@@ -6,7 +6,7 @@ namespace Foundatio.Metrics {
     public class DiagnosticsMetricsClient : IMetricsClient {
         private readonly ConcurrentDictionary<string, Counter<int>> _counters = new();
         private readonly ConcurrentDictionary<string, GaugeInfo> _gauges = new();
-        private readonly ConcurrentDictionary<string, Histogram<int>> _timers = new();
+        private readonly ConcurrentDictionary<string, Histogram<double>> _timers = new();
         private readonly Meter _meter;
         private readonly string _prefix;
 
@@ -31,7 +31,7 @@ namespace Foundatio.Metrics {
         }
 
         public void Timer(string name, int milliseconds) {
-            var timer = _timers.GetOrAdd(_prefix + name, _meter.CreateHistogram<int>(name, "ms"));
+            var timer = _timers.GetOrAdd(_prefix + name, _meter.CreateHistogram<double>(name, "ms"));
             timer.Record(milliseconds);
         }
 

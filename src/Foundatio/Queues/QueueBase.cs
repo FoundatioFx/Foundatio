@@ -21,14 +21,15 @@ namespace Foundatio.Queues {
 
         private readonly Counter<int> _enqueuedCounter;
         private readonly Counter<int> _dequeuedCounter;
-        private readonly Histogram<int> _queueTimeHistogram;
+        private readonly Histogram<double> _queueTimeHistogram;
         private readonly Counter<int> _completedCounter;
-        private readonly Histogram<int> _processTimeHistogram;
-        private readonly Histogram<int> _totalTimeHistogram;
+        private readonly Histogram<double> _processTimeHistogram;
+        private readonly Histogram<double> _totalTimeHistogram;
         private readonly Counter<int> _abandonedCounter;
         private readonly ObservableGauge<long> _countGauge;
         private readonly ObservableGauge<long> _workingGauge;
         private readonly ObservableGauge<long> _deadletterGauge;
+        private readonly TagList _emptyTags = default;
 
         private readonly List<IQueueBehavior<T>> _behaviors = new();
         protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
@@ -48,10 +49,10 @@ namespace Foundatio.Queues {
             // setup meters
             _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
             _dequeuedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("dequeued"), description: "Number of dequeued items");
-            _queueTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<int>(GetFullMetricName("queuetime"), description: "Time in queue", unit: "ms");
+            _queueTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("queuetime"), description: "Time in queue", unit: "ms");
             _completedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("completed"), description: "Number of completed items");
-            _processTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<int>(GetFullMetricName("processtime"), description: "Time to process items", unit: "ms");
-            _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<int>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
+            _processTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("processtime"), description: "Time to process items", unit: "ms");
+            _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
             _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
             
             _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), GetQueueCount, description: "Number of items in the queue");
@@ -150,8 +151,9 @@ namespace Foundatio.Queues {
         protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry) {
             LastEnqueueActivity = SystemClock.UtcNow;
 
-            _enqueuedCounter.Add(1);
-            IncrementSubCounter(entry.Value, "enqueued");
+            var tags = GetQueueEntryTags(entry);
+            _enqueuedCounter.Add(1, tags);
+            IncrementSubCounter(entry.Value, "enqueued", tags);
 
             var enqueued = Enqueued;
             if (enqueued == null)
@@ -166,8 +168,9 @@ namespace Foundatio.Queues {
         protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry) {
             LastDequeueActivity = SystemClock.UtcNow;
 
-            _dequeuedCounter.Add(1);
-            IncrementSubCounter(entry.Value, "dequeued");
+            var tags = GetQueueEntryTags(entry);
+            _dequeuedCounter.Add(1, tags);
+            IncrementSubCounter(entry.Value, "dequeued", tags);
 
             var metadata = entry as IQueueEntryMetadata;
             if (metadata != null && (metadata.EnqueuedTimeUtc != DateTime.MinValue || metadata.DequeuedTimeUtc != DateTime.MinValue)) {
@@ -175,8 +178,8 @@ namespace Foundatio.Queues {
                 var end = metadata.DequeuedTimeUtc;
                 int time = (int)(end - start).TotalMilliseconds;
 
-                _queueTimeHistogram.Record(time);
-                RecordSubHistogram(entry.Value, "queuetime", time);
+                _queueTimeHistogram.Record(time, tags);
+                RecordSubHistogram(entry.Value, "queuetime", time, tags);
             }
 
             var dequeued = Dequeued;
@@ -185,6 +188,10 @@ namespace Foundatio.Queues {
 
             var args = new DequeuedEventArgs<T> { Queue = this, Entry = entry };
             return dequeued.InvokeAsync(this, args);
+        }
+
+        protected virtual TagList GetQueueEntryTags(IQueueEntry<T> entry) {
+            return _emptyTags;
         }
 
         public AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; } = new AsyncEvent<LockRenewedEventArgs<T>>(true);
@@ -206,20 +213,21 @@ namespace Foundatio.Queues {
             var now = SystemClock.UtcNow;
             LastDequeueActivity = now;
 
-            _completedCounter.Add(1);
-            IncrementSubCounter(entry.Value, "completed");
+            var tags = GetQueueEntryTags(entry);
+            _completedCounter.Add(1, tags);
+            IncrementSubCounter(entry.Value, "completed", tags);
 
             if (entry is QueueEntry<T> metadata) {
                 if (metadata.EnqueuedTimeUtc > DateTime.MinValue) {
                     metadata.TotalTime = now.Subtract(metadata.EnqueuedTimeUtc);
-                    _totalTimeHistogram.Record((int)metadata.TotalTime.TotalMilliseconds);
-                    RecordSubHistogram(entry.Value, "totaltime", (int)metadata.TotalTime.TotalMilliseconds);
+                    _totalTimeHistogram.Record((int)metadata.TotalTime.TotalMilliseconds, tags);
+                    RecordSubHistogram(entry.Value, "totaltime", (int)metadata.TotalTime.TotalMilliseconds, tags);
                 }
 
                 if (metadata.DequeuedTimeUtc > DateTime.MinValue) {
                     metadata.ProcessingTime = now.Subtract(metadata.DequeuedTimeUtc);
-                    _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds);
-                    RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds);
+                    _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds, tags);
+                    RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds, tags);
                 }
             }
 
@@ -234,13 +242,14 @@ namespace Foundatio.Queues {
         protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry) {
             LastDequeueActivity = SystemClock.UtcNow;
 
-            _abandonedCounter.Add(1);
-            IncrementSubCounter(entry.Value, "abandoned");
+            var tags = GetQueueEntryTags(entry);
+            _abandonedCounter.Add(1, tags);
+            IncrementSubCounter(entry.Value, "abandoned", tags);
 
             if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue) {
                 metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
-                _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds);
-                RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds);
+                _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds, tags);
+                RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds, tags);
             }
 
             if (Abandoned != null) {
@@ -265,7 +274,7 @@ namespace Foundatio.Queues {
         }
 
         protected readonly ConcurrentDictionary<string, Counter<int>> _counters = new();
-        private void IncrementSubCounter(T data, string name) {
+        private void IncrementSubCounter(T data, string name, in TagList tags) {
             if (data is not IHaveSubMetricName)
                 return;
 
@@ -274,11 +283,11 @@ namespace Foundatio.Queues {
                 return;
 
             var fullName = GetFullMetricName(subMetricName, name);
-            _counters.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateCounter<int>(fullName)).Add(1);
+            _counters.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateCounter<int>(fullName)).Add(1, tags);
         }
 
         protected readonly ConcurrentDictionary<string, Histogram<int>> _histograms = new();
-        private void RecordSubHistogram(T data, string name, int value) {
+        private void RecordSubHistogram(T data, string name, int value, in TagList tags) {
             if (data is not IHaveSubMetricName)
                 return;
 
@@ -287,7 +296,7 @@ namespace Foundatio.Queues {
                 return;
 
             var fullName = GetFullMetricName(subMetricName, name);
-            _histograms.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateHistogram<int>(fullName)).Record(value);
+            _histograms.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateHistogram<int>(fullName)).Record(value, tags);
         }
 
         protected string GetFullMetricName(string name) {
