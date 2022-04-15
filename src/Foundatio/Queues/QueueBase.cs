@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
+        private readonly string _metricsPrefix;
         protected readonly ISerializer _serializer;
         private ScheduledTimer _timer;
 
@@ -38,6 +39,7 @@ namespace Foundatio.Queues {
 
         protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
+            _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
 
             QueueId = options.Name + Guid.NewGuid().ToString("N").Substring(10);
 
@@ -292,11 +294,11 @@ namespace Foundatio.Queues {
         }
 
         protected string GetFullMetricName(string name) {
-            return String.Concat("foundatio.", name);
+            return String.Concat(_metricsPrefix, ".", name);
         }
 
         protected string GetFullMetricName(string customMetricName, string name) {
-            return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat("foundatio.", customMetricName.ToLower(), ".", name);
+            return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
         }
 
         private void EnsureQueueStatsTimer() {

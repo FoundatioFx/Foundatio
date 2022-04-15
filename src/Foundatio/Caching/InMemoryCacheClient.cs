@@ -20,6 +20,7 @@ namespace Foundatio.Caching {
         private long _hits;
         private long _misses;
         private readonly ILogger _logger;
+        private readonly object _lock = new();
 
         public InMemoryCacheClient() : this(o => o) {}
 
@@ -719,17 +720,26 @@ namespace Foundatio.Caching {
             if (!_maxItems.HasValue || _memory.Count <= _maxItems)
                 return;
 
-            (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
-            foreach (var kvp in _memory) {
-                if (kvp.Value.LastAccessTicks < oldest.LastAccessTicks
-                    || (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
-                    oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+            string expiredKey = null;
+            lock (_lock) {
+                if (_memory.Count <= _maxItems)
+                    return;
+
+                (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
+                foreach (var kvp in _memory) {
+                    if (kvp.Value.LastAccessTicks < oldest.LastAccessTicks
+                        || (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
+                        oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+                }
+
+                _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
+                _memory.TryRemove(oldest.Key, out var cacheEntry);
+                if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
+                    expiredKey = oldest.Key;
             }
 
-            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
-            _memory.TryRemove(oldest.Key, out var cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
-                await OnItemExpiredAsync(oldest.Key).AnyContext();
+            if (expiredKey != null)
+                await OnItemExpiredAsync(expiredKey).AnyContext();
         }
 
         private async Task DoMaintenanceAsync() {
