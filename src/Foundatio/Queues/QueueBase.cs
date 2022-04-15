@@ -15,7 +15,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
-        private readonly string _metricsPrefix;
         protected readonly ISerializer _serializer;
         private ScheduledTimer _timer;
 
@@ -26,9 +25,11 @@ namespace Foundatio.Queues {
         private readonly Histogram<double> _processTimeHistogram;
         private readonly Histogram<double> _totalTimeHistogram;
         private readonly Counter<int> _abandonedCounter;
+#pragma warning disable IDE0052 // Remove unread private members
         private readonly ObservableGauge<long> _countGauge;
         private readonly ObservableGauge<long> _workingGauge;
         private readonly ObservableGauge<long> _deadletterGauge;
+#pragma warning restore IDE0052 // Remove unread private members
         private readonly TagList _emptyTags = default;
 
         private readonly List<IQueueBehavior<T>> _behaviors = new();
@@ -37,7 +38,6 @@ namespace Foundatio.Queues {
 
         protected QueueBase(TOptions options) : base(options?.LoggerFactory) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            _metricsPrefix = GetMetricsPrefix();
 
             QueueId = options.Name + Guid.NewGuid().ToString("N").Substring(10);
 
@@ -78,7 +78,8 @@ namespace Foundatio.Queues {
         protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);
         public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null) {
             await EnsureQueueCreatedAsync().AnyContext();
-            
+
+            _count = Math.Max(1, _count);
             LastEnqueueActivity = SystemClock.UtcNow;
             options ??= new QueueEntryOptions();
             
@@ -90,6 +91,7 @@ namespace Foundatio.Queues {
             using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
             await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
 
+            _working = Math.Max(1, _working);
             LastDequeueActivity = SystemClock.UtcNow;
             return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
         }
@@ -258,16 +260,6 @@ namespace Foundatio.Queues {
             }
         }
 
-        private string GetMetricsPrefix() {
-            var metricsPrefix = _options.MetricsPrefix;
-            if (!String.IsNullOrEmpty(metricsPrefix) && !metricsPrefix.EndsWith("."))
-                metricsPrefix += ".";
-
-            metricsPrefix += typeof(T).Name.ToLowerInvariant();
-
-            return metricsPrefix;
-        }
-
         protected string GetSubMetricName(T data) {
             var haveStatName = data as IHaveSubMetricName;
             return haveStatName?.SubMetricName;
@@ -300,31 +292,37 @@ namespace Foundatio.Queues {
         }
 
         protected string GetFullMetricName(string name) {
-            return String.Concat(_metricsPrefix, ".", name);
+            return String.Concat("foundatio.", name);
         }
 
         protected string GetFullMetricName(string customMetricName, string name) {
-            return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
+            return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat("foundatio.", customMetricName.ToLower(), ".", name);
         }
 
         private void EnsureQueueStatsTimer() {
             if (_timer == null)
-                _timer = new ScheduledTimer(GetQueueStats, minimumIntervalTime: TimeSpan.FromMilliseconds(250), loggerFactory: _options?.LoggerFactory ?? NullLoggerFactory.Instance);
+                _timer = new ScheduledTimer(GetQueueStats, minimumIntervalTime: TimeSpan.FromSeconds(15), loggerFactory: _options?.LoggerFactory ?? NullLoggerFactory.Instance);
         }
 
         protected virtual long GetQueueCount() {
             EnsureQueueStatsTimer();
-            return _count;
+            long count = _count;
+            _count = 0;
+            return count;
         }
 
         protected virtual long GetWorkingCount() {
             EnsureQueueStatsTimer();
-            return _working;
+            long working = _working;
+            _working = 0;
+            return working;
         }
 
         protected virtual long GetDeadletterCount() {
             EnsureQueueStatsTimer();
-            return _deadletter;
+            long deadletter = _deadletter;
+            _deadletter = 0;
+            return deadletter;
         }
 
         private long _count = 0;
@@ -336,9 +334,9 @@ namespace Foundatio.Queues {
                 var stats = await GetQueueStatsAsync().AnyContext();
                 _logger.LogTrace("Getting queue stats");
 
-                _count = stats.Queued;
-                _working = stats.Working;
-                _deadletter = stats.Deadletter;
+                _count = Math.Max(stats.Queued, _count);
+                _working = Math.Max(stats.Working, _count);
+                _deadletter = Math.Max(stats.Deadletter, _count);
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error getting queue stats");
             }

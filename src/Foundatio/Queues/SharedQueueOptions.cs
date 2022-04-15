@@ -6,7 +6,6 @@ namespace Foundatio.Queues {
         public string Name { get; set; } = typeof(T).Name;
         public int Retries { get; set; } = 2;
         public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
-        public string MetricsPrefix { get; set; }
         public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
     }
 
@@ -36,12 +35,6 @@ namespace Foundatio.Queues {
                 throw new ArgumentOutOfRangeException(nameof(timeout));
             
             Target.WorkItemTimeout = timeout;
-            return (TBuilder)this;
-        }
-
-        public TBuilder MetricsPrefix(string prefix) {
-            if (!String.IsNullOrEmpty(prefix))
-                Target.MetricsPrefix = prefix;
             return (TBuilder)this;
         }
 

@@ -9,6 +9,8 @@ using System.Diagnostics;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics.Metrics;
+using System.Collections.Generic;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider, IHaveLogger {
@@ -18,11 +20,16 @@ namespace Foundatio.Lock {
         private readonly AsyncLock _lock = new();
         private bool _isSubscribed;
         private readonly ILogger _logger;
+        private readonly Histogram<double> _lockWaitTimeHistogram;
+        private readonly Counter<int> _lockTimeoutCounter;
 
         public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
             _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
+
+            _lockWaitTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.lock.wait.time", description: "Time waiting for locks", unit: "ms");
+            _lockTimeoutCounter = FoundatioDiagnostics.Meter.CreateCounter<int>("foundatio.lock.failed", description: "Number of failed attempts to acquire a lock");
         }
 
         ILogger IHaveLogger.Logger => _logger;
@@ -53,6 +60,18 @@ namespace Foundatio.Lock {
             return Task.CompletedTask;
         }
 
+        protected virtual Activity StartLockActivity(string resource) {
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("AcquireLock");
+
+            if (activity == null)
+                return activity;
+
+            activity.AddTag("resource", resource);
+            activity.DisplayName = $"Lock: {resource}";
+
+            return activity;
+        }
+
         public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             bool shouldWait = !cancellationToken.IsCancellationRequested;
@@ -61,6 +80,8 @@ namespace Foundatio.Lock {
 
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
+
+            using var activity = StartLockActivity(resource);
 
             bool gotLock = false;
             string lockId = GenerateNewLockId();
@@ -129,7 +150,11 @@ namespace Foundatio.Lock {
             }
             sw.Stop();
 
+            _lockWaitTimeHistogram.Record(sw.Elapsed.TotalMilliseconds, new KeyValuePair<string, object>("resource", resource));
+
             if (!gotLock) {
+                _lockTimeoutCounter.Add(1, new KeyValuePair<string, object>("resource", resource));
+
                 if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
                     _logger.LogTrace("Cancellation requested for lock {Resource} after {Duration:g}", resource, sw.Elapsed);
                 else if (_logger.IsEnabled(LogLevel.Warning))
@@ -161,7 +186,7 @@ namespace Foundatio.Lock {
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
         }
-
+            
         public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
