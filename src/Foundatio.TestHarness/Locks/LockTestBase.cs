@@ -133,6 +133,35 @@ namespace Foundatio.Tests.Locks {
             Assert.NotNull(testLock3);
         }
 
+        public virtual async Task CanAcquireMultipleScopedResources() {
+            Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+            Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
+
+            locker = new ScopedLockProvider(locker, "myscope");
+            
+            var resources = new List<string> { "test1", "test2", "test3", "test4", "test5" };
+            var testLock = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+            _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+            Assert.NotNull(testLock);
+            
+            resources.Add("other");
+            var testLock2 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+            _logger.LogInformation(testLock2 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+            Assert.Null(testLock2);
+            
+            await testLock.RenewAsync();
+            await testLock.ReleaseAsync();
+            
+            var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+            _logger.LogInformation(testLock3 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+            Assert.NotNull(testLock3);
+        }
+
         public virtual async Task LockOneAtATimeAsync() {
             var locker = GetLockProvider();
             if (locker == null)

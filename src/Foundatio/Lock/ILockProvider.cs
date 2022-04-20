@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -130,13 +130,23 @@ namespace Foundatio.Lock {
             
             // if any lock is null, release any acquired and return null (all or nothing)
             var acquiredLocks = locks.Where(l => l != null).ToArray();
-            var unacquiredResources = resourceList.Except(locks.Select(l => l?.Resource)).ToArray();
-            if (unacquiredResources.Length > 0) {
-                if (logger.IsEnabled(LogLevel.Trace))
-                    logger.LogTrace("Unable to acquire all {LockCount} locks {Resource} releasing acquired locks", unacquiredResources.Length, unacquiredResources);
-                
-                await Task.WhenAll(acquiredLocks.Select(l => l.ReleaseAsync())).AnyContext();
-                return null;
+            if (resourceList.Length > acquiredLocks.Length) {
+                var unacquiredResources = new List<string>();
+                string[] acquiredResources = acquiredLocks.Select(l => l.Resource).ToArray();
+
+                foreach (string resource in resourceList) {
+                    // account for scoped lock providers with prefixes
+                    if (!acquiredResources.Any(r => r.EndsWith(resource)))
+                        unacquiredResources.Add(resource);
+                }
+
+                if (unacquiredResources.Count > 0) {
+                    if (logger.IsEnabled(LogLevel.Trace))
+                        logger.LogTrace("Unable to acquire all {LockCount} locks {Resource} releasing acquired locks", unacquiredResources.Count, unacquiredResources);
+
+                    await Task.WhenAll(acquiredLocks.Select(l => l.ReleaseAsync())).AnyContext();
+                    return null;
+                }
             }
             
             if (logger.IsEnabled(LogLevel.Trace))
