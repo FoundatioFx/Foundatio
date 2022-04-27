@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio.Kafka\Foundatio.Kafka.csproj" />
+  </ItemGroup>
+</Project>
