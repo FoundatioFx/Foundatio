@@ -115,15 +115,15 @@ namespace Foundatio.Queues {
         protected abstract Task<QueueStats> GetQueueStatsImplAsync();
 
         public Task<QueueStats> GetQueueStatsAsync() {
-            _logger.LogInformation("GetQueueStatsAsync call");
-
             return GetQueueStatsImplAsync();
         }
 
         protected virtual QueueStats GetMetricsQueueStats() {
-            _logger.LogInformation("GetQueueStatsAsync call");
+            return GetQueueStatsAsync().GetAwaiter().GetResult();
+        }
 
-            var stats = GetQueueStatsAsync().GetAwaiter().GetResult();
+        private QueueStats GetMetricsQueueStatsInternal() {
+            var stats = GetMetricsQueueStats();
 
             _count = stats.Queued;
             _workingCount = stats.Working;
@@ -136,10 +136,9 @@ namespace Foundatio.Queues {
         private long GetMetricsQueueCount() {
             long count = Interlocked.Read(ref _count);
             if (count == -1) {
-                var stats = GetMetricsQueueStats();
+                var stats = GetMetricsQueueStatsInternal();
                 return stats.Queued;
             } else {
-                _logger.LogInformation("skipping get queue stats");
                 Interlocked.CompareExchange(ref _count, -1, count);
                 return count;
             }
@@ -149,10 +148,9 @@ namespace Foundatio.Queues {
         private long GetMetricsWorkingCount() {
             long workingCount = Interlocked.Read(ref _workingCount);
             if (workingCount == -1) {
-                var stats = GetMetricsQueueStats();
+                var stats = GetMetricsQueueStatsInternal();
                 return stats.Working;
             } else {
-                _logger.LogInformation("skipping get queue stats");
                 Interlocked.CompareExchange(ref _workingCount, -1, workingCount);
                 return workingCount;
             }
@@ -162,10 +160,9 @@ namespace Foundatio.Queues {
         private long GetMetricsDeadletterCount() {
             long deadletterCount = Interlocked.Read(ref _deadletterCount);
             if (deadletterCount == -1) {
-                var stats = GetMetricsQueueStats();
+                var stats = GetMetricsQueueStatsInternal();
                 return stats.Deadletter;
             } else {
-                _logger.LogInformation("skipping get queue stats");
                 Interlocked.CompareExchange(ref _deadletterCount, -1, deadletterCount);
                 return deadletterCount;
             }
