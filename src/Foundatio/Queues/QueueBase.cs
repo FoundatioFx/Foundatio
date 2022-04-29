@@ -6,18 +6,17 @@ using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Metrics;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Queues {
     public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T> {
         protected readonly TOptions _options;
         private readonly string _metricsPrefix;
         protected readonly ISerializer _serializer;
-        private ScheduledTimer _timer;
 
         private readonly Counter<int> _enqueuedCounter;
         private readonly Counter<int> _dequeuedCounter;
@@ -57,9 +56,9 @@ namespace Foundatio.Queues {
             _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
             _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
             
-            _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), GetQueueCount, description: "Number of items in the queue");
-            _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), GetWorkingCount, description: "Number of items currently being processed");
-            _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"), GetDeadletterCount, description: "Number of items in the deadletter queue");
+            _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), GetMetricsQueueCount, description: "Number of items in the queue");
+            _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), GetMetricsWorkingCount, description: "Number of items currently being processed");
+            _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"), GetMetricsDeadletterCount, description: "Number of items in the deadletter queue");
         }
 
         public string QueueId { get; protected set; }
@@ -81,7 +80,6 @@ namespace Foundatio.Queues {
         public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null) {
             await EnsureQueueCreatedAsync().AnyContext();
 
-            _count = Math.Max(1, _count);
             LastEnqueueActivity = SystemClock.UtcNow;
             options ??= new QueueEntryOptions();
             
@@ -93,7 +91,6 @@ namespace Foundatio.Queues {
             using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
             await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
 
-            _working = Math.Max(1, _working);
             LastDequeueActivity = SystemClock.UtcNow;
             return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
         }
@@ -116,9 +113,61 @@ namespace Foundatio.Queues {
         }
 
         protected abstract Task<QueueStats> GetQueueStatsImplAsync();
-        public async Task<QueueStats> GetQueueStatsAsync() {
-            await EnsureQueueCreatedAsync().AnyContext();
-            return await GetQueueStatsImplAsync().AnyContext();
+
+        public Task<QueueStats> GetQueueStatsAsync() {
+            _logger.LogInformation("GetQueueStatsAsync call");
+
+            return GetQueueStatsImplAsync();
+        }
+
+        protected virtual QueueStats GetMetricsQueueStats() {
+            _logger.LogInformation("GetQueueStatsAsync call");
+
+            var stats = GetQueueStatsAsync().GetAwaiter().GetResult();
+            _count = stats.Queued;
+            _workingCount = stats.Working;
+            _deadletterCount = stats.Deadletter;
+
+            return stats;
+        }
+
+        private long? _count = null;
+        private long GetMetricsQueueCount() {
+            if (_count == null)
+                GetMetricsQueueStats();
+            else
+                _logger.LogInformation("skipping get queue stats");
+
+            var count = _count.Value;
+            _count = null;
+
+            return count;
+        }
+
+        private long? _workingCount = null;
+        private long GetMetricsWorkingCount() {
+            if (_workingCount == null)
+                GetMetricsQueueStats();
+            else
+                _logger.LogInformation("skipping get queue stats");
+
+            var workingCount = _workingCount.Value;
+            _workingCount = null;
+
+            return workingCount;
+        }
+
+        private long? _deadletterCount = null;
+        private long GetMetricsDeadletterCount() {
+            if (_deadletterCount == null)
+                GetMetricsQueueStats();
+            else
+                _logger.LogInformation("skipping get queue stats");
+
+            var deadletterCount = _deadletterCount.Value;
+            _deadletterCount = null;
+
+            return deadletterCount;
         }
 
         public abstract Task DeleteQueueAsync();
@@ -299,51 +348,6 @@ namespace Foundatio.Queues {
 
         protected string GetFullMetricName(string customMetricName, string name) {
             return String.IsNullOrEmpty(customMetricName) ? GetFullMetricName(name) : String.Concat(_metricsPrefix, ".", customMetricName.ToLower(), ".", name);
-        }
-
-        private void EnsureQueueStatsTimer() {
-            if (_timer == null)
-                _timer = new ScheduledTimer(GetQueueStats, minimumIntervalTime: TimeSpan.FromSeconds(15), loggerFactory: _options?.LoggerFactory ?? NullLoggerFactory.Instance);
-        }
-
-        protected virtual long GetQueueCount() {
-            EnsureQueueStatsTimer();
-            long count = _count;
-            _count = 0;
-            return count;
-        }
-
-        protected virtual long GetWorkingCount() {
-            EnsureQueueStatsTimer();
-            long working = _working;
-            _working = 0;
-            return working;
-        }
-
-        protected virtual long GetDeadletterCount() {
-            EnsureQueueStatsTimer();
-            long deadletter = _deadletter;
-            _deadletter = 0;
-            return deadletter;
-        }
-
-        private long _count = 0;
-        private long _working = 0;
-        private long _deadletter = 0;
-
-        private async Task<DateTime?> GetQueueStats() {
-            try {
-                var stats = await GetQueueStatsAsync().AnyContext();
-                _logger.LogTrace("Getting queue stats");
-
-                _count = Math.Max(stats.Queued, _count);
-                _working = Math.Max(stats.Working, _count);
-                _deadletter = Math.Max(stats.Deadletter, _count);
-            } catch (Exception ex) {
-                _logger.LogError(ex, "Error getting queue stats");
-            }
-
-            return null;
         }
 
         protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken) {

@@ -489,6 +489,8 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             try {
+                using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
@@ -498,6 +500,8 @@ namespace Foundatio.Tests.Queue {
                         Data = "Hello"
                     });
                 }
+                metricsCollector.RecordObservableInstruments();
+                Assert.Equal(workItemCount, metricsCollector.GetMax<long>("foundatio.simpleworkitem.count"));
                 Assert.Equal(workItemCount, (await queue.GetQueueStatsAsync()).Queued);
 
                 var sw = Stopwatch.StartNew();

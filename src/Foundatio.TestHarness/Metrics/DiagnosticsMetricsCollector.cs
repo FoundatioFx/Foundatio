@@ -192,6 +192,33 @@ namespace Foundatio.Tests.Metrics {
             }
         }
 
+        public double GetMax<T>(string name) where T : struct {
+            if (typeof(T) == typeof(byte)) {
+                var measurements = GetMeasurements<byte>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(short)) {
+                var measurements = GetMeasurements<short>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(int)) {
+                var measurements = GetMeasurements<int>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(long)) {
+                var measurements = GetMeasurements<long>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(float)) {
+                var measurements = GetMeasurements<float>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(double)) {
+                var measurements = GetMeasurements<double>(name);
+                return measurements.Max(m => m.Value);
+            } else if (typeof(T) == typeof(decimal)) {
+                var measurements = GetMeasurements<decimal>(name);
+                return measurements.Max(m => (double)m.Value);
+            } else {
+                return 0;
+            }
+        }
+
         public async Task<bool> WaitForCounterAsync<T>(string statName, long count = 1, TimeSpan? timeout = null) where T : struct {
             using var cancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromMinutes(1));
             return await WaitForCounterAsync<T>(statName, () => Task.CompletedTask, count, cancellationTokenSource.Token).AnyContext();

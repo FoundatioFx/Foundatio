@@ -150,10 +150,10 @@ namespace Foundatio.Lock {
             }
             sw.Stop();
 
-            _lockWaitTimeHistogram.Record(sw.Elapsed.TotalMilliseconds, new KeyValuePair<string, object>("resource", resource));
+            _lockWaitTimeHistogram.Record(sw.Elapsed.TotalMilliseconds);
 
             if (!gotLock) {
-                _lockTimeoutCounter.Add(1, new KeyValuePair<string, object>("resource", resource));
+                _lockTimeoutCounter.Add(1);
 
                 if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
                     _logger.LogTrace("Cancellation requested for lock {Resource} after {Duration:g}", resource, sw.Elapsed);

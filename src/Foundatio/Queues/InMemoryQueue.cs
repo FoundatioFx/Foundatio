@@ -38,7 +38,11 @@ namespace Foundatio.Queues {
         }
 
         protected override Task<QueueStats> GetQueueStatsImplAsync() {
-            return Task.FromResult(new QueueStats {
+            return Task.FromResult(GetMetricsQueueStats());
+        }
+
+        protected override QueueStats GetMetricsQueueStats() {
+            return new QueueStats {
                 Queued = _queue.Count,
                 Working = _dequeued.Count,
                 Deadletter = _deadletterQueue.Count,
@@ -48,19 +52,7 @@ namespace Foundatio.Queues {
                 Abandoned = _abandonedCount,
                 Errors = _workerErrorCount,
                 Timeouts = _workerItemTimeoutCount
-            });
-        }
-
-        protected override long GetQueueCount() {
-            return _queue.Count;
-        }
-
-        protected override long GetWorkingCount() {
-            return _dequeued.Count;
-        }
-
-        protected override long GetDeadletterCount() {
-            return _deadletterQueue.Count;
+            };
         }
 
         public IReadOnlyCollection<QueueEntry<T>> GetEntries() {
