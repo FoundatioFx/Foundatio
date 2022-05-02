@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon;
 using Foundatio.Metrics;
 using Foundatio.Tests.Metrics;
-using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
