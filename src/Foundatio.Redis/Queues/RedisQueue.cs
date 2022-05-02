@@ -112,6 +112,25 @@ namespace Foundatio.Queues {
                 }, TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
+        protected override QueueStats GetMetricsQueueStats() {
+            var queued = Database.ListLength(_queueListName);
+            var wait = Database.ListLength(_waitListName);
+            var working = Database.ListLength(_workListName);
+            var deadLetter = Database.ListLength(_deadListName);
+
+            return new QueueStats {
+                Queued = queued + wait,
+                Working = working,
+                Deadletter = deadLetter,
+                Enqueued = _enqueuedCount,
+                Dequeued = _dequeuedCount,
+                Completed = _completedCount,
+                Abandoned = _abandonedCount,
+                Errors = _workerErrorCount,
+                Timeouts = _workItemTimeoutCount
+            };
+        }
+
         private readonly string _queueListName;
         private readonly string _workListName;
         private readonly string _waitListName;

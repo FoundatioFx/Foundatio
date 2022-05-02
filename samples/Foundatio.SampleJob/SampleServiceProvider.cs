@@ -20,8 +20,7 @@ namespace Foundatio.SampleJob {
 
             var muxer = ConnectionMultiplexer.Connect("localhost");
             container.AddSingleton(muxer);
-            var behaviors = new[] { new MetricsQueueBehavior<PingRequest>(new RedisMetricsClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)), loggerFactory: loggerFactory) };
-            container.AddSingleton<IQueue<PingRequest>>(s => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).Behaviors(behaviors).LoggerFactory(loggerFactory)));
+            container.AddSingleton<IQueue<PingRequest>>(s => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).LoggerFactory(loggerFactory)));
             container.AddSingleton<ICacheClient>(s => new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)));
             container.AddSingleton<IMessageBus>(s => new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).LoggerFactory(loggerFactory).MapMessageTypeToClassName<EchoMessage>()));
             container.AddSingleton<ILockProvider>(s => new CacheLockProvider(s.GetRequiredService<ICacheClient>(), s.GetRequiredService<IMessageBus>(), loggerFactory));
