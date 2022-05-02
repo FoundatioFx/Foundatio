@@ -6,7 +6,6 @@ using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.AsyncEx;
 using Foundatio.Metrics;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -55,10 +54,15 @@ namespace Foundatio.Queues {
             _processTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("processtime"), description: "Time to process items", unit: "ms");
             _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
             _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
-            
-            _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), GetMetricsQueueCount, description: "Number of items in the queue");
-            _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), GetMetricsWorkingCount, description: "Number of items currently being processed");
-            _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"), GetMetricsDeadletterCount, description: "Number of items in the deadletter queue");
+
+            var queueMetricValues = new InstrumentsValues<long, long, long>(() => {
+                var stats = GetMetricsQueueStats();
+                return (stats.Queued, stats.Working, stats.Deadletter);
+            });
+
+            _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), () => new Measurement<long>(queueMetricValues.GetValue1()), description: "Number of items in the queue");
+            _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), () => new Measurement<long>(queueMetricValues.GetValue2()), description: "Number of items currently being processed");
+            _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"), () => new Measurement<long>(queueMetricValues.GetValue3()), description: "Number of items in the deadletter queue");
         }
 
         public string QueueId { get; protected set; }
@@ -120,52 +124,6 @@ namespace Foundatio.Queues {
 
         protected virtual QueueStats GetMetricsQueueStats() {
             return GetQueueStatsAsync().GetAwaiter().GetResult();
-        }
-
-        private QueueStats GetMetricsQueueStatsInternal() {
-            var stats = GetMetricsQueueStats();
-
-            _count = stats.Queued;
-            _workingCount = stats.Working;
-            _deadletterCount = stats.Deadletter;
-
-            return stats;
-        }
-
-        private long _count = -1;
-        private long GetMetricsQueueCount() {
-            long count = Interlocked.Read(ref _count);
-            if (count == -1) {
-                var stats = GetMetricsQueueStatsInternal();
-                return stats.Queued;
-            } else {
-                Interlocked.CompareExchange(ref _count, -1, count);
-                return count;
-            }
-        }
-
-        private long _workingCount = -1;
-        private long GetMetricsWorkingCount() {
-            long workingCount = Interlocked.Read(ref _workingCount);
-            if (workingCount == -1) {
-                var stats = GetMetricsQueueStatsInternal();
-                return stats.Working;
-            } else {
-                Interlocked.CompareExchange(ref _workingCount, -1, workingCount);
-                return workingCount;
-            }
-        }
-
-        private long _deadletterCount = -1;
-        private long GetMetricsDeadletterCount() {
-            long deadletterCount = Interlocked.Read(ref _deadletterCount);
-            if (deadletterCount == -1) {
-                var stats = GetMetricsQueueStatsInternal();
-                return stats.Deadletter;
-            } else {
-                Interlocked.CompareExchange(ref _deadletterCount, -1, deadletterCount);
-                return deadletterCount;
-            }
         }
 
         public abstract Task DeleteQueueAsync();
