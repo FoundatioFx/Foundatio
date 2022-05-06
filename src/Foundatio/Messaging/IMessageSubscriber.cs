@@ -4,6 +4,10 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging {
+    public interface IHandle<T> where T: class {
+        Task Handle(IMessageContext<T> context);
+    }
+
     public interface IMessageSubscriber : IDisposable {
         Task<IMessageSubscription> SubscribeAsync(MessageSubscriptionOptions options, Func<IMessageContext, Task> handler);
         Task<IMessageContext> ReceiveAsync(MessageReceiveOptions options);
