@@ -219,6 +219,19 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+            if (String.IsNullOrEmpty(_queueUrl))
+                return new QueueStats {
+                    Queued = 0,
+                    Working = 0,
+                    Deadletter = 0,
+                    Enqueued = _enqueuedCount,
+                    Dequeued = _dequeuedCount,
+                    Completed = _completedCount,
+                    Abandoned = _abandonedCount,
+                    Errors = _workerErrorCount,
+                    Timeouts = 0
+                };
+
             var attributeNames = new List<string> { QueueAttributeName.All };
             var queueRequest = new GetQueueAttributesRequest(_queueUrl, attributeNames);
             var queueAttributes = await _client.Value.GetQueueAttributesAsync(queueRequest).AnyContext();
