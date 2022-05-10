@@ -8,6 +8,7 @@ using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace Foundatio.Jobs {
     [Job(Description = "Processes adhoc work item queues entries")]
@@ -57,6 +58,8 @@ namespace Foundatio.Jobs {
                 await queueEntry.AbandonAsync().AnyContext();
                 return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
             }
+
+            using var activity = StartProcessWorkItemActivity(queueEntry, workItemDataType);
 
             object workItemData;
             try {
@@ -124,6 +127,39 @@ namespace Foundatio.Jobs {
                 return JobResult.FromException(ex, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
             } finally {
                 await lockValue.ReleaseAsync().AnyContext();
+            }
+        }
+
+        protected virtual Activity StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType) {
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
+
+            if (activity == null)
+                return activity;
+
+            if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
+                activity.TraceStateString = traceState.ToString();
+
+            activity.DisplayName = $"Work Item: {entry.Value.SubMetricName ?? workItemDataType.Name}";
+
+            EnrichProcessWorkItemActivity(activity, entry, workItemDataType);
+
+            return activity;
+        }
+
+        protected virtual void EnrichProcessWorkItemActivity(Activity activity, IQueueEntry<WorkItemData> entry, Type workItemDataType) {
+            if (!activity.IsAllDataRequested)
+                return;
+
+            activity.AddTag("WorkItemType", entry.Value.Type);
+            activity.AddTag("Id", entry.Id);
+            activity.AddTag("CorrelationId", entry.CorrelationId);
+
+            if (entry.Properties == null || entry.Properties.Count <= 0)
+                return;
+
+            foreach (var p in entry.Properties) {
+                if (p.Key != "TraceState")
+                    activity.AddTag(p.Key, p.Value);
             }
         }
 

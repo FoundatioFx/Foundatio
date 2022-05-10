@@ -120,8 +120,6 @@ namespace Foundatio.Jobs {
                 activity.TraceStateString = traceState.ToString();
 
             activity.DisplayName = $"Queue: {entry.EntryType.Name}";
-            if (entry.GetValue() is WorkItemData workItem && !String.IsNullOrEmpty(workItem.SubMetricName))
-                activity.DisplayName = $"Queue Work Item: {workItem.SubMetricName}";
 
             EnrichProcessQueueEntryActivity(activity, entry);
 
