@@ -15,9 +15,11 @@ namespace Foundatio.Redis.Tests.Metrics {
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
+#pragma warning disable CS0618 // Type or member is obsolete
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
             return new RedisMetricsClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).Buffered(buffered).LoggerFactory(Log));
         }
+#pragma warning restore CS0618 // Type or member is obsolete
 
         [Fact]
         public override Task CanSetGaugesAsync() {
