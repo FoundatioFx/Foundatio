@@ -22,8 +22,11 @@ jobs:
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
     - name: Build
       run: dotnet build Foundatio.sln --configuration Release
+    - name: Start Services
+      if: hashFiles('docker-compose.yml') != ''
+      run: docker-compose up -d
     - name: Run Tests
-      run: dotnet test Foundatio.sln --configuration Release --no-build
+      run: dotnet test Foundatio.sln --configuration Release --no-build --logger GitHubActions
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack Foundatio.sln --configuration Release --no-build
