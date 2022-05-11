@@ -183,12 +183,10 @@ namespace Foundatio.Storage {
                 var listingResult = await _container.ListBlobsSegmentedAsync(prefix, true, BlobListingDetails.Metadata, limit, continuationToken, null, null, cancellationToken).AnyContext();
                 continuationToken = listingResult.ContinuationToken;
 
-                // TODO: Implement paging
                 blobs.AddRange(listingResult.Results.OfType<CloudBlockBlob>().MatchesPattern(patternRegex));
             } while (continuationToken != null && blobs.Count < limit.GetValueOrDefault(Int32.MaxValue));
 
-            if (limit.HasValue)
-                blobs = blobs.Take(limit.Value).ToList();
+            blobs = blobs.Skip(skip.HasValue ? skip.Value : 0).Take(limit.HasValue ? limit.Value : Int32.MaxValue).ToList();
 
             return blobs.Select(blob => blob.ToFileInfo());
         }

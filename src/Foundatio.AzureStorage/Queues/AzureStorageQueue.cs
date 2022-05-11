@@ -161,12 +161,57 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats.");
+            if (_queueReference == null || _deadletterQueueReference == null || !_queueCreated)
+                return new QueueStats {
+                    Queued = 0,
+                    Working = 0,
+                    Deadletter = 0,
+                    Enqueued = _enqueuedCount,
+                    Dequeued = _dequeuedCount,
+                    Completed = _completedCount,
+                    Abandoned = _abandonedCount,
+                    Errors = _workerErrorCount,
+                    Timeouts = 0
+                };
+
             var sw = Stopwatch.StartNew();
             await Task.WhenAll(
                 _queueReference.FetchAttributesAsync(),
                 _deadletterQueueReference.FetchAttributesAsync()
             ).AnyContext();
+            sw.Stop();
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}.", sw.Elapsed);
+
+            return new QueueStats {
+                Queued = _queueReference.ApproximateMessageCount.GetValueOrDefault(),
+                Working = 0,
+                Deadletter = _deadletterQueueReference.ApproximateMessageCount.GetValueOrDefault(),
+                Enqueued = _enqueuedCount,
+                Dequeued = _dequeuedCount,
+                Completed = _completedCount,
+                Abandoned = _abandonedCount,
+                Errors = _workerErrorCount,
+                Timeouts = 0
+            };
+        }
+
+        protected override QueueStats GetMetricsQueueStats() {
+            if (_queueReference == null || _deadletterQueueReference == null || !_queueCreated)
+                return new QueueStats {
+                    Queued = 0,
+                    Working = 0,
+                    Deadletter = 0,
+                    Enqueued = _enqueuedCount,
+                    Dequeued = _dequeuedCount,
+                    Completed = _completedCount,
+                    Abandoned = _abandonedCount,
+                    Errors = _workerErrorCount,
+                    Timeouts = 0
+                };
+
+            var sw = Stopwatch.StartNew();
+            _queueReference.FetchAttributes();
+            _deadletterQueueReference.FetchAttributes();
             sw.Stop();
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}.", sw.Elapsed);
 
