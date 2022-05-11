@@ -709,6 +709,7 @@ namespace Foundatio.Tests.Queue {
                         var stats = await queue.GetQueueStatsAsync();
                         if (stats.Abandoned > 0)
                             break;
+                        await Task.Delay(250);
                     } while (sw.Elapsed < TimeSpan.FromSeconds(10));
                 }
 

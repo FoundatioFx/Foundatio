@@ -56,8 +56,12 @@ namespace Foundatio.Queues {
             _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
 
             var queueMetricValues = new InstrumentsValues<long, long, long>(() => {
-                var stats = GetMetricsQueueStats();
-                return (stats.Queued, stats.Working, stats.Deadletter);
+                try {
+                    var stats = GetMetricsQueueStats();
+                    return (stats.Queued, stats.Working, stats.Deadletter);
+                } catch {
+                    return (0, 0, 0);
+                }
             });
 
             _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), () => new Measurement<long>(queueMetricValues.GetValue1()), description: "Number of items in the queue");
