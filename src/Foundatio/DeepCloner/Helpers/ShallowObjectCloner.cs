@@ -1,8 +1,6 @@
 ﻿#define NETCORE
 using System;
 using System.Linq.Expressions;
-using System.Reflection;
-using System.Reflection.Emit;
 
 namespace Foundatio.Force.DeepCloner.Helpers
 {

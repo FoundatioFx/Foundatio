@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
@@ -12,243 +9,121 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
-        private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
-        protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
+    public abstract class MessageBusBase<TOptions> : IMessageBus where TOptions : SharedMessageBusOptions {
+        protected readonly List<IMessageSubscription> _subscriptions = new List<IMessageSubscription>();
         protected readonly TOptions _options;
-        protected readonly ILogger _logger;
         protected readonly ISerializer _serializer;
+        protected readonly ITypeNameSerializer _typeNameSerializer;
+        protected readonly IMessageStore _store;
+        protected readonly ILogger _logger;
         private bool _isDisposed;
+        protected readonly ISystemClock _clock;
+        protected readonly ITimer _maintenanceTimer;
 
         public MessageBusBase(TOptions options) {
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
-            _logger = loggerFactory.CreateLogger(GetType());
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
-            MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
-            _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
-        }
-
-        protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
-            if (messageType == null || message == null)
-                return;
-
-            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
-        }
- 
-        private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
-        protected string GetMappedMessageType(Type messageType) {
-            return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
-                var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
-                if (reversedMap.ContainsKey(type))
-                    return reversedMap[type];
-                
-                return String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name);
-            });
-        }
-
-        private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-        protected virtual Type GetMappedMessageType(string messageType) {
-            if (String.IsNullOrEmpty(messageType))
-                return null;
-            
-            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
-                if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
-                    return _options.MessageTypeMappings[type];
-                
-                try {
-                    return Type.GetType(type);
-                } catch (Exception) {
-                    try {
-                        string[] typeParts = type.Split(',');
-                        if (typeParts.Length >= 2)
-                            type = String.Join(",", typeParts[0], typeParts[1]);
-                        
-                        // try resolve type without version
-                        return Type.GetType(type);
-                    } catch (Exception ex) {
-                        if (_logger.IsEnabled(LogLevel.Warning))
-                            _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
-
-                        return null;
-                    }
-                }
-            });
-        }
-
-        protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
-            var subscriber = new Subscriber {
-                CancellationToken = cancellationToken,
-                Type = typeof(T),
-                Action = (message, token) => {
-                    if (message is not T) {
-                        if (_logger.IsEnabled(LogLevel.Trace))
-                            _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
-                        return Task.CompletedTask;
-                    }
-
-                    return handler((T)message, cancellationToken);
-                }
-            };
-
-            if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
-                _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
-
-            return Task.CompletedTask;
-        }
-
-        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
-            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
-            await SubscribeImplAsync(handler, cancellationToken).AnyContext();
-        }
-
-        protected List<Subscriber> GetMessageSubscribers(IMessage message) {
-            return _subscribers.Values.Where(s => SubscriberHandlesMessage(s, message)).ToList();
-        }
-
-        protected virtual bool SubscriberHandlesMessage(Subscriber subscriber, IMessage message) {
-            if (subscriber.Type == typeof(IMessage))
-                return true;
-
-            var clrType = GetMappedMessageType(message.Type);
-            
-            if (subscriber.IsAssignableFrom(clrType))
-                return true;
-            
-            return false;
-        }
-
-        protected virtual byte[] SerializeMessageBody(string messageType, object body) {
-            if (body == null)
-                return new byte[0];
-            
-            return _serializer.SerializeToBytes(body);
-        }
-
-        protected virtual object DeserializeMessageBody(string messageType, byte[] data) {
-            if (data == null || data.Length == 0)
-                return null;
-
-            object body;
-            try {
-                var clrType = GetMappedMessageType(messageType);
-                if (clrType != null)
-                    body = _serializer.Deserialize(data, clrType);
-                else
-                    body = data;
-            } catch (Exception ex) {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
-                
-                return null;
-            }
-
-            return body;
-        }
-
-        protected async Task SendMessageToSubscribersAsync(IMessage message) {
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            var subscribers = GetMessageSubscribers(message);
-
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
-            
-            if (subscribers.Count == 0)
-                return;
-
-            if (message.Data == null || message.Data.Length == 0) {
-                _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
-                return;
-            }
-            
-            var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
-
-            var subscriberHandlers = subscribers.Select(subscriber => {
-                if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out _)) {
-                        if (isTraceLogLevelEnabled)
-                            _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
-                    } else if (isTraceLogLevelEnabled) {
-                        _logger.LogTrace("Unable to remove cancelled subscriber: {SubscriberId}", subscriber.Id);
-                    }
-
-                    return Task.CompletedTask;
-                }
-
-                return Task.Run(async () => {
-                    if (subscriber.CancellationToken.IsCancellationRequested) {
-                        if (isTraceLogLevelEnabled)
-                            _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
-
-                        return;
-                    }
-
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
-
-                    if (subscriber.Type == typeof(IMessage))
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                    else
-                        await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
-
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
-                });
-            });
-
-            try {
-                await Task.WhenAll(subscriberHandlers.ToArray());
-            } catch (Exception ex) {
-                _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
-
-                throw;
-            }
-
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
-        }
-       
-        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
-            if (message == null)
-                throw new ArgumentNullException(nameof(message));
-
-            SendDelayedMessage(messageType, message, delay);
-
-            return Task.CompletedTask;
-        }
-
-        protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
-            if (message == null)
-                throw new ArgumentNullException(nameof(message));
-            
-            if (delay <= TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(delay));
-
-            var sendTime = SystemClock.UtcNow.SafeAdd(delay);
-            Task.Factory.StartNew(async () => {
-                await SystemClock.SleepSafeAsync(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
-
-                bool isTraceLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-                if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
-                    if (isTraceLevelEnabled)
-                        _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
-                    return;
-                }
-                
-                if (isTraceLevelEnabled)
-                    _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
-
-                await PublishAsync(messageType, message).AnyContext();
-            });
+            var loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+            _logger = loggerFactory.CreateLogger(GetType());
+            _typeNameSerializer = options.TypeNameSerializer ?? new DefaultTypeNameSerializer(_logger);
+            _store = options.MessageStore ?? new InMemoryMessageStore(_logger);
+            MessageBusId = Guid.NewGuid().ToString("N");
+            _clock = options.SystemClock ?? SystemClock.Instance;
+            _maintenanceTimer = _clock.Timer(DoMaintenanceAsync, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         public string MessageBusId { get; protected set; }
+
+        protected virtual Task ConfigureMessageType(Type messageType, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        protected abstract Task PublishImplAsync(byte[] body, MessagePublishOptions options = null);
+
+        public async Task PublishAsync(object message, MessagePublishOptions options) {
+            if (message == null)
+                return;
+            
+            if (options.MessageType == null)
+                options.MessageType = message.GetType();
+            
+            if (options.CancellationToken.IsCancellationRequested)
+                return;
+
+            if (options.ExpiresAtUtc.HasValue && options.ExpiresAtUtc.Value < SystemClock.UtcNow)
+                return;
+            
+            await ConfigureMessageType(options.MessageType, options.CancellationToken).AnyContext();
+            var body = _serializer.SerializeToBytes(message);
+
+            if (options.DeliverAtUtc.HasValue && options.DeliverAtUtc > SystemClock.UtcNow) {
+                _logger.LogTrace("Storing message scheduled for delivery at {DeliverAt}.", options.DeliverAtUtc.Value);
+                var typeName = _typeNameSerializer.Serialize(options.MessageType);
+                await _store.AddAsync(new PersistedMessage {
+                    Id = Guid.NewGuid().ToString("N"),
+                    PublishedUtc = SystemClock.UtcNow,
+                    CorrelationId = options.CorrelationId,
+                    MessageTypeName = typeName,
+                    Body = body,
+                    ExpiresAtUtc = options.ExpiresAtUtc,
+                    DeliverAtUtc = options.DeliverAtUtc,
+                    Properties = options.Properties
+                });
+
+                return;
+            }
+
+            await PublishImplAsync(body, options).AnyContext();
+        }
+
+        protected abstract Task<IMessageSubscription> SubscribeImplAsync(MessageSubscriptionOptions options, Func<IMessageContext, Task> handler);
+
+        public async Task<IMessageSubscription> SubscribeAsync(MessageSubscriptionOptions options, Func<IMessageContext, Task> handler) {
+            if (options.MessageType == null)
+                throw new ArgumentNullException("Options must have a MessageType specified.");
+            
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Adding subscription for {MessageType}.", options.MessageType.FullName);
+            
+            if (options.CancellationToken.IsCancellationRequested)
+                return null;
+
+            await ConfigureMessageType(options.MessageType, options.CancellationToken).AnyContext();
+            var subscription = await SubscribeImplAsync(options, handler).AnyContext();
+            _subscriptions.Add(subscription);
+
+            return subscription;
+        }
+
+        public Task<IMessageContext> ReceiveAsync(MessageReceiveOptions options) {
+            throw new NotImplementedException();
+        }
+
+        protected bool MessageTypeHasSubscribers(Type messageType) {
+            var subscribers = _subscriptions.Where(s => s.MessageType.IsAssignableFrom(messageType)).ToList();
+            return subscribers.Count == 0;
+        }
+
+        protected async Task DoMaintenanceAsync() {
+            _logger.LogTrace("Checking for stored messages that are ready for delivery...");
+            var pendingMessages = await _store.GetReadyForDeliveryAsync();
+            foreach (var pendingMessage in pendingMessages) {
+                var messageType = _typeNameSerializer.Deserialize(pendingMessage.MessageTypeName);
+                var properties = new Dictionary<string, string>();
+                if (pendingMessage.Properties != null)
+                    properties.AddRange(pendingMessage.Properties);
+
+                await PublishImplAsync(pendingMessage.Body, new MessagePublishOptions {
+                    CorrelationId = pendingMessage.CorrelationId,
+                    DeliverAtUtc = pendingMessage.DeliverAtUtc,
+                    ExpiresAtUtc = pendingMessage.ExpiresAtUtc,
+                    MessageType = messageType,
+                    Properties = properties
+                }).AnyContext();
+            }
+
+            int removed = _subscriptions.RemoveAll(s => s.IsCancelled);
+            if (removed > 0)
+                _logger.LogTrace("Removing {CancelledSubscriptionCount} cancelled subscriptions.", removed);
+        }
 
         public virtual void Dispose() {
             if (_isDisposed) {
@@ -259,29 +134,12 @@ namespace Foundatio.Messaging {
             _isDisposed = true;
             
             _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
-            _subscribers?.Clear();
-            _messageBusDisposedCancellationTokenSource?.Cancel();
-            _messageBusDisposedCancellationTokenSource?.Dispose();
-        }
 
-        [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
-        protected class DelayedMessage {
-            public DateTime SendTime { get; set; }
-            public Type MessageType { get; set; }
-            public object Message { get; set; }
-        }
+            _maintenanceTimer?.Dispose();
 
-        [DebuggerDisplay("Id: {Id} Type: {Type} CancellationToken: {CancellationToken}")]
-        protected class Subscriber {
-            private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new();
-
-            public string Id { get; private set; } = Guid.NewGuid().ToString("N");
-            public CancellationToken CancellationToken { get; set; }
-            public Type Type { get; set; }
-            public Func<object, CancellationToken, Task> Action { get; set; }
-
-            public bool IsAssignableFrom(Type type) {
-                return _assignableTypesCache.GetOrAdd(type, t => Type.GetTypeInfo().IsAssignableFrom(t));
+            if (_subscriptions != null && _subscriptions.Count > 0) {
+                foreach (var subscription in _subscriptions)
+                    subscription.Dispose();
             }
         }
     }

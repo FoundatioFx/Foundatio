@@ -108,7 +108,7 @@ namespace Foundatio.Tests.Messaging {
 
         public virtual async Task CanSendMappedMessageAsync() {
             var messageBus = GetMessageBus(b => {
-                b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
+                b.TypeNameSerializer = new DefaultTypeNameSerializer(_logger, new Dictionary<string, Type> {{ nameof(SimpleMessageA), typeof(SimpleMessageA) }});
                 return b;
             });
             if (messageBus == null)
@@ -136,7 +136,43 @@ namespace Foundatio.Tests.Messaging {
         }
 
         public virtual async Task CanSendDelayedMessageAsync() {
-            const int numConcurrentMessages = 1000;
+            Log.MinimumLevel = LogLevel.Trace;
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            try {
+                var countdown = new AsyncCountdownEvent(1);
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                    var msgDelay = TimeSpan.FromMilliseconds(msg.Count);
+                    _logger.LogTrace("Got message delayed by {Delay:g}.", msgDelay);
+
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                });
+
+                var sw = Stopwatch.StartNew();
+                var delay = TimeSpan.FromMilliseconds(RandomData.GetInt(250, 1500));
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello",
+                    Count = (int)delay.TotalMilliseconds
+                }, delay);
+                _logger.LogTrace("Published message...");
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(30));
+                sw.Stop();
+
+                _logger.LogTrace("Got message delayed by {Delay:g} in {Duration:g}", delay, sw.Elapsed);
+                Assert.Equal(0, countdown.CurrentCount);
+                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 2000);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
+        }
+
+        public virtual async Task CanSendParallelDelayedMessagesAsync() {
+            Log.MinimumLevel = LogLevel.Trace;
+            const int numConcurrentMessages = 100;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
@@ -158,17 +194,18 @@ namespace Foundatio.Tests.Messaging {
                     await messageBus.PublishAsync(new SimpleMessageA {
                         Data = "Hello",
                         Count = i
-                    }, new MessageOptions { DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)) });
+                    }, TimeSpan.FromMilliseconds(RandomData.GetInt(100, 500)));
                     if (i % 500 == 0)
                         _logger.LogTrace("Published 500 messages...");
                 });
+                _logger.LogTrace("Done publishing {Count} messages.", numConcurrentMessages);
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(30));
                 sw.Stop();
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
+                _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
-                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
+                Assert.InRange(sw.Elapsed.TotalMilliseconds, 100, 2000);
             } finally {
                 await CleanupMessageBusAsync(messageBus);
             }

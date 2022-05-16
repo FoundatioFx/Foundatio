@@ -92,7 +92,7 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanCancelContinuousJobs() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var job = new HelloWorldJob(Log);
                 var timeoutCancellationTokenSource = new CancellationTokenSource(100);
                 await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
@@ -101,7 +101,7 @@ namespace Foundatio.Tests.Jobs {
 
                 timeoutCancellationTokenSource = new CancellationTokenSource(500);
                 var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
-                await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
+                await clock.SleepAsync(TimeSpan.FromSeconds(1));
                 await runnerTask;
             }
         }
@@ -137,11 +137,9 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobsWithInterval() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-                TestSystemClock.SetFrozenTime(time);
-                TestSystemClock.UseFakeSleep();
+                clock.SetTime(time);
 
                 var job = new HelloWorldJob(Log);
                 var interval = TimeSpan.FromHours(.75);
@@ -155,11 +153,9 @@ namespace Foundatio.Tests.Jobs {
 
         [Fact]
         public async Task CanRunJobsWithIntervalBetweenFailingJob() {
-            using (TestSystemClock.Install()) {
+            using (var clock = TestSystemClock.Install()) {
                 var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-                TestSystemClock.SetFrozenTime(time);
-                TestSystemClock.UseFakeSleep();
+                clock.SetTime(time);
 
                 var job = new FailingJob(Log);
                 var interval = TimeSpan.FromHours(.75);

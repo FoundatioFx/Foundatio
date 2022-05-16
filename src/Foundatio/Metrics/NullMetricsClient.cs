@@ -1,6 +1,4 @@
-﻿using System.Threading.Tasks;
-
-namespace Foundatio.Metrics {
+﻿namespace Foundatio.Metrics {
     public class NullMetricsClient : IMetricsClient {
         public static readonly IMetricsClient Instance = new NullMetricsClient();
         public void Counter(string name, int value = 1) {}
