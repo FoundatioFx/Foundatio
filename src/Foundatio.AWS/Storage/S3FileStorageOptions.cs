@@ -12,6 +12,7 @@ namespace Foundatio.Storage {
         public bool? UseChunkEncoding { get; set; }
         public string ServiceUrl { get; set; }
         public S3CannedACL CannedACL { get; set; }
+        public HttpClientFactory HttpClientFactory { get; set; }
     }
 
     public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder> {
