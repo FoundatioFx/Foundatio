@@ -44,7 +44,8 @@ namespace Foundatio.Storage {
                 _client = new AmazonS3Client(credentials, new AmazonS3Config {
                     RegionEndpoint = RegionEndpoint.USEast1,
                     ServiceURL = options.ServiceUrl,
-                    ForcePathStyle = true
+                    ForcePathStyle = true,
+                    HttpClientFactory = options.HttpClientFactory
                 });
             }
         }
