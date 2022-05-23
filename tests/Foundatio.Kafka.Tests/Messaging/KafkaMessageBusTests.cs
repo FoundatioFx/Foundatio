@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -10,20 +13,24 @@ using Xunit.Abstractions;
 namespace Foundatio.Kafka.Tests.Messaging; 
 
 public class KafkaMessageBusTests : MessageBusTestBase {
+    private readonly string _topic = $"test_topic_{DateTime.Now.Ticks}";
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
-    
+
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => {
             o.LoggerFactory(Log);
-
-            config?.Invoke(o.Target);
-
+            o.BootStrapServers("localhost:9092");
+            o.AutoCommitIntervalMs(100);
+            o.TopicName(_topic);
+            o.GroupId(Guid.NewGuid().ToString());
+            o.NumberOfPartitions(1);
+            o.ReplicationFactor(1);
             return o;
         });
     }
 
     [Fact]
-    public override Task CanSendMessageAsync() {
+    public override Task CanSendMessageAsync() {        
         return base.CanSendMessageAsync();
     }
 
@@ -43,7 +50,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     }
 
     [Fact]
-    public override Task CanSubscribeConcurrentlyAsync() {
+    public override  Task CanSubscribeConcurrentlyAsync() {
         return base.CanSubscribeConcurrentlyAsync();
     }
 
@@ -94,6 +101,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     [Fact]
     public override Task CanReceiveFromMultipleSubscribersAsync() {
+        Log.MinimumLevel = LogLevel.Trace;
         return base.CanReceiveFromMultipleSubscribersAsync();
     }
 
