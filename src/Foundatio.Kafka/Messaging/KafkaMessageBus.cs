@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -125,10 +126,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
         int? queueSize = _producer?.Flush(TimeSpan.FromSeconds(15));
-        if (queueSize > 0) {
+        if (queueSize > 0)
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Flushing producer {queueSize}", queueSize);
-        }
         _producer?.Dispose();
         _messageBusDisposedCancellationTokenSource.Cancel();
         _messageBusDisposedCancellationTokenSource.Dispose();
@@ -141,8 +141,22 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             try {
                var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
                bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.TopicName);
-               if (!isTopicExist)
-                   await adminClient.CreateTopicsAsync(new TopicSpecification[] { new TopicSpecification { Name = _options.TopicName, ReplicationFactor = _options.TopicReplicationFactor, NumPartitions = _options.TopicNumberOfPartitions, Configs = _options.TopicConfigs, ReplicasAssignments = _options.TopicReplicasAssignments } });
+               if (!isTopicExist) {
+                   if (_options.AllowAutoCreateTopics.GetValueOrDefault())
+                       await adminClient.CreateTopicsAsync(new TopicSpecification[] {
+                           new TopicSpecification {
+                               Name = _options.TopicName,
+                               ReplicationFactor = _options.TopicReplicationFactor,
+                               NumPartitions = _options.TopicNumberOfPartitions,
+                               Configs = _options.TopicConfigs,
+                               ReplicasAssignments = _options.TopicReplicasAssignments
+                           }
+                       });
+                   else
+                       throw new CreateTopicsException(new List<CreateTopicReport> {
+                           new CreateTopicReport { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.TopicName }
+                       });
+               } 
             } catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists) {
                 if (_logger.IsEnabled(LogLevel.Debug))
                     _logger.LogDebug(ex, "Topic {Topic} already exists", _options.Topic);
