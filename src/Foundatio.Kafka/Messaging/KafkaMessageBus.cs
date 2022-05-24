@@ -139,18 +139,19 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         using (await _lock.LockAsync().AnyContext()) {
             using var adminClient = new AdminClientBuilder(_adminClientConfig).Build();
             try {
-                var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
-                bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.TopicName);
-                if (!isTopicExist)
-                    await adminClient.CreateTopicsAsync(new TopicSpecification[] { new TopicSpecification { Name = _options.TopicName, ReplicationFactor = _options.TopicReplicationFactor, NumPartitions = _options.TopicNumberOfPartitions, Configs = _options.TopicConfigs, ReplicasAssignments = _options.TopicReplicasAssignments } });
-            } catch (CreateTopicsException e) {
-                if (e.Results[0].Error.Code != ErrorCode.TopicAlreadyExists) {
-                    if (_logger.IsEnabled(LogLevel.Trace))
-                        _logger.LogTrace("An error occured creating topic {Topic}: {Reason}", _options.Topic, e.Results[0].Error.Reason);
-                } else {
-                    if (_logger.IsEnabled(LogLevel.Trace))
-                        _logger.LogTrace("Topic {Topic} already exists", _options.Topic);
-                }
+               var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
+               bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.TopicName);
+               if (!isTopicExist)
+                   await adminClient.CreateTopicsAsync(new TopicSpecification[] { new TopicSpecification { Name = _options.TopicName, ReplicationFactor = _options.TopicReplicationFactor, NumPartitions = _options.TopicNumberOfPartitions, Configs = _options.TopicConfigs, ReplicasAssignments = _options.TopicReplicasAssignments } });
+            } catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists) {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                    _logger.LogDebug(ex, "Topic {Topic} already exists", _options.Topic);
+            } catch (CreateTopicsException ex) {
+                _logger.LogError(ex, "An error occured creating topic {Topic}: {Reason}", _options.Topic, ex.Results[0].Error.Reason);
+                throw;
+            } catch (Exception ex) {
+                _logger.LogError(ex, "An error occured creating topic {Topic}: {Reason}", _options.Topic, ex.Message);
+                throw;
             }
         }
     }
