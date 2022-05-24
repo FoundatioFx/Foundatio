@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Kafka.Tests.Messaging; 
+namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusTests : MessageBusTestBase {
     private readonly string _topic = $"test_topic_{DateTime.Now.Ticks}";
@@ -121,11 +121,11 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             _logger.LogTrace("Got message {Data}", msg.Data);
             t.Set();
         }, cts.Token);
-        messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 1"});
+        messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
         t.WaitOne(TimeSpan.FromSeconds(5));
         cts.Cancel();
 
-        messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit message 2"});
+        messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
 
         cts = new CancellationTokenSource();
         messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
@@ -135,9 +135,9 @@ public class KafkaMessageBusTests : MessageBusTestBase {
         t.WaitOne(TimeSpan.FromSeconds(5));
         cts.Cancel();
 
-        messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 1"});
-        messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 2"});
-        messageBus1.PublishAsync(new SimpleMessageA {Data = "Audit offline message 3"});
+        messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
+        messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
+        messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
 
         messageBus1.Dispose();
         var messageBus2 = new KafkaMessageBus(o => o.LoggerFactory(Log));
@@ -146,6 +146,6 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             _logger.LogTrace("Got message {Data}", msg.Data);
             t.Set();
         }, cts.Token);
-        messageBus2.PublishAsync(new SimpleMessageA {Data = "Another audit message 4"});
+        messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
     }
 }

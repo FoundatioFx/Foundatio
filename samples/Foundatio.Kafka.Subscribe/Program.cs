@@ -11,16 +11,16 @@ namespace Foundatio.Kafka.Subscribe {
 
             var tasks = new List<Task>();
             var messageBuses = new List<IMessageBus>();
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 1; i++) {
                 var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
-                    BootstrapServers = "localhost:29092",
+                    BootstrapServers = "localhost:9092",
                     TopicName = "localTopic1",
                     GroupId = Guid.NewGuid().ToString(),
                     AutoOffSetReset = AutoOffsetReset.Earliest,
-                    EnableAutoCommit=true,
-                    EnableAutoOffsetStore=true
-                });;
-                messageBuses.Add(messageBus);                
+                    EnableAutoCommit = true,
+                    EnableAutoOffsetStore = true
+                }); ;
+                messageBuses.Add(messageBus);
                 tasks.Add(messageBus.SubscribeAsync<MyMessage>(msg => { Console.WriteLine($"Got subscriber {messageBus.MessageBusId} message: {msg.Hey}"); }));
             }
             await Task.WhenAll(tasks);

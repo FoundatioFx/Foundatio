@@ -22,6 +22,21 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
     public string GroupId { get; set; }
 
     /// <summary>
+    /// Message Header Key of MessageType
+    /// </summary>
+    public string MessageType { get; set; } = "MessageType";
+
+    /// <summary>
+    /// Message Header Key of ContentType
+    /// </summary>
+    public string ContentType { get; set; } = "text/json";
+
+    /// <summary>
+    /// Publish message key
+    /// </summary>
+    public string PublishKey { get; set; }
+
+    /// <summary>
     /// { "auto.commit.interval.ms", 5000 },
     ///     /// <summary>
     /// <value>
@@ -1555,5 +1570,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     public KafkaMessageBusOptionsBuilder AllowAutoCreateTopics(bool? allowAutoCreateTopics) {
         Target.AllowAutoCreateTopics = allowAutoCreateTopics ?? throw new ArgumentNullException(nameof(allowAutoCreateTopics));
         return this;
-    }
+    } 
 }
+
