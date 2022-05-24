@@ -1,15 +1,12 @@
 ﻿using System;
-using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
-using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
@@ -26,26 +23,27 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     private const string MessageType = "MessageType";
     private const string ContentType = "ContentType";
     private const string CorrelationId = "CorrelationId";
-
+    
     public KafkaMessageBus(KafkaMessageBusOptions options) : base(options) {
         _adminClientConfig = CreateAdminConfig();
         _consumerConfig = CreateConsumerConfig();
         _producerConfig = CreateProducerConfig();
         _producer = new ProducerBuilder<string, byte[]>(_producerConfig).Build();
     }
-
+    
     public KafkaMessageBus(Builder<KafkaMessageBusOptionsBuilder, KafkaMessageBusOptions> config)
         : this(config(new KafkaMessageBusOptionsBuilder()).Build()) {
     }
  
     protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
         if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("PublishImplAsync([{messageType}])", messageType);
+            _logger.LogTrace("PublishImplAsync([{MessageType}])", messageType);
         var headers = new Headers();
         headers.Add(new Header(MessageType, Encoding.UTF8.GetBytes(messageType)));
         headers.Add(new Header(ContentType, Encoding.UTF8.GetBytes(_options.ContentType)));
         if (options?.CorrelationId != null)
             headers.Add(new Header(CorrelationId, Encoding.UTF8.GetBytes(options.CorrelationId)));
+        
         var publishMessage = new Message<string, byte[]> {
             Key = _options.PublishKey,
             Value = SerializeMessageBody(messageType, message),
@@ -62,13 +60,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         });
         return Task.CompletedTask;
     }
-
     private async Task OnMessageAsync(ConsumeResult<string, byte[]> consumeResult) {
         if (_subscribers.IsEmpty)
             return;
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("OnMessage( topic: {Topic},groupId: {GroupId} partition: [{Partition}] offset: [{Offset}] partitionOffset; [{TopicPartitionOffset}])", consumeResult.Topic, _consumerConfig.GroupId, consumeResult.Partition, consumeResult.Offset, consumeResult.TopicPartitionOffset);
-
         IMessage message;
         try {
             message = ConvertToMessage(Encoding.UTF8.GetString(consumeResult.Message.Headers.SingleOrDefault(x => x.Key.Equals(MessageType)).GetValueBytes()), consumeResult.Message.Value);
@@ -85,7 +81,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         await EnsureTopicCreatedAsync();
         EnsureListening();
     }
-
     protected virtual IMessage ConvertToMessage(string messageType, byte[] data) {
         return new Message(() => DeserializeMessageBody(messageType, data)) {
             Type = messageType,
@@ -93,25 +88,20 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             Data = data
         };
     }
-
     private void EnsureListening() {
         if (_listeningTask is not null) {
             _logger.LogDebug("StartListening: Already listening");
             return;
         }
-
         _listeningTask = Task.Run(async () => {
             using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig).Build();
             consumer.Subscribe(_options.TopicName);
             _logger.LogInformation("EnsureListening consumer {Name} subscribed on {Topic}", consumer.Name, _options.Topic);
-
             try {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
-
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
                     var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
-
                     if (_logger.IsEnabled(LogLevel.Trace))
                         _logger.LogTrace($"Consumed topic: {consumeResult.Topic} by consumer : {consumer.Name} partition {consumeResult.TopicPartition}");
                     await OnMessageAsync(consumeResult).AnyContext();
@@ -125,7 +115,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             }
         }, _messageBusDisposedCancellationTokenSource.Token);
     }
-
     public override void Dispose() {
         if (_isDisposed) {
             if (_logger.IsEnabled(LogLevel.Trace))
@@ -133,22 +122,18 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             return;
         }
         _isDisposed = true;
-
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
-
         int? queueSize = _producer?.Flush(TimeSpan.FromSeconds(15));
         if (queueSize > 0) {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Flushing producer {queueSize}", queueSize);
         }
         _producer?.Dispose();
-
         _messageBusDisposedCancellationTokenSource.Cancel();
         _messageBusDisposedCancellationTokenSource.Dispose();
         base.Dispose();
     }
-
     private async Task EnsureTopicCreatedAsync() {
         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("EnsureTopicCreatedAsync {Topic}", _options.Topic);
         using (await _lock.LockAsync().AnyContext()) {
@@ -162,7 +147,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 if (e.Results[0].Error.Code != ErrorCode.TopicAlreadyExists) {
                     if (_logger.IsEnabled(LogLevel.Trace))
                         _logger.LogTrace("An error occured creating topic {Topic}: {Reason}", _options.Topic, e.Results[0].Error.Reason);
-
                 } else {
                     if (_logger.IsEnabled(LogLevel.Trace))
                         _logger.LogTrace("Topic {Topic} already exists", _options.Topic);
@@ -170,7 +154,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             }
         }
     }
-
     private ClientConfig CreateClientConfig() {
         return new ClientConfig {
             SaslMechanism = _options.SaslMechanism,
@@ -241,13 +224,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             ClientRack = _options.ClientRack,
         };
     }
-
     private AdminClientConfig CreateAdminConfig() {
         var _clientConfig = CreateClientConfig();
         var config = new AdminClientConfig(_clientConfig);
         return config;
     }
-
     /// <summary>
     /// check default values
     /// </summary>
@@ -278,7 +259,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         };
         return config;
     }
-
     private ConsumerConfig CreateConsumerConfig() {
         var _clientConfig = CreateClientConfig();
         var config = new ConsumerConfig(_clientConfig) {

@@ -1,11 +1,8 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.AsyncEx;
 using Foundatio.Messaging;
-using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
