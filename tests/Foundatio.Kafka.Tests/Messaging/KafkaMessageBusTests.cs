@@ -22,6 +22,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             o.GroupId(Guid.NewGuid().ToString());
             o.NumberOfPartitions(1);
             o.ReplicationFactor(1);
+            o.AllowAutoCreateTopics(true);
             return o;
         });
     }

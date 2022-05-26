@@ -24,18 +24,18 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     private const string MessageType = "MessageType";
     private const string ContentType = "ContentType";
     private const string CorrelationId = "CorrelationId";
-    
+
     public KafkaMessageBus(KafkaMessageBusOptions options) : base(options) {
         _adminClientConfig = CreateAdminConfig();
         _consumerConfig = CreateConsumerConfig();
         _producerConfig = CreateProducerConfig();
-        _producer = new ProducerBuilder<string, byte[]>(_producerConfig).Build();
+        _producer = new ProducerBuilder<string, byte[]>(_producerConfig).SetLogHandler((client, message) => OnKafkaClientMessage(client, message)).Build();
     }
-    
+
     public KafkaMessageBus(Builder<KafkaMessageBusOptionsBuilder, KafkaMessageBusOptions> config)
         : this(config(new KafkaMessageBusOptionsBuilder()).Build()) {
     }
- 
+
     protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("PublishImplAsync([{MessageType}])", messageType);
@@ -44,13 +44,13 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         headers.Add(new Header(ContentType, Encoding.UTF8.GetBytes(_options.ContentType)));
         if (options?.CorrelationId != null)
             headers.Add(new Header(CorrelationId, Encoding.UTF8.GetBytes(options.CorrelationId)));
-        
+
         var publishMessage = new Message<string, byte[]> {
             Key = _options.PublishKey,
             Value = SerializeMessageBody(messageType, message),
             Headers = headers
         };
-        
+
         _producer.Produce(_options.TopicName, publishMessage,
         (deliveryReport) => {
             if (deliveryReport.Error.Code != ErrorCode.NoError) {
@@ -75,7 +75,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             return;
         }
     }
-  
+
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("EnsureTopicSubscriptionAsync");
@@ -90,12 +90,16 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         };
     }
     private void EnsureListening() {
-        if (_listeningTask is not null) {
-            _logger.LogDebug("StartListening: Already listening");
+        if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
+            return;
+        if (_listeningTask is { Status: TaskStatus.Running }) {
+            _logger.LogDebug("Already Listening: {TopicName}", _options.TopicName);
             return;
         }
+
+        _logger.LogDebug("Start Listening: {TopicName}", _options.TopicName);
         _listeningTask = Task.Run(async () => {
-            using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig).Build();
+            using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig).SetLogHandler((client, message) => OnKafkaClientMessage(client, message)).Build();
             consumer.Subscribe(_options.TopicName);
             _logger.LogInformation("EnsureListening consumer {Name} subscribed on {Topic}", consumer.Name, _options.Topic);
             try {
@@ -113,9 +117,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 _logger.LogDebug(ex, "Error consuming message: {Message}", ex.Message);
             } finally {
                 consumer.Close();
+                _logger.LogDebug("Stop Listening {TopicName}", _options.TopicName);
             }
         }, _messageBusDisposedCancellationTokenSource.Token);
     }
+
     public override void Dispose() {
         if (_isDisposed) {
             if (_logger.IsEnabled(LogLevel.Trace))
@@ -134,16 +140,21 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         _messageBusDisposedCancellationTokenSource.Dispose();
         base.Dispose();
     }
+    private void OnKafkaClientMessage(IClient client, LogMessage message) {
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("[{LogLevel}] Client {Name} Message :{Message}", message.Level, client.Name, message.Message);
+    }
+
     private async Task EnsureTopicCreatedAsync() {
         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("EnsureTopicCreatedAsync {Topic}", _options.Topic);
         using (await _lock.LockAsync().AnyContext()) {
-            using var adminClient = new AdminClientBuilder(_adminClientConfig).Build();
+            using var adminClient = new AdminClientBuilder(_adminClientConfig).SetLogHandler((client, message) => OnKafkaClientMessage(client, message)).Build();
             try {
-               var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
-               bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.TopicName);
-               if (!isTopicExist) {
-                   if (_options.AllowAutoCreateTopics.GetValueOrDefault())
-                       await adminClient.CreateTopicsAsync(new TopicSpecification[] {
+                var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
+                bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.TopicName);
+                if (!isTopicExist) {
+                    if (_options.AllowAutoCreateTopics.GetValueOrDefault())
+                        await adminClient.CreateTopicsAsync(new TopicSpecification[] {
                            new TopicSpecification {
                                Name = _options.TopicName,
                                ReplicationFactor = _options.TopicReplicationFactor,
@@ -152,11 +163,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                                ReplicasAssignments = _options.TopicReplicasAssignments
                            }
                        });
-                   else
-                       throw new CreateTopicsException(new List<CreateTopicReport> {
+                    else
+                        throw new CreateTopicsException(new List<CreateTopicReport> {
                            new CreateTopicReport { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.TopicName }
                        });
-               } 
+                }
             } catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists) {
                 if (_logger.IsEnabled(LogLevel.Debug))
                     _logger.LogDebug(ex, "Topic {Topic} already exists", _options.Topic);
