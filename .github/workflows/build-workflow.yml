@@ -33,7 +33,7 @@ jobs:
       if: hashFiles('docker-compose.yml') != ''
       run: docker compose up -d && docker compose up ready || true
     - name: Run Tests
-      run: dotnet test ${{ inputs.solution }} --configuration Release --no-build --logger "GitHubActions;report-warnings=false" 
+      run: dotnet test ${{ inputs.solution }} --configuration Release --no-build --logger GitHubActions
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ inputs.solution }} --configuration Release --no-build
