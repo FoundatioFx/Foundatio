@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -25,7 +25,12 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         _adminClientConfig = CreateAdminConfig();
         _consumerConfig = CreateConsumerConfig();
         var producerConfig = CreateProducerConfig();
-        _producer = new ProducerBuilder<string, byte[]>(producerConfig).SetLogHandler(OnKafkaClientMessage).Build();
+        _producer = new ProducerBuilder<string, byte[]>(producerConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
     }
 
     public KafkaMessageBus(Builder<KafkaMessageBusOptionsBuilder, KafkaMessageBusOptions> config)
@@ -110,7 +115,17 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
 
         _logger.LogDebug("Start Listening: {Topic}", _options.Topic);
         _listeningTask = Task.Run(async () => {
-            using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig).SetLogHandler(OnKafkaClientMessage).Build();
+            using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
+                .SetLogHandler(LogHandler)
+                .SetStatisticsHandler(LogStatisticsHandler)
+                .SetErrorHandler(LogErrorHandler)
+                .SetPartitionsAssignedHandler(LogPartitionAssignmentHandler)
+                .SetPartitionsLostHandler(LogPartitionsLostHandler)
+                .SetPartitionsRevokedHandler(LogPartitionsRevokedHandler)
+                .SetOffsetsCommittedHandler(LogOffsetsCommittedHandler)
+                .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+                .Build();
+   
             consumer.Subscribe(_options.Topic);
             _logger.LogInformation("EnsureListening Consumer={ConsumerName} Topic={Topic}", consumer.Name, _options.Topic);
 
@@ -148,18 +163,18 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         _messageBusDisposedCancellationTokenSource.Dispose();
         base.Dispose();
     }
-
-    private void OnKafkaClientMessage(IClient client, LogMessage message) {
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("[{LogLevel}] Client {Name}: {Message}", message.Level, client.Name, message.Message);
-    }
-
+    
     private async Task EnsureTopicCreatedAsync() {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("EnsureTopicCreatedAsync Topic={Topic}", _options.Topic);
 
         using var topicLock = await _lock.LockAsync().AnyContext();
-        using var adminClient = new AdminClientBuilder(_adminClientConfig).SetLogHandler(OnKafkaClientMessage).Build();
+        using var adminClient = new AdminClientBuilder(_adminClientConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
 
         try {
             var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
@@ -190,6 +205,47 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             _logger.LogError(ex, "Error creating topic {Topic}: {Reason}", _options.Topic, ex.Message);
             throw;
         }
+    }
+    
+    private void LogHandler(IClient client, LogMessage message) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("[{LogLevel}] Client log: {Message}", message.Level, message.Message);
+    }
+
+    private void LogStatisticsHandler(IClient client, string statistics)
+    {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Client Statistics: {Statistics}", statistics);
+    }
+    
+    private void LogPartitionAssignmentHandler(IConsumer<string, byte[]> consumer, List<TopicPartition> list) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Consumer partitions assigned: {@Partitions}", list);
+    }
+
+    private void LogPartitionsLostHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Consumer partitions list: {@Partitions}", list);
+    }
+
+    private void LogPartitionsRevokedHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Consumer partitions revoked: {@Partitions}", list);
+    }
+
+    private void LogOffsetsCommittedHandler(IConsumer<string, byte[]> consumer, CommittedOffsets offsets) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Consumer Committed Offsets: {@Offsets}", offsets.Offsets);
+    }
+
+    private void LogOAuthBearerTokenRefreshHandler(IClient client, string token) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Client refresh OAuth Bearer Token: {BearerToken}", token);
+    }
+
+    private void LogErrorHandler(IClient client, Error error) {
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Client Error: [{ErrorCode}] {Message}", error.Code, error.Reason);
     }
 
     private ClientConfig CreateClientConfig() {

@@ -23,6 +23,7 @@ public class Program {
             //EnableAutoCommit = false,
             //EnableAutoOffsetStore = false,
             AllowAutoCreateTopics = true,
+            Debug = "consumer,cgrp,topic,fetch",
             LoggerFactory = loggerFactory
         });
 
