@@ -16,16 +16,17 @@ public class Program {
         using var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
             BootstrapServers = "localhost:9092",
             Topic = "sample-topic",
-            LoggerFactory = loggerFactory,
-            GroupId = Guid.NewGuid().ToString()
+            GroupId = "test-group-1",
+            //EnableAutoCommit = false,
+            //EnableAutoOffsetStore = false,
+            LoggerFactory = loggerFactory
         });
 
         string message;
         do {
             message = Console.ReadLine();
-            var delay = TimeSpan.FromSeconds(1);
-            var body = new MyMessage { Hey = message };
-            await messageBus.PublishAsync(body, delay);
+            await messageBus.PublishAsync(new MyMessage { Hey = message });
+            
             logger.LogInformation("Message sent. Enter new message or press enter to exit:");
         } while (!String.IsNullOrEmpty(message));
     }

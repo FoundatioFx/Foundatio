@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
@@ -10,22 +10,21 @@ using Xunit.Abstractions;
 namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusTests : MessageBusTestBase {
-    private readonly string _topic = $"test_topic_{DateTime.Now.Ticks}";
+    private readonly string _topic = $"test_topic_{SystemClock.UtcNow.Ticks}";
 
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
-        return new KafkaMessageBus(o => {
-            o.LoggerFactory(Log);
-            o.BootStrapServers("localhost:9092");
-            o.AutoCommitIntervalMs(100);
-            o.Topic(_topic);
-            o.GroupId(Guid.NewGuid().ToString());
-            o.NumberOfPartitions(1);
-            o.ReplicationFactor(1);
-            o.AllowAutoCreateTopics(true);
-            return o;
-        });
+        return new KafkaMessageBus(o => o
+            .BootStrapServers("localhost:9092")
+            .AutoCommitIntervalMs(100)
+            .Topic(_topic)
+            .GroupId(Guid.NewGuid().ToString())
+            .NumberOfPartitions(1)
+            .ReplicationFactor(1)
+            .AllowAutoCreateTopics(true)
+            .LoggerFactory(Log)
+        );
     }
 
     [Fact]
