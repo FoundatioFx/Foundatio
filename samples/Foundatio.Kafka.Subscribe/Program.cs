@@ -21,17 +21,21 @@ public class Program {
         for (int i = 0; i < 1; i++) {
             var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
                 BootstrapServers = "localhost:9092",
-                TopicName = "sample-topic",
+                Topic = "sample-topic",
                 GroupId = Guid.NewGuid().ToString(),
                 AutoOffSetReset = AutoOffsetReset.Earliest,
                 EnableAutoCommit = true,
                 EnableAutoOffsetStore = true,
                 AllowAutoCreateTopics = true,
-                LoggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug))
+                LoggerFactory = loggerFactory
             });
+
             messageBuses.Add(messageBus);
-            tasks.Add(messageBus.SubscribeAsync<MyMessage>(msg => { logger.LogInformation($"Got subscriber {messageBus.MessageBusId} message: {msg.Hey}"); }));
+            tasks.Add(messageBus.SubscribeAsync<MyMessage>(msg => {
+                logger.LogInformation($"Got subscriber {messageBus.MessageBusId} message: {msg.Hey}");
+            }));
         }
+
         await Task.WhenAll(tasks);
         Console.ReadLine();
         foreach (var messageBus in messageBuses)

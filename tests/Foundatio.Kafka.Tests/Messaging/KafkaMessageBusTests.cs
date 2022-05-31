@@ -11,6 +11,7 @@ namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusTests : MessageBusTestBase {
     private readonly string _topic = $"test_topic_{DateTime.Now.Ticks}";
+
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
@@ -18,7 +19,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             o.LoggerFactory(Log);
             o.BootStrapServers("localhost:9092");
             o.AutoCommitIntervalMs(100);
-            o.TopicName(_topic);
+            o.Topic(_topic);
             o.GroupId(Guid.NewGuid().ToString());
             o.NumberOfPartitions(1);
             o.ReplicationFactor(1);
@@ -28,7 +29,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     }
 
     [Fact]
-    public override Task CanSendMessageAsync() {        
+    public override Task CanSendMessageAsync() {
         return base.CanSendMessageAsync();
     }
 
@@ -48,7 +49,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     }
 
     [Fact]
-    public override  Task CanSubscribeConcurrentlyAsync() {
+    public override Task CanSubscribeConcurrentlyAsync() {
         return base.CanSubscribeConcurrentlyAsync();
     }
 
@@ -110,7 +111,6 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     [Fact]
     public void MessageQueueWillPersistAndNotLoseMessages() {
-        Log.MinimumLevel = LogLevel.Trace;
         var messageBus1 = new KafkaMessageBus(o => o
             .LoggerFactory(Log));
         var t = new AutoResetEvent(false);
