@@ -14,23 +14,27 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
 
-Includes implementations in Redis, Azure, AWS, RabbitMQ and in memory (for development).
+Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
 ## Why Foundatio?
+
 When building several big cloud applications we found a lack of great solutions (that's not to say there isn't solutions out there) for many key pieces to building scalable distributed applications while keeping the development experience simple. Here are a few examples of why we built and use Foundatio:
- * Wanted to build against abstract interfaces so that we could easily change implementations.
- * Wanted the blocks to be dependency injection friendly.
- * Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there weren't any in memory implementations so every developer was required to set up and configure Redis.
- * Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
- * Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
+
+- Wanted to build against abstract interfaces so that we could easily change implementations.
+- Wanted the blocks to be dependency injection friendly.
+- Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there weren't any in memory implementations so every developer was required to set up and configure Redis.
+- Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
+- Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
 
 ## Implementations
+
 - [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks, Metrics
 - [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
 - [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
+- [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) - Messaging
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Messaging
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
 - [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) - Storage
@@ -76,7 +80,7 @@ Queues offer First In, First Out (FIFO) message delivery. We provide four differ
 2. [RedisQueue](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Queues/RedisQueue.cs): An Redis queue implementation.
 3. [AzureServiceBusQueue](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs): An Azure Service Bus Queue implementation.
 4. [AzureStorageQueue](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/master/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs): An Azure Storage Queue implementation.
-4. [SQSQueue](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Queues/SQSQueue.cs): An AWS SQS implementation.
+5. [SQSQueue](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Queues/SQSQueue.cs): An AWS SQS implementation.
 
 #### Sample
 
@@ -125,7 +129,8 @@ Allows you to publish and subscribe to messages flowing through your application
 1. [InMemoryMessageBus](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Messaging/InMemoryMessageBus.cs): An in memory message bus implementation. This message bus implementation is only valid for the lifetime of the process.
 2. [RedisMessageBus](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Messaging/RedisMessageBus.cs): A Redis message bus implementation.
 3. [RabbitMQMessageBus](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
-4. [AzureServiceBusMessageBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
+4. [KafkaMessageBus](https://github.com/FoundatioFx/Foundatio.Kafka/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs): A Kafka Bus implementation.
+5. [AzureServiceBusMessageBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
 
 #### Sample
 
