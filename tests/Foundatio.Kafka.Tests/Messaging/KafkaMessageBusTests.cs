@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
