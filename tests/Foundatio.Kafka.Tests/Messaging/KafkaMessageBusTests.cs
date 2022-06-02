@@ -17,7 +17,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => o
-            .BootStrapServers("localhost:9092")
+            .BootStrapServers("host.docker.internal:9092")
             .AutoCommitIntervalMs(100)
             .Topic(_topic)
             .GroupId(Guid.NewGuid().ToString())
@@ -100,7 +100,6 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     [Fact]
     public override Task CanReceiveFromMultipleSubscribersAsync() {
-        Log.MinimumLevel = LogLevel.Trace;
         return base.CanReceiveFromMultipleSubscribersAsync();
     }
 
