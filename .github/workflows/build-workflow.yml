@@ -11,6 +11,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NUGET_KEY: ${{ secrets.NUGET_KEY }}
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -38,7 +41,7 @@ jobs:
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ inputs.solution }} --configuration Release --no-build
     - name: Publish CI Packages
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && env.GITHUB_TOKEN != '' && env.FEEDZ_KEY != ''
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
           echo "${0##*/}": Pushing $package...
