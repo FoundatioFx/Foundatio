@@ -17,7 +17,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => o
-            .BootStrapServers("host.docker.internal:9092")
+            .BootStrapServers("127.0.0.1:9092")
             .AutoCommitIntervalMs(100)
             .Topic(_topic)
             .GroupId(Guid.NewGuid().ToString())
