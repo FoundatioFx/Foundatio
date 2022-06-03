@@ -338,11 +338,12 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         return new AdminClientConfig(clientConfig);
     }
 
-    // TODO: check default values
     private ProducerConfig CreateProducerConfig() {
         var clientConfig = CreateClientConfig();
         var producerConfig = new ProducerConfig(clientConfig);
 
+        // TODO: Producer config throws exception with this property
+        if (!String.IsNullOrEmpty(_options.DeliveryReportFields)) producerConfig.DeliveryReportFields = _options.DeliveryReportFields;
         if (!String.IsNullOrEmpty(_options.TransactionalId)) producerConfig.TransactionalId = _options.TransactionalId;
         if (_options.EnableBackgroundPoll.HasValue) producerConfig.EnableBackgroundPoll = _options.EnableBackgroundPoll;
         if (_options.EnableDeliveryReports.HasValue) producerConfig.EnableDeliveryReports = _options.EnableDeliveryReports;

@@ -10,15 +10,11 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public string GroupId { get; set; }
 
-    public string ContentType { get; set; } = "text/json";
+    public string ContentType { get; set; } = "application/json";
 
-    // TODO: Ensure builder
     public string PublishKey { get; set; }
 
     public int? AutoCommitIntervalMs { get; set; }
-
-    // TODO: Ensure we are setting this on kafka lib config
-    public IDictionary<string, object> Arguments { get; set; }
 
     public string SslCertificateLocation { get; set; }
 
@@ -36,10 +32,8 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public short? TopicReplicationFactor { get; set; }
 
-    // TODO: Ensure builder
     public Dictionary<string, string> TopicConfigs { get; set; }
 
-    // TODO: Ensure builder
     public Dictionary<int, List<int>> TopicReplicasAssignments { get; set; }
 
     public Acks? Acks { get; set; }
@@ -164,7 +158,6 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public bool? EnableDeliveryReports { get; set; }
 
-    // TODO: Producer config throws exception with this property
     public string DeliveryReportFields { get; set; }
 
     public int? RequestTimeoutMs { get; set; }
@@ -237,7 +230,6 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public int? FetchMinBytes { get; set; }
 
-    // TODO: Ensure builder
     public int? FetchErrorBackoffMs { get; set; }
 
     public IsolationLevel? IsolationLevel { get; set; }
@@ -264,8 +256,8 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         return this;
     }
 
-    public KafkaMessageBusOptionsBuilder Arguments(IDictionary<string, object> arguments) {
-        Target.Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments));
+    public KafkaMessageBusOptionsBuilder PublishKey(string publishKey) {
+        Target.PublishKey = publishKey ?? throw new ArgumentNullException(nameof(publishKey));
         return this;
     }
 
@@ -341,6 +333,16 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
 
     public KafkaMessageBusOptionsBuilder MaxInFlight(int? maxInFlight) {
         Target.MaxInFlight = maxInFlight ?? throw new ArgumentNullException(nameof(maxInFlight));
+        return this;
+    }
+
+    public KafkaMessageBusOptionsBuilder TopicConfigs(Dictionary<string, string> topicConfigs) {
+        Target.TopicConfigs = topicConfigs ?? throw new ArgumentNullException(nameof(topicConfigs));
+        return this;
+    }
+
+    public KafkaMessageBusOptionsBuilder TopicReplicasAssignments(Dictionary<int, List<int>> topicReplicasAssignments) {
+        Target.TopicReplicasAssignments = topicReplicasAssignments ?? throw new ArgumentNullException(nameof(topicReplicasAssignments));
         return this;
     }
 
@@ -776,6 +778,11 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
 
     public KafkaMessageBusOptionsBuilder QueuedMaxMessagesKbytes(int? queuedMaxMessagesKbytes) {
         Target.QueuedMaxMessagesKbytes = queuedMaxMessagesKbytes ?? throw new ArgumentNullException(nameof(queuedMaxMessagesKbytes));
+        return this;
+    }
+
+    public KafkaMessageBusOptionsBuilder FetchErrorBackoffMs(int? fetchErrorBackoffMs) {
+        Target.FetchErrorBackoffMs = fetchErrorBackoffMs ?? throw new ArgumentNullException(nameof(fetchErrorBackoffMs));
         return this;
     }
 
