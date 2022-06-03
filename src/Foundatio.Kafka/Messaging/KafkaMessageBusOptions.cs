@@ -10,6 +10,11 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public string GroupId { get; set; }
 
+    /// <summary>
+    /// Resolve a message type from a custom source.
+    /// </summary>
+    public Func<ConsumeResult<string, byte[]>, string> ResolveMessageType { get; set; }
+
     public string ContentType { get; set; } = "application/json";
 
     public string PublishKey { get; set; }
@@ -243,6 +248,11 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<KafkaMessageBusOptions, KafkaMessageBusOptionsBuilder> {
     public KafkaMessageBusOptionsBuilder BootStrapServers(string bootstrapServers) {
         Target.BootstrapServers = bootstrapServers ?? throw new ArgumentNullException(nameof(bootstrapServers));
+        return this;
+    }
+
+    public KafkaMessageBusOptionsBuilder ResolveMessageType(Func<ConsumeResult<string, byte[]>, string> resolveMessageType) {
+        Target.ResolveMessageType = resolveMessageType ?? throw new ArgumentNullException(nameof(resolveMessageType));
         return this;
     }
 

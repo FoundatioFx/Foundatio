@@ -82,8 +82,15 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             _logger.LogTrace("OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId})", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId);
 
         try {
-            var messageTypeHeader = consumeResult.Message.Headers.SingleOrDefault(x => x.Key.Equals(KafkaHeaders.MessageType));
-            var message = ConvertToMessage(Encoding.UTF8.GetString(messageTypeHeader.GetValueBytes()), consumeResult.Message.Value);
+            string messageType = _options.ResolveMessageType?.Invoke(consumeResult);
+            if (String.IsNullOrEmpty(messageType)) {
+                var messageTypeHeader = consumeResult.Message.Headers.SingleOrDefault(x => x.Key.Equals(KafkaHeaders.MessageType));
+                if (messageTypeHeader != null)
+                    messageType = Encoding.UTF8.GetString(messageTypeHeader.GetValueBytes());
+            }
+
+            // What to do if message type is null?
+            var message = ConvertToMessage(messageType, consumeResult.Message.Value);
             await SendMessageToSubscribersAsync(message).AnyContext();
         } catch (Exception ex) {
             _logger.LogError(ex, "OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId}) Error deserializing message: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
