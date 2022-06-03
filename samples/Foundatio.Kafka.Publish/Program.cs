@@ -17,7 +17,6 @@ public class Program {
         using var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
             BootstrapServers = "localhost:9092",
             Topic = "sample-topic",
-            ClientId = Dns.GetHostName(),
             LoggerFactory = loggerFactory,
         });
 
@@ -25,7 +24,7 @@ public class Program {
         do {
             message = Console.ReadLine();
             await messageBus.PublishAsync(new MyMessage { Hey = message });
-            
+
             logger.LogInformation("Message sent. Enter new message or press enter to exit:");
         } while (!String.IsNullOrEmpty(message));
     }

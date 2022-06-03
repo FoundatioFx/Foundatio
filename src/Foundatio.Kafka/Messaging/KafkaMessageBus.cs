@@ -133,12 +133,14 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
                     var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
                     await OnMessageAsync(consumeResult).AnyContext();
-                    if (_options.EnableAutoCommit.HasValue && !_options.EnableAutoCommit.Value) {
-                        _logger.LogDebug("Manual Commit: {Topic}", _options.Topic);
+
+                    if (!_options.EnableAutoCommit.GetValueOrDefault()) {
+                        _logger.LogTrace("Manual Commit: {Topic}", _options.Topic);
                         consumer.Commit(consumeResult);
                     }
-                    if (_options.EnableAutoOffsetStore.HasValue && !_options.EnableAutoOffsetStore.Value) {
-                        _logger.LogDebug("Manual StoreOffset: {Topic}", _options.Topic);
+
+                    if (!_options.EnableAutoOffsetStore.GetValueOrDefault()) {
+                        _logger.LogTrace("Manual Store Offset: {Topic}", _options.Topic);
                         consumer.StoreOffset(consumeResult);
                     }
                 }
@@ -188,20 +190,24 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
             bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.Topic);
             if (!isTopicExist) {
-                if (_options.AllowAutoCreateTopics.GetValueOrDefault())
-                    await adminClient.CreateTopicsAsync(new TopicSpecification[] {
-                        new() {
-                            Name = _options.Topic,
-                            ReplicationFactor = _options.TopicReplicationFactor.Value,
-                            NumPartitions = _options.TopicNumberOfPartitions.Value,
-                            Configs = _options.TopicConfigs,
-                            ReplicasAssignments = _options.TopicReplicasAssignments
-                        }
-                    });
-                else
+                if (_options.AllowAutoCreateTopics.GetValueOrDefault()) {
+                    var topicSpecification = new TopicSpecification {
+                        Name = _options.Topic,
+                        Configs = _options.TopicConfigs,
+                        ReplicasAssignments = _options.TopicReplicasAssignments
+                    };
+
+                    if (_options.TopicNumberOfPartitions.HasValue)
+                        topicSpecification.NumPartitions = _options.TopicNumberOfPartitions.Value;
+                    if (_options.TopicReplicationFactor.HasValue)
+                        topicSpecification.ReplicationFactor = _options.TopicReplicationFactor.Value;
+
+                    await adminClient.CreateTopicsAsync(new[] { topicSpecification });
+                } else {
                     throw new CreateTopicsException(new List<CreateTopicReport> {
                         new() { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.Topic }
                     });
+                }
             }
         } catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists) {
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -334,8 +340,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
 
     // TODO: check default values
     private ProducerConfig CreateProducerConfig() {
-        var _clientConfig = CreateClientConfig();
-        var producerConfig = new ProducerConfig(_clientConfig);
+        var clientConfig = CreateClientConfig();
+        var producerConfig = new ProducerConfig(clientConfig);
 
         if (!String.IsNullOrEmpty(_options.TransactionalId)) producerConfig.TransactionalId = _options.TransactionalId;
         if (_options.EnableBackgroundPoll.HasValue) producerConfig.EnableBackgroundPoll = _options.EnableBackgroundPoll;
@@ -362,8 +368,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     }
 
     private ConsumerConfig CreateConsumerConfig() {
-        var _clientConfig = CreateClientConfig();
-        var consumerConfig = new ConsumerConfig(_clientConfig);
+        var clientConfig = CreateClientConfig();
+        var consumerConfig = new ConsumerConfig(clientConfig);
 
         if (!String.IsNullOrEmpty(_options.GroupId)) consumerConfig.GroupId = _options.GroupId;
         if (!String.IsNullOrEmpty(_options.GroupInstanceId)) consumerConfig.GroupInstanceId = _options.GroupInstanceId;

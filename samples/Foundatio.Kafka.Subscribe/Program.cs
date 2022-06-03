@@ -14,11 +14,11 @@ public class Program {
         var logger = loggerFactory.CreateLogger<Program>();
 
         logger.LogInformation("Waiting to receive messages, press enter to quit...");
-        
+
         using var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
             BootstrapServers = "localhost:9092",
             Topic = "sample-topic",
-            GroupId = Guid.NewGuid().ToString(),
+            GroupId = "test-group-1",
             AutoOffsetReset = AutoOffsetReset.Earliest,
             //EnableAutoCommit = false,
             //EnableAutoOffsetStore = false,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
@@ -148,7 +148,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     [Fact]
     public async Task CanAcknowledgeMessage() {
-        
+
         using var messageBus = new KafkaMessageBus(o => o
              .BootStrapServers("localhost:9092")
              //.AutoCommitIntervalMs(100)
