@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Logging;
@@ -16,10 +17,8 @@ public class Program {
         using var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
             BootstrapServers = "localhost:9092",
             Topic = "sample-topic",
-            GroupId = "test-group-1",
-            //EnableAutoCommit = false,
-            //EnableAutoOffsetStore = false,
-            LoggerFactory = loggerFactory
+            ClientId = Dns.GetHostName(),
+            LoggerFactory = loggerFactory,
         });
 
         string message;

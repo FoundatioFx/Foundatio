@@ -12,15 +12,10 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public string ContentType { get; set; } = "text/json";
 
-    // TODO: Ensure builder
     public string PublishKey { get; set; }
 
-    public int AutoCommitIntervalMs { get; set; } = 5000;
+    public int? AutoCommitIntervalMs { get; set; }
 
-    // TODO: Ensure we are setting this on kafka lib config
-    public AutoOffsetReset AutoOffSetReset { get; set; }
-
-    // TODO: Ensure we are setting this on kafka lib config
     public IDictionary<string, object> Arguments { get; set; }
 
     public string SslCertificateLocation { get; set; }
@@ -35,15 +30,25 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public SecurityProtocol? SecurityProtocol { get; set; }
 
-    public int TopicNumberOfPartitions { get; set; } = -1;
+    public int? TopicNumberOfPartitions {
+        get;
+        set;
+    } = -1;
 
-    public short TopicReplicationFactor { get; set; } = -1;
+    public short? TopicReplicationFactor {
+        get;
+        set;
+    } = -1;
 
-    // TODO: Ensure builder
-    public Dictionary<string, string> TopicConfigs { get; set; }
+    public Dictionary<string, string> TopicConfigs {
+        get;
+        set;
+    }
 
-    // TODO: Ensure builder
-    public Dictionary<int, List<int>> TopicReplicasAssignments { get; set; }
+    public Dictionary<int, List<int>> TopicReplicasAssignments {
+        get;
+        set;
+    }
 
     public Acks? Acks { get; set; }
 
@@ -167,8 +172,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public bool? EnableDeliveryReports { get; set; }
 
-    // TODO: Producer config throws exception with this property
-    //public string DeliveryReportFields { get; set; }
+    public string DeliveryReportFields { get; set; }
 
     public int? RequestTimeoutMs { get; set; }
 
@@ -240,7 +244,6 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions {
 
     public int? FetchMinBytes { get; set; }
 
-    // TODO: Ensure builder
     public int? FetchErrorBackoffMs { get; set; }
 
     public IsolationLevel? IsolationLevel { get; set; }
@@ -264,11 +267,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
 
     public KafkaMessageBusOptionsBuilder AutoCommitIntervalMs(int autoCommitIntervalMs) {
         Target.AutoCommitIntervalMs = autoCommitIntervalMs;
-        return this;
-    }
-
-    public KafkaMessageBusOptionsBuilder AutoOffSetReset(Confluent.Kafka.AutoOffsetReset? autoOffSetReset) {
-        Target.AutoOffSetReset = autoOffSetReset ?? throw new ArgumentNullException(nameof(autoOffSetReset));
         return this;
     }
 
@@ -382,7 +380,7 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         return this;
     }
 
-    public KafkaMessageBusOptionsBuilder Debug(string debug) {
+    public KafkaMessageBusOptionsBuilder Debug(string? debug) {
         Target.Debug = debug ?? throw new ArgumentNullException(nameof(debug));
         return this;
     }
@@ -391,6 +389,7 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         Target.SocketTimeoutMs = socketTimeoutMs ?? throw new ArgumentNullException(nameof(socketTimeoutMs));
         return this;
     }
+
     public KafkaMessageBusOptionsBuilder SocketSendBufferBytes(int? socketSendBufferBytes) {
         Target.SocketSendBufferBytes = socketSendBufferBytes ?? throw new ArgumentNullException(nameof(socketSendBufferBytes));
         return this;
@@ -626,11 +625,10 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         return this;
     }
 
-    // TODO: Producer config throws exception with this property
-    //public KafkaMessageBusOptionsBuilder DeliveryReportFields(string deliveryReportFields) {
-    //    Target.DeliveryReportFields = deliveryReportFields ?? throw new ArgumentNullException(nameof(deliveryReportFields));
-    //    return this;
-    //}
+    public KafkaMessageBusOptionsBuilder DeliveryReportFields(string deliveryReportFields) {
+        Target.DeliveryReportFields = deliveryReportFields ?? throw new ArgumentNullException(nameof(deliveryReportFields));
+        return this;
+    }
 
     public KafkaMessageBusOptionsBuilder RequestTimeoutMs(int? requestTimeoutMs) {
         Target.RequestTimeoutMs = requestTimeoutMs ?? throw new ArgumentNullException(nameof(requestTimeoutMs));
@@ -651,6 +649,7 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         Target.CompressionLevel = compressionLevel ?? throw new ArgumentNullException(nameof(compressionLevel));
         return this;
     }
+
     public KafkaMessageBusOptionsBuilder TransactionalId(string transactionalId) {
         Target.TransactionalId = transactionalId ?? throw new ArgumentNullException(nameof(transactionalId));
         return this;
@@ -725,12 +724,12 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         Target.ConsumeResultFields = consumeResultFields ?? throw new ArgumentNullException(nameof(consumeResultFields));
         return this;
     }
-
+   
     public KafkaMessageBusOptionsBuilder AutoOffsetReset(AutoOffsetReset? autoOffsetReset) {
         Target.AutoOffsetReset = autoOffsetReset ?? throw new ArgumentNullException(nameof(autoOffsetReset));
         return this;
     }
-
+   
     public KafkaMessageBusOptionsBuilder GroupInstanceId(string groupInstanceId) {
         Target.GroupInstanceId = groupInstanceId ?? throw new ArgumentNullException(nameof(groupInstanceId));
         return this;
@@ -740,12 +739,12 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
         Target.PartitionAssignmentStrategy = partitionAssignmentStrategy ?? throw new ArgumentNullException(nameof(partitionAssignmentStrategy));
         return this;
     }
-
+    
     public KafkaMessageBusOptionsBuilder SessionTimeoutMs(int? sessionTimeoutMs) {
         Target.SessionTimeoutMs = sessionTimeoutMs ?? throw new ArgumentNullException(nameof(sessionTimeoutMs));
         return this;
     }
-
+    
     public KafkaMessageBusOptionsBuilder HeartbeatIntervalMs(int? heartbeatIntervalMs) {
         Target.HeartbeatIntervalMs = heartbeatIntervalMs ?? throw new ArgumentNullException(nameof(heartbeatIntervalMs));
         return this;

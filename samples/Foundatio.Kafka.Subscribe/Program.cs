@@ -18,12 +18,12 @@ public class Program {
         using var messageBus = new KafkaMessageBus(new KafkaMessageBusOptions {
             BootstrapServers = "localhost:9092",
             Topic = "sample-topic",
-            GroupId = "test-group-1",
-            AutoOffSetReset = AutoOffsetReset.Earliest,
+            GroupId = Guid.NewGuid().ToString(),
+            AutoOffsetReset = AutoOffsetReset.Earliest,
             //EnableAutoCommit = false,
             //EnableAutoOffsetStore = false,
             AllowAutoCreateTopics = true,
-            Debug = "consumer,cgrp,topic,fetch",
+            //Debug = "consumer,cgrp,topic,fetch",
             LoggerFactory = loggerFactory
         });
 

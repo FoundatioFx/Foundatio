@@ -145,4 +145,31 @@ public class KafkaMessageBusTests : MessageBusTestBase {
         }, cts.Token);
         messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
     }
+
+    [Fact]
+    public async Task CanAcknowledgeMessage() {
+        
+        using var messageBus = new KafkaMessageBus(o => o
+             .BootStrapServers("localhost:9092")
+             //.AutoCommitIntervalMs(100)
+             .Topic($"{_topic}-ack")
+             .GroupId(Guid.NewGuid().ToString())
+             .NumberOfPartitions(1)
+             .ReplicationFactor(1)
+             .AllowAutoCreateTopics(true)
+             .LoggerFactory(Log)
+         );
+
+        await messageBus.PublishAsync(new SimpleMessageA { Data = "a" });
+
+        var resetEvent = new AutoResetEvent(false);
+        var cts = new CancellationTokenSource();
+        await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+            _logger.LogTrace("Got message {Data}", msg.Data);
+            resetEvent.Set();
+        }, cts.Token);
+
+        resetEvent.WaitOne(TimeSpan.FromSeconds(5));
+        cts.Cancel();
+    }
 }
