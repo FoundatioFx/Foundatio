@@ -126,7 +126,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("EnsureTopicSubscriptionAsync Topic={Topic}", _options.Topic);
-        
+
         await EnsureTopicCreatedAsync().AnyContext();
         EnsureListening();
     }
@@ -151,7 +151,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
 
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Start Listening: {Topic}", _options.Topic);
- 
+
         _listeningTask = Task.Run(async () => {
             using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
                 .SetLogHandler(LogHandler)
