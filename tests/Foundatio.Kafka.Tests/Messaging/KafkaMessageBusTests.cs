@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -25,6 +25,8 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             .GroupId(Guid.NewGuid().ToString())
             .NumberOfPartitions(1)
             .ReplicationFactor(1)
+            .EnableAutoCommit(false)
+            .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
             .LoggerFactory(Log)
         );

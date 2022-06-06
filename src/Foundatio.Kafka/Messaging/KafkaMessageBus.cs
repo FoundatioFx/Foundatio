@@ -124,7 +124,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     }
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
-        _logger.LogTrace("EnsureTopicSubscriptionAsync");
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("EnsureTopicSubscriptionAsync Topic={Topic}", _options.Topic);
+        
         await EnsureTopicCreatedAsync().AnyContext();
         EnsureListening();
     }
@@ -142,11 +144,14 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             return;
 
         if (_listeningTask is { Status: TaskStatus.Running }) {
-            _logger.LogDebug("Already Listening: {Topic}", _options.Topic);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Already Listening: {Topic}", _options.Topic);
             return;
         }
 
-        _logger.LogDebug("Start Listening: {Topic}", _options.Topic);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Start Listening: {Topic}", _options.Topic);
+ 
         _listeningTask = Task.Run(async () => {
             using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
                 .SetLogHandler(LogHandler)
@@ -160,7 +165,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 .Build();
 
             consumer.Subscribe(_options.Topic);
-            _logger.LogInformation("EnsureListening Consumer={ConsumerName} Topic={Topic}", consumer.Name, _options.Topic);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic}", consumer.Name, _options.Topic);
 
             try {
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
@@ -168,12 +174,15 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                     await OnMessageAsync(consumer, consumeResult).AnyContext();
                 }
             } catch (OperationCanceledException) {
-                consumer.Unsubscribe();
+                // Don't log operation cancelled exceptions
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error consuming {Topic} message: {Message}", _options.Topic, ex.Message);
             } finally {
+                consumer.Unsubscribe();
                 consumer.Close();
-                _logger.LogDebug("Stop Listening: {Topic}", _options.Topic);
+
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic}", consumer.Name, _options.Topic);
             }
         }, _messageBusDisposedCancellationTokenSource.Token);
     }
@@ -198,11 +207,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     }
 
     private async Task EnsureTopicCreatedAsync() {
-        if (_topicCreated || !_consumerConfig.AllowAutoCreateTopics.GetValueOrDefault(false))
+        if (_topicCreated || !_consumerConfig.AllowAutoCreateTopics.GetValueOrDefault())
             return;
-
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("EnsureTopicCreatedAsync Topic={Topic}", _options.Topic);
 
         using var topicLock = await _lock.LockAsync().AnyContext();
         if (_topicCreated)
