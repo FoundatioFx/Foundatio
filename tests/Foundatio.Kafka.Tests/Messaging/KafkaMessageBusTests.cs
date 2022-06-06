@@ -19,12 +19,12 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => o
-            .BootStrapServers("127.0.0.1:9092")
+            .BootstrapServers("127.0.0.1:9092")
             .AutoCommitIntervalMs(100)
             .Topic(_topic)
             .GroupId(Guid.NewGuid().ToString())
-            .NumberOfPartitions(1)
-            .ReplicationFactor(1)
+            .TopicNumberOfPartitions(1)
+            .TopicReplicationFactor(1)
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
@@ -115,7 +115,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     [Fact]
     public async Task CanPersistAndNotLoseMessages() {
         var messageBus1 = new KafkaMessageBus(o => o
-            .BootStrapServers("localhost:9092")
+            .BootstrapServers("localhost:9092")
             .Topic($"{_topic}-offline")
             .GroupId("test-group-offline")
             .EnableAutoCommit(false)
@@ -154,7 +154,7 @@ public class KafkaMessageBusTests : MessageBusTestBase {
         messageBus1.Dispose();
 
         var messageBus2 = new KafkaMessageBus(o => o
-            .BootStrapServers("localhost:9092")
+            .BootstrapServers("localhost:9092")
             .Topic($"{_topic}-offline")
             .GroupId("test-group-offline")
             .EnableAutoCommit(false)
@@ -177,11 +177,9 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     public async Task CanAcknowledgeMessage() {
 
         using var messageBus = new KafkaMessageBus(o => o
-             .BootStrapServers("localhost:9092")
+             .BootstrapServers("localhost:9092")
              .Topic($"{_topic}-ack")
              .GroupId(Guid.NewGuid().ToString())
-             .NumberOfPartitions(1)
-             .ReplicationFactor(1)
              .AllowAutoCreateTopics(true)
              .LoggerFactory(Log)
          );
