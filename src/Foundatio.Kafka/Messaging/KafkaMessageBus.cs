@@ -141,14 +141,22 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                     var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
                     await OnMessageAsync(consumeResult).AnyContext();
 
-                    if (!_options.EnableAutoCommit.GetValueOrDefault()) {
+                    if (!_consumerConfig.EnableAutoCommit.GetValueOrDefault(true)) {
                         _logger.LogTrace("Manual Commit: {Topic}", _options.Topic);
-                        consumer.Commit(consumeResult);
+                        try {
+                            consumer.Commit(consumeResult);
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Error committing message {TopicPartitionOffset}: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
+                        }
                     }
 
-                    if (!_options.EnableAutoOffsetStore.GetValueOrDefault()) {
+                    if (!_consumerConfig.EnableAutoOffsetStore.GetValueOrDefault(true)) {
                         _logger.LogTrace("Manual Store Offset: {Topic}", _options.Topic);
-                        consumer.StoreOffset(consumeResult);
+                        try {
+                            consumer.StoreOffset(consumeResult);
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Error storing message offset {TopicPartitionOffset}: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
+                        }
                     }
                 }
             } catch (OperationCanceledException) {
