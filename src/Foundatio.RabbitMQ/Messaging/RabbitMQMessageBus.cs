@@ -87,7 +87,7 @@ namespace Foundatio.Messaging {
             var message = ConvertToMessage(e);
             await SendMessageToSubscribersAsync(message).AnyContext();
             
-            if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+            if (!_subscribers.IsEmpty && _options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 _subscriberChannel.BasicAck(e.DeliveryTag, false);
         }
 
