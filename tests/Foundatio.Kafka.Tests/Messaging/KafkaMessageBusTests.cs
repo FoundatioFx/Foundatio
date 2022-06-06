@@ -13,18 +13,15 @@ using Xunit.Abstractions;
 namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusTests : MessageBusTestBase {
-    private readonly string _topic = $"test_topic_{SystemClock.UtcNow.Ticks}";
+    private readonly string _topic = $"foundatio_topic_{SystemClock.UtcNow.Ticks}";
 
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => o
             .BootstrapServers("127.0.0.1:9092")
-            .AutoCommitIntervalMs(100)
             .Topic(_topic)
             .GroupId(Guid.NewGuid().ToString())
-            .TopicNumberOfPartitions(1)
-            .TopicReplicationFactor(1)
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
@@ -171,29 +168,5 @@ public class KafkaMessageBusTests : MessageBusTestBase {
         await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
         await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, countdownEvent.CurrentCount);
-    }
-
-    [Fact]
-    public async Task CanAcknowledgeMessage() {
-
-        using var messageBus = new KafkaMessageBus(o => o
-             .BootstrapServers("localhost:9092")
-             .Topic($"{_topic}-ack")
-             .GroupId(Guid.NewGuid().ToString())
-             .AllowAutoCreateTopics(true)
-             .LoggerFactory(Log)
-         );
-
-        await messageBus.PublishAsync(new SimpleMessageA { Data = "a" });
-
-        var resetEvent = new AutoResetEvent(false);
-        var cts = new CancellationTokenSource();
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
-            _logger.LogTrace("Got message {Data}", msg.Data);
-            resetEvent.Set();
-        }, cts.Token);
-
-        resetEvent.WaitOne(TimeSpan.FromSeconds(5));
-        cts.Cancel();
     }
 }

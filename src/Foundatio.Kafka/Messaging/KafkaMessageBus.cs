@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -61,7 +61,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 return;
 
             if (deliveryReport.Error.Code != ErrorCode.NoError)
-                _logger.LogTrace("Publish failure: {Reason}", deliveryReport.Error.Reason);
+                _logger.LogWarning("Publish failure: {Reason}", deliveryReport.Error.Reason);
             else
                 _logger.LogTrace("Published message to: {TopicPartitionOffset}", deliveryReport.TopicPartitionOffset);
         });
