@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -20,6 +20,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     private readonly ConsumerConfig _consumerConfig;
     private readonly IProducer<string, byte[]> _producer;
     private readonly AsyncLock _lock = new();
+    private bool _topicCreated;
 
     public KafkaMessageBus(KafkaMessageBusOptions options) : base(options) {
         _adminClientConfig = CreateAdminConfig();
@@ -68,7 +69,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         return Task.CompletedTask;
     }
 
-    private async Task OnMessageAsync(ConsumeResult<string, byte[]> consumeResult) {
+    private async Task OnMessageAsync(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult) {
         if (_subscribers.IsEmpty)
             return;
 
@@ -124,7 +125,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
         _logger.LogTrace("EnsureTopicSubscriptionAsync");
-        await EnsureTopicCreatedAsync();
+        await EnsureTopicCreatedAsync().AnyContext();
         EnsureListening();
     }
 
@@ -197,10 +198,16 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
     }
 
     private async Task EnsureTopicCreatedAsync() {
+        if (_topicCreated || !_consumerConfig.AllowAutoCreateTopics.GetValueOrDefault(false))
+            return;
+
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("EnsureTopicCreatedAsync Topic={Topic}", _options.Topic);
 
         using var topicLock = await _lock.LockAsync().AnyContext();
+        if (_topicCreated)
+            return;
+
         using var adminClient = new AdminClientBuilder(_adminClientConfig)
             .SetLogHandler(LogHandler)
             .SetStatisticsHandler(LogStatisticsHandler)
@@ -224,7 +231,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                     if (_options.TopicReplicationFactor.HasValue)
                         topicSpecification.ReplicationFactor = _options.TopicReplicationFactor.Value;
 
-                    await adminClient.CreateTopicsAsync(new[] { topicSpecification });
+                    await adminClient.CreateTopicsAsync(new[] { topicSpecification }).AnyContext();
+                    _topicCreated = true;
                 } else {
                     throw new CreateTopicsException(new List<CreateTopicReport> {
                         new() { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.Topic }
@@ -232,6 +240,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
                 }
             }
         } catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists) {
+            _topicCreated = true;
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug(ex, "Topic {Topic} already exists", _options.Topic);
         } catch (CreateTopicsException ex) {
