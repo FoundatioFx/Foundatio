@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -92,8 +92,33 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             // What to do if message type is null?
             var message = ConvertToMessage(messageType, consumeResult.Message.Value);
             await SendMessageToSubscribersAsync(message).AnyContext();
+
+            if (!_subscribers.IsEmpty)
+                AcknowledgeMessage(consumer, consumeResult);
         } catch (Exception ex) {
             _logger.LogError(ex, "OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId}) Error deserializing message: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
+        }
+    }
+
+    private void AcknowledgeMessage(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult) {
+        if (!_consumerConfig.EnableAutoCommit.GetValueOrDefault(true)) {
+            _logger.LogTrace("Manual Commit: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
+            try {
+                consumer.Commit(consumeResult);
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error committing message {TopicPartitionOffset}: {Message}",
+                    consumeResult.TopicPartitionOffset, ex.Message);
+            }
+        }
+
+        if (!_consumerConfig.EnableAutoOffsetStore.GetValueOrDefault(true)) {
+            _logger.LogTrace("Manual Store Offset: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
+            try {
+                consumer.StoreOffset(consumeResult);
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error storing message offset {TopicPartitionOffset}: {Message}",
+                    consumeResult.TopicPartitionOffset, ex.Message);
+            }
         }
     }
 
@@ -139,25 +164,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             try {
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
                     var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
-                    await OnMessageAsync(consumeResult).AnyContext();
-
-                    if (!_consumerConfig.EnableAutoCommit.GetValueOrDefault(true)) {
-                        _logger.LogTrace("Manual Commit: {Topic}", _options.Topic);
-                        try {
-                            consumer.Commit(consumeResult);
-                        } catch (Exception ex) {
-                            _logger.LogError(ex, "Error committing message {TopicPartitionOffset}: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
-                        }
-                    }
-
-                    if (!_consumerConfig.EnableAutoOffsetStore.GetValueOrDefault(true)) {
-                        _logger.LogTrace("Manual Store Offset: {Topic}", _options.Topic);
-                        try {
-                            consumer.StoreOffset(consumeResult);
-                        } catch (Exception ex) {
-                            _logger.LogError(ex, "Error storing message offset {TopicPartitionOffset}: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
-                        }
-                    }
+                    await OnMessageAsync(consumer, consumeResult).AnyContext();
                 }
             } catch (OperationCanceledException) {
                 consumer.Unsubscribe();
