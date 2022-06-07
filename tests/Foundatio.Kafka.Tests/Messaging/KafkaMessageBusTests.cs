@@ -21,6 +21,8 @@ public class KafkaMessageBusTests : MessageBusTestBase {
         return new KafkaMessageBus(o => o
             .BootstrapServers("127.0.0.1:9092")
             .Topic(_topic)
+            .TopicReplicationFactor(1)
+            .TopicNumberOfPartitions(1)
             .GroupId(Guid.NewGuid().ToString())
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
