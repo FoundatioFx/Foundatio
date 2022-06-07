@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusTests : MessageBusTestBase {
-    private readonly string _topic = $"foundatio_topic_{SystemClock.UtcNow.Ticks}";
+    private readonly string _topic = $"test_{SystemClock.UtcNow.Ticks}";
 
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
@@ -23,10 +23,11 @@ public class KafkaMessageBusTests : MessageBusTestBase {
             .Topic(_topic)
             .TopicReplicationFactor(1)
             .TopicNumberOfPartitions(1)
-            .GroupId(Guid.NewGuid().ToString())
+            .GroupId(Guid.NewGuid().ToString("N"))
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
+            //.Debug("consumer,cgrp,topic,fetch")
             .LoggerFactory(Log)
         );
     }
@@ -115,11 +116,12 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     public async Task CanPersistAndNotLoseMessages() {
         var messageBus1 = new KafkaMessageBus(o => o
             .BootstrapServers("localhost:9092")
-            .Topic($"{_topic}-offline")
-            .GroupId("test-group-offline")
+            .Topic($"{_topic}_offline")
+            .GroupId("offline")
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
+            //.Debug("broker,topic,msg")
             .LoggerFactory(Log));
 
         var countdownEvent = new AsyncCountdownEvent(1);
@@ -154,8 +156,8 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
         var messageBus2 = new KafkaMessageBus(o => o
             .BootstrapServers("localhost:9092")
-            .Topic($"{_topic}-offline")
-            .GroupId("test-group-offline")
+            .Topic($"{_topic}_offline")
+            .GroupId("offline")
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
