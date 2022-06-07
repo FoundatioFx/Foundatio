@@ -140,14 +140,14 @@ namespace Foundatio.Extensions.Hosting.Startup {
 
         public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder builder, string path, params string[] tags) {
             if (tags == null)
-                tags = new string[0];
+                tags = Array.Empty<string>();
             
             return builder.UseHealthChecks(path, new HealthCheckOptions { Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)) });
         }
 
         public static IApplicationBuilder UseReadyHealthChecks(this IApplicationBuilder builder, params string[] tags) {
             if (tags == null)
-                tags = new string[0];
+                tags = Array.Empty<string>();
 
             var options = new HealthCheckOptions {
                 Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase))
@@ -157,7 +157,7 @@ namespace Foundatio.Extensions.Hosting.Startup {
 
         public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, params string[] tags) {
             if (tags == null)
-                tags = new string[0];
+                tags = Array.Empty<string>();
             
             services.AddStartupActionToWaitForHealthChecks(c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)));
         }

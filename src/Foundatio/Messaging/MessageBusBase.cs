@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -116,8 +116,7 @@ namespace Foundatio.Messaging {
             if (subscriber.Type == typeof(IMessage))
                 return true;
 
-            var clrType = GetMappedMessageType(message.Type);
-            
+            var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
             if (subscriber.IsAssignableFrom(clrType))
                 return true;
             
@@ -126,22 +125,19 @@ namespace Foundatio.Messaging {
 
         protected virtual byte[] SerializeMessageBody(string messageType, object body) {
             if (body == null)
-                return new byte[0];
-            
+                return Array.Empty<byte>();
+
             return _serializer.SerializeToBytes(body);
         }
 
-        protected virtual object DeserializeMessageBody(string messageType, byte[] data) {
-            if (data == null || data.Length == 0)
+        protected virtual object DeserializeMessageBody(IMessage message) {
+            if (message.Data is null || message.Data.Length == 0)
                 return null;
 
             object body;
             try {
-                var clrType = GetMappedMessageType(messageType);
-                if (clrType != null)
-                    body = _serializer.Deserialize(data, clrType);
-                else
-                    body = data;
+                var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
+                body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
@@ -166,8 +162,6 @@ namespace Foundatio.Messaging {
                 _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
                 return;
             }
-            
-            var body = new Lazy<object>(() => DeserializeMessageBody(message.Type, message.Data));
 
             var subscriberHandlers = subscribers.Select(subscriber => {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
@@ -195,7 +189,7 @@ namespace Foundatio.Messaging {
                     if (subscriber.Type == typeof(IMessage))
                         await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                     else
-                        await subscriber.Action(body.Value, subscriber.CancellationToken).AnyContext();
+                        await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
 
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);

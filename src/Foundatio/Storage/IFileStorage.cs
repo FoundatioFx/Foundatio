@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -34,7 +34,7 @@ namespace Foundatio.Storage {
     }
 
     public class PagedFileListResult : IHasNextPageFunc {
-        private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(new FileSpec[0]);
+        private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(Array.Empty<FileSpec>());
         public static PagedFileListResult Empty = new(_empty);
 
         public PagedFileListResult(IReadOnlyCollection<FileSpec> files) {
