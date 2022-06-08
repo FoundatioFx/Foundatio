@@ -24,7 +24,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.CanHandleNullMessageAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task CanSendDerivedMessageAsync() {
         return base.CanSendDerivedMessageAsync();
     }
