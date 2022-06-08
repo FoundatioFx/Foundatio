@@ -248,6 +248,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
                     await adminClient.CreateTopicsAsync(new[] { topicSpecification }).AnyContext();
                     _topicCreated = true;
+
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("Created topic {Topic}", _options.Topic);
                 } else {
                     throw new CreateTopicsException(new List<CreateTopicReport> {
                         new() { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.Topic }
@@ -268,12 +271,18 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     }
 
     async Task IKafkaMessageBus.DeleteTopicAsync() {
-        if (!_topicCreated)
+        if (!_topicCreated) {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Skipping topic {Topic} deletion: topic wasn't created by this instance", _options.Topic);
             return;
+        }
 
         using var topicLock = await _lock.LockAsync().AnyContext();
-        if (!_topicCreated)
+        if (!_topicCreated) {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Skipping topic {Topic} deletion: topic wasn't created by this instance", _options.Topic);
             return;
+        }
 
         using var adminClient = new AdminClientBuilder(_adminClientConfig)
             .SetLogHandler(LogHandler)
@@ -285,12 +294,14 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         try {
             var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
             bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.Topic);
-            if (isTopicExist)
+            if (isTopicExist) {
                 await adminClient.DeleteTopicsAsync(new[] { _options.Topic });
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Deleted topic {Topic}", _options.Topic);
+            }
 
             _topicCreated = false;
         } catch (DeleteTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicDeletionDisabled) {
-            _topicCreated = true;
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug(ex, "Topic {Topic} deletion disabled", _options.Topic);
         } catch (DeleteTopicsException ex) {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
@@ -14,7 +14,7 @@ public class KafkaMessageBusFanOutTests : KafkaMessageBusTestBase {
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
         return new KafkaMessageBus(o => o
             .BootstrapServers("127.0.0.1:9092")
-            .Topic(_topic)
+            .Topic(Topic)
             .TopicReplicationFactor(1)
             .TopicNumberOfPartitions(1)
             .GroupId(Guid.NewGuid().ToString("N"))
