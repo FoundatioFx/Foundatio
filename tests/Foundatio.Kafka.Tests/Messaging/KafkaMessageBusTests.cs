@@ -39,7 +39,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.WillReceiveDerivedMessageTypesAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task CanSubscribeToAllMessageTypesAsync() {
         return base.CanSubscribeToAllMessageTypesAsync();
     }
