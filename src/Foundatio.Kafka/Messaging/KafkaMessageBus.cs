@@ -42,6 +42,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("PublishImplAsync([{MessageType}])", messageType);
 
+        if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            return AddDelayedMessageAsync(GetMappedMessageType(messageType), message, options.DeliveryDelay.Value);
+        }
+
         var headers = new Headers {
             new Header(KafkaHeaders.MessageType, Encoding.UTF8.GetBytes(messageType)),
             new Header(KafkaHeaders.ContentType, Encoding.UTF8.GetBytes(_options.ContentType))
@@ -62,7 +67,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
 
             if (deliveryReport.Error.Code != ErrorCode.NoError)
                 _logger.LogWarning("Publish failure: {Reason}", deliveryReport.Error.Reason);
-            else
+            else if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Published message to: {TopicPartitionOffset}", deliveryReport.TopicPartitionOffset);
         });
 
@@ -97,7 +102,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             if (!_subscribers.IsEmpty)
                 AcknowledgeMessage(consumer, consumeResult);
         } catch (Exception ex) {
-            _logger.LogError(ex, "OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId}) Error deserializing message: {Message}", consumeResult.TopicPartitionOffset, ex.Message);
+            _logger.LogError(ex, "OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId}) Error deserializing message: {Message}", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId, ex.Message);
         }
     }
 
