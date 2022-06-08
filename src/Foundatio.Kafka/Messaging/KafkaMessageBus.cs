@@ -175,7 +175,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
             consumer.Subscribe(_options.Topic);
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic}", consumer.Name, _options.Topic);
+                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
 
             try {
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
@@ -185,13 +185,13 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             } catch (OperationCanceledException) {
                 // Don't log operation cancelled exceptions
             } catch (Exception ex) {
-                _logger.LogError(ex, "Error consuming {Topic} message: {Message}", _options.Topic, ex.Message);
+                _logger.LogError(ex, "Error consuming {Topic} GroupId={GroupId} message: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
             } finally {
                 consumer.Unsubscribe();
                 consumer.Close();
 
                 if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic}", consumer.Name, _options.Topic);
+                    _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
             }
         }, _messageBusDisposedCancellationTokenSource.Token);
     }

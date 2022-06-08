@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -47,6 +47,31 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
     [Fact]
     public override Task CanSubscribeToRawMessagesAsync() {
         return base.CanSubscribeToRawMessagesAsync();
+    }
+
+    [Fact]
+    public override Task CanTolerateSubscriberFailureAsync() {
+        return base.CanTolerateSubscriberFailureAsync();
+    }
+
+    [Fact]
+    public override Task CanSendMessageToMultipleSubscribersAsync() {
+        return base.CanSendMessageToMultipleSubscribersAsync();
+    }
+
+    [Fact]
+    public override Task CanSubscribeConcurrentlyAsync() {
+        return base.CanSubscribeConcurrentlyAsync();
+    }
+
+    [Fact]
+    public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
+        return base.WillOnlyReceiveSubscribedMessageTypeAsync();
+    }
+
+    [Fact]
+    public override Task CanCancelSubscriptionAsync() {
+        return base.CanCancelSubscriptionAsync();
     }
 
     [Fact]

@@ -31,32 +31,7 @@ public class KafkaMessageBusFanOutTests : KafkaMessageBusTestBase {
     }
 
     [Fact]
-    public override Task CanTolerateSubscriberFailureAsync() {
-        return base.CanTolerateSubscriberFailureAsync();
-    }
-
-    [Fact]
-    public override Task CanSubscribeConcurrentlyAsync() {
-        return base.CanSubscribeConcurrentlyAsync();
-    }
-
-    [Fact]
     public override Task CanReceiveMessagesConcurrentlyAsync() {
         return base.CanReceiveMessagesConcurrentlyAsync();
-    }
-
-    [Fact]
-    public override Task CanSendMessageToMultipleSubscribersAsync() {
-        return base.CanSendMessageToMultipleSubscribersAsync();
-    }
-
-    [Fact]
-    public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
-        return base.WillOnlyReceiveSubscribedMessageTypeAsync();
-    }
-
-    [Fact]
-    public override Task CanCancelSubscriptionAsync() {
-        return base.CanCancelSubscriptionAsync();
     }
 }
