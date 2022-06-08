@@ -49,7 +49,7 @@ namespace Foundatio.Messaging {
             }
             
             byte[] body = SerializeMessageBody(messageType, message);
-            var messageData = new Message(() => DeserializeMessageBody(messageType, body)) {
+            var messageData = new Message(DeserializeMessageBody) {
                 Type = messageType,
                 ClrType = mappedType,
                 Data = body
