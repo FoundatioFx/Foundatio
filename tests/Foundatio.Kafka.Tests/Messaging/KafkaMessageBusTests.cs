@@ -64,7 +64,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.CanSubscribeConcurrentlyAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
         return base.WillOnlyReceiveSubscribedMessageTypeAsync();
     }
