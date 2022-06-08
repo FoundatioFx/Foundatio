@@ -271,19 +271,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     }
 
     async Task IKafkaMessageBus.DeleteTopicAsync() {
-        if (!_topicCreated) {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Skipping topic {Topic} deletion: topic wasn't created by this instance", _options.Topic);
-            return;
-        }
-
         using var topicLock = await _lock.LockAsync().AnyContext();
-        if (!_topicCreated) {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Skipping topic {Topic} deletion: topic wasn't created by this instance", _options.Topic);
-            return;
-        }
-
         using var adminClient = new AdminClientBuilder(_adminClientConfig)
             .SetLogHandler(LogHandler)
             .SetStatisticsHandler(LogStatisticsHandler)

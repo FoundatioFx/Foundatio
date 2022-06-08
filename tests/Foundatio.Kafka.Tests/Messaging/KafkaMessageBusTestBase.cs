@@ -2,6 +2,7 @@
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Kafka.Tests.Messaging;
@@ -10,8 +11,8 @@ public class KafkaMessageBusTestBase : MessageBusTestBase {
     protected readonly string Topic = $"test_{Guid.NewGuid():N}";
     protected readonly string GroupId = $"group_{Guid.NewGuid():N}";
 
-    public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output)
-    {
+    public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output) {
+        Log.MinimumLevel = LogLevel.Trace;
         EnableTopicDeletion = true;
     }
 
