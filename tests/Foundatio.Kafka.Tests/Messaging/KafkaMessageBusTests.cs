@@ -1,36 +1,18 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Kafka.Tests.Messaging;
 
-public class KafkaMessageBusTests : MessageBusTestBase {
-    private readonly string _topic = $"test_{SystemClock.UtcNow.Ticks}";
-
+public class KafkaMessageBusTests : KafkaMessageBusTestBase {
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
-
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
-        return new KafkaMessageBus(o => o
-            .BootstrapServers("127.0.0.1:9092")
-            .Topic(_topic)
-            .TopicReplicationFactor(1)
-            .TopicNumberOfPartitions(1)
-            .GroupId(Guid.NewGuid().ToString("N"))
-            .EnableAutoCommit(false)
-            .EnableAutoOffsetStore(false)
-            .AllowAutoCreateTopics(true)
-            //.Debug("consumer,cgrp,topic,fetch")
-            .LoggerFactory(Log)
-        );
-    }
 
     [Fact]
     public override Task CanSendMessageAsync() {
@@ -53,31 +35,6 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     }
 
     [Fact]
-    public override Task CanSubscribeConcurrentlyAsync() {
-        return base.CanSubscribeConcurrentlyAsync();
-    }
-
-    [Fact]
-    public override Task CanReceiveMessagesConcurrentlyAsync() {
-        return base.CanReceiveMessagesConcurrentlyAsync();
-    }
-
-    [Fact]
-    public override Task CanSendMessageToMultipleSubscribersAsync() {
-        return base.CanSendMessageToMultipleSubscribersAsync();
-    }
-
-    [Fact]
-    public override Task CanTolerateSubscriberFailureAsync() {
-        return base.CanTolerateSubscriberFailureAsync();
-    }
-
-    [Fact]
-    public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
-        return base.WillOnlyReceiveSubscribedMessageTypeAsync();
-    }
-
-    [Fact]
     public override Task WillReceiveDerivedMessageTypesAsync() {
         return base.WillReceiveDerivedMessageTypesAsync();
     }
@@ -93,18 +50,8 @@ public class KafkaMessageBusTests : MessageBusTestBase {
     }
 
     [Fact]
-    public override Task CanCancelSubscriptionAsync() {
-        return base.CanCancelSubscriptionAsync();
-    }
-
-    [Fact]
     public override Task WontKeepMessagesWithNoSubscribersAsync() {
         return base.WontKeepMessagesWithNoSubscribersAsync();
-    }
-
-    [Fact]
-    public override Task CanReceiveFromMultipleSubscribersAsync() {
-        return base.CanReceiveFromMultipleSubscribersAsync();
     }
 
     [Fact]
@@ -114,63 +61,51 @@ public class KafkaMessageBusTests : MessageBusTestBase {
 
     [Fact]
     public async Task CanPersistAndNotLoseMessages() {
-        var messageBus1 = new KafkaMessageBus(o => o
-            .BootstrapServers("localhost:9092")
-            .Topic($"{_topic}_offline")
-            .GroupId("offline")
-            .EnableAutoCommit(false)
-            .EnableAutoOffsetStore(false)
-            .AllowAutoCreateTopics(true)
-            //.Debug("broker,topic,msg")
-            .LoggerFactory(Log));
+        var messageBus1 = GetMessageBus();
+        try {
+            var countdownEvent = new AsyncCountdownEvent(1);
+            var cts = new CancellationTokenSource();
+            await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogInformation("[Subscriber1] Got message: {Message}", msg.Data);
+                countdownEvent.Signal();
+            }, cts.Token);
 
-        var countdownEvent = new AsyncCountdownEvent(1);
-        var cts = new CancellationTokenSource();
-        await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
-            _logger.LogInformation("[Subscriber1] Got message: {Message}", msg.Data);
-            countdownEvent.Signal();
-        }, cts.Token);
+            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
+            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdownEvent.CurrentCount);
+            cts.Cancel();
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
-        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdownEvent.CurrentCount);
-        cts.Cancel();
+            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
+            cts = new CancellationTokenSource();
+            countdownEvent.AddCount(1);
+            await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogInformation("[Subscriber2] Got message: {Message}", msg.Data);
+                countdownEvent.Signal();
+            }, cts.Token);
+            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdownEvent.CurrentCount);
+            cts.Cancel();
 
-        cts = new CancellationTokenSource();
-        countdownEvent.AddCount(1);
-        await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
-            _logger.LogInformation("[Subscriber2] Got message: {Message}", msg.Data);
-            countdownEvent.Signal();
-        }, cts.Token);
-        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdownEvent.CurrentCount);
-        cts.Cancel();
+            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
+            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
+            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
+            messageBus1.Dispose();
 
-        messageBus1.Dispose();
+            using var messageBus2 = GetMessageBus();
 
-        var messageBus2 = new KafkaMessageBus(o => o
-            .BootstrapServers("localhost:9092")
-            .Topic($"{_topic}_offline")
-            .GroupId("offline")
-            .EnableAutoCommit(false)
-            .EnableAutoOffsetStore(false)
-            .AllowAutoCreateTopics(true)
-            .LoggerFactory(Log));
-
-        cts = new CancellationTokenSource();
-        countdownEvent.AddCount(4);
-        await messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
-            _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
-            countdownEvent.Signal();
-        }, cts.Token);
-        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
-        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Equal(0, countdownEvent.CurrentCount);
+            cts = new CancellationTokenSource();
+            countdownEvent.AddCount(4);
+            await messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
+                _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
+                countdownEvent.Signal();
+            }, cts.Token);
+            await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
+            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(0, countdownEvent.CurrentCount);
+        } finally {
+            await CleanupMessageBusAsync(messageBus1);
+        }
     }
 }
