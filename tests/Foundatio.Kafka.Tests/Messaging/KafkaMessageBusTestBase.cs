@@ -12,7 +12,7 @@ public class KafkaMessageBusTestBase : MessageBusTestBase {
     protected readonly string GroupId = $"group_{Guid.NewGuid():N}";
 
     public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output) {
-        Log.MinimumLevel = LogLevel.Trace;
+        //Log.MinimumLevel = LogLevel.Trace;
         EnableTopicDeletion = true;
     }
 
@@ -26,6 +26,7 @@ public class KafkaMessageBusTestBase : MessageBusTestBase {
             .EnableAutoCommit(false)
             .EnableAutoOffsetStore(false)
             .AllowAutoCreateTopics(true)
+            //.Debug("consumer,cgrp,topic,fetch")
             .LoggerFactory(Log)
         );
     }

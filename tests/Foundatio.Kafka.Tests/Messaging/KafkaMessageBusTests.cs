@@ -34,7 +34,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.CanSendDelayedMessageAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task WillReceiveDerivedMessageTypesAsync() {
         return base.WillReceiveDerivedMessageTypesAsync();
     }
@@ -49,7 +49,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.CanSubscribeToRawMessagesAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task CanTolerateSubscriberFailureAsync() {
         return base.CanTolerateSubscriberFailureAsync();
     }
@@ -59,7 +59,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
         return base.CanSendMessageToMultipleSubscribersAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task CanSubscribeConcurrentlyAsync() {
         return base.CanSubscribeConcurrentlyAsync();
     }
