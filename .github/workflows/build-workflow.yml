@@ -14,6 +14,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       NUGET_KEY: ${{ secrets.NUGET_KEY }}
+      FEEDZ_KEY: ${{ secrets.FEEDZ_KEY }}
     steps:
     - name: Checkout
       uses: actions/checkout@v2
