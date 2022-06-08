@@ -12,7 +12,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
+public interface IKafkaMessageBus : IMessageBus {
+    Task DeleteTopicAsync();
+}
+
+public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMessageBus {
     private bool _isDisposed;
     private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource = new();
     private Task _listeningTask;
@@ -259,6 +263,41 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions> {
             throw;
         } catch (Exception ex) {
             _logger.LogError(ex, "Error creating topic {Topic}: {Reason}", _options.Topic, ex.Message);
+            throw;
+        }
+    }
+
+    async Task IKafkaMessageBus.DeleteTopicAsync() {
+        if (!_topicCreated)
+            return;
+
+        using var topicLock = await _lock.LockAsync().AnyContext();
+        if (!_topicCreated)
+            return;
+
+        using var adminClient = new AdminClientBuilder(_adminClientConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
+
+        try {
+            var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
+            bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.Topic);
+            if (isTopicExist)
+                await adminClient.DeleteTopicsAsync(new[] { _options.Topic });
+
+            _topicCreated = false;
+        } catch (DeleteTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicDeletionDisabled) {
+            _topicCreated = true;
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug(ex, "Topic {Topic} deletion disabled", _options.Topic);
+        } catch (DeleteTopicsException ex) {
+            _logger.LogError(ex, "Error deleting topic {Topic}: {Reason}", _options.Topic, ex.Results[0].Error.Reason);
+            throw;
+        } catch (Exception ex) {
+            _logger.LogError(ex, "Error deleting topic {Topic}: {Reason}", _options.Topic, ex.Message);
             throw;
         }
     }
