@@ -62,9 +62,10 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
 
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
-            var message = new Message(() => DeserializeMessageBody(brokeredMessage.ContentType, brokeredMessage.Body)) {
+            var message = new Message(DeserializeMessageBody) {
                 Data = brokeredMessage.Body,
-                Type = brokeredMessage.ContentType
+                Type = brokeredMessage.ContentType,
+                ClrType = GetMappedMessageType(brokeredMessage.ContentType)
             };
 
             return SendMessageToSubscribersAsync(message);
