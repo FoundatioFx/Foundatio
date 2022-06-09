@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -34,6 +34,14 @@ namespace Foundatio.Messaging {
         public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
             if (messageType == null || message == null)
                 return;
+
+            options ??= new MessageOptions();
+
+            if (String.IsNullOrEmpty(options.CorrelationId)) {
+                options.CorrelationId = Activity.Current?.Id;
+                if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
+                    options.Properties.Add("TraceState", Activity.Current.TraceStateString);
+            }
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
@@ -95,6 +103,11 @@ namespace Foundatio.Messaging {
                 }
             };
 
+            if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1) {
+                var modelType = subscriber.Type.GenericTypeArguments.Single();
+                subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
+            }
+
             if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
@@ -130,14 +143,14 @@ namespace Foundatio.Messaging {
             return _serializer.SerializeToBytes(body);
         }
 
-        protected virtual object DeserializeMessageBody(IMessage message) {
-            if (message.Data is null || message.Data.Length == 0)
+        protected virtual object DeserializeMessageBody(byte[] data, IMessage message) {
+            if (data is null || data.Length == 0)
                 return null;
 
             object body;
             try {
                 var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
-                body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
+                body = clrType != null ? _serializer.Deserialize(data, clrType) : data;
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
@@ -153,15 +166,10 @@ namespace Foundatio.Messaging {
             var subscribers = GetMessageSubscribers(message);
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
+                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType} {ClrType}.", subscribers.Count, message.Type, message.ClrType.FullName);
             
             if (subscribers.Count == 0)
                 return;
-
-            if (message.Data == null || message.Data.Length == 0) {
-                _logger.LogWarning("Unable to send null message for type {MessageType}", message.Type);
-                return;
-            }
 
             var subscriberHandlers = subscribers.Select(subscriber => {
                 if (subscriber.CancellationToken.IsCancellationRequested) {
@@ -186,10 +194,21 @@ namespace Foundatio.Messaging {
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
 
-                    if (subscriber.Type == typeof(IMessage))
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                    else
-                        await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
+                    using var activity = StartHandleMessageActivity(message);
+
+                    using (_logger.BeginScope(s => s
+                            .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
+                            .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId)))) {
+
+                        if (subscriber.Type == typeof(IMessage)) {
+                            await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        } else if (subscriber.GenericType != null) {
+                            var typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
+                        } else {
+                            await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
+                        }
+                    }
 
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
@@ -207,7 +226,41 @@ namespace Foundatio.Messaging {
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
         }
-       
+
+        protected virtual Activity StartHandleMessageActivity(IMessage message) {
+            var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Server, message.CorrelationId);
+
+            if (activity == null)
+                return activity;
+
+            if (message.Properties != null && message.Properties.TryGetValue("TraceState", out var traceState))
+                activity.TraceStateString = traceState.ToString();
+
+            activity.DisplayName = $"Message: {message.ClrType?.Name ?? message.Type}";
+
+            EnrichHandleMessageActivity(activity, message);
+
+            return activity;
+        }
+
+        protected virtual void EnrichHandleMessageActivity(Activity activity, IMessage message) {
+            if (!activity.IsAllDataRequested)
+                return;
+
+            activity.AddTag("MessageType", message.Type);
+            activity.AddTag("ClrType", message.ClrType?.FullName);
+            activity.AddTag("UniqueId", message.UniqueId);
+            activity.AddTag("CorrelationId", message.CorrelationId);
+
+            if (message.Properties == null || message.Properties.Count <= 0)
+                return;
+
+            foreach (var p in message.Properties) {
+                if (p.Key != "TraceState")
+                    activity.AddTag(p.Key, p.Value);
+            }
+        }
+
         protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
@@ -272,10 +325,19 @@ namespace Foundatio.Messaging {
             public string Id { get; private set; } = Guid.NewGuid().ToString("N");
             public CancellationToken CancellationToken { get; set; }
             public Type Type { get; set; }
+            public Type GenericType { get; set; }
             public Func<object, CancellationToken, Task> Action { get; set; }
 
             public bool IsAssignableFrom(Type type) {
-                return _assignableTypesCache.GetOrAdd(type, t => Type.GetTypeInfo().IsAssignableFrom(t));
+                return _assignableTypesCache.GetOrAdd(type, t => {
+                    if (t.IsClass) {
+                        var typedMessageType = typeof(IMessage<>).MakeGenericType(t);
+                        if (Type == typedMessageType)
+                            return true;
+                    }
+
+                    return Type.GetTypeInfo().IsAssignableFrom(t);
+                });
             }
         }
     }

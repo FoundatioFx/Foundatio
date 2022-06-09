@@ -68,7 +68,7 @@ namespace Foundatio.Queues {
         public string UniqueId { get; set; }
         public string CorrelationId { get; set; }
         public TimeSpan? DeliveryDelay { get; set; }
-        public DataDictionary Properties { get; set; } = new DataDictionary();
+        public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     }
 
     public class EnqueuingEventArgs<T> : CancelEventArgs where T : class {

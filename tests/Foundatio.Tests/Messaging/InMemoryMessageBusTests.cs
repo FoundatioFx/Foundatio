@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Xunit;
@@ -24,8 +24,9 @@ namespace Foundatio.Tests.Messaging {
             return _messageBus;
         }
 
-        protected override Task CleanupMessageBusAsync(IMessageBus messageBus) {
-            return Task.CompletedTask;
+        [Fact]
+        public override Task CanUseMessageOptionsAsync() {
+            return base.CanUseMessageOptionsAsync();
         }
 
         [Fact]

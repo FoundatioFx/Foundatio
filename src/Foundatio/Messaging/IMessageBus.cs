@@ -1,5 +1,5 @@
 ﻿using System;
-using Foundatio.Utility;
+using System.Collections.Generic;
 
 namespace Foundatio.Messaging {
     public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable {}
@@ -8,6 +8,6 @@ namespace Foundatio.Messaging {
         public string UniqueId { get; set; }
         public string CorrelationId { get; set; }
         public TimeSpan? DeliveryDelay { get; set; }
-        public DataDictionary Properties { get; set; } = new DataDictionary();
+        public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     }
 }

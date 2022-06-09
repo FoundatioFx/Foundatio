@@ -233,7 +233,7 @@ namespace Foundatio.Tests.Queue {
 
             public string CorrelationId => _queueEntry.CorrelationId;
 
-            public DataDictionary Properties => _queueEntry.Properties;
+            public IDictionary<string, string> Properties => _queueEntry.Properties;
 
             public Type EntryType => _queueEntry.EntryType;
 

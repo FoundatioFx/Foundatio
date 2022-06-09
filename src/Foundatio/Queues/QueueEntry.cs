@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -20,7 +21,7 @@ namespace Foundatio.Queues {
 
         public string Id { get; }
         public string CorrelationId { get; }
-        public DataDictionary Properties { get; } = new DataDictionary();
+        public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
         public bool IsCompleted { get; private set; }
         public bool IsAbandoned { get; private set; }
         public Type EntryType => Value.GetType();
@@ -69,7 +70,7 @@ namespace Foundatio.Queues {
     public interface IQueueEntryMetadata {
         string Id { get; }
         string CorrelationId { get; }
-        DataDictionary Properties { get; }
+        IDictionary<string, string> Properties { get; }
         DateTime EnqueuedTimeUtc { get; }
         DateTime RenewedTimeUtc { get; }
         DateTime DequeuedTimeUtc { get; }

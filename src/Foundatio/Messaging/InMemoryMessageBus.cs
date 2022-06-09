@@ -49,11 +49,15 @@ namespace Foundatio.Messaging {
             }
             
             byte[] body = SerializeMessageBody(messageType, message);
-            var messageData = new Message(DeserializeMessageBody) {
+            var messageData = new Message(msg => DeserializeMessageBody(body, msg)) {
+                CorrelationId = options.CorrelationId,
+                UniqueId = options.UniqueId,
                 Type = messageType,
-                ClrType = mappedType,
-                Data = body
+                ClrType = mappedType
             };
+
+            foreach (var property in options.Properties)
+                messageData.Properties[property.Key] = property.Value;
 
             try {
                 await SendMessageToSubscribersAsync(messageData).AnyContext();

@@ -174,7 +174,7 @@ namespace Foundatio.Tests.Queue {
                     Data = "Hello"
                 }, new QueueEntryOptions {
                     CorrelationId = "123+456",
-                    Properties = new DataDictionary {
+                    Properties = new Dictionary<string, string> {
                         { "hey", "now" }
                     }
                 });

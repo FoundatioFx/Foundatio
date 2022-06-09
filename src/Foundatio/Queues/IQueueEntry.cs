@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -6,7 +7,7 @@ namespace Foundatio.Queues {
     public interface IQueueEntry {
         string Id { get; }
         string CorrelationId { get; }
-        DataDictionary Properties { get; }
+        IDictionary<string, string> Properties { get; }
         Type EntryType { get; }
         object GetValue();
         bool IsCompleted { get; }

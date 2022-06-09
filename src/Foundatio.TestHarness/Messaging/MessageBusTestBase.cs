@@ -12,6 +12,7 @@ using Xunit;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
+using Foundatio.Tests.Metrics;
 
 namespace Foundatio.Tests.Messaging {
     public abstract class MessageBusTestBase : TestWithLoggingBase {
@@ -26,6 +27,59 @@ namespace Foundatio.Tests.Messaging {
         protected virtual Task CleanupMessageBusAsync(IMessageBus messageBus) {
             messageBus?.Dispose();
             return Task.CompletedTask;
+        }
+
+        public virtual async Task CanUseMessageOptionsAsync() {
+            var messageBus = GetMessageBus();
+            if (messageBus == null)
+                return;
+
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+
+            try {
+                using var listener = new ActivityListener {
+                    ShouldListenTo = s => s.Name == FoundatioDiagnostics.ActivitySource.Name,
+                    Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
+                    ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
+                };
+
+                ActivitySource.AddActivityListener(listener);
+
+                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent", ActivityKind.Internal);
+                Assert.Equal(Activity.Current, activity);
+
+                var countdown = new AsyncCountdownEvent(1);
+                await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg => {
+                    _logger.LogTrace("Got message");
+
+                    Assert.Equal("Hello", msg.Body.Data);
+                    Assert.True(msg.Body.Items.ContainsKey("Test"));
+
+                    Assert.Equal(activity.Id, msg.CorrelationId);
+                    Assert.Equal(Activity.Current.ParentId, activity.Id);
+                    Assert.Single(msg.Properties);
+                    Assert.Contains(msg.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
+                    countdown.Signal();
+                    _logger.LogTrace("Set event");
+                });
+
+                await SystemClock.SleepAsync(1000);
+                await messageBus.PublishAsync(new SimpleMessageA {
+                    Data = "Hello",
+                    Items = { { "Test", "Test" } }
+                }, new MessageOptions {
+                    Properties = new Dictionary<string, string> {
+                        { "hey", "now" }
+                    }
+                });
+                _logger.LogTrace("Published one...");
+
+                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown.CurrentCount);
+            } finally {
+                await CleanupMessageBusAsync(messageBus);
+            }
         }
 
         public virtual async Task CanSendMessageAsync() {
@@ -163,12 +217,12 @@ namespace Foundatio.Tests.Messaging {
                         _logger.LogTrace("Published 500 messages...");
                 });
 
-                await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+                await countdown.WaitAsync(TimeSpan.FromSeconds(30));
                 sw.Stop();
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
-                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 5000);
+                Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
             } finally {
                 await CleanupMessageBusAsync(messageBus);
             }
