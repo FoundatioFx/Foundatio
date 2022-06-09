@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
-using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -62,11 +61,15 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
 
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
-            var message = new Message(DeserializeMessageBody) {
-                Data = brokeredMessage.Body,
+            var message = new Message(msg => DeserializeMessageBody(brokeredMessage.Body, msg)) {
                 Type = brokeredMessage.ContentType,
-                ClrType = GetMappedMessageType(brokeredMessage.ContentType)
+                ClrType = GetMappedMessageType(brokeredMessage.ContentType),
+                CorrelationId = brokeredMessage.CorrelationId,
+                UniqueId = brokeredMessage.MessageId
             };
+
+            foreach (var property in brokeredMessage.UserProperties)
+                message.Properties[property.Key] = property.Value.ToString();
 
             return SendMessageToSubscribersAsync(message);
         }
@@ -96,13 +99,19 @@ namespace Foundatio.Messaging {
             }
         }
 
-         protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
-             var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message)) {
-                 MessageId = options.UniqueId,
-                 ContentType = messageType
-             };
+        protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
+            var brokeredMessage = new Microsoft.Azure.ServiceBus.Message(_serializer.SerializeToBytes(message)) {
+                CorrelationId = options.CorrelationId,
+                ContentType = messageType
+            };
 
-             if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+            if (!String.IsNullOrEmpty(options.UniqueId))
+                brokeredMessage.MessageId = options.UniqueId;
+
+            foreach (var property in options.Properties)
+                brokeredMessage.UserProperties[property.Key] = property.Value;
+
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
                 _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
                 brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(options.DeliveryDelay.Value);
             } else {

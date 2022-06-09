@@ -88,6 +88,9 @@ namespace Foundatio.Queues {
         }
 
         protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+            if (!QueueIsCreated)
+                return new QueueStats();
+
             var q = await _managementClient.GetQueueRuntimeInfoAsync(_options.Name).AnyContext();
             return new QueueStats {
                 Queued = q.MessageCount,
@@ -114,7 +117,8 @@ namespace Foundatio.Queues {
             var stream = new MemoryStream();
             _serializer.Serialize(data, stream);
             var brokeredMessage = new Message(stream.ToArray());
-            brokeredMessage.MessageId = options.UniqueId;
+            if (!String.IsNullOrEmpty(options.UniqueId))
+                brokeredMessage.MessageId = options.UniqueId;
             brokeredMessage.CorrelationId = options.CorrelationId;
 
             if (options is AzureServiceBusQueueEntryOptions asbOptions)
@@ -131,7 +135,8 @@ namespace Foundatio.Queues {
             var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, data, this, SystemClock.UtcNow, 0);
             entry.SetLockToken(brokeredMessage);
             foreach (var property in brokeredMessage.UserProperties)
-                entry.Properties.Add(property.Key, property.Value);
+                entry.Properties.Add(property.Key, property.Value.ToString());
+
             await OnEnqueuedAsync(entry).AnyContext();
 
             return brokeredMessage.MessageId;
@@ -221,7 +226,8 @@ namespace Foundatio.Queues {
             var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, message, this, brokeredMessage.SystemProperties.EnqueuedTimeUtc, brokeredMessage.SystemProperties.DeliveryCount);
             entry.SetLockToken(brokeredMessage);
             foreach (var property in brokeredMessage.UserProperties)
-                entry.Properties.Add(property.Key, property.Value);
+                entry.Properties.Add(property.Key, property.Value.ToString());
+
             await OnDequeuedAsync(entry).AnyContext();
             return entry;
         }
