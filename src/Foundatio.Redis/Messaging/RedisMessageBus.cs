@@ -6,6 +6,8 @@ using Foundatio.Utility;
 using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Foundatio.Messaging {
     public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions> {
@@ -45,11 +47,15 @@ namespace Foundatio.Messaging {
             IMessage message;
             try {
                 var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])channelMessage.Message);
-                message = new Message(DeserializeMessageBody) {
-                    Data = envelope.Data,
+                message = new Message(msg => DeserializeMessageBody(envelope.Data, msg)) {
                     Type = envelope.Type,
-                    ClrType = GetMappedMessageType(envelope.Type)
+                    ClrType = GetMappedMessageType(envelope.Type),
+                    CorrelationId = envelope.CorrelationId,
+                    UniqueId = envelope.UniqueId
                 };
+
+                foreach (var property in envelope.Properties)
+                    message.Properties.Add(property.Key, property.Value);
             } catch (Exception ex) {
                 _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
                 return;
@@ -68,10 +74,15 @@ namespace Foundatio.Messaging {
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
             byte[] bodyData = SerializeMessageBody(messageType, message);
-            byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope() {
+            byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope {
                 Type = messageType,
-                Data = bodyData
+                Data = bodyData,
+                CorrelationId = options.CorrelationId,
+                UniqueId = options.UniqueId,
+                Properties = options.Properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
             });
+
+            // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
 
             await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
@@ -96,7 +107,10 @@ namespace Foundatio.Messaging {
     }
 
     public class RedisMessageEnvelope {
+        public string UniqueId { get; set; }
+        public string CorrelationId { get; set; }
         public string Type { get; set; }
         public byte[] Data { get; set; }
+        public Dictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     }
 }

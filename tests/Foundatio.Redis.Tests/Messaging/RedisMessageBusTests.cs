@@ -32,6 +32,11 @@ namespace Foundatio.Redis.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanUseMessageOptionsAsync() {
+            return base.CanUseMessageOptionsAsync();
+        }
+
+        [Fact]
         public override Task CanSendMessageAsync() {
             return base.CanSendMessageAsync();
         }

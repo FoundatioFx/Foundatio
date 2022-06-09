@@ -719,7 +719,7 @@ namespace Foundatio.Queues {
 
     public class RedisPayloadEnvelope<T> {
         public string CorrelationId { get; set; }
-        public DataDictionary Properties { get; set; }
+        public IDictionary<string, string> Properties { get; set; }
         public T Value { get; set; }
     }
 }
