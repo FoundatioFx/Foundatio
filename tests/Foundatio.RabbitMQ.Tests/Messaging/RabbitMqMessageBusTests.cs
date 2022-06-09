@@ -27,6 +27,11 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
         }
 
         [Fact]
+        public override Task CanUseMessageOptionsAsync() {
+            return base.CanUseMessageOptionsAsync();
+        }
+
+        [Fact]
         public override Task CanSendMessageAsync() {
             return base.CanSendMessageAsync();
         }

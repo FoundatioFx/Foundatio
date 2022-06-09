@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -83,12 +84,16 @@ namespace Foundatio.Messaging {
 
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
-            
-            var message = ConvertToMessage(envelope);
-            await SendMessageToSubscribersAsync(message).AnyContext();
-            
-            if (!_subscribers.IsEmpty && _options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
-                _subscriberChannel.BasicAck(envelope.DeliveryTag, false);
+
+            try {
+                var message = ConvertToMessage(envelope);
+                await SendMessageToSubscribersAsync(message).AnyContext();
+
+                if (!_subscribers.IsEmpty && _options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                    _subscriberChannel.BasicAck(envelope.DeliveryTag, false);
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error handling message ({MessageId}): {Message}", envelope.BasicProperties?.MessageId, ex.Message);
+            }
         }
 
         /// <summary>
@@ -97,11 +102,18 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
-            return new Message(DeserializeMessageBody) {
-                Data = envelope.Body.ToArray(),
+            var message = new Message(msg => DeserializeMessageBody(envelope.Body.ToArray(), msg)) {
                 Type = envelope.BasicProperties.Type,
-                ClrType = GetMappedMessageType(envelope.BasicProperties.Type)
+                ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
+                CorrelationId = envelope.BasicProperties.CorrelationId,
+                UniqueId = envelope.BasicProperties.MessageId
             };
+
+            if (envelope.BasicProperties.Headers != null)
+                foreach (var header in envelope.BasicProperties.Headers)
+                    message.Properties[header.Key] = Encoding.UTF8.GetString((byte[])header.Value);
+
+            return message;
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
@@ -160,12 +172,20 @@ namespace Foundatio.Messaging {
             }
 
             var basicProperties = _publisherChannel.CreateBasicProperties();
-            basicProperties.MessageId = Guid.NewGuid().ToString("N");
+            basicProperties.MessageId = options.UniqueId ?? Guid.NewGuid().ToString("N");
+            basicProperties.CorrelationId = options.CorrelationId;
             basicProperties.Type = messageType;
+
             if (_options.IsDurable)
                 basicProperties.Persistent = true;
             if (_options.DefaultMessageTimeToLive.HasValue)
                 basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
+
+            if (options.Properties.Count > 0) {
+                basicProperties.Headers ??= new Dictionary<string, object>();
+                foreach (var property in options.Properties)
+                    basicProperties.Headers.Add(property.Key, property.Value);
+            }
 
             // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
             if (_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
