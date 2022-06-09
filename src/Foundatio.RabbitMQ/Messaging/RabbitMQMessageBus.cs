@@ -77,18 +77,18 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        private async Task OnMessage(object sender, BasicDeliverEventArgs e) {
+        private async Task OnMessage(object sender, BasicDeliverEventArgs envelope) {
             if (_subscribers.IsEmpty)
                 return;
 
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("OnMessageAsync({MessageId})", e.BasicProperties?.MessageId);
+                _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
             
-            var message = ConvertToMessage(e);
+            var message = ConvertToMessage(envelope);
             await SendMessageToSubscribersAsync(message).AnyContext();
             
             if (!_subscribers.IsEmpty && _options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
-                _subscriberChannel.BasicAck(e.DeliveryTag, false);
+                _subscriberChannel.BasicAck(envelope.DeliveryTag, false);
         }
 
         /// <summary>
@@ -97,10 +97,10 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
-            return new Message(() => DeserializeMessageBody(envelope.BasicProperties.Type, envelope.Body.ToArray())) {
+            return new Message(DeserializeMessageBody) {
+                Data = envelope.Body.ToArray(),
                 Type = envelope.BasicProperties.Type,
-                ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
-                Data = envelope.Body.ToArray()
+                ClrType = GetMappedMessageType(envelope.BasicProperties.Type)
             };
         }
 
