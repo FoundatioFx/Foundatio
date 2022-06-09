@@ -45,13 +45,13 @@ namespace Foundatio.Messaging {
             IMessage message;
             try {
                 var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])channelMessage.Message);
-                message = new Message(() => DeserializeMessageBody(envelope.Type, envelope.Data)) {
-                    Type = envelope.Type,
+                message = new Message(DeserializeMessageBody) {
                     Data = envelope.Data,
+                    Type = envelope.Type,
                     ClrType = GetMappedMessageType(envelope.Type)
                 };
             } catch (Exception ex) {
-                _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing messsage: {Message}", channelMessage.Channel, ex.Message);
+                _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
                 return;
             }
 
