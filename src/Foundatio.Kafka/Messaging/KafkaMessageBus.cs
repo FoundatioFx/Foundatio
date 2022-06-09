@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -59,6 +59,12 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (options?.CorrelationId is not null)
             headers.Add(new Header(KafkaHeaders.CorrelationId, Encoding.UTF8.GetBytes(options.CorrelationId)));
 
+        if (options?.UniqueId is not null)
+            headers.Add(new Header(KafkaHeaders.UniqueId, Encoding.UTF8.GetBytes(options.UniqueId)));
+
+        foreach (var property in options.Properties)
+            headers.Add(new Header(property.Key, Encoding.UTF8.GetBytes(property.Value)));
+
         var publishMessage = new Message<string, byte[]> {
             Key = _options.PublishKey,
             Value = SerializeMessageBody(messageType, message),
@@ -82,12 +88,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (_subscribers.IsEmpty)
             return;
 
-        using var _ = _logger.BeginScope(s => s
-            .Property("GroupId", _consumerConfig.GroupId)
-            .Property("Topic", consumeResult.Topic)
-            .Property("Partition", consumeResult.Partition)
-            .Property("Offset", consumeResult.Offset));
-
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId})", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId);
 
@@ -100,7 +100,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             }
 
             // What to do if message type is null?
-            var message = ConvertToMessage(messageType, consumeResult.Message.Value);
+            var message = ConvertToMessage(messageType, consumeResult.Message);
+
             await SendMessageToSubscribersAsync(message).AnyContext();
 
             if (!_subscribers.IsEmpty)
@@ -140,12 +141,30 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         EnsureListening();
     }
 
-    protected virtual IMessage ConvertToMessage(string messageType, byte[] data) {
-        return new Message(DeserializeMessageBody) {
-            Data = data,
+    protected virtual IMessage ConvertToMessage(string messageType, Message<string, byte[]> message) {
+        var result = new Message(msg => DeserializeMessageBody(message.Value, msg)) {
             Type = messageType,
             ClrType = GetMappedMessageType(messageType)
         };
+
+        foreach (var header in message.Headers) {
+            switch (header.Key) {
+                case KafkaHeaders.MessageType:
+                case KafkaHeaders.ContentType:
+                    break;
+                case KafkaHeaders.CorrelationId:
+                    result.CorrelationId = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+                case KafkaHeaders.UniqueId:
+                    result.UniqueId = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+                default:
+                    result.Properties[header.Key] = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+            }
+        }
+
+        return result;
     }
 
     private void EnsureListening() {
@@ -484,5 +503,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         public const string MessageType = "MessageType";
         public const string ContentType = "ContentType";
         public const string CorrelationId = "CorrelationId";
+        public const string UniqueId = "UniqueId";
     }
 }

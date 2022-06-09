@@ -14,6 +14,11 @@ namespace Foundatio.Kafka.Tests.Messaging;
 public class KafkaMessageBusTests : KafkaMessageBusTestBase {
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
+    [Fact]
+    public override Task CanUseMessageOptionsAsync() {
+        return base.CanUseMessageOptionsAsync();
+    }
+
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
     public override Task CanSendMessageAsync() {
         return base.CanSendMessageAsync();
