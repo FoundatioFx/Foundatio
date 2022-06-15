@@ -87,7 +87,9 @@ namespace Foundatio.Messaging {
             });
         }
 
+        protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
@@ -103,6 +105,14 @@ namespace Foundatio.Messaging {
                 }
             };
 
+            if (cancellationToken != CancellationToken.None) {
+                cancellationToken.Register(() => {
+                    _subscribers.TryRemove(subscriber.Id, out _);
+                    if (_subscribers.Count == 0)
+                        RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
+                });
+            }
+
             if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1) {
                 var modelType = subscriber.Type.GenericTypeArguments.Single();
                 subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
@@ -117,8 +127,9 @@ namespace Foundatio.Messaging {
         public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
-            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
+
             await SubscribeImplAsync(handler, cancellationToken).AnyContext();
+            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
         }
 
         protected List<Subscriber> GetMessageSubscribers(IMessage message) {
