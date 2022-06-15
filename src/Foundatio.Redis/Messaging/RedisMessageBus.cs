@@ -47,7 +47,7 @@ namespace Foundatio.Messaging {
             IMessage message;
             try {
                 var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])channelMessage.Message);
-                message = new Message(msg => DeserializeMessageBody(envelope.Data, msg)) {
+                message = new Message(envelope.Data, DeserializeMessageBody) {
                     Type = envelope.Type,
                     ClrType = GetMappedMessageType(envelope.Type),
                     CorrelationId = envelope.CorrelationId,
