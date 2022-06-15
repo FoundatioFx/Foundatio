@@ -61,7 +61,7 @@ namespace Foundatio.Messaging {
                 return Task.CompletedTask;
 
             _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
-            var message = new Message(msg => DeserializeMessageBody(brokeredMessage.Body, msg)) {
+            var message = new Message(brokeredMessage.Body, DeserializeMessageBody) {
                 Type = brokeredMessage.ContentType,
                 ClrType = GetMappedMessageType(brokeredMessage.ContentType),
                 CorrelationId = brokeredMessage.CorrelationId,
