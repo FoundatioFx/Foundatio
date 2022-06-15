@@ -38,11 +38,14 @@ namespace Foundatio.Messaging {
         }
 
         private async Task OnMessage(ChannelMessage channelMessage) {
-            if (_subscribers.IsEmpty || !channelMessage.Message.HasValue)
-                return;
-
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
+
+            if (_subscribers.IsEmpty || !channelMessage.Message.HasValue) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("No subscribers ({Channel})", channelMessage.Channel);
+                return;
+            }
             
             IMessage message;
             try {
