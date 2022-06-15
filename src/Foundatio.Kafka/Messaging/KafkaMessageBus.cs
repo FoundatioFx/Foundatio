@@ -142,7 +142,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     }
 
     protected virtual IMessage ConvertToMessage(string messageType, Message<string, byte[]> message) {
-        var result = new Message(msg => DeserializeMessageBody(message.Value, msg)) {
+        var result = new Message(message.Value, DeserializeMessageBody) {
             Type = messageType,
             ClrType = GetMappedMessageType(messageType)
         };
