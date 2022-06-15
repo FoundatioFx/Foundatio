@@ -15,10 +15,10 @@ namespace Foundatio.Messaging {
     public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions> {
         private readonly AsyncLock _lock = new();
         private readonly ConnectionFactory _factory;
-        private IConnection _publisherClient;
-        private IConnection _subscriberClient;
-        private IModel _publisherChannel;
-        private IModel _subscriberChannel;
+        private IConnection _publisherConnection;
+        private IConnection _subscriberConnection;
+        private IModel _publisherModel;
+        private IModel _subscriberModel;
         private bool? _delayedExchangePluginEnabled;
 
         public RabbitMQMessageBus(RabbitMQMessageBusOptions options) : base(options) {
@@ -41,33 +41,40 @@ namespace Foundatio.Messaging {
             : this(config(new RabbitMQMessageBusOptionsBuilder()).Build()) { }
 
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
-            if (_subscriberChannel != null)
+            if (_subscriberModel != null)
                 return;
 
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
 
             using (await _lock.LockAsync().AnyContext()) {
-                if (_subscriberChannel != null)
+                if (_subscriberModel != null)
                     return;
 
-                _subscriberClient = CreateConnection();
-                _subscriberChannel = _subscriberClient.CreateModel();
+                _subscriberConnection = CreateConnection();
+                _subscriberModel = _subscriberConnection.CreateModel();
 
                 // If InitPublisher is called first, then we will never come in this if clause.
-                if (!CreateDelayedExchange(_subscriberChannel)) {
-                    _subscriberClient = CreateConnection();
-                    _subscriberChannel = _subscriberClient.CreateModel();
-                    CreateRegularExchange(_subscriberChannel);
+                if (!CreateDelayedExchange(_subscriberModel)) {
+                    _subscriberModel.Close();
+                    _subscriberModel.Abort();
+                    _subscriberModel.Dispose();
+
+                    _subscriberConnection.Close();
+                    _subscriberConnection.Dispose();
+
+                    _subscriberConnection = CreateConnection();
+                    _subscriberModel = _subscriberConnection.CreateModel();
+                    CreateRegularExchange(_subscriberModel);
                 }
 
-                string queueName = CreateQueue(_subscriberChannel);
-                var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
+                string queueName = CreateQueue(_subscriberModel);
+                var consumer = new AsyncEventingBasicConsumer(_subscriberModel);
                 consumer.Received += OnMessage;
                 consumer.Shutdown += OnConsumerShutdown;
 
-                _subscriberChannel.BasicConsume(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, consumer);
+                _subscriberModel.BasicConsume(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, consumer);
                 if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
+                    _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberModel.ChannelNumber);
             }
         }
 
@@ -89,10 +96,13 @@ namespace Foundatio.Messaging {
                 var message = ConvertToMessage(envelope);
                 await SendMessageToSubscribersAsync(message).AnyContext();
 
-                if (!_subscribers.IsEmpty && _options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
-                    _subscriberChannel.BasicAck(envelope.DeliveryTag, false);
+                if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                    _subscriberModel.BasicAck(envelope.DeliveryTag, false);
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error handling message ({MessageId}): {Message}", envelope.BasicProperties?.MessageId, ex.Message);
+
+                if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                    _subscriberModel.BasicReject(envelope.DeliveryTag, true);
             }
         }
 
@@ -102,7 +112,7 @@ namespace Foundatio.Messaging {
         /// <param name="envelope">The RabbitMQ delivery arguments</param>
         /// <returns>The MessageBusData for the message</returns>
         protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope) {
-            var message = new Message(msg => DeserializeMessageBody(envelope.Body.ToArray(), msg)) {
+            var message = new Message(envelope.Body.ToArray(), DeserializeMessageBody) {
                 Type = envelope.BasicProperties.Type,
                 ClrType = GetMappedMessageType(envelope.BasicProperties.Type),
                 CorrelationId = envelope.BasicProperties.CorrelationId,
@@ -110,41 +120,52 @@ namespace Foundatio.Messaging {
             };
 
             if (envelope.BasicProperties.Headers != null)
-                foreach (var header in envelope.BasicProperties.Headers)
-                    message.Properties[header.Key] = Encoding.UTF8.GetString((byte[])header.Value);
+                foreach (var header in envelope.BasicProperties.Headers) {
+                    if (header.Value is byte[] byteData)
+                        message.Properties[header.Key] = Encoding.UTF8.GetString(byteData);
+                    else
+                        message.Properties[header.Key] = header.Value.ToString();
+                }
 
             return message;
         }
 
         protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) {
-            if (_publisherChannel != null)
+            if (_publisherModel != null)
                 return;
 
             using (await _lock.LockAsync().AnyContext()) {
-                if (_publisherChannel != null)
+                if (_publisherModel != null)
                     return;
 
                 // Create the client connection, channel, declares the exchange, queue and binds
                 // the exchange with the publisher queue. It requires the name of our exchange, exchange type, durability and auto-delete.
                 // For now we are using same autoDelete for both exchange and queue ( it will survive a server restart )
-                _publisherClient = CreateConnection();
-                _publisherChannel = _publisherClient.CreateModel();
+                _publisherConnection = CreateConnection();
+                _publisherModel = _publisherConnection.CreateModel();
 
                 // We first attempt to create "x-delayed-type". For this plugin should be installed.
                 // However, we plugin is not installed this will throw an exception. In that case
                 // we attempt to create regular exchange. If regular exchange also throws and exception
                 // then trouble shoot the problem.
-                if (!CreateDelayedExchange(_publisherChannel)) {
+                if (!CreateDelayedExchange(_publisherModel)) {
                     // if the initial exchange creation was not successful then we must close the previous connection
                     // and establish the new client connection and model otherwise you will keep receiving failure in creation
                     // of the regular exchange too.
-                    _publisherClient = CreateConnection();
-                    _publisherChannel = _publisherClient.CreateModel();
-                    CreateRegularExchange(_publisherChannel);
+                    _publisherModel.Close();
+                    _publisherModel.Abort();
+                    _publisherModel.Dispose();
+
+                    _publisherConnection.Close();
+                    _publisherConnection.Dispose();
+
+                    _publisherConnection = CreateConnection();
+                    _publisherModel = _publisherConnection.CreateModel();
+                    CreateRegularExchange(_publisherModel);
                 }
 
                 if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
+                    _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherModel.ChannelNumber);
             }
         }
 
@@ -171,7 +192,7 @@ namespace Foundatio.Messaging {
                 return AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value);
             }
 
-            var basicProperties = _publisherChannel.CreateBasicProperties();
+            var basicProperties = _publisherModel.CreateBasicProperties();
             basicProperties.MessageId = options.UniqueId ?? Guid.NewGuid().ToString("N");
             basicProperties.CorrelationId = options.CorrelationId;
             basicProperties.Type = messageType;
@@ -200,8 +221,8 @@ namespace Foundatio.Messaging {
             }
             
             // The publication occurs with mandatory=false
-            lock (_publisherChannel)
-                _publisherChannel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
+            lock (_publisherModel)
+                _publisherModel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
             
             return Task.CompletedTask;
         }
@@ -267,51 +288,51 @@ namespace Foundatio.Messaging {
 
         public override void Dispose() {
             base.Dispose();
+
+            if (_factory != null)
+                _factory.AutomaticRecoveryEnabled = false;
+
             ClosePublisherConnection();
             CloseSubscriberConnection();
         }
 
         private void ClosePublisherConnection() {
-            if (_publisherClient == null)
+            if (_publisherConnection == null)
                 return;
 
             using (_lock.Lock()) {
-                if (_publisherClient == null)
-                    return;
+                if (_publisherModel != null) {
+                    _publisherModel.Close();
+                    _publisherModel.Abort();
+                    _publisherModel.Dispose();
+                    _publisherModel = null;
+                }
 
-                if (_publisherChannel != null &&_publisherChannel.IsOpen)
-                    _publisherChannel.Close();
-
-                _publisherChannel?.Dispose();
-                _publisherChannel = null;
-
-                if (_publisherClient != null && _publisherClient.IsOpen)
-                    _publisherClient.Close();
-
-                _publisherClient?.Dispose();
-                _publisherClient = null;
+                if (_publisherConnection != null) {
+                    _publisherConnection.Close();
+                    _publisherConnection.Dispose();
+                    _publisherConnection = null;
+                }
             }
         }
 
         private void CloseSubscriberConnection() {
-            if (_subscriberClient == null)
+            if (_subscriberConnection == null)
                 return;
 
             using (_lock.Lock()) {
-                if (_subscriberClient == null)
-                    return;
+                if (_subscriberModel != null) {
+                    _subscriberModel.Close();
+                    _subscriberModel.Abort();
+                    _subscriberModel.Dispose();
+                    _subscriberModel = null;
+                }
 
-                if (_subscriberChannel != null && _subscriberChannel.IsOpen)
-                    _subscriberChannel.Close();
-
-                _subscriberChannel?.Dispose();
-                _subscriberChannel = null;
-
-                if (_subscriberClient != null && _subscriberClient.IsOpen)
-                    _subscriberClient.Close();
-
-                _subscriberClient?.Dispose();
-                _subscriberClient = null;
+                if (_subscriberConnection != null) {
+                    _subscriberConnection.Close();
+                    _subscriberConnection.Dispose();
+                    _subscriberConnection = null;
+                }
             }
         }
     }

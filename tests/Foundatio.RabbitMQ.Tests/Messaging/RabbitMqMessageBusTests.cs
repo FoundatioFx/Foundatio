@@ -168,6 +168,8 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
             await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
             await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(0, countdownEvent.CurrentCount);
+
+            messageBus2.Dispose();
         }
     }
 }
