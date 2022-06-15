@@ -143,18 +143,18 @@ namespace Foundatio.Messaging {
             return _serializer.SerializeToBytes(body);
         }
 
-        protected virtual object DeserializeMessageBody(byte[] data, IMessage message) {
-            if (data is null || data.Length == 0)
+        protected virtual object DeserializeMessageBody(IMessage message) {
+            if (message.Data is null || message.Data.Length == 0)
                 return null;
 
             object body;
             try {
                 var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
-                body = clrType != null ? _serializer.Deserialize(data, clrType) : data;
+                body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
             } catch (Exception ex) {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
-                
+
                 return null;
             }
 
@@ -167,7 +167,7 @@ namespace Foundatio.Messaging {
 
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType} {ClrType}.", subscribers.Count, message.Type, message.ClrType.FullName);
-            
+
             if (subscribers.Count == 0)
                 return;
 
