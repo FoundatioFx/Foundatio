@@ -113,6 +113,8 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
 
         [Fact]
         public async Task CanPersistAndNotLoseMessages() {
+            Log.MinimumLevel = LogLevel.Trace;
+
             var messageBus1 = new RabbitMQMessageBus(o => o
                 .ConnectionString("amqp://localhost:5673")
                 .LoggerFactory(Log)
@@ -166,7 +168,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging {
                 countdownEvent.Signal();
             }, cts.Token);
             await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
-            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
+            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(0, countdownEvent.CurrentCount);
 
             messageBus2.Dispose();

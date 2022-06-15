@@ -40,6 +40,13 @@ namespace Foundatio.Messaging {
         public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
             : this(config(new RabbitMQMessageBusOptionsBuilder()).Build()) { }
 
+        protected override Task RemoveTopicSubscriptionAsync() {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveTopicSubscriptionAsync");
+            CloseSubscriberConnection();
+            return Task.CompletedTask;
+        }
+
         protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
             if (_subscriberModel != null)
                 return;
@@ -79,18 +86,23 @@ namespace Foundatio.Messaging {
         }
 
         private Task OnConsumerShutdown(object sender, ShutdownEventArgs e) {
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
-
+            _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
             return Task.CompletedTask;
         }
 
         private async Task OnMessage(object sender, BasicDeliverEventArgs envelope) {
-            if (_subscribers.IsEmpty)
-                return;
-
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
+
+            if (_subscribers.IsEmpty) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties?.MessageId);
+
+                if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                    _subscriberModel.BasicReject(envelope.DeliveryTag, true);
+
+                return;
+            }
 
             try {
                 var message = ConvertToMessage(envelope);
@@ -223,7 +235,9 @@ namespace Foundatio.Messaging {
             // The publication occurs with mandatory=false
             lock (_publisherModel)
                 _publisherModel.BasicPublish(_options.Topic, String.Empty, basicProperties, data);
-            
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
+
             return Task.CompletedTask;
         }
 
@@ -301,6 +315,9 @@ namespace Foundatio.Messaging {
                 return;
 
             using (_lock.Lock()) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("ClosePublisherConnection");
+
                 if (_publisherModel != null) {
                     _publisherModel.Close();
                     _publisherModel.Abort();
@@ -321,6 +338,9 @@ namespace Foundatio.Messaging {
                 return;
 
             using (_lock.Lock()) {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("CloseSubscriberConnection");
+
                 if (_subscriberModel != null) {
                     _subscriberModel.Close();
                     _subscriberModel.Abort();
