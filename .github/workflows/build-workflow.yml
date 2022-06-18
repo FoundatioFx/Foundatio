@@ -7,6 +7,11 @@ on:
         default: ''
         required: false
         type: string
+      compose-command:
+        description: 'The docker compose command to run for tests'
+        default: 'docker compose up -d && docker compose up ready || true'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -31,11 +36,12 @@ jobs:
         dotnet tool install --global minver-cli --version 4.0.0
         version=$(minver --tag-prefix v)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
+        echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
     - name: Build
       run: dotnet build ${{ inputs.solution }} --configuration Release
     - name: Start Services
       if: hashFiles('docker-compose.yml') != ''
-      run: docker compose up -d && docker compose up ready || true
+      run: ${{ inputs.compose-command }}
     - name: Run Tests
       run: dotnet test ${{ inputs.solution }} --configuration Release --no-build --logger GitHubActions
     - name: Package
