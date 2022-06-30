@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Foundatio.AsyncEx;
@@ -74,9 +74,10 @@ namespace Foundatio.Lock {
 
         public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            bool isDebugLogLevelEnabled = _logger.IsEnabled(LogLevel.Debug);
             bool shouldWait = !cancellationToken.IsCancellationRequested;
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Attempting to acquire lock: {Resource}", resource);
+            if (isDebugLogLevelEnabled)
+                _logger.LogDebug("Attempting to acquire lock: {Resource}", resource);
 
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
@@ -98,8 +99,8 @@ namespace Foundatio.Lock {
                     if (gotLock)
                         break;
 
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Failed to acquire lock: {Resource}", resource);
+                    if (isDebugLogLevelEnabled)
+                        _logger.LogDebug("Failed to acquire lock: {Resource}", resource);
                     
                     if (cancellationToken.IsCancellationRequested) {
                         if (isTraceLogLevelEnabled && shouldWait)

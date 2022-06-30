@@ -10,6 +10,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using System.Linq;
 
 namespace Foundatio.Tests.Locks {
     public abstract class LockTestBase : TestWithLoggingBase {
@@ -160,6 +161,40 @@ namespace Foundatio.Tests.Locks {
             var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
             _logger.LogInformation(testLock3 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
             Assert.NotNull(testLock3);
+        }
+
+        public virtual async Task CanAcquireLocksInParallel() {
+            var locker = GetLockProvider();
+            if (locker == null)
+                return;
+
+            Log.SetLogLevel<CacheLockProvider>(LogLevel.Debug);
+
+            const int COUNT = 100;
+            int current = 1;
+            var used = new List<int>();
+            int concurrency = 0;
+
+            await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (index, ct) => {
+                await using (var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1))) {
+
+                    Assert.NotNull(myLock);
+
+                    int currentConcurrency = Interlocked.Increment(ref concurrency);
+                    Assert.Equal(1, currentConcurrency);
+
+                    int item = current;
+                    await Task.Delay(10, ct);
+                    used.Add(item);
+                    current++;
+
+                    Interlocked.Decrement(ref concurrency);
+                }
+            });
+
+            var duplicates = used.GroupBy(x => x).Where(g => g.Count() > 1);
+            Assert.Empty(duplicates);
+            Assert.Equal(COUNT, used.Count);
         }
 
         public virtual async Task LockOneAtATimeAsync() {

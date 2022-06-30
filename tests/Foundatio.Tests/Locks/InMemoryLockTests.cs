@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
@@ -47,6 +47,11 @@ namespace Foundatio.Tests.Locks {
         [Fact]
         public override Task CanAcquireMultipleResources() {
             return base.CanAcquireMultipleResources();
+        }
+
+        [Fact]
+        public override Task CanAcquireLocksInParallel() {
+            return base.CanAcquireLocksInParallel();
         }
 
         [Fact]
