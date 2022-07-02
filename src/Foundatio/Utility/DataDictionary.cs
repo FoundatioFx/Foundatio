@@ -2,63 +2,73 @@
 using System.Collections.Generic;
 
 namespace Foundatio.Utility {
-    public class DataDictionary : Dictionary<string, object> {
+    public interface IDataDictionary : IDictionary<string, object> { }
+
+    public interface IHaveData {
+        IDataDictionary Data { get; }
+    }
+
+    public class DataDictionary : Dictionary<string, object>, IDataDictionary {
         public static readonly DataDictionary Empty = new();
 
         public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) {}
 
         public DataDictionary(IEnumerable<KeyValuePair<string, object>> values) : base(StringComparer.OrdinalIgnoreCase) {
-            foreach (var kvp in values)
-                Add(kvp.Key, kvp.Value);
+            if (values != null) {
+                foreach (var kvp in values)
+                    Add(kvp.Key, kvp.Value);
+            }
+        }
+    }
+
+    public static class DataDictionaryExtensions {
+        public static object GetValueOrDefault(this IDataDictionary dictionary, string key) {
+            return dictionary.TryGetValue(key, out object value) ? value : null;
         }
 
-        public object GetValueOrDefault(string key) {
-            return TryGetValue(key, out object value) ? value : null;
+        public static object GetValueOrDefault(this IDataDictionary dictionary, string key, object defaultValue) {
+            return dictionary.TryGetValue(key, out object value) ? value : defaultValue;
         }
 
-        public object GetValueOrDefault(string key, object defaultValue) {
-            return TryGetValue(key, out object value) ? value : defaultValue;
+        public static object GetValueOrDefault(this IDataDictionary dictionary, string key, Func<object> defaultValueProvider) {
+            return dictionary.TryGetValue(key, out object value) ? value : defaultValueProvider();
         }
 
-        public object GetValueOrDefault(string key, Func<object> defaultValueProvider) {
-            return TryGetValue(key, out object value) ? value : defaultValueProvider();
-        }
-
-        public T GetValue<T>(string key) {
-            if (!ContainsKey(key))
+        public static T GetValue<T>(this IDataDictionary dictionary, string key) {
+            if (!dictionary.ContainsKey(key))
                 throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary");
 
-            return GetValueOrDefault<T>(key);
+            return dictionary.GetValueOrDefault<T>(key);
         }
 
-        public T GetValueOrDefault<T>(string key, T defaultValue = default) {
-            if (!ContainsKey(key))
+        public static T GetValueOrDefault<T>(this IDataDictionary dictionary, string key, T defaultValue = default) {
+            if (!dictionary.ContainsKey(key))
                 return defaultValue;
 
-            object data = this[key];
-            if (data is T)
-                return (T)data;
+            object data = dictionary[key];
+            if (data is T t)
+                return t;
 
             if (data == null)
                 return defaultValue;
 
             try {
                 return data.ToType<T>();
-            } catch {}
+            } catch { }
 
             return defaultValue;
         }
 
-        public string GetString(string name) {
-            return GetString(name, String.Empty);
+        public static string GetString(this IDataDictionary dictionary, string name) {
+            return dictionary.GetString(name, String.Empty);
         }
 
-        public string GetString(string name, string @default) {
-            if (!TryGetValue(name, out object value))
+        public static string GetString(this IDataDictionary dictionary, string name, string @default) {
+            if (!dictionary.TryGetValue(name, out object value))
                 return @default;
 
-            if (value is string)
-                return (string)value;
+            if (value is string s)
+                return s;
 
             return String.Empty;
         }

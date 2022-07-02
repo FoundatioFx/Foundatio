@@ -1,4 +1,4 @@
-using Foundatio.Tests.Messaging;
+﻿using Foundatio.Tests.Messaging;
 using Foundatio.Utility;
 
 namespace Foundatio.Tests.Messaging {
@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Messaging {
         public string Data { get; set; }
         public int Count { get; set; }
             
-        public DataDictionary Items { get; set; }
+        public IDataDictionary Items { get; set; }
     }
 
     public class DerivedSimpleMessageA : SimpleMessageA { }
@@ -45,6 +45,6 @@ namespace Foundatio.Tests.MessagingAlt {
         public string Data { get; set; }
         public int Count { get; set; }
             
-        public DataDictionary Items { get; set; }
+        public IDataDictionary Items { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -55,7 +55,7 @@ namespace Foundatio.Storage {
 
         public IReadOnlyCollection<FileSpec> Files { get; private set; }
         public bool HasMore { get; private set; }
-        protected DataDictionary Data { get; } = new DataDictionary();
+        protected IDataDictionary Data { get; } = new DataDictionary();
         Func<PagedFileListResult, Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
 
         public async Task<bool> NextPageAsync() {
