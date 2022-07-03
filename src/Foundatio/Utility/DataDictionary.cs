@@ -3,13 +3,11 @@ using System.Collections.Generic;
 using Foundatio.Serializer;
 
 namespace Foundatio.Utility {
-    public interface IDataDictionary : IDictionary<string, object> { }
-
     public interface IHaveData {
-        IDataDictionary Data { get; }
+        IDictionary<string, object> Data { get; }
     }
 
-    public class DataDictionary : Dictionary<string, object>, IDataDictionary {
+    public class DataDictionary : Dictionary<string, object> {
         public static readonly DataDictionary Empty = new();
 
         public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) {}
@@ -23,26 +21,26 @@ namespace Foundatio.Utility {
     }
 
     public static class DataDictionaryExtensions {
-        public static object GetValueOrDefault(this IDataDictionary dictionary, string key) {
+        public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key) {
             return dictionary.TryGetValue(key, out object value) ? value : null;
         }
 
-        public static object GetValueOrDefault(this IDataDictionary dictionary, string key, object defaultValue) {
+        public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, object defaultValue) {
             return dictionary.TryGetValue(key, out object value) ? value : defaultValue;
         }
 
-        public static object GetValueOrDefault(this IDataDictionary dictionary, string key, Func<object> defaultValueProvider) {
+        public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, Func<object> defaultValueProvider) {
             return dictionary.TryGetValue(key, out object value) ? value : defaultValueProvider();
         }
 
-        public static T GetValue<T>(this IDataDictionary dictionary, string key) {
+        public static T GetValue<T>(this IDictionary<string, object> dictionary, string key) {
             if (!dictionary.ContainsKey(key))
                 throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary");
 
             return dictionary.GetValueOrDefault<T>(key);
         }
 
-        public static T GetValueOrDefault<T>(this IDataDictionary dictionary, string key, T defaultValue = default) {
+        public static T GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, T defaultValue = default) {
             if (!dictionary.ContainsKey(key))
                 return defaultValue;
 
@@ -60,11 +58,11 @@ namespace Foundatio.Utility {
             return defaultValue;
         }
 
-        public static string GetString(this IDataDictionary dictionary, string name) {
+        public static string GetString(this IDictionary<string, object> dictionary, string name) {
             return dictionary.GetString(name, String.Empty);
         }
 
-        public static string GetString(this IDataDictionary dictionary, string name, string @default) {
+        public static string GetString(this IDictionary<string, object> dictionary, string name, string @default) {
             if (!dictionary.TryGetValue(name, out object value))
                 return @default;
 
@@ -81,7 +79,7 @@ namespace Foundatio.Utility {
         /// as well as using either the passed in <see cref="ISerializer"/> or one accessed from the <see cref="IHaveSerializer"/> accessor.
         /// </summary>
         /// <typeparam name="T">The data type to be returned</typeparam>
-        /// <param name="target">The source containing the <see cref="IDataDictionary"/></param>
+        /// <param name="target">The source containing the data</param>
         /// <param name="key">They data dictionary key</param>
         /// <param name="defaultValue">The default value to return if the value doesn't exist</param>
         /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>
@@ -101,7 +99,7 @@ namespace Foundatio.Utility {
         /// as well as using either the passed in <see cref="ISerializer"/> or one accessed from the <see cref="IHaveSerializer"/> accessor.
         /// </summary>
         /// <typeparam name="T">The data type to be returned</typeparam>
-        /// <param name="target">The source containing the <see cref="IDataDictionary"/></param>
+        /// <param name="target">The source containing the data</param>
         /// <param name="key">They data dictionary key</param>
         /// <param name="value">The value from the data dictionary converted to the desired type</param>
         /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>

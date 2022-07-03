@@ -55,7 +55,7 @@ namespace Foundatio.Storage {
 
         public IReadOnlyCollection<FileSpec> Files { get; private set; }
         public bool HasMore { get; private set; }
-        protected IDataDictionary Data { get; } = new DataDictionary();
+        protected IDictionary<string, object> Data { get; } = new DataDictionary();
         Func<PagedFileListResult, Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
 
         public async Task<bool> NextPageAsync() {
