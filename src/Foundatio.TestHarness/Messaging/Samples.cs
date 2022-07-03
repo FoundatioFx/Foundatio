@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Messaging {
         public string Data { get; set; }
         public int Count { get; set; }
             
-        public IDataDictionary Items { get; set; }
+        public DataDictionary Items { get; set; }
     }
 
     public class DerivedSimpleMessageA : SimpleMessageA { }

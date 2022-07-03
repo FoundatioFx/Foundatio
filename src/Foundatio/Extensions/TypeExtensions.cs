@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Reflection;
+using Foundatio.Serializer;
 
 namespace Foundatio.Utility {
     internal static class TypeExtensions {
@@ -47,7 +48,7 @@ namespace Foundatio.Utility {
             return t != null && t.IsNumeric();
         }
 
-        public static T ToType<T>(this object value) {
+        public static T ToType<T>(this object value, ISerializer serializer = null) {
             var targetType = typeof(T);
             if (value == null) {
                 try {
@@ -83,14 +84,26 @@ namespace Foundatio.Utility {
                 return (T)convertedValue;
             }
 
-            if (!(value is IConvertible))
-                throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value));
-            try {
-                object convertedValue = Convert.ChangeType(value, targetType);
-                return (T)convertedValue;
-            } catch (Exception e) {
-                throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value), e);
+            if (serializer != null && value is byte[] data) {
+                try {
+                    return serializer.Deserialize<T>(data);
+                } catch { }
             }
+
+            if (serializer != null && value is string stringValue) {
+                try {
+                    return serializer.Deserialize<T>(stringValue);
+                } catch { }
+            }
+
+            if (value is IConvertible) {
+                try {
+                    object convertedValue = Convert.ChangeType(value, targetType);
+                    return (T)convertedValue;
+                } catch { }
+            }
+
+            throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value));
         }
     }
 }
