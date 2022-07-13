@@ -33,6 +33,11 @@ namespace Foundatio.Redis.Tests.Locks {
         }
 
         [Fact]
+        public override Task CanAcquireLocksInParallel() {
+            return base.CanAcquireLocksInParallel();
+        }
+
+        [Fact]
         public override Task CanAcquireAndReleaseLockAsync() {
             return base.CanAcquireAndReleaseLockAsync();
         }

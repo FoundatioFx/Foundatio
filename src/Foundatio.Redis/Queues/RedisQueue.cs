@@ -371,7 +371,7 @@ namespace Foundatio.Queues {
                         workListName = _workListName,
                         queueName = _options.Name,
                         now,
-                        timeout = timeout.TotalSeconds
+                        timeout = timeout.TotalMilliseconds
                     }).AnyContext();
                     return result.ToString();
                 }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();                
