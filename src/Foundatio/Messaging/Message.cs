@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Foundatio.Serializer;
+using System.Threading.Tasks;
 
 namespace Foundatio.Messaging {
-    public interface IMessage {
+    public interface IMessage : IAsyncDisposable {
         string UniqueId { get; }
         string CorrelationId { get; }
         string Type { get; }
@@ -12,6 +12,10 @@ namespace Foundatio.Messaging {
         byte[] Data { get; }
         object GetBody();
         IDictionary<string, string> Properties { get; }
+
+        Task RenewLockAsync();
+        Task AbandonAsync();
+        Task CompleteAsync();
     }
 
     public interface IMessage<T> : IMessage where T: class {
@@ -33,7 +37,24 @@ namespace Foundatio.Messaging {
         public Type ClrType { get; set; }
         public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
         public byte[] Data { get; set; }
+
         public object GetBody() => _getBody(this);
+
+        public Task AbandonAsync() {
+            throw new NotImplementedException();
+        }
+
+        public Task CompleteAsync() {
+            throw new NotImplementedException();
+        }
+
+        public Task RenewLockAsync() {
+            throw new NotImplementedException();
+        }
+
+        public ValueTask DisposeAsync() {
+            throw new NotImplementedException();
+        }
     }
 
     public class Message<T> : IMessage<T> where T : class {
@@ -58,5 +79,13 @@ namespace Foundatio.Messaging {
         public IDictionary<string, string> Properties => _message.Properties;
 
         public object GetBody() => _message.GetBody();
+
+        public Task AbandonAsync() => _message.AbandonAsync();
+
+        public Task CompleteAsync() => _message.CompleteAsync();
+
+        public Task RenewLockAsync() => _message.RenewLockAsync();
+
+        public ValueTask DisposeAsync() => _message.DisposeAsync();
     }
 }

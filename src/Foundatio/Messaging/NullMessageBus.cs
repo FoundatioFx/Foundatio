@@ -15,5 +15,9 @@ namespace Foundatio.Messaging {
         }
 
         public void Dispose() {}
+
+        public Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null) where T : class {
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString(), () => new ValueTask()));
+        }
     }
 }

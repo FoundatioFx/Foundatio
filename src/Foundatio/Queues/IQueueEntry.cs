@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Queues {
-    public interface IQueueEntry {
+    public interface IQueueEntry : IAsyncDisposable {
         string Id { get; }
         string CorrelationId { get; }
         IDictionary<string, string> Properties { get; }
@@ -18,7 +18,6 @@ namespace Foundatio.Queues {
         Task RenewLockAsync();
         Task AbandonAsync();
         Task CompleteAsync();
-        ValueTask DisposeAsync();
     }
     
     public interface IQueueEntry<T> : IQueueEntry  where T : class {
