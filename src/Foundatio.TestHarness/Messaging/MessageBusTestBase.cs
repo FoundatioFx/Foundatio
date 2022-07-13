@@ -495,7 +495,6 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await SystemClock.SleepAsync(100);
-                var resetEvent = new AsyncAutoResetEvent(false);
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
