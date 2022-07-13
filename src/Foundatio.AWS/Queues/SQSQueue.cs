@@ -88,6 +88,9 @@ namespace Foundatio.Queues {
                 MessageBody = _serializer.SerializeToString(data)
             };
 
+            if (!String.IsNullOrEmpty(options.UniqueId))
+                message.MessageDeduplicationId = options.UniqueId;
+
             if (!String.IsNullOrEmpty(options?.CorrelationId))
                 message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue {
                     DataType = "String",
