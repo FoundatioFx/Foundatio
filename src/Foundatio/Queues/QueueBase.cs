@@ -86,7 +86,7 @@ namespace Foundatio.Queues {
 
         protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);
         public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null) {
-            await EnsureQueueCreatedAsync().AnyContext();
+            await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
 
             LastEnqueueActivity = SystemClock.UtcNow;
             options ??= new QueueEntryOptions();
@@ -96,10 +96,10 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
         public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken) {
-            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-            await EnsureQueueCreatedAsync(linkedCancellationToken.Token).AnyContext();
+            await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
 
             LastDequeueActivity = SystemClock.UtcNow;
+            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
             return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
         }
 
@@ -116,7 +116,7 @@ namespace Foundatio.Queues {
 
         protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
         public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default) {
-            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
             return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
         }
 
@@ -134,7 +134,7 @@ namespace Foundatio.Queues {
 
         protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
         public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default) {
-            await EnsureQueueCreatedAsync(cancellationToken).AnyContext();
+            await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
             StartWorkingImpl(handler, autoComplete, cancellationToken);
         }
 
