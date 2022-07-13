@@ -9,14 +9,19 @@ namespace Foundatio.Messaging {
         public string Topic { get; set; } = "messages";
 
         /// <summary>
-        /// Resolves a message to a .NET type.
+        /// Resolves message types
         /// </summary>
-        public Func<IConsumeMessageContext, Type> MessageTypeResolver { get; set; }
+        public IMessageTypeResolver MessageTypeResolver { get; set; }
 
         /// <summary>
         /// Statically configured message type mappings. <see cref="MessageTypeResolver"/> will be run first and then this dictionary will be checked.
         /// </summary>
         public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
+    }
+
+    public interface IMessageTypeResolver {
+        IConsumeMessageContext ToMessageType(Type messageType);
+        Type ToClrType(IConsumeMessageContext context);
     }
 
     public interface IConsumeMessageContext {
@@ -39,7 +44,7 @@ namespace Foundatio.Messaging {
             return (TBuilder)this;
         }
 
-        public TBuilder MessageTypeResolver(Func<IConsumeMessageContext, Type> resolver) {
+        public TBuilder MessageTypeResolver(IMessageTypeResolver resolver) {
             if (resolver == null)
                 throw new ArgumentNullException(nameof(resolver));
             Target.MessageTypeResolver = resolver;

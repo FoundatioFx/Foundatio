@@ -59,11 +59,11 @@ namespace Foundatio.Messaging {
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-        protected virtual Type GetMappedMessageType(string messageType) {
-            if (String.IsNullOrEmpty(messageType))
+        protected virtual Type GetMappedMessageType(IConsumeMessageContext context) {
+            if (context == null || String.IsNullOrEmpty(context.MessageType))
                 return null;
             
-            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
+            return _knownMessageTypesCache.GetOrAdd(context.MessageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
                 
@@ -86,6 +86,9 @@ namespace Foundatio.Messaging {
                 }
             });
         }
+        protected Type GetMappedMessageType(string messageType) {
+            return GetMappedMessageType(new ConsumeMessageContext { MessageType = messageType });
+        }
 
         protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -105,14 +108,6 @@ namespace Foundatio.Messaging {
                 }
             };
 
-            if (options.CancellationToken != CancellationToken.None) {
-                options.CancellationToken.Register(() => {
-                    _subscribers.TryRemove(subscriber.Id, out _);
-                    if (_subscribers.Count == 0)
-                        RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
-                });
-            }
-
             if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1) {
                 var modelType = subscriber.Type.GenericTypeArguments.Single();
                 subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
@@ -121,7 +116,13 @@ namespace Foundatio.Messaging {
             if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
-            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString("N"), () => new ValueTask()));
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString("N"), () => {
+                _subscribers.TryRemove(subscriber.Id, out _);
+                if (_subscribers.Count == 0)
+                    RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
+
+                return new ValueTask();
+            }));
         }
 
         public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null) where T : class {
@@ -132,6 +133,9 @@ namespace Foundatio.Messaging {
 
             var sub = await SubscribeImplAsync(handler, options).AnyContext();
             await EnsureTopicSubscriptionAsync(options.CancellationToken).AnyContext();
+
+            if (options.CancellationToken != CancellationToken.None)
+                options.CancellationToken.Register(() => sub.DisposeAsync());
 
             return sub;
         }
