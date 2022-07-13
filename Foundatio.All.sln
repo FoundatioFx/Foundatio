@@ -93,13 +93,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.RabbitMQ.Publish"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.RabbitMQ.Subscribe", "..\Foundatio.RabbitMQ\samples\Foundatio.RabbitMQ.Subscribe\Foundatio.RabbitMQ.Subscribe.csproj", "{1BFF4141-586B-410A-86EE-A107C314113D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Kafka.Tests", "..\Foundatio.Kafka\tests\Foundatio.Kafka.Tests\Foundatio.Kafka.Tests.csproj", "{DF1C1264-6021-4487-B81E-32405004D013}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Kafka.Tests", "..\Foundatio.Kafka\tests\Foundatio.Kafka.Tests\Foundatio.Kafka.Tests.csproj", "{DF1C1264-6021-4487-B81E-32405004D013}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Kafka", "..\Foundatio.Kafka\src\Foundatio.Kafka\Foundatio.Kafka.csproj", "{D86E4DAA-67A5-4962-BC34-EBDCFDD08551}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Kafka", "..\Foundatio.Kafka\src\Foundatio.Kafka\Foundatio.Kafka.csproj", "{D86E4DAA-67A5-4962-BC34-EBDCFDD08551}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Kafka.Publish", "..\Foundatio.Kafka\samples\Foundatio.Kafka.Publish\Foundatio.Kafka.Publish.csproj", "{3CFBAED8-1FCD-4237-B7E6-59FCDC4FB0F5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Kafka.Publish", "..\Foundatio.Kafka\samples\Foundatio.Kafka.Publish\Foundatio.Kafka.Publish.csproj", "{3CFBAED8-1FCD-4237-B7E6-59FCDC4FB0F5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Kafka.Subscribe", "..\Foundatio.Kafka\samples\Foundatio.Kafka.Subscribe\Foundatio.Kafka.Subscribe.csproj", "{0B2C6825-972B-4B52-84A6-81C668FFCD5C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Kafka.Subscribe", "..\Foundatio.Kafka\samples\Foundatio.Kafka.Subscribe\Foundatio.Kafka.Subscribe.csproj", "{0B2C6825-972B-4B52-84A6-81C668FFCD5C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
