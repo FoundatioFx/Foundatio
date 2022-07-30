@@ -10,14 +10,10 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        public Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
-            return Task.CompletedTask;
+        public Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null, CancellationToken cancellationToken = default) where T : class {
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString(), () => new ValueTask()));
         }
 
         public void Dispose() {}
-
-        public Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null) where T : class {
-            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString(), () => new ValueTask()));
-        }
     }
 }

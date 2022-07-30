@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+        protected readonly ConcurrentDictionary<string, Channel<Message>> _topics = new();
         private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
         protected readonly TOptions _options;
@@ -25,7 +27,7 @@ namespace Foundatio.Messaging {
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
-            MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
+            MessageBusId = _options.DefaultTopic + Guid.NewGuid().ToString("N").Substring(10);
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
@@ -93,9 +95,9 @@ namespace Foundatio.Messaging {
         protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-        protected virtual Task<IMessageSubscription> SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options) where T : class {
+        protected virtual Task<IMessageSubscription> SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options, CancellationToken cancellationToken = default) where T : class {
             var subscriber = new Subscriber {
-                CancellationToken = options.CancellationToken,
+                CancellationToken = cancellationToken,
                 Type = typeof(T),
                 Action = (message, token) => {
                     if (message is not T) {
@@ -104,7 +106,7 @@ namespace Foundatio.Messaging {
                         return Task.CompletedTask;
                     }
 
-                    return handler((T)message, options.CancellationToken);
+                    return handler((T)message, cancellationToken);
                 }
             };
 
@@ -116,26 +118,24 @@ namespace Foundatio.Messaging {
             if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
-            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString("N"), () => {
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString("N"), async () => {
                 _subscribers.TryRemove(subscriber.Id, out _);
                 if (_subscribers.Count == 0)
-                    RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
-
-                return new ValueTask();
+                    await RemoveTopicSubscriptionAsync().AnyContext();
             }));
         }
 
-        public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null) where T : class {
+        public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null, CancellationToken cancellationToken = default) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
 
             options ??= new MessageSubscriptionOptions();
 
             var sub = await SubscribeImplAsync(handler, options).AnyContext();
-            await EnsureTopicSubscriptionAsync(options.CancellationToken).AnyContext();
+            await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
 
-            if (options.CancellationToken != CancellationToken.None)
-                options.CancellationToken.Register(() => sub.DisposeAsync());
+            if (cancellationToken != CancellationToken.None)
+                cancellationToken.Register(() => sub.DisposeAsync());
 
             return sub;
         }

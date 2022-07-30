@@ -522,7 +522,7 @@ namespace Foundatio.Tests.Messaging {
                     Interlocked.Increment(ref messageCount);
                     cancellationTokenSource.Cancel();
                     countdown.Signal();
-                }, cancellationTokenSource.Token);
+                }, cancellationToken: cancellationTokenSource.Token);
 
                 await messageBus.SubscribeAsync<object>(msg => countdown.Signal());
 
