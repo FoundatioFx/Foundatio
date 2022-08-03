@@ -39,7 +39,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
         public static IServiceCollection AddJob<T>(this IServiceCollection services, HostedJobOptions jobOptions) where T : class, IJob {
             services.AddTransient<T>();
             if (String.IsNullOrEmpty(jobOptions.CronSchedule)) {
-                return services.AddHostedService(s => {
+                return services.AddTransient<IHostedService>(s => {
                     if (jobOptions.JobFactory == null)
                         jobOptions.JobFactory = s.GetRequiredService<T>;
 
@@ -47,7 +47,7 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 });
             } else {
                 if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
-                    services.AddHostedService<ScheduledJobService>();
+                    services.AddTransient<IHostedService, ScheduledJobService>();
 
                 return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.JobFactory ?? (s.GetRequiredService<T>), jobOptions.CronSchedule));
             }

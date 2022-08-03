@@ -2,7 +2,7 @@
   "profiles": {
     "Foundatio.HostingSample": {
       "commandName": "Project",
-      "commandLineArgs": "sample2"
+      "commandLineArgs": "sample1 sample2"
     }
   }
 }
