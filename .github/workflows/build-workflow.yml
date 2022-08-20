@@ -12,6 +12,13 @@ on:
         default: 'docker compose up -d && docker compose up ready || true'
         required: false
         type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+      NUGET_KEY:
+        required: false
+      FEEDZ_KEY:
+        required: false
 
 jobs:
   build:
