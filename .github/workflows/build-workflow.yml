@@ -13,8 +13,6 @@ on:
         required: false
         type: string
     secrets:
-      GITHUB_TOKEN:
-        required: false
       NUGET_KEY:
         required: false
       FEEDZ_KEY:
