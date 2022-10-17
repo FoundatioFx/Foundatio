@@ -15,6 +15,7 @@ namespace Foundatio.Queues {
         private readonly ConcurrentQueue<QueueEntry<T>> _queue = new();
         private readonly ConcurrentDictionary<string, QueueEntry<T>> _dequeued = new();
         private readonly ConcurrentQueue<QueueEntry<T>> _deadletterQueue = new();
+        private readonly ConcurrentQueue<QueueEntry<T>> _completedQueue = new();
         private readonly AsyncAutoResetEvent _autoResetEvent = new();
 
         private int _enqueuedCount;
@@ -57,6 +58,18 @@ namespace Foundatio.Queues {
 
         public IReadOnlyCollection<QueueEntry<T>> GetEntries() {
             return new ReadOnlyCollection<QueueEntry<T>>(_queue.ToList());
+        }
+
+        public IReadOnlyCollection<QueueEntry<T>> GetDequeuedEntries() {
+            return new ReadOnlyCollection<QueueEntry<T>>(_dequeued.Values.ToList());
+        }
+
+        public IReadOnlyCollection<QueueEntry<T>> GetCompletedEntries() {
+            return new ReadOnlyCollection<QueueEntry<T>>(_completedQueue.ToList());
+        }
+
+        public IReadOnlyCollection<QueueEntry<T>> GetDeadletterEntries() {
+            return new ReadOnlyCollection<QueueEntry<T>>(_deadletterQueue.ToList());
         }
 
         protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
@@ -208,6 +221,12 @@ namespace Foundatio.Queues {
 
             if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
                 throw new Exception("Unable to remove item from the dequeued list");
+
+            if (_options.CompletedEntryRetentionLimit > 0) {
+                _completedQueue.Enqueue(info);
+                while (_completedQueue.Count > _options.CompletedEntryRetentionLimit)
+                    _completedQueue.TryDequeue(out _);
+            }
 
             entry.MarkCompleted();
             Interlocked.Increment(ref _completedCount);

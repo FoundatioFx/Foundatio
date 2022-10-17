@@ -3,6 +3,7 @@
 namespace Foundatio.Queues {
     public class InMemoryQueueOptions<T> : SharedQueueOptions<T> where T : class {
         public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMinutes(1);
+        public int CompletedEntryRetentionLimit { get; set; } = 100;
         public int[] RetryMultipliers { get; set; } = { 1, 3, 5, 10 };
     }
 
@@ -15,6 +16,14 @@ namespace Foundatio.Queues {
                 throw new ArgumentOutOfRangeException(nameof(retryDelay));
             
             Target.RetryDelay = retryDelay;
+            return this;
+        }
+
+        public InMemoryQueueOptionsBuilder<T> CompletedEntryRetentionLimit(int retentionCount) {
+            if (retentionCount < 0)
+                throw new ArgumentOutOfRangeException(nameof(retentionCount));
+
+            Target.CompletedEntryRetentionLimit = retentionCount;
             return this;
         }
 
