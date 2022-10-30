@@ -14,6 +14,8 @@ namespace Foundatio.Serializer {
         public static ISerializer Instance { get; set; } = new SystemTextJsonSerializer();
     }
 
+    // TODO: Add a wrapper that adds activities for serialization
+
     public static class SerializerExtensions {
         public static T Deserialize<T>(this ISerializer serializer, Stream data) {
             return (T)serializer.Deserialize(data, typeof(T));

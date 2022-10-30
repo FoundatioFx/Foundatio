@@ -1,17 +1,42 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Foundatio.Messaging {
     public class SharedMessageBusOptions : SharedOptions {
         /// <summary>
-        /// The topic name
+        /// The default topic name
         /// </summary>
-        public string Topic { get; set; } = "messages";
+        public string DefaultTopic { get; set; } = "messages";
 
         /// <summary>
-        /// Controls which types messages are mapped to.
+        /// Resolves message types
+        /// </summary>
+        public IMessageRouter Router { get; set; }
+
+        /// <summary>
+        /// Statically configured message type mappings. <see cref="Router"/> will be run first and then this dictionary will be checked.
         /// </summary>
         public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
+    }
+
+    public interface IMessageRouter {
+        // get topic from bus options, message and message options
+        // get message type from message and options
+        // get .net type from topic, message type and properties (headers)
+        IConsumeMessageContext ToMessageType(Type messageType);
+        Type ToClrType(IConsumeMessageContext context);
+    }
+
+    public interface IConsumeMessageContext {
+        string Topic { get; set; }
+        string MessageType { get; set; }
+        IDictionary<string, string> Properties { get; }
+    }
+
+    public class ConsumeMessageContext : IConsumeMessageContext {
+        public string Topic { get; set; }
+        public string MessageType { get; set; } 
+        public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     }
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -20,7 +45,14 @@ namespace Foundatio.Messaging {
         public TBuilder Topic(string topic) {
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
-            Target.Topic = topic;
+            Target.DefaultTopic = topic;
+            return (TBuilder)this;
+        }
+
+        public TBuilder MessageTypeResolver(IMessageRouter resolver) {
+            if (resolver == null)
+                throw new ArgumentNullException(nameof(resolver));
+            Target.Router = resolver;
             return (TBuilder)this;
         }
 

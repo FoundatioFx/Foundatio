@@ -553,6 +553,7 @@ namespace Foundatio.Tests.Queue {
                 return;
 
             try {
+                Log.MinimumLevel = LogLevel.Trace;
                 await queue.DeleteQueueAsync();
                 await AssertEmptyQueueAsync(queue);
 
@@ -564,14 +565,16 @@ namespace Foundatio.Tests.Queue {
                 Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(5000));
 
                 _ = Task.Run(async () => {
-                    await SystemClock.SleepAsync(500);
+                    await Task.Delay(500);
+                    _logger.LogInformation("Enqueuing async message");
                     await queue.EnqueueAsync(new SimpleWorkItem {
                         Data = "Hello"
                     });
                 });
 
                 sw.Restart();
-                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(1));
+                _logger.LogInformation("Dequeuing message with timeout");
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
                 sw.Stop();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(400));

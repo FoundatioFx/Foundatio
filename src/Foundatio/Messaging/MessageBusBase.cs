@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging {
     public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+        protected readonly ConcurrentDictionary<string, Channel<Message>> _topics = new();
         private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
         protected readonly TOptions _options;
@@ -25,7 +27,7 @@ namespace Foundatio.Messaging {
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
-            MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
+            MessageBusId = _options.DefaultTopic + Guid.NewGuid().ToString("N").Substring(10);
             _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
         }
 
@@ -59,11 +61,11 @@ namespace Foundatio.Messaging {
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-        protected virtual Type GetMappedMessageType(string messageType) {
-            if (String.IsNullOrEmpty(messageType))
+        protected virtual Type GetMappedMessageType(IConsumeMessageContext context) {
+            if (context == null || String.IsNullOrEmpty(context.MessageType))
                 return null;
             
-            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
+            return _knownMessageTypesCache.GetOrAdd(context.MessageType, type => {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
                 
@@ -86,11 +88,14 @@ namespace Foundatio.Messaging {
                 }
             });
         }
+        protected Type GetMappedMessageType(string messageType) {
+            return GetMappedMessageType(new ConsumeMessageContext { MessageType = messageType });
+        }
 
         protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
+        protected virtual Task<IMessageSubscription> SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options, CancellationToken cancellationToken = default) where T : class {
             var subscriber = new Subscriber {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
@@ -105,14 +110,6 @@ namespace Foundatio.Messaging {
                 }
             };
 
-            if (cancellationToken != CancellationToken.None) {
-                cancellationToken.Register(() => {
-                    _subscribers.TryRemove(subscriber.Id, out _);
-                    if (_subscribers.Count == 0)
-                        RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
-                });
-            }
-
             if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1) {
                 var modelType = subscriber.Type.GenericTypeArguments.Single();
                 subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
@@ -121,15 +118,26 @@ namespace Foundatio.Messaging {
             if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
-            return Task.CompletedTask;
+            return Task.FromResult<IMessageSubscription>(new MessageSubscription(Guid.NewGuid().ToString("N"), async () => {
+                _subscribers.TryRemove(subscriber.Id, out _);
+                if (_subscribers.Count == 0)
+                    await RemoveTopicSubscriptionAsync().AnyContext();
+            }));
         }
 
-        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
+        public async Task<IMessageSubscription> SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, MessageSubscriptionOptions options = null, CancellationToken cancellationToken = default) where T : class {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
 
-            await SubscribeImplAsync(handler, cancellationToken).AnyContext();
+            options ??= new MessageSubscriptionOptions();
+
+            var sub = await SubscribeImplAsync(handler, options).AnyContext();
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
+
+            if (cancellationToken != CancellationToken.None)
+                cancellationToken.Register(() => sub.DisposeAsync());
+
+            return sub;
         }
 
         protected List<Subscriber> GetMessageSubscribers(IMessage message) {
