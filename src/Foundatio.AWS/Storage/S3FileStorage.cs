@@ -11,6 +11,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
+using Foundatio.AWS.Storage;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
@@ -54,7 +55,7 @@ namespace Foundatio.Storage {
             : this(builder(new S3FileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
-        
+
         public AmazonS3Client Client => _client;
         public string Bucket => _bucket;
         public S3CannedACL CannedACL => _cannedAcl;
@@ -69,8 +70,12 @@ namespace Foundatio.Storage {
             };
 
             var res = await _client.GetObjectAsync(req, cancellationToken).AnyContext();
-            if (!res.HttpStatusCode.IsSuccessful())
+
+            if (res.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
+
+            if (res.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new S3FileStorageException($"Invalid status code, expected 200 OK, found {(int)res.HttpStatusCode} {res.HttpStatusCode}.");
 
             return new ActionableStream(res.ResponseStream, () => {
                 res?.Dispose();
@@ -89,8 +94,11 @@ namespace Foundatio.Storage {
             try {
                 var res = await _client.GetObjectMetadataAsync(req).AnyContext();
 
-                if (!res.HttpStatusCode.IsSuccessful())
+                if (res.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
                     return null;
+
+                if (res.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                    throw new S3FileStorageException($"Invalid status code, expected 200 OK, found {(int)res.HttpStatusCode} {res.HttpStatusCode}.");
 
                 return new FileSpec {
                     Size = res.ContentLength,
@@ -98,8 +106,10 @@ namespace Foundatio.Storage {
                     Modified = res.LastModified.ToUniversalTime(),
                     Path = path
                 };
-            } catch (AmazonS3Exception) {
-                return null;
+            } catch (AmazonS3Exception ex) {
+                if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    return null;
+                throw new S3FileStorageException("Error accessing S3 storage: " + ex.Message, ex);
             }
         }
 
@@ -209,7 +219,7 @@ namespace Foundatio.Storage {
                     continue;
 
                 deleteRequest.Objects.AddRange(keys);
-                
+
                 var deleteResponse = await _client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
                 if (deleteResponse.DeleteErrors.Count > 0) {
                     // retry 1 time, continue on.
@@ -259,9 +269,9 @@ namespace Foundatio.Storage {
                 Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
                 NextPageFunc = response.IsTruncated ? r => GetFiles(criteria, pageSize, cancellationToken, response.NextContinuationToken) : (Func<PagedFileListResult, Task<NextPageResult>>)null
             };
-    }
+        }
 
-    private class SearchCriteria {
+        private class SearchCriteria {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
         }
