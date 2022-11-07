@@ -106,10 +106,8 @@ namespace Foundatio.Storage {
                     Modified = res.LastModified.ToUniversalTime(),
                     Path = path
                 };
-            } catch (AmazonS3Exception ex) {
-                if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    return null;
-                throw new S3FileStorageException("Error accessing S3 storage: " + ex.Message, ex);
+            } catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound) {
+                return null;
             }
         }
 
