@@ -98,7 +98,7 @@ namespace Foundatio.Storage {
                     return null;
 
                 if (res.HttpStatusCode != System.Net.HttpStatusCode.OK)
-                    throw new S3FileStorageException($"Invalid status code, expected 200 OK, found {(int)res.HttpStatusCode} {res.HttpStatusCode}.");
+                    throw new S3FileStorageException($"Invalid status code {res.HttpStatusCode} ({(int)res.HttpStatusCode}): Expected 200 OK");
 
                 return new FileSpec {
                     Size = res.ContentLength,
