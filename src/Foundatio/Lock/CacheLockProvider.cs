@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Foundatio.AsyncEx;
@@ -10,7 +10,6 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics.Metrics;
-using System.Collections.Generic;
 
 namespace Foundatio.Lock {
     public class CacheLockProvider : ILockProvider, IHaveLogger {
