@@ -106,6 +106,10 @@ namespace Foundatio.Queues {
             }
 
             var response = await _client.Value.SendMessageAsync(message).AnyContext();
+            if (response.HttpStatusCode != System.Net.HttpStatusCode.OK)
+                throw new InvalidOperationException("Failed to send SQS message.");
+
+            _logger.LogTrace("Enqueued SQS message {MessageId}", response.MessageId);
 
             Interlocked.Increment(ref _enqueuedCount);
             var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, data, this, SystemClock.UtcNow, 0);
@@ -131,24 +135,30 @@ namespace Foundatio.Queues {
             // receive message local function
             async Task<ReceiveMessageResponse> ReceiveMessageAsync() {
                 try {
+                    _logger.LogTrace("Checking for SQS message");
                     return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
                 } catch (OperationCanceledException) {
+                    _logger.LogTrace("OperationCanceledException while checking for SQS message");
                     return null;
                 }
             }
 
             var response = await ReceiveMessageAsync().AnyContext();
             // retry loop
-            while (response == null && !linkedCancellationToken.IsCancellationRequested) {
+            while ((response == null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested) {
                 try {
                     await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) { }
+                } catch (OperationCanceledException) {
+                    _logger.LogTrace("Operation cancelled while waiting to retry dequeue");
+                }
 
                 response = await ReceiveMessageAsync().AnyContext();
             }
 
-            if (response == null || response.Messages.Count == 0)
+            if (response == null || response.Messages.Count == 0) {
+                _logger.LogTrace("Response null or 0 message count");
                 return null;
+            }
 
             Interlocked.Increment(ref _dequeuedCount);
 
@@ -326,13 +336,13 @@ namespace Foundatio.Queues {
 
                     try {
                         await handler(entry, linkedCancellationToken.Token).AnyContext();
-                        if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted)
+                        if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
                             await entry.CompleteAsync().AnyContext();
                     } catch (Exception ex) {
                         Interlocked.Increment(ref _workerErrorCount);
                         if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                        if (entry != null && !entry.IsAbandoned && !entry.IsCompleted)
+                        if (entry != null && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
                             await entry.AbandonAsync().AnyContext();
                     }
                 }

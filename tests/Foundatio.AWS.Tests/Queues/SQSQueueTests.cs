@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -22,6 +22,8 @@ namespace Foundatio.AWS.Tests.Queues {
                     .Retries(retries)
                     //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                     .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                    .DequeueInterval(TimeSpan.FromSeconds(1))
+                    .ReadQueueTimeout(TimeSpan.FromSeconds(1))
                     .LoggerFactory(Log));
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
@@ -143,6 +145,11 @@ namespace Foundatio.AWS.Tests.Queues {
         public override Task VerifyDelayedRetryAttemptsAsync()
         {
             return base.VerifyDelayedRetryAttemptsAsync();
+        }
+
+        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+            await base.CleanupQueueAsync(queue);
+            await Task.Delay(TimeSpan.FromSeconds(2));
         }
     }
 }
