@@ -306,7 +306,7 @@ namespace Foundatio.Tests.Queue {
             if (queue == null)
                 return Task.CompletedTask;
 
-            return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(7));
+            return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(30));
         }
 
         private async Task VerifyRetryAttemptsImplAsync(IQueue<SimpleWorkItem> queue, int retryCount, TimeSpan waitTime) {
@@ -548,6 +548,7 @@ namespace Foundatio.Tests.Queue {
         }
 
         public virtual async Task WillWaitForItemAsync() {
+            Log.MinimumLevel = LogLevel.Trace;
             var queue = GetQueue();
             if (queue == null)
                 return;
@@ -571,7 +572,7 @@ namespace Foundatio.Tests.Queue {
                 });
 
                 sw.Restart();
-                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(1));
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
                 sw.Stop();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
                 Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(400));
