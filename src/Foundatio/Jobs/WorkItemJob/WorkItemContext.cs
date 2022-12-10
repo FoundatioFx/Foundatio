@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
@@ -18,6 +18,7 @@ namespace Foundatio.Jobs {
         public object Data { get; private set; }
         public string JobId { get; private set; }
         public ILock WorkItemLock { get; private set; }
+        public JobResult Result { get; set; } = JobResult.Success;
         public CancellationToken CancellationToken { get; private set; }
 
         public Task ReportProgressAsync(int progress, string message = null) {

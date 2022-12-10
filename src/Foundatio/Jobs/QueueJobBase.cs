@@ -48,65 +48,65 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
 
             using var activity = StartProcessQueueEntryActivity(queueEntry);
-
-            using (_logger.BeginScope(s => s
+            using var _ = _logger.BeginScope(s => s
+                    .Property("JobId", JobId)
                     .Property("QueueEntryId", queueEntry.Id)
                     .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId))
-                    .Property("QueueEntryName", _queueEntryName))) {
-                _logger.LogInformation("Processing queue entry: id={QueueEntryId} type={QueueEntryName} attempt={QueueEntryAttempt}", queueEntry.Id, _queueEntryName, queueEntry.Attempts);
+                    .Property("QueueEntryName", _queueEntryName));
+            
+            _logger.LogInformation("Processing queue entry: id={QueueEntryId} type={QueueEntryName} attempt={QueueEntryAttempt}", queueEntry.Id, _queueEntryName, queueEntry.Attempts);
 
-                if (cancellationToken.IsCancellationRequested) {
-                    if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("Job was cancelled. Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            if (cancellationToken.IsCancellationRequested) {
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation("Job was cancelled. Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
 
-                    await queueEntry.AbandonAsync().AnyContext();
-                    return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
-                }
+                await queueEntry.AbandonAsync().AnyContext();
+                return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
+            }
 
-                var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
-                if (lockValue == null) {
-                    await queueEntry.AbandonAsync().AnyContext();
-                    _logger.LogTrace("Unable to acquire queue entry lock");
-                    return JobResult.Success;
-                }
+            var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
+            if (lockValue == null) {
+                await queueEntry.AbandonAsync().AnyContext();
+                _logger.LogTrace("Unable to acquire queue entry lock");
+                return JobResult.Success;
+            }
 
-                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-                try {
-                    LogProcessingQueueEntry(queueEntry);
-                    var result = await ProcessQueueEntryAsync(new QueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
+            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+            try {
+                LogProcessingQueueEntry(queueEntry);
+                var result = await ProcessQueueEntryAsync(new QueueEntryContext<T>(queueEntry, lockValue, cancellationToken)).AnyContext();
 
-                    if (!AutoComplete || queueEntry.IsCompleted || queueEntry.IsAbandoned)
-                        return result;
-
-                    if (result.IsSuccess) {
-                        await queueEntry.CompleteAsync().AnyContext();
-                        LogAutoCompletedQueueEntry(queueEntry);
-                    } else {
-                        if (result.Error != null || result.Message != null)
-                            _logger.LogError(result.Error, "{QueueEntryName} queue entry {Id} returned an unsuccessful response: {ErrorMessage}", _queueEntryName, queueEntry.Id, result.Message ?? result.Error?.Message);
-
-                        if (isTraceLogLevelEnabled)
-                            _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
-                        await queueEntry.AbandonAsync().AnyContext();
-                        if (_logger.IsEnabled(LogLevel.Warning))
-                            _logger.LogWarning("Auto abandoned {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
-                    }
-
+                if (!AutoComplete || queueEntry.IsCompleted || queueEntry.IsAbandoned)
                     return result;
-                } catch (Exception ex) {
-                    _logger.LogError(ex, "Error processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
 
-                    if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
-                        await queueEntry.AbandonAsync().AnyContext();
+                if (result.IsSuccess) {
+                    await queueEntry.CompleteAsync().AnyContext();
+                    LogAutoCompletedQueueEntry(queueEntry);
+                } else {
+                    if (result.Error != null || result.Message != null)
+                        _logger.LogError(result.Error, "{QueueEntryName} queue entry {Id} returned an unsuccessful response: {ErrorMessage}", _queueEntryName, queueEntry.Id, result.Message ?? result.Error?.Message);
 
-                    throw;
-                } finally {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Releasing Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
-                    await lockValue.ReleaseAsync().AnyContext();
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Released Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                        _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                    await queueEntry.AbandonAsync().AnyContext();
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning("Auto abandoned {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
                 }
+
+                return result;
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+
+                if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
+                    await queueEntry.AbandonAsync().AnyContext();
+
+                throw;
+            } finally {
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Releasing Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                await lockValue.ReleaseAsync().AnyContext();
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("Released Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
             }
         }
 

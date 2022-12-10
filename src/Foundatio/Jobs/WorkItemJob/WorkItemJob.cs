@@ -60,6 +60,11 @@ namespace Foundatio.Jobs {
             }
 
             using var activity = StartProcessWorkItemActivity(queueEntry, workItemDataType);
+            using var _ = _logger.BeginScope(s => s
+                    .Property("JobId", JobId)
+                    .Property("QueueEntryId", queueEntry.Id)
+                    .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId))
+                    .Property("QueueEntryName", workItemDataType.Name));
 
             object workItemData;
             try {
@@ -107,7 +112,15 @@ namespace Foundatio.Jobs {
 
             try {
                 handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-                await handler.HandleItemAsync(new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback)).AnyContext();
+                var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback);
+                await handler.HandleItemAsync(workItemContext).AnyContext();
+
+                if (!workItemContext.Result.IsSuccess) {
+                    if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
+                        await queueEntry.AbandonAsync().AnyContext();
+                        return workItemContext.Result;
+                    }
+                }
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.CompleteAsync().AnyContext();
