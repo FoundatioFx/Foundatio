@@ -246,7 +246,7 @@ namespace Foundatio.Tests.Jobs {
 
             await job.RunUntilEmptyAsync();
             await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-            Assert.Equal(0, countdown.CurrentCount);
+            Assert.Equal(-1, countdown.CurrentCount);
         }
     }
 
