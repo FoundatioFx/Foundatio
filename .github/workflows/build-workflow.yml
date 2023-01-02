@@ -7,6 +7,11 @@ on:
         default: ''
         required: false
         type: string
+      org:
+        description: 'The organization to publish CI builds to'
+        default: 'foundatiofx'
+        required: false
+        type: string
       compose-command:
         description: 'The docker compose command to run for tests'
         default: 'docker compose up -d && docker compose up ready || true'
@@ -16,6 +21,8 @@ on:
       NUGET_KEY:
         required: false
       FEEDZ_KEY:
+        required: false
+      GITHUB_TOKEN:
         required: false
 
 jobs:
@@ -61,7 +68,7 @@ jobs:
           echo "${0##*/}": Pushing $package...
           
           # GitHub
-          dotnet nuget push $package --source https://nuget.pkg.github.com/foundatiofx/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+          dotnet nuget push $package --source https://nuget.pkg.github.com/${{ inputs.org }}/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
           
           # Feedz (remove once GitHub supports anonymous access)
           dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
