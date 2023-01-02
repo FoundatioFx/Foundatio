@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.3" />
-    <PackageReference Include="Exceptionless.RandomData" Version="1.2.1" />
+    <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="6.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="6.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
