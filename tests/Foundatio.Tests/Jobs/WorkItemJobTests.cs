@@ -237,7 +237,7 @@ namespace Foundatio.Tests.Jobs {
                 SomeData = "Test"
             }, true);
 
-            var countdown = new AsyncCountdownEvent(1);
+            var countdown = new AsyncCountdownEvent(2);
             await messageBus.SubscribeAsync<WorkItemStatus>(status => {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
                 Assert.Equal(jobId, status.WorkItemId);
@@ -246,7 +246,7 @@ namespace Foundatio.Tests.Jobs {
 
             await job.RunUntilEmptyAsync();
             await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-            Assert.Equal(-1, countdown.CurrentCount);
+            Assert.Equal(0, countdown.CurrentCount);
         }
     }
 
