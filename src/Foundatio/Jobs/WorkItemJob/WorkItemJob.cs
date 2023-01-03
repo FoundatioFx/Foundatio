@@ -133,7 +133,8 @@ namespace Foundatio.Jobs {
                 return JobResult.Success;
             } catch (Exception ex) {
 
-                await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
+                if (queueEntry.Value.SendProgressReports)
+                    await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.AbandonAsync().AnyContext();
@@ -189,7 +190,7 @@ namespace Foundatio.Jobs {
                         string[] typeParts = type.Split(',');
                         if (typeParts.Length >= 2)
                             type = String.Join(",", typeParts[0], typeParts[1]);
-                        
+
                         // try resolve type without version
                         return Type.GetType(type);
                     } catch (Exception ex) {
