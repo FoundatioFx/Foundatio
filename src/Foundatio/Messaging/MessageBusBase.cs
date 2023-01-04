@@ -141,6 +141,13 @@ namespace Foundatio.Messaging {
                 return true;
 
             var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
+            if (clrType is null) {
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning("Unable to resolve CLR type for message body type: ClrType={MessageClrType} Type={MessageType}", message.ClrType, message.Type);
+                
+                return false;
+            }
+
             if (subscriber.IsAssignableFrom(clrType))
                 return true;
             
@@ -340,6 +347,9 @@ namespace Foundatio.Messaging {
             public Func<object, CancellationToken, Task> Action { get; set; }
 
             public bool IsAssignableFrom(Type type) {
+                if (type is null)
+                    return false;
+                
                 return _assignableTypesCache.GetOrAdd(type, t => {
                     if (t.IsClass) {
                         var typedMessageType = typeof(IMessage<>).MakeGenericType(t);
