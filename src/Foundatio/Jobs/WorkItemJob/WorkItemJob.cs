@@ -132,6 +132,10 @@ namespace Foundatio.Jobs {
 
                 return JobResult.Success;
             } catch (Exception ex) {
+
+                if (queueEntry.Value.SendProgressReports)
+                    await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
+
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted) {
                     await queueEntry.AbandonAsync().AnyContext();
                     return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
