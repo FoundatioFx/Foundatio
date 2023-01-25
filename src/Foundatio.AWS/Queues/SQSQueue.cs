@@ -121,7 +121,6 @@ namespace Foundatio.Queues {
         protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
             // sqs doesn't support already canceled token, change timeout and token for sqs pattern
             int waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : (int)_options.ReadQueueTimeout.TotalSeconds;
-            var cancel = linkedCancellationToken.IsCancellationRequested ? CancellationToken.None : linkedCancellationToken;
 
             var request = new ReceiveMessageRequest {
                 QueueUrl = _queueUrl,
@@ -133,23 +132,26 @@ namespace Foundatio.Queues {
             };
 
             // receive message local function
-            async Task<ReceiveMessageResponse> ReceiveMessageAsync() {
-                try {
-                    _logger.LogTrace("Checking for SQS message");
-                    return await _client.Value.ReceiveMessageAsync(request, cancel).AnyContext();
-                } catch (OperationCanceledException) {
-                    _logger.LogTrace("OperationCanceledException while checking for SQS message");
-                    return null;
-                }
+            Task<ReceiveMessageResponse> ReceiveMessageAsync() {
+                if (_logger.IsEnabled(LogLevel.Trace))
+                    _logger.LogTrace("Checking for SQS message... Cancel Requested: {IsCancellationRequested}", linkedCancellationToken.IsCancellationRequested);
+
+                // The aws sdk will not abort an http long pull operation when the cancellation token is cancelled.
+                // The aws sdk will throw the OperationCanceledException after the long poll http call is returned and 
+                // the message will be marked as in-flight but not returned from this call: https://github.com/aws/aws-sdk-net/issues/1680
+                return _client.Value.ReceiveMessageAsync(request, CancellationToken.None);
             }
 
             var response = await ReceiveMessageAsync().AnyContext();
+            
             // retry loop
             while ((response == null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested) {
-                try {
-                    await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
-                } catch (OperationCanceledException) {
-                    _logger.LogTrace("Operation cancelled while waiting to retry dequeue");
+                if (_options.DequeueInterval > TimeSpan.Zero) {
+                    try {
+                        await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                    } catch (OperationCanceledException) {
+                        _logger.LogTrace("Operation cancelled while waiting to retry dequeue");
+                    }
                 }
 
                 response = await ReceiveMessageAsync().AnyContext();
@@ -162,6 +164,9 @@ namespace Foundatio.Queues {
 
             Interlocked.Increment(ref _dequeuedCount);
 
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Received message {MessageId} Cancel Requested: {IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
+            
             var message = response.Messages.First();
             string body = message.Body;
             var data = _serializer.Deserialize<T>(body);
@@ -297,7 +302,6 @@ namespace Foundatio.Queues {
             };
         }
 
-
         public override async Task DeleteQueueAsync() {
             if (!String.IsNullOrEmpty(_queueUrl)) {
                 var response = await _client.Value.DeleteQueueAsync(_queueUrl).AnyContext();
@@ -347,7 +351,7 @@ namespace Foundatio.Queues {
                     }
                 }
 
-                if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {1}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+                if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
             }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 

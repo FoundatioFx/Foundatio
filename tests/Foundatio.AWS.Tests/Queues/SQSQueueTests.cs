@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -17,13 +18,28 @@ namespace Foundatio.AWS.Tests.Queues {
 
         protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
             var queue = new SQSQueue<SimpleWorkItem>(
-                o => o.ConnectionString($"serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
+                o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                     .Name(_queueName)
                     .Retries(retries)
                     //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                     .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                     .DequeueInterval(TimeSpan.FromSeconds(1))
                     .ReadQueueTimeout(TimeSpan.FromSeconds(1))
+                    .LoggerFactory(Log));
+
+            _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+            return queue;
+        }
+        
+        protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null) {
+            var queue = new SQSQueue<SimpleWorkItem>(
+                o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
+                    .Name(_queueName)
+                    .Retries(retries)
+                    //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
+                    .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                    .DequeueInterval(dequeueInterval ?? TimeSpan.FromSeconds(1))
+                    .ReadQueueTimeout(readQueueTimeout ?? TimeSpan.FromSeconds(1))
                     .LoggerFactory(Log));
 
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
@@ -148,6 +164,82 @@ namespace Foundatio.AWS.Tests.Queues {
             return base.VerifyDelayedRetryAttemptsAsync();
         }
 
+        [Fact]
+        public async Task CanGetQueueItemWithDeliveryDelayAndEnsureMessageNotMarkedWorkingWhileWaiting() {
+            var queue = GetQueue(dequeueInterval: TimeSpan.Zero, readQueueTimeout: TimeSpan.FromSeconds(2));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                // await AssertEmptyQueueAsync(queue); // TODO: Uncomment once foundatio is updated.
+
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" }, new QueueEntryOptions { DeliveryDelay = TimeSpan.FromSeconds(4) });
+                var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
+                Assert.Null(workItem);
+
+                if (_assertStats) {
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(0, stats.Dequeued);
+                    Assert.Equal(1, stats.Enqueued);
+                    Assert.Equal(0, stats.Queued);
+                    Assert.Equal(0, stats.Working);
+                }
+
+                await SystemClock.SleepAsync(TimeSpan.FromSeconds(3));
+                
+                if (_assertStats) {
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(0, stats.Dequeued);
+                    Assert.Equal(1, stats.Enqueued);
+                    Assert.Equal(1, stats.Queued);
+                    Assert.Equal(0, stats.Working);
+                }
+
+                _logger.LogInformation("Second Dequeue Attempt");
+                workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+                
+                if (_assertStats) {
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(1, stats.Dequeued);
+                    Assert.Equal(1, stats.Enqueued);
+                    Assert.Equal(0, stats.Queued);
+                    Assert.Equal(1, stats.Working);
+                }
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+
+        [Fact]
+        public async Task CanGetQueueItemWithTimeoutCancelledTokenWithDeliveryDelayMaxWaitOverlap() {
+            var queue = GetQueue(dequeueInterval: TimeSpan.Zero, readQueueTimeout: TimeSpan.FromSeconds(2));
+            if (queue == null)
+                return;
+
+            try {
+                await queue.DeleteQueueAsync();
+                // await AssertEmptyQueueAsync(queue); // TODO: Uncomment once foundatio is updated.
+
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" }, new QueueEntryOptions { DeliveryDelay = TimeSpan.FromSeconds(3) });
+                var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
+                Assert.NotNull(workItem);
+                Assert.Equal("Hello", workItem.Value.Data);
+
+                if (_assertStats) {
+                    var stats = await queue.GetQueueStatsAsync();
+                    Assert.Equal(1, stats.Dequeued);
+                    Assert.Equal(1, stats.Enqueued);
+                    Assert.Equal(0, stats.Queued);
+                    Assert.Equal(1, stats.Working);
+                }
+            } finally {
+                await CleanupQueueAsync(queue);
+            }
+        }
+        
         protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
             await base.CleanupQueueAsync(queue);
             await Task.Delay(TimeSpan.FromSeconds(2));

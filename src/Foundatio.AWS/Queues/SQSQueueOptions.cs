@@ -32,6 +32,9 @@ namespace Foundatio.Queues {
         }
 
         public SQSQueueOptionsBuilder<T> ReadQueueTimeout(TimeSpan timeout) {
+            if (timeout < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(timeout), "Read Queue timeout must be greater than or equal to zero.");
+            
             Target.ReadQueueTimeout = timeout;
             return this;
         }
@@ -42,6 +45,9 @@ namespace Foundatio.Queues {
         }
         
         public SQSQueueOptionsBuilder<T> DequeueInterval(TimeSpan interval) {
+            if (interval < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(interval), "Dequeue interval must be greater than or equal to zero.");
+            
             Target.DequeueInterval = interval;
             return this;
         }
