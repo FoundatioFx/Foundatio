@@ -236,7 +236,7 @@ namespace Foundatio.Tests.Storage {
             using (storage) {
                 Assert.False(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
-                using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
+                await using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
                     bool result = await storage.SaveFileAsync("Foundatio.Tests.csproj", stream);
                     Assert.True(result);
                 }
@@ -244,7 +244,7 @@ namespace Foundatio.Tests.Storage {
                 Assert.Single(await storage.GetFileListAsync());
                 Assert.True(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
-                using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj")) {
+                await using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj")) {
                     string result = await new StreamReader(stream).ReadToEndAsync();
                     Assert.Equal(File.ReadAllText(readmeFile), result);
                 }
@@ -422,7 +422,7 @@ namespace Foundatio.Tests.Storage {
                     _logger.LogTrace("Saved contents with position {Position}.", memoryStream.Position);
                 }
 
-                using var stream = await storage.GetFileStreamAsync(path);
+                await using var stream = await storage.GetFileStreamAsync(path);
                 var actual = XElement.Load(stream);
                 Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
             }
@@ -439,7 +439,7 @@ namespace Foundatio.Tests.Storage {
                 string path = "blake.txt";
                 using (var memoryStream = new MemoryStream()) {
                     long offset;
-                    using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true)) {
+                    await using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true)) {
                         writer.AutoFlush = true;
                         await writer.WriteAsync("Eric");
                         offset = memoryStream.Position;

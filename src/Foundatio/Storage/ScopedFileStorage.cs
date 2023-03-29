@@ -91,11 +91,11 @@ namespace Foundatio.Storage {
 
             searchPattern = !String.IsNullOrEmpty(searchPattern) ? String.Concat(_pathPrefix, searchPattern) : String.Concat(_pathPrefix, "*");
             var unscopedResult = await UnscopedStorage.GetPagedFileListAsync(pageSize, searchPattern, cancellationToken).AnyContext();
-            
+
             foreach (var file in unscopedResult.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 
-            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, unscopedResult.HasMore ? s => NextPage(unscopedResult) : null);
+            return new PagedFileListResult(unscopedResult.Files, unscopedResult.HasMore, unscopedResult.HasMore ? _ => NextPage(unscopedResult) : null);
         }
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {

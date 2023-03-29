@@ -34,8 +34,8 @@ namespace Foundatio.Storage {
     }
 
     public class PagedFileListResult : IHasNextPageFunc {
-        private static IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(Array.Empty<FileSpec>());
-        public static PagedFileListResult Empty = new(_empty);
+        private static readonly IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(Array.Empty<FileSpec>());
+        public static readonly PagedFileListResult Empty = new(_empty);
 
         public PagedFileListResult(IReadOnlyCollection<FileSpec> files) {
             Files = files;
@@ -103,10 +103,9 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            using (var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext()) {
-                if (stream != null)
-                    return storage.Serializer.Deserialize<T>(stream);
-            }
+            using var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext();
+            if (stream != null)
+                return storage.Serializer.Deserialize<T>(stream);
 
             return default;
         }
@@ -123,10 +122,9 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            using (var stream = await storage.GetFileStreamAsync(path).AnyContext()) {
-                if (stream != null)
-                    return await new StreamReader(stream).ReadToEndAsync().AnyContext();
-            }
+            using var stream = await storage.GetFileStreamAsync(path).AnyContext();
+            if (stream != null)
+                return await new StreamReader(stream).ReadToEndAsync().AnyContext();
 
             return null;
         }
