@@ -176,20 +176,18 @@ namespace Foundatio.Tests.Locks {
             int concurrency = 0;
 
             await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (index, ct) => {
-                await using (var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1))) {
+                await using var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+                Assert.NotNull(myLock);
 
-                    Assert.NotNull(myLock);
+                int currentConcurrency = Interlocked.Increment(ref concurrency);
+                Assert.Equal(1, currentConcurrency);
 
-                    int currentConcurrency = Interlocked.Increment(ref concurrency);
-                    Assert.Equal(1, currentConcurrency);
+                int item = current;
+                await Task.Delay(10, ct);
+                used.Add(item);
+                current++;
 
-                    int item = current;
-                    await Task.Delay(10, ct);
-                    used.Add(item);
-                    current++;
-
-                    Interlocked.Decrement(ref concurrency);
-                }
+                Interlocked.Decrement(ref concurrency);
             });
 
             var duplicates = used.GroupBy(x => x).Where(g => g.Count() > 1);
