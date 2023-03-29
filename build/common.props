@@ -10,7 +10,7 @@
     <MinVerSkip Condition="'$(Configuration)' == 'Debug'">true</MinVerSkip>
     <MinVerTagPrefix>v</MinVerTagPrefix>
 
-    <Copyright>Copyright (c) 2022 Foundatio.  All rights reserved.</Copyright>
+    <Copyright>Copyright (c) 2023 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591;NU1701</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
@@ -25,11 +25,11 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
-  
+
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
-  
+
   <PropertyGroup Label="Signing">
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)Foundatio.snk</AssemblyOriginatorKeyFile>
@@ -38,7 +38,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All"/>
     <PackageReference Include="AsyncFixer" Version="1.6.0" PrivateAssets="All" />
-    <PackageReference Include="MinVer" Version="4.2.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="4.3.0" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>

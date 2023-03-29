@@ -26,7 +26,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -35,14 +35,14 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: | 
+        dotnet-version: |
           6.0.x
           7.0.x
     - name: Build Reason
       run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
     - name: Build Version
       run: |
-        dotnet tool install --global minver-cli --version 4.2.0
+        dotnet tool install --global minver-cli --version 4.3.0
         version=$(minver --tag-prefix v)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
@@ -66,7 +66,7 @@ jobs:
             echo "${0##*/}": Pushing $package to GitHub...
             dotnet nuget push $package --source https://nuget.pkg.github.com/${{ inputs.org }}/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
           fi
-          
+
           # Feedz (remove once GitHub supports anonymous access)
           if [ -n "${{ secrets.FEEDZ_KEY }}" ]; then
             echo "${0##*/}": Pushing $package to Feedz...
