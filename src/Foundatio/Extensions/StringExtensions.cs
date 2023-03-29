@@ -1,9 +1,10 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 
 namespace Foundatio.Extensions {
     internal static class StringExtensions {
         public static string NormalizePath(this string path) {
-            if (string.IsNullOrEmpty(path))
+            if (String.IsNullOrEmpty(path))
                 return path;
             
             if (Path.DirectorySeparatorChar == '\\')

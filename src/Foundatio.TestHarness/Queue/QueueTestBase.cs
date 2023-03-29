@@ -1,4 +1,4 @@
-﻿using Exceptionless;
+using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
@@ -1302,7 +1302,7 @@ namespace Foundatio.Tests.Queue {
             }
         }
 
-        private async Task AssertEmptyQueueAsync(IQueue<SimpleWorkItem> queue) {
+        protected async Task AssertEmptyQueueAsync(IQueue<SimpleWorkItem> queue) {
             if (_assertStats) {
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(0, stats.Abandoned);
