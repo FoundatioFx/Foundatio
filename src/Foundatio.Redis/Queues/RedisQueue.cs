@@ -32,6 +32,7 @@ namespace Foundatio.Queues {
         private bool _isSubscribed;
         private readonly TimeSpan _payloadTimeToLive;
         private bool _scriptsLoaded;
+        private readonly string _listPrefix;
 
         private LoadedLuaScript _dequeueId;
 
@@ -45,11 +46,11 @@ namespace Foundatio.Queues {
             _payloadTimeToLive = GetPayloadTtl();
             _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
 
-            string listPrefix = _options.ConnectionMultiplexer.IsCluster() ? "{q:" + _options.Name + "}" : $"q:{_options.Name}";
-            _queueListName = $"{listPrefix}:in";
-            _workListName = $"{listPrefix}:work";
-            _waitListName = $"{listPrefix}:wait";
-            _deadListName = $"{listPrefix}:dead";
+            _listPrefix = _options.ConnectionMultiplexer.IsCluster() ? "{q:" + _options.Name + "}" : $"q:{_options.Name}";
+            _queueListName = $"{_listPrefix}:in";
+            _workListName = $"{_listPrefix}:work";
+            _waitListName = $"{_listPrefix}:wait";
+            _deadListName = $"{_listPrefix}:dead";
 
             // min is 1 second, max is 1 minute
             var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
@@ -139,7 +140,7 @@ namespace Foundatio.Queues {
         private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
         private string GetPayloadKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id);
+            return String.Concat(_listPrefix, ":", id);
         }
 
         private TimeSpan GetPayloadTtl() {
@@ -152,7 +153,7 @@ namespace Foundatio.Queues {
         }
 
         private string GetAttemptsKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id, ":attempts");
+            return String.Concat(_listPrefix, ":", id, ":attempts");
         }
 
         private TimeSpan GetAttemptsTtl() {
@@ -160,15 +161,15 @@ namespace Foundatio.Queues {
         }
 
         private string GetEnqueuedTimeKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id, ":enqueued");
+            return String.Concat(_listPrefix, ":", id, ":enqueued");
         }
 
         private string GetDequeuedTimeKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id, ":dequeued");
+            return String.Concat(_listPrefix, ":", id, ":dequeued");
         }
 
         private string GetRenewedTimeKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id, ":renewed");
+            return String.Concat(_listPrefix, ":", id, ":renewed");
         }
 
         private TimeSpan GetWorkItemTimeoutTimeTtl() {
@@ -176,7 +177,7 @@ namespace Foundatio.Queues {
         }
 
         private string GetWaitTimeKey(string id) {
-            return String.Concat("q:", _options.Name, ":", id, ":wait");
+            return String.Concat(_listPrefix, ":", id, ":wait");
         }
 
         private TimeSpan GetWaitTimeTtl() {
@@ -184,7 +185,7 @@ namespace Foundatio.Queues {
         }
 
         private string GetTopicName() {
-            return String.Concat("q:", _options.Name, ":in");
+            return String.Concat(_listPrefix, ":in");
         }
 
         protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
@@ -367,9 +368,9 @@ namespace Foundatio.Queues {
 
                     await LoadScriptsAsync().AnyContext();
                     var result = await Database.ScriptEvaluateAsync(_dequeueId, new {
-                        queueListName = _queueListName,
-                        workListName = _workListName,
-                        queueName = _options.Name,
+                        queueListName = (RedisKey)_queueListName,
+                        workListName = (RedisKey)_workListName,
+                        listPrefix = _listPrefix,
                         now,
                         timeout = timeout.TotalMilliseconds
                     }).AnyContext();
