@@ -184,7 +184,7 @@ namespace Foundatio.Messaging {
             var subscribers = GetMessageSubscribers(message);
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Found {SubscriberCount} subscribers for message type {MessageType} {ClrType}.", subscribers.Count, message.Type, message.ClrType.FullName);
+                _logger.LogTrace("Found {SubscriberCount} subscribers for message type: ClrType={MessageClrType} Type={MessageType}", subscribers.Count, message.ClrType, message.Type);
 
             if (subscribers.Count == 0)
                 return;
@@ -221,7 +221,7 @@ namespace Foundatio.Messaging {
                         if (subscriber.Type == typeof(IMessage)) {
                             await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                         } else if (subscriber.GenericType != null) {
-                            var typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            object typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
                             await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
                         } else {
                             await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
@@ -236,13 +236,13 @@ namespace Foundatio.Messaging {
             try {
                 await Task.WhenAll(subscriberHandlers.ToArray());
             } catch (Exception ex) {
-                _logger.LogWarning(ex, "Error sending message to subscribers: {ErrorMessage}", ex.Message);
+                _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
 
                 throw;
             }
 
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}.", subscribers.Count, message.Type);
+                _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
         }
 
         protected virtual Activity StartHandleMessageActivity(IMessage message) {
