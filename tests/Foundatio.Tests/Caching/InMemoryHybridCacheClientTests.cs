@@ -1,5 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Logging;

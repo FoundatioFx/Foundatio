@@ -1,5 +1,4 @@
-﻿using System;
-using Foundatio.Serializer;
+﻿using Foundatio.Serializer;
 using Foundatio.TestHarness.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
