@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -401,7 +401,10 @@ namespace Foundatio.Caching {
 
                     collection.Add(stringValue);
                     cacheEntry.Value = collection;
-                    cacheEntry.ExpiresAt = expiresAt;
+
+                    if (expiresIn.HasValue)
+                        cacheEntry.ExpiresAt = expiresAt;
+
                     return cacheEntry;
                 });
 
@@ -417,7 +420,10 @@ namespace Foundatio.Caching {
 
                     collection.AddRange(items);
                     cacheEntry.Value = collection;
-                    cacheEntry.ExpiresAt = expiresAt;
+
+                    if (expiresIn.HasValue)
+                        cacheEntry.ExpiresAt = expiresAt;
+
                     return cacheEntry;
                 });
 
@@ -452,7 +458,9 @@ namespace Foundatio.Caching {
                         cacheEntry.Value = collection;
                     }
 
-                    cacheEntry.ExpiresAt = expiresAt;
+                    if (expiresIn.HasValue)
+                        cacheEntry.ExpiresAt = expiresAt;
+
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
                     return cacheEntry;
                 });
@@ -468,7 +476,9 @@ namespace Foundatio.Caching {
                         cacheEntry.Value = collection;
                     }
 
-                    cacheEntry.ExpiresAt = expiresAt;
+                    if (expiresIn.HasValue)
+                        cacheEntry.ExpiresAt = expiresAt;
+
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
                     return cacheEntry;
                 });
@@ -563,18 +573,20 @@ namespace Foundatio.Caching {
 
             var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
             bool wasExpectedValue = false;
-            bool success = _memory.TryUpdate(key, (k, e) => {
-                var currentValue = e.GetValue<T>();
+            bool success = _memory.TryUpdate(key, (k, cacheEntry) => {
+                var currentValue = cacheEntry.GetValue<T>();
                 if (currentValue.Equals(expected)) {
-                    e.Value = value;
+                    cacheEntry.Value = value;
                     wasExpectedValue = true;
+
+                    if (expiresIn.HasValue)
+                        cacheEntry.ExpiresAt = expiresAt;
                 }
                 
-                return e;
+                return cacheEntry;
             });
 
             success = success && wasExpectedValue;
-
             await StartMaintenanceAsync().AnyContext();
 
             if (_logger.IsEnabled(LogLevel.Trace))

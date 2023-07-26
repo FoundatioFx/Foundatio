@@ -483,16 +483,19 @@ namespace Foundatio.Tests.Caching {
             using (cache) {
                 await cache.RemoveAllAsync();
 
-                Assert.True(await cache.AddAsync("replace-if-equal", "123"));
-                var result = await cache.GetAsync<string>("replace-if-equal");
+                const string cacheKey = "replace-if-equal";
+                Assert.True(await cache.AddAsync(cacheKey, "123"));
+                var result = await cache.GetAsync<string>(cacheKey);
                 Assert.NotNull(result);
                 Assert.Equal("123", result.Value);
+                Assert.Null(await cache.GetExpirationAsync(cacheKey));
 
-                Assert.False(await cache.ReplaceIfEqualAsync("replace-if-equal", "456", "789"));
-                Assert.True(await cache.ReplaceIfEqualAsync("replace-if-equal", "456", "123"));
-                result = await cache.GetAsync<string>("replace-if-equal");
+                Assert.False(await cache.ReplaceIfEqualAsync(cacheKey, "456", "789", TimeSpan.FromHours(1)));
+                Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123", TimeSpan.FromHours(1)));
+                result = await cache.GetAsync<string>(cacheKey);
                 Assert.NotNull(result);
                 Assert.Equal("456", result.Value);
+                Assert.NotNull(await cache.GetExpirationAsync(cacheKey));
             }
         }
         

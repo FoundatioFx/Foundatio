@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using Foundatio.Xunit;
+﻿using Foundatio.Xunit;
 using Foundatio.Utility;
 using Xunit;
 using Xunit.Abstractions;
