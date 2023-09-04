@@ -12,6 +12,7 @@ using Foundatio.Utility;
 namespace Foundatio.Storage {
     public interface IFileStorage : IHaveSerializer, IDisposable {
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
+        Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default);
         Task<FileSpec> GetFileInfoAsync(string path);
         Task<bool> ExistsAsync(string path);
         Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default);
