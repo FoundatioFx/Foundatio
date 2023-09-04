@@ -455,7 +455,7 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task WillWriteStremContentAsync() {
+        public virtual async Task WillWriteStreamContentAsync() {
 
             const string testContent = "test";
             const string path = "created.txt";

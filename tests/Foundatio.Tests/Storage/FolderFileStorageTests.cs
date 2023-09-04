@@ -107,8 +107,8 @@ namespace Foundatio.Tests.Storage {
         }
 
         [Fact]
-        public override Task WillWriteStremContentAsync() {
-            return base.WillWriteStremContentAsync();
+        public override Task WillWriteStreamContentAsync() {
+            return base.WillWriteStreamContentAsync();
         }
     }
 }
