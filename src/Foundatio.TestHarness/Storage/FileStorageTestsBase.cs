@@ -6,12 +6,12 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Exceptionless;
-using Foundatio.Xunit;
 using Foundatio.Storage;
 using Foundatio.Tests.Utility;
-using Xunit;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage {
@@ -452,6 +452,29 @@ namespace Foundatio.Tests.Storage {
                 }
 
                 Assert.Equal("Blake", await storage.GetFileContentsAsync(path));
+            }
+        }
+
+        public virtual async Task WillWriteStreamContentAsync() {
+
+            const string testContent = "test";
+            const string path = "created.txt";
+
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            await ResetAsync(storage);
+
+            using (storage) {
+
+                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, FileAccess.ReadWrite), Encoding.UTF8, 1024, false)) {
+                    await writer.WriteAsync(testContent);
+                }
+
+                var content = await storage.GetFileContentsAsync(path);
+
+                Assert.Equal(testContent, content);
             }
         }
 

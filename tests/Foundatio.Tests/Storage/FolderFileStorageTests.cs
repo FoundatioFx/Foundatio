@@ -105,5 +105,10 @@ namespace Foundatio.Tests.Storage {
         public override Task WillRespectStreamOffsetAsync() {
             return base.WillRespectStreamOffsetAsync();
         }
+
+        [Fact]
+        public override Task WillWriteStreamContentAsync() {
+            return base.WillWriteStreamContentAsync();
+        }
     }
 }
