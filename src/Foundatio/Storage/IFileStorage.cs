@@ -11,6 +11,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IHaveSerializer, IDisposable {
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream.")]
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
         Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default);
         Task<FileSpec> GetFileInfoAsync(string path);
