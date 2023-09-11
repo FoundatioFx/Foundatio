@@ -43,17 +43,29 @@ namespace Foundatio.Storage {
 
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
-            if (String.IsNullOrEmpty(path))
-                throw new ArgumentNullException(nameof(path));
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+            => GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
 
+        public async Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
+            if (String.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path)); 
+            
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
-            
+
             var blockBlob = _container.GetBlockBlobReference(normalizedPath);
-            
+
             try {
-                return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
+                switch (fileAccess) {
+                    case FileAccess.Read:
+                        return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
+                    case FileAccess.Write:
+                        return await blockBlob.OpenWriteAsync(null, null, null, cancellationToken).AnyContext();
+                    case FileAccess.ReadWrite:
+                        throw new NotSupportedException($"{nameof(AzureFileStorage)} only supports either read or write access, but not both at once.");
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(fileAccess), fileAccess, $"Unknown {nameof(FileAccess)} received");
+                }
             } catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404}) {
                 _logger.LogDebug(ex, "Unable to get file stream for {Path}: File Not Found", normalizedPath);
                 return null;
