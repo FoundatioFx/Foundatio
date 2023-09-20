@@ -42,6 +42,7 @@ namespace Foundatio.Storage {
             : this(config(new AzureFileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
+        public CloudBlobContainer Container => _container;
 
         public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
