@@ -52,7 +52,11 @@ namespace Foundatio.Queues {
 
         public AzureServiceBusQueue(Builder<AzureServiceBusQueueOptionsBuilder<T>, AzureServiceBusQueueOptions<T>> config)
             : this(config(new AzureServiceBusQueueOptionsBuilder<T>()).Build()) { }
-
+        
+        public ManagementClient ManagementClient => _managementClient;
+        public MessageReceiver MessageReceiver => _queueReceiver;
+        public MessageSender MessageSender => _queueSender;
+        
         private bool QueueIsCreated => _queueReceiver != null && _queueSender != null;
         protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
             if (QueueIsCreated)
