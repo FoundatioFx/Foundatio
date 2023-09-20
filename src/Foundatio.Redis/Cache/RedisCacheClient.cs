@@ -36,6 +36,8 @@ namespace Foundatio.Caching {
         public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
             : this(config(new RedisCacheClientOptionsBuilder()).Build()) { }
 
+        public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+        
         public Task<bool> RemoveAsync(string key) {
             return Database.KeyDeleteAsync(key);
         }
@@ -462,8 +464,6 @@ namespace Foundatio.Caching {
 
             return Database.KeyExpireAsync(key, expiresIn);
         }
-
-        private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
         private async Task LoadScriptsAsync() {
             if (_scriptsLoaded)

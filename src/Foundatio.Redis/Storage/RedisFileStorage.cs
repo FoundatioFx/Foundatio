@@ -35,8 +35,7 @@ namespace Foundatio.Storage {
             : this(config(new RedisFileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
-
-        private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+        public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
         public void Dispose() {
             _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;

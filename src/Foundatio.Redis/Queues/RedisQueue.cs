@@ -62,6 +62,8 @@ namespace Foundatio.Queues {
         public RedisQueue(Builder<RedisQueueOptionsBuilder<T>, RedisQueueOptions<T>> config)
             : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
 
+        public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+        
         protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null && !_maintenanceTask.IsCanceled && !_maintenanceTask.IsFaulted && !_maintenanceTask.IsCompleted;
@@ -136,8 +138,6 @@ namespace Foundatio.Queues {
         private readonly string _workListName;
         private readonly string _waitListName;
         private readonly string _deadListName;
-
-        private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
         private string GetPayloadKey(string id) {
             return String.Concat(_listPrefix, ":", id);
