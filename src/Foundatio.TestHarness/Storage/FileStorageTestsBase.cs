@@ -468,7 +468,7 @@ namespace Foundatio.Tests.Storage {
 
             using (storage) {
 
-                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, FileAccess.ReadWrite), Encoding.UTF8, 1024, false)) {
+                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, StreamMode.Write), Encoding.UTF8, 1024, false)) {
                     await writer.WriteAsync(testContent);
                 }
 

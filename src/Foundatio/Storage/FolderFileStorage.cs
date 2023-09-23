@@ -44,9 +44,19 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
-            => GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
+            => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-        public Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default) {
+            var stream = streamMode switch {
+                StreamMode.Read => GetFileStreamAsync(path, FileAccess.Read),
+                StreamMode.Write => GetFileStreamAsync(path, FileAccess.Write),
+                _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported."),
+            };
+
+            return Task.FromResult(stream);
+        }
+
+        public Stream GetFileStreamAsync(string path, FileAccess fileAccess) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -59,12 +69,14 @@ namespace Foundatio.Storage {
             var fileMode = GetFileModeForFileAccess(fileAccess);
 
             try {
-                return Task.FromResult<Stream>(File.Open(fullPath, fileMode, fileAccess));
+                return File.Open(fullPath, fileMode, fileAccess);
             } catch (IOException ex) when (ex is FileNotFoundException or DirectoryNotFoundException) {
                 _logger.LogError(ex, "Unable to get file stream for {Path}: {Message}", normalizedPath, ex.Message);
-                return Task.FromResult<Stream>(null);
+                return null;
             }
         }
+
+
         private FileMode GetFileModeForFileAccess(FileAccess fileAccess) {
             return fileAccess switch {
                 FileAccess.Read => FileMode.Open,
