@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -12,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage {
     public class FolderFileStorage : IFileStorage {
-        private readonly object _lockObject = new();
+        private readonly AsyncLock _lock = new();
         private readonly ISerializer _serializer;
         protected readonly ILogger _logger;
 
@@ -138,7 +139,7 @@ namespace Foundatio.Storage {
             return File.Create(filePath);
         }
 
-        public Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default) {
+        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(newPath))
@@ -149,7 +150,7 @@ namespace Foundatio.Storage {
             _logger.LogInformation("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
 
             try {
-                lock (_lockObject) {
+                using (await _lock.LockAsync().AnyContext()) {
                     string directory = Path.GetDirectoryName(normalizedNewPath);
                     if (directory != null) {
                         _logger.LogInformation("Creating {Directory} directory", directory);
@@ -170,13 +171,13 @@ namespace Foundatio.Storage {
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
-                return Task.FromResult(false);
+                return false;
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
-        public Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default) {
+        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(targetPath))
@@ -187,7 +188,7 @@ namespace Foundatio.Storage {
             _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
 
             try {
-                lock (_lockObject) {
+                using (await _lock.LockAsync().AnyContext()) {
                     string directory = Path.GetDirectoryName(normalizedTargetPath);
                     if (directory != null) {
                         _logger.LogInformation("Creating {Directory} directory", directory);
@@ -198,10 +199,10 @@ namespace Foundatio.Storage {
                 }
             } catch (Exception ex) {
                 _logger.LogError(ex, "Error copying {Path} to {TargetPath}: {Message}", normalizedPath, normalizedTargetPath, ex.Message);
-                return Task.FromResult(false);
+                return false;
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
         public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default) {
