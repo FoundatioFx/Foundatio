@@ -37,13 +37,16 @@ namespace Foundatio.Storage {
         public long MaxFiles { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
+            GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
+
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             string normalizedPath = path.NormalizePath();
             _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
-            
+
             lock (_lock) {
                 if (!_storage.ContainsKey(normalizedPath)) {
                     _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);

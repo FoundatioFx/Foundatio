@@ -32,30 +32,46 @@ namespace Foundatio.Storage {
                 folder += Path.DirectorySeparatorChar;
 
             Folder = folder;
-            
+
             _logger.LogInformation("Creating {Directory} directory", folder);
             Directory.CreateDirectory(folder);
         }
 
-        public FolderFileStorage(Builder<FolderFileStorageOptionsBuilder, FolderFileStorageOptions> config) 
+        public FolderFileStorage(Builder<FolderFileStorageOptionsBuilder, FolderFileStorageOptions> config)
             : this(config(new FolderFileStorageOptionsBuilder()).Build()) { }
 
         public string Folder { get; set; }
         ISerializer IHaveSerializer.Serializer => _serializer;
 
-        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+            => GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
+
+        public Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             string normalizedPath = path.NormalizePath();
-            _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
+            var fullPath = Path.Combine(Folder, normalizedPath);
+            if (fileAccess != FileAccess.Read) {
+                CreateFileStream(fullPath).Dispose();
+            }
+
+            var fileMode = GetFileModeForFileAccess(fileAccess);
 
             try {
-                return Task.FromResult<Stream>(File.OpenRead(Path.Combine(Folder, normalizedPath)));
+                return Task.FromResult<Stream>(File.Open(fullPath, fileMode, fileAccess));
             } catch (IOException ex) when (ex is FileNotFoundException or DirectoryNotFoundException) {
                 _logger.LogError(ex, "Unable to get file stream for {Path}: {Message}", normalizedPath, ex.Message);
                 return Task.FromResult<Stream>(null);
             }
+        }
+        private FileMode GetFileModeForFileAccess(FileAccess fileAccess) {
+            return fileAccess switch {
+                FileAccess.Read => FileMode.Open,
+                FileAccess.Write => FileMode.Create,
+                FileAccess.ReadWrite => FileMode.OpenOrCreate,
+                _ => throw new ArgumentOutOfRangeException(nameof(fileAccess), fileAccess, null)
+            };
         }
 
         public Task<FileSpec> GetFileInfoAsync(string path) {
@@ -147,7 +163,7 @@ namespace Foundatio.Storage {
                     } catch (IOException ex) {
                         _logger.LogDebug(ex, "Error renaming {Path} to {NewPath}: Deleting {NewFullPath}", normalizedPath, normalizedNewPath, newFullPath);
                         File.Delete(newFullPath);
-                        
+
                         _logger.LogTrace("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
                         File.Move(oldFullPath, newFullPath);
                     }
@@ -207,7 +223,7 @@ namespace Foundatio.Storage {
 
         public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default) {
             int count = 0;
-            
+
             if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*") {
                 if (Directory.Exists(Folder)) {
                     _logger.LogInformation("Deleting {Directory} directory", Folder);
@@ -251,7 +267,7 @@ namespace Foundatio.Storage {
 
             _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
             return Task.FromResult(count);
-            
+
         }
 
         public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
@@ -293,7 +309,7 @@ namespace Foundatio.Storage {
                     Size = info.Length
                 });
             }
-            
+
             bool hasMore = false;
             if (list.Count == pagingLimit) {
                 hasMore = true;
@@ -301,10 +317,10 @@ namespace Foundatio.Storage {
             }
 
             return new NextPageResult {
-                Success = true, 
-                HasMore = hasMore, 
+                Success = true,
+                HasMore = hasMore,
                 Files = list,
-                NextPageFunc = hasMore ? _ => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : null 
+                NextPageFunc = hasMore ? _ => Task.FromResult(GetFiles(searchPattern, page + 1, pageSize)) : null
             };
         }
 
