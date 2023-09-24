@@ -41,7 +41,7 @@ namespace Foundatio.Storage {
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
             GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-        public async Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
+        public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
