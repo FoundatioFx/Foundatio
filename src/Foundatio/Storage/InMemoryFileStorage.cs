@@ -38,9 +38,9 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
 
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
-            GetFileStreamAsync(path, FileAccess.Read, cancellationToken);
+            GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-        public Task<Stream> GetFileStreamAsync(string path, FileAccess fileAccess, CancellationToken cancellationToken = default) {
+        public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
