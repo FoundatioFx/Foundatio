@@ -8,6 +8,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Update="Foundatio.TestHarness" Version="10.6.2-alpha.0.2" />
+    <PackageReference Update="Foundatio.TestHarness" Version="10.6.2-alpha.0.4" />
   </ItemGroup>
 </Project>
