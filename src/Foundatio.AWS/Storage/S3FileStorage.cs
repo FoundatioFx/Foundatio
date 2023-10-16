@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -117,11 +118,32 @@ namespace Foundatio.Storage {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            string normalizedPath = NormalizePath(path);
-            _logger.LogTrace("Checking if {Path} exists", normalizedPath);
+            var req = new GetObjectMetadataRequest {
+                BucketName = _bucket,
+                Key = NormalizePath(path)
+            };
+
+            _logger.LogTrace("Getting file info for {Path}", req.Key);
             
-            var result = await GetFileInfoAsync(normalizedPath).AnyContext();
-            return result != null;
+            try {
+                var response = await _client.GetObjectMetadataAsync(req).AnyContext();
+                if (response.HttpStatusCode.IsSuccessful())
+                    return true;
+
+                if (response.HttpStatusCode == HttpStatusCode.NotFound)
+                    return false;
+                
+                if (!response.HttpStatusCode.IsSuccessful()) {
+                    _logger.LogDebug("[{HttpStatusCode}] Unable to get file info for {Path}", response.HttpStatusCode, req.Key);
+                    return false;
+                }
+            } catch (AmazonS3Exception ex) when (ex.StatusCode is HttpStatusCode.NotFound) {
+                return false;
+            } catch (AmazonS3Exception ex) {
+                _logger.LogError(ex, "Unable to get file info for {Path}: {Message}", req.Key, ex.Message);
+            }
+
+            return false;
         }
 
         public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
