@@ -19,7 +19,6 @@ namespace Foundatio.Caching {
         private readonly AsyncLock _lock = new();
         private bool _scriptsLoaded;
 
-        private LoadedLuaScript _removeByPrefix;
         private LoadedLuaScript _incrementWithExpire;
         private LoadedLuaScript _removeIfEqual;
         private LoadedLuaScript _replaceIfEqual;
@@ -88,12 +87,39 @@ namespace Foundatio.Caching {
         public async Task<int> RemoveByPrefixAsync(string prefix) {
             await LoadScriptsAsync().AnyContext();
 
+            const int chunkSize = 2500;
+            string regex = prefix + "*";
             try {
-                var result = await Database.ScriptEvaluateAsync(_removeByPrefix, new { keys = prefix + "*" }).AnyContext();
-                return (int)result;
+                int total = 0;
+                int index = 0;
+
+                (int cursor, string[] keys) = await ScanKeysAsync(regex, index, chunkSize).AnyContext();
+
+                while (keys.Length != 0 || index < chunkSize) {
+                    total += await RemoveAllAsync(keys).AnyContext();
+                    index += chunkSize;
+                    (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
+                }
+
+                total += await RemoveAllAsync(keys).AnyContext();
+
+                return total;
             } catch (RedisServerException) {
                 return 0;
             }
+        }
+
+        /// <summary>
+        /// Scan for keys matching the prefix
+        /// </summary>
+        /// <remarks>SCAN, SSCAN, HSCAN and ZSCAN return a two elements multi-bulk reply, where the first element
+        /// is a string representing an unsigned 64 bit number (the cursor), and the second element is a multi-bulk
+        /// with an array of elements.</remarks>
+        private async Task<(int, string[])> ScanKeysAsync(string prefix, int index, int chunkSize)
+        {
+            var result = await Database.ExecuteAsync("scan", index, "match", prefix, "count", chunkSize).AnyContext();
+            var value = (RedisResult[])result;
+            return ((int)value![0], (string[])value[1]);
         }
 
         private static readonly RedisValue _nullValue = "@@NULL";
@@ -473,7 +499,6 @@ namespace Foundatio.Caching {
                 if (_scriptsLoaded)
                     return;
 
-                var removeByPrefix = LuaScript.Prepare(RemoveByPrefixScript);
                 var incrementWithExpire = LuaScript.Prepare(IncrementWithScript);
                 var removeIfEqual = LuaScript.Prepare(RemoveIfEqualScript);
                 var replaceIfEqual = LuaScript.Prepare(ReplaceIfEqualScript);
@@ -484,8 +509,7 @@ namespace Foundatio.Caching {
                     var server = _options.ConnectionMultiplexer.GetServer(endpoint);
                     if (server.IsReplica)
                         continue;
-                    
-                    _removeByPrefix = await removeByPrefix.LoadAsync(server).AnyContext();
+
                     _incrementWithExpire = await incrementWithExpire.LoadAsync(server).AnyContext();
                     _removeIfEqual = await removeIfEqual.LoadAsync(server).AnyContext();
                     _replaceIfEqual = await replaceIfEqual.LoadAsync(server).AnyContext();
@@ -508,7 +532,6 @@ namespace Foundatio.Caching {
 
         ISerializer IHaveSerializer.Serializer => _options.Serializer;
 
-		private static readonly string RemoveByPrefixScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.RemoveByPrefix.lua");
 		private static readonly string IncrementWithScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.IncrementWithExpire.lua");
 		private static readonly string RemoveIfEqualScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.RemoveIfEqual.lua");
 		private static readonly string ReplaceIfEqualScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.ReplaceIfEqual.lua");
