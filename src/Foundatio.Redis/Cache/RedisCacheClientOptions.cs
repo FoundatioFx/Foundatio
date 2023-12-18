@@ -11,6 +11,11 @@ namespace Foundatio.Caching {
         /// </summary>
         public bool ShouldThrowOnSerializationError { get; set; } = true;
 
+        /// <summary>
+        /// The behaviour required when performing read operations from cache
+        /// </summary>
+        public CommandFlags ReadMode { get; set; } = CommandFlags.None;
+
     }
 
     public class RedisCacheClientOptionsBuilder : SharedOptionsBuilder<RedisCacheClientOptions, RedisCacheClientOptionsBuilder> {

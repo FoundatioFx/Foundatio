@@ -102,7 +102,7 @@ namespace Foundatio.Caching {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
 
-            var redisValue = await Database.StringGetAsync(key, CommandFlags.PreferReplica).AnyContext();
+            var redisValue = await Database.StringGetAsync(key, _options.ReadMode).AnyContext();
             return RedisValueToCacheValue<T>(redisValue);
         }
 
@@ -149,7 +149,7 @@ namespace Foundatio.Caching {
 
         public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) {
             string[] keyArray = keys.ToArray();
-            var values = await Database.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray(), CommandFlags.PreferReplica).AnyContext();
+            var values = await Database.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray(), _options.ReadMode).AnyContext();
 
             var result = new Dictionary<string, CacheValue<T>>();
             for (int i = 0; i < keyArray.Length; i++)
@@ -166,12 +166,12 @@ namespace Foundatio.Caching {
                 throw new ArgumentNullException(nameof(page), "Page cannot be less than 1.");
 
             if (!page.HasValue) {
-                var set = await Database.SortedSetRangeByScoreAsync(key, flags: CommandFlags.PreferReplica).AnyContext();
+                var set = await Database.SortedSetRangeByScoreAsync(key, flags: _options.ReadMode).AnyContext();
                 return RedisValuesToCacheValue<T>(set);
             } else {
                 long start = ((page.Value - 1) * pageSize);
                 long end = start + pageSize - 1;
-                var set = await Database.SortedSetRangeByRankAsync(key, start, end, flags: CommandFlags.PreferReplica).AnyContext();
+                var set = await Database.SortedSetRangeByRankAsync(key, start, end, flags: _options.ReadMode).AnyContext();
                 return RedisValuesToCacheValue<T>(set);
             }
         }
