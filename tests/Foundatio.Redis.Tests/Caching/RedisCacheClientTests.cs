@@ -87,15 +87,15 @@ namespace Foundatio.Redis.Tests.Caching {
 
             using (cache) {
                 await cache.RemoveAllAsync();
-                const string prefix = "blah:";
+                const string prefix = "prefix:";
                 await cache.SetAsync("test", 1);
 
-                await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => prefix + "test" + i));
+                await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => $"{prefix}test{i}"));
 
-                Assert.Equal(1, (await cache.GetAsync<int>(prefix + "test" + 1)).Value);
+                Assert.Equal(1, (await cache.GetAsync<int>($"{prefix}test{1}")).Value);
                 Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
 
-                Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
+                Assert.Equal(0, await cache.RemoveByPrefixAsync($"{prefix}:doesntexist"));
                 Assert.Equal(count, await cache.RemoveByPrefixAsync(prefix));
             }
         }

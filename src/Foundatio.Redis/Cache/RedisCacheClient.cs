@@ -85,28 +85,21 @@ namespace Foundatio.Caching {
         }
 
         public async Task<int> RemoveByPrefixAsync(string prefix) {
-            await LoadScriptsAsync().AnyContext();
-
             const int chunkSize = 2500;
-            string regex = prefix + "*";
-            try {
-                int total = 0;
-                int index = 0;
+            string regex = $"{prefix}*";
 
-                (int cursor, string[] keys) = await ScanKeysAsync(regex, index, chunkSize).AnyContext();
+            int total = 0;
+            int index = 0;
 
-                while (keys.Length != 0 || index < chunkSize) {
-                    total += await RemoveAllAsync(keys).AnyContext();
-                    index += chunkSize;
-                    (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
-                }
+            (int cursor, string[] keys) = await ScanKeysAsync(regex, index, chunkSize).AnyContext();
 
+            while (keys.Length != 0 || index < chunkSize) {
                 total += await RemoveAllAsync(keys).AnyContext();
-
-                return total;
-            } catch (RedisServerException) {
-                return 0;
+                index += chunkSize;
+                (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
             }
+
+            return total;
         }
 
         /// <summary>
