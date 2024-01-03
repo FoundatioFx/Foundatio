@@ -116,10 +116,10 @@ namespace Foundatio.Queues {
         }
 
         protected override QueueStats GetMetricsQueueStats() {
-            var queued = Database.ListLength(_queueListName);
-            var wait = Database.ListLength(_waitListName);
-            var working = Database.ListLength(_workListName);
-            var deadLetter = Database.ListLength(_deadListName);
+            long queued = Database.ListLength(_queueListName);
+            long wait = Database.ListLength(_waitListName);
+            long working = Database.ListLength(_workListName);
+            long deadLetter = Database.ListLength(_deadListName);
 
             return new QueueStats {
                 Queued = queued + wait,
@@ -231,7 +231,7 @@ namespace Foundatio.Queues {
             return id;
         }
 
-        private readonly List<Task> _workers = new();
+        private readonly List<Task> _workers = [];
 
         protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
             if (handler == null)
