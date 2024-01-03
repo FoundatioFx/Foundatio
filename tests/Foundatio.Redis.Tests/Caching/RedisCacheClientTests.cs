@@ -75,6 +75,31 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanRemoveByPrefixAsync();
         }
 
+        [Theory]
+        [InlineData(50)]
+        [InlineData(500)]
+        [InlineData(5000)]
+        [InlineData(50000)]
+        public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+                const string prefix = "blah:";
+                await cache.SetAsync("test", 1);
+
+                await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => prefix + "test" + i));
+
+                Assert.Equal(1, (await cache.GetAsync<int>(prefix + "test" + 1)).Value);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+
+                Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
+                Assert.Equal(count, await cache.RemoveByPrefixAsync(prefix));
+            }
+        }
+
         [Fact]
         public override Task CanSetExpirationAsync() {
             return base.CanSetExpirationAsync();
