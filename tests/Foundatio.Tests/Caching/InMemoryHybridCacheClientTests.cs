@@ -33,6 +33,13 @@ namespace Foundatio.Tests.Caching {
             return base.CanRemoveByPrefixAsync();
         }
 
+        [Theory]
+        [InlineData(50)]
+        [InlineData(500)]
+        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+            return base.CanRemoveByPrefixMultipleEntriesAsync(count);
+        }
+
         [Fact]
         public override Task CanUseScopedCachesAsync() {
             return base.CanUseScopedCachesAsync();

@@ -353,6 +353,26 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, await cache.RemoveByPrefixAsync(String.Empty));
             }
         }
+        
+        public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+            var cache = GetCacheClient();
+            if (cache == null)
+                return;
+
+            using (cache) {
+                await cache.RemoveAllAsync();
+                const string prefix = "prefix:";
+                await cache.SetAsync("test", 1);
+
+                await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => $"{prefix}test{i}"));
+
+                Assert.Equal(1, (await cache.GetAsync<int>($"{prefix}test1")).Value);
+                Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+
+                Assert.Equal(0, await cache.RemoveByPrefixAsync($"{prefix}:doesntexist"));
+                Assert.Equal(count, await cache.RemoveByPrefixAsync(prefix));
+            }
+        }
 
         public virtual async Task CanSetAndGetObjectAsync() {
             var cache = GetCacheClient();
