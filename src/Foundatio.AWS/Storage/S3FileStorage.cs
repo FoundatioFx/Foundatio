@@ -29,10 +29,10 @@ namespace Foundatio.Storage {
         public S3FileStorage(S3FileStorageOptions options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            
+
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
-            
+
             _bucket = options.Bucket;
             _useChunkEncoding = options.UseChunkEncoding ?? true;
             _cannedAcl = options.CannedACL;
@@ -56,14 +56,22 @@ namespace Foundatio.Storage {
             : this(builder(new S3FileStorageOptionsBuilder()).Build()) { }
 
         ISerializer IHaveSerializer.Serializer => _serializer;
-        
+
         public AmazonS3Client Client => _client;
         public string Bucket => _bucket;
         public S3CannedACL CannedACL => _cannedAcl;
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+            => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
+
+        public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
+
+            if (streamMode is StreamMode.Write)
+                throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
 
             var req = new GetObjectRequest {
                 BucketName = _bucket,
@@ -71,7 +79,7 @@ namespace Foundatio.Storage {
             };
 
             _logger.LogTrace("Getting file stream for {Path}", req.Key);
-            
+
             var response = await _client.GetObjectAsync(req, cancellationToken).AnyContext();
             if (!response.HttpStatusCode.IsSuccessful()) {
                 _logger.LogError("[{HttpStatusCode}] Unable to get file stream for {Path}", response.HttpStatusCode, req.Key);
@@ -161,7 +169,7 @@ namespace Foundatio.Storage {
                 InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream),
                 UseChunkEncoding = _useChunkEncoding
             };
-            
+
             _logger.LogTrace("Saving {Path}", req.Key);
             var response = await _client.PutObjectAsync(req, cancellationToken).AnyContext();
             return response.HttpStatusCode.IsSuccessful();
@@ -199,7 +207,7 @@ namespace Foundatio.Storage {
                 _logger.LogError("[{HttpStatusCode}] Unable to delete renamed {Path}", deleteResponse.HttpStatusCode, deleteRequest.Key);
                 return false;
             }
-            
+
             return true;
         }
 
@@ -255,7 +263,7 @@ namespace Foundatio.Storage {
                     continue;
 
                 deleteRequest.Objects.AddRange(keys);
-                
+
                 _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", keys.Length, searchPattern);
                 var deleteResponse = await _client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
                 if (deleteResponse.DeleteErrors.Count > 0) {
@@ -301,10 +309,10 @@ namespace Foundatio.Storage {
             };
 
             _logger.LogTrace(
-                s => s.Property("Limit", req.MaxKeys), 
+                s => s.Property("Limit", req.MaxKeys),
                 "Getting file list matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern
             );
-            
+
             var response = await _client.ListObjectsV2Async(req, cancellationToken).AnyContext();
             return new NextPageResult {
                 Success = response.HttpStatusCode.IsSuccessful(),
@@ -317,7 +325,7 @@ namespace Foundatio.Storage {
         private string NormalizePath(string path) {
             return path?.Replace('\\', '/');
         }
-            
+
         private class SearchCriteria {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
@@ -326,14 +334,14 @@ namespace Foundatio.Storage {
         private SearchCriteria GetRequestCriteria(string searchPattern) {
             if (String.IsNullOrEmpty(searchPattern))
                 return new SearchCriteria { Prefix = String.Empty };
-            
+
             string normalizedSearchPattern = NormalizePath(searchPattern);
             int wildcardPos = normalizedSearchPattern.IndexOf('*');
             bool hasWildcard = wildcardPos >= 0;
 
             string prefix = normalizedSearchPattern;
             Regex patternRegex = null;
-            
+
             if (hasWildcard) {
                 patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
                 int slashPos = normalizedSearchPattern.LastIndexOf('/');
