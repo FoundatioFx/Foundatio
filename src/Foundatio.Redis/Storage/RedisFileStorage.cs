@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,10 +22,10 @@ namespace Foundatio.Storage {
         public RedisFileStorage(RedisFileStorageOptions options) {
             if (options.ConnectionMultiplexer == null)
                 throw new ArgumentException("ConnectionMultiplexer is required.");
-            
+
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
-            
+
             options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
             _fileSpecContainer = $"{options.ContainerName}-filespecs";
             _options = options;
@@ -41,47 +41,55 @@ namespace Foundatio.Storage {
             _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         }
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+            => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
+
+        public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
+            if (streamMode is StreamMode.Write)
+                throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
-            
+
             var fileContent = await Run.WithRetriesAsync(() => Database.HashGetAsync(_options.ContainerName, normalizedPath),
                 cancellationToken: cancellationToken, logger: _logger).AnyContext();
-            
+
             if (fileContent.IsNull) {
                 _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
                 return null;
             }
-            
+
             return new MemoryStream(fileContent);
         }
 
         public async Task<FileSpec> GetFileInfoAsync(string path) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Getting file info for {Path}", normalizedPath);
-            
+
             var fileSpec = await Run.WithRetriesAsync(() => Database.HashGetAsync(_fileSpecContainer, normalizedPath), logger: _logger).AnyContext();
             if (!fileSpec.HasValue) {
                 _logger.LogError("Unable to get file info for {Path}: File Not Found", normalizedPath);
                 return null;
             }
-            
+
             return _serializer.Deserialize<FileSpec>((byte[])fileSpec);
         }
 
         public Task<bool> ExistsAsync(string path) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Checking if {Path} exists", normalizedPath);
-            
+
             return Run.WithRetriesAsync(() => Database.HashExistsAsync(_fileSpecContainer, normalizedPath), logger: _logger);
         }
 
@@ -90,7 +98,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
-            
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Saving {Path}", normalizedPath);
             
@@ -103,7 +111,7 @@ namespace Foundatio.Storage {
                 long fileSize = memory.Length;
                 memory.Seek(0, SeekOrigin.Begin);
                 memory.SetLength(0);
-                
+
                 _serializer.Serialize(new FileSpec {
                     Path = normalizedPath,
                     Created = DateTime.UtcNow,
@@ -126,7 +134,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(newPath))
                 throw new ArgumentNullException(nameof(newPath));
-            
+
             string normalizedPath = NormalizePath(path);
             string normalizedNewPath = NormalizePath(newPath);
             _logger.LogInformation("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
@@ -146,7 +154,7 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(targetPath))
                 throw new ArgumentNullException(nameof(targetPath));
-            
+
             string normalizedPath = NormalizePath(path);
             string normalizedTargetPath = NormalizePath(targetPath);
             _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
@@ -166,7 +174,7 @@ namespace Foundatio.Storage {
         public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default) {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
-            
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Deleting {Path}", normalizedPath);
 
@@ -187,14 +195,14 @@ namespace Foundatio.Storage {
                 count++;
             }
             _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
-            
+
             return count;
         }
 
         private Task<List<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
             if (limit is <= 0)
                 return Task.FromResult(new List<FileSpec>());
-            
+
             searchPattern = NormalizePath(searchPattern);
             string prefix = searchPattern;
             Regex patternRegex = null;
@@ -204,15 +212,15 @@ namespace Foundatio.Storage {
                 int slashPos = searchPattern.LastIndexOf('/');
                 prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
             }
-            
+
             prefix ??= String.Empty;
             int pageSize = limit ?? Int32.MaxValue;
-            
+
             _logger.LogTrace(
-                s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip), 
+                s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
                 "Getting file list matching {Prefix} and {Pattern}...", prefix, patternRegex
             );
-            
+
             return Task.FromResult(Database.HashScan(_fileSpecContainer, $"{prefix}*")
                 .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value))
                 .Where(fileSpec => patternRegex == null || patternRegex.IsMatch(fileSpec.Path))
@@ -236,12 +244,12 @@ namespace Foundatio.Storage {
             int skip = (page - 1) * pagingLimit;
             if (pagingLimit < Int32.MaxValue)
                 pagingLimit++;
-            
+
             _logger.LogTrace(
-                s => s.Property("Limit", pagingLimit).Property("Skip", skip), 
+                s => s.Property("Limit", pagingLimit).Property("Skip", skip),
                 "Getting files matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern
             );
-            
+
             var list = Database.HashScan(_fileSpecContainer, $"{criteria.Prefix}*")
                 .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value))
                 .Where(fileSpec => criteria.Pattern == null || criteria.Pattern.IsMatch(fileSpec.Path))
@@ -266,7 +274,7 @@ namespace Foundatio.Storage {
         private string NormalizePath(string path) {
             return path?.Replace('\\', '/');
         }
-        
+
         private class SearchCriteria {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
@@ -275,14 +283,14 @@ namespace Foundatio.Storage {
         private SearchCriteria GetRequestCriteria(string searchPattern) {
             if (String.IsNullOrEmpty(searchPattern))
                 return new SearchCriteria { Prefix = String.Empty };
-            
+
             string normalizedSearchPattern = NormalizePath(searchPattern);
             int wildcardPos = normalizedSearchPattern.IndexOf('*');
             bool hasWildcard = wildcardPos >= 0;
 
             string prefix = normalizedSearchPattern;
             Regex patternRegex = null;
-            
+
             if (hasWildcard) {
                 patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
                 int slashPos = normalizedSearchPattern.LastIndexOf('/');
