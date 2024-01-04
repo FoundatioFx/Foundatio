@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,15 +23,15 @@ namespace Foundatio.Storage {
         public AzureFileStorage(AzureFileStorageOptions options) {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
-            
+
             _serializer = options.Serializer ?? DefaultSerializer.Instance;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
 
             var account = CloudStorageAccount.Parse(options.ConnectionString);
             var client = account.CreateCloudBlobClient();
-            
+
             _container = client.GetContainerReference(options.ContainerName);
-            
+
             _logger.LogTrace("Checking if {Container} container exists", _container.Name);
             bool created = _container.CreateIfNotExistsAsync().GetAwaiter().GetResult();
             if (created)
@@ -44,15 +44,23 @@ namespace Foundatio.Storage {
         ISerializer IHaveSerializer.Serializer => _serializer;
         public CloudBlobContainer Container => _container;
 
-        public async Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) {
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+        public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+            => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
+
+        public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
+            if (streamMode is StreamMode.Write)
+                throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
-            
+
             var blockBlob = _container.GetBlockBlobReference(normalizedPath);
-            
+
             try {
                 return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
             } catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404}) {
@@ -67,7 +75,7 @@ namespace Foundatio.Storage {
 
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Getting file info for {Path}", normalizedPath);
-            
+
             var blob = _container.GetBlockBlobReference(normalizedPath);
             try {
                 await blob.FetchAttributesAsync().AnyContext();
@@ -95,10 +103,10 @@ namespace Foundatio.Storage {
                 throw new ArgumentNullException(nameof(path));
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
-            
+
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Saving {Path}", normalizedPath);
-            
+
             var blockBlob = _container.GetBlockBlobReference(normalizedPath);
             await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
 
@@ -140,7 +148,7 @@ namespace Foundatio.Storage {
             string normalizedPath = NormalizePath(path);
             string normalizedTargetPath = NormalizePath(targetPath);
             _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
-            
+
             var oldBlob = _container.GetBlockBlobReference(normalizedPath);
             var newBlob = _container.GetBlockBlobReference(normalizedTargetPath);
 
@@ -157,7 +165,7 @@ namespace Foundatio.Storage {
 
             string normalizedPath = NormalizePath(path);
             _logger.LogTrace("Deleting {Path}", normalizedPath);
-            
+
             var blockBlob = _container.GetBlockBlobReference(normalizedPath);
             return blockBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken);
         }
@@ -210,13 +218,13 @@ namespace Foundatio.Storage {
         private async Task<List<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default) {
             if (limit is <= 0)
                 return new List<FileSpec>();
-            
+
             var criteria = GetRequestCriteria(searchPattern);
 
-            int totalLimit = limit.GetValueOrDefault(Int32.MaxValue) < Int32.MaxValue 
+            int totalLimit = limit.GetValueOrDefault(Int32.MaxValue) < Int32.MaxValue
                 ? skip.GetValueOrDefault() + limit.Value
                 : Int32.MaxValue;
-            
+
             BlobContinuationToken continuationToken = null;
             var blobs = new List<CloudBlockBlob>();
             do {
@@ -232,20 +240,20 @@ namespace Foundatio.Storage {
                     blobs.Add(blob);
                 }
             } while (continuationToken != null && blobs.Count < totalLimit);
-            
+
             if (skip.HasValue)
                 blobs = blobs.Skip(skip.Value).ToList();
-            
+
             if (limit.HasValue)
                 blobs = blobs.Take(limit.Value).ToList();
-            
+
             return blobs.Select(blob => blob.ToFileInfo()).ToList();
         }
-        
+
         private string NormalizePath(string path) {
             return path?.Replace('\\', '/');
         }
-        
+
         private class SearchCriteria {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
@@ -261,7 +269,7 @@ namespace Foundatio.Storage {
 
             string prefix = normalizedSearchPattern;
             Regex patternRegex = null;
-            
+
             if (hasWildcard) {
                 patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
                 int slashPos = normalizedSearchPattern.LastIndexOf('/');
@@ -273,7 +281,7 @@ namespace Foundatio.Storage {
                 Pattern = patternRegex
             };
         }
-        
+
         public void Dispose() {}
     }
 }
