@@ -20,6 +20,7 @@ namespace Foundatio.Storage {
         public string Scope { get; private set; }
         ISerializer IHaveSerializer.Serializer => UnscopedStorage.Serializer;
 
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
         public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
             => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
@@ -103,7 +104,7 @@ namespace Foundatio.Storage {
 
         private async Task<NextPageResult> NextPage(PagedFileListResult result) {
             var success = await result.NextPageAsync().AnyContext();
-            
+
             foreach (var file in result.Files)
                 file.Path = file.Path.Substring(_pathPrefix.Length);
 

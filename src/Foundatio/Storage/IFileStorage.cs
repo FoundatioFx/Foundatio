@@ -11,7 +11,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Storage {
     public interface IFileStorage : IHaveSerializer, IDisposable {
-        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream.")]
+        [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
         /// <summary>
         /// Gets a file stream in the specified mode
@@ -51,7 +51,7 @@ namespace Foundatio.Storage {
             HasMore = false;
             ((IHasNextPageFunc)this).NextPageFunc = null;
         }
-        
+
         public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
             Files = files;
             HasMore = hasMore;
@@ -70,7 +70,7 @@ namespace Foundatio.Storage {
         public async Task<bool> NextPageAsync() {
             if (((IHasNextPageFunc)this).NextPageFunc == null)
                 return false;
-            
+
             var result = await ((IHasNextPageFunc)this).NextPageFunc(this).AnyContext();
             if (result.Success) {
                 Files = result.Files;
@@ -170,7 +170,7 @@ namespace Foundatio.Storage {
             do {
                 files.AddRange(result.Files);
             } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync().AnyContext());
-            
+
             return files;
         }
     }
