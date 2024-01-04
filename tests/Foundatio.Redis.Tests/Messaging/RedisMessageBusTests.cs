@@ -15,13 +15,13 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Messaging {
     public class RedisMessageBusTests : MessageBusTestBase {
         public RedisMessageBusTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
             return new RedisMessageBus(o => {
-                o.Subscriber(SharedConnection.GetMuxer().GetSubscriber());
+                o.Subscriber(SharedConnection.GetMuxer(Log).GetSubscriber());
                 o.Topic("test-messages");
                 o.LoggerFactory(Log);
                 if (config != null)
@@ -123,7 +123,7 @@ namespace Foundatio.Redis.Tests.Messaging {
 
         [Fact]
         public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages() {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
 
             var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });

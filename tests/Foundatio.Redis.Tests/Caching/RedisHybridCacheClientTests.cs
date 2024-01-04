@@ -10,13 +10,13 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisHybridCacheClientTests : HybridCacheClientTests {
         public RedisHybridCacheClientTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
             return new RedisHybridCacheClient(o => o
-                    .ConnectionMultiplexer(SharedConnection.GetMuxer())
+                    .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
                     .LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError),
                 localConfig => localConfig
                     .CloneValues(true)

@@ -27,7 +27,7 @@ namespace Foundatio.SampleJobClient
             _loggerFactory.MaxLogEntriesToStore = Console.WindowHeight - (OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT) - 1;
             _logger = _loggerFactory.CreateLogger<Program>();
 
-            var muxer = ConnectionMultiplexer.Connect("localhost");
+            var muxer = ConnectionMultiplexer.Connect("localhost", o => o.LoggerFactory = _loggerFactory);
             _queue = new RedisQueue<PingRequest>(new RedisQueueOptions<PingRequest> { ConnectionMultiplexer = muxer });
             _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).LoggerFactory(_loggerFactory).MapMessageTypeToClassName<EchoMessage>());
 

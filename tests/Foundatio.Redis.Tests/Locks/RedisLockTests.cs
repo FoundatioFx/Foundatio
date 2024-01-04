@@ -18,7 +18,7 @@ namespace Foundatio.Redis.Tests.Locks {
         private readonly IMessageBus _messageBus;
 
         public RedisLockTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
             _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
             _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(Log));
@@ -95,7 +95,7 @@ namespace Foundatio.Redis.Tests.Locks {
         public void Dispose() {
             _cache.Dispose();
             _messageBus.Dispose();
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
     }

@@ -9,13 +9,13 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Jobs {
     public class RedisJobQueueTests : JobQueueTestsBase {
         public RedisJobQueueTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay) {
             return new RedisQueue<SampleQueueWorkItem>(o => o
-                .ConnectionMultiplexer(SharedConnection.GetMuxer())
+                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
                 .Retries(retries)
                 .RetryDelay(retryDelay)
                 .LoggerFactory(Log)

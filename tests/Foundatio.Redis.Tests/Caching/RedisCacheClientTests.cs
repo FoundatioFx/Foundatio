@@ -12,12 +12,12 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Caching {
     public class RedisCacheClientTests : CacheClientTestsBase {
         public RedisCacheClientTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
-            return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
+            return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer(Log)).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
         }
 
         [Fact]
@@ -131,7 +131,7 @@ namespace Foundatio.Redis.Tests.Caching {
 
         [Fact]
         public async Task CanUpgradeListType() {
-            var db = SharedConnection.GetMuxer().GetDatabase();
+            var db = SharedConnection.GetMuxer(Log).GetDatabase();
             var cache = GetCacheClient();
             if (cache == null)
                 return;

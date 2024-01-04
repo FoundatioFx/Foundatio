@@ -8,12 +8,12 @@ using Xunit.Abstractions;
 namespace Foundatio.Redis.Tests.Storage {
     public class RedisFileStorageTests : FileStorageTestsBase {
         public RedisFileStorageTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
         protected override IFileStorage GetStorage() {
-            return new RedisFileStorage(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).LoggerFactory(Log));
+            return new RedisFileStorage(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer(Log)).LoggerFactory(Log));
         }
 
         [Fact]

@@ -18,7 +18,7 @@ namespace Foundatio.SampleJob {
                 container.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
             }
 
-            var muxer = ConnectionMultiplexer.Connect("localhost");
+            var muxer = ConnectionMultiplexer.Connect("localhost", o => o.LoggerFactory = loggerFactory);
             container.AddSingleton(muxer);
             container.AddSingleton<IQueue<PingRequest>>(s => new RedisQueue<PingRequest>(o => o.ConnectionMultiplexer(muxer).RetryDelay(TimeSpan.FromSeconds(1)).WorkItemTimeout(TimeSpan.FromSeconds(5)).LoggerFactory(loggerFactory)));
             container.AddSingleton<ICacheClient>(s => new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(loggerFactory)));

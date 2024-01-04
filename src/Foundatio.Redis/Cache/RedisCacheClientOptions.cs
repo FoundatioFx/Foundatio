@@ -1,6 +1,4 @@
-﻿using System;
-using Foundatio.Serializer;
-using StackExchange.Redis;
+﻿using StackExchange.Redis;
 
 namespace Foundatio.Caching {
     public class RedisCacheClientOptions : SharedOptions {

@@ -11,13 +11,13 @@ using Foundatio.Xunit;
 namespace Foundatio.Redis.Tests.Metrics {
     public class RedisMetricsTests : MetricsClientTestBase, IDisposable {
         public RedisMetricsTests(ITestOutputHelper output) : base(output) {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
 #pragma warning disable CS0618 // Type or member is obsolete
         public override IMetricsClient GetMetricsClient(bool buffered = false) {
-            return new RedisMetricsClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer()).Buffered(buffered).LoggerFactory(Log));
+            return new RedisMetricsClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer(Log)).Buffered(buffered).LoggerFactory(Log));
         }
 #pragma warning restore CS0618 // Type or member is obsolete
 
@@ -86,7 +86,7 @@ namespace Foundatio.Redis.Tests.Metrics {
 
         [Fact]
         public async Task SendRedisAsync() {
-            var db = SharedConnection.GetMuxer().GetDatabase();
+            var db = SharedConnection.GetMuxer(Log).GetDatabase();
 
             int max = 1000;
             for (int index = 0; index <= max; index++) {
@@ -95,7 +95,7 @@ namespace Foundatio.Redis.Tests.Metrics {
         }
 
         public void Dispose() {
-            var muxer = SharedConnection.GetMuxer();
+            var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
     }
