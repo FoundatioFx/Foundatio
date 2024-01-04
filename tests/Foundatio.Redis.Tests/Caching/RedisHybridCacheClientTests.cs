@@ -43,6 +43,15 @@ namespace Foundatio.Redis.Tests.Caching {
             return base.CanRemoveByPrefixAsync();
         }
 
+        [Theory]
+        [InlineData(50)]
+        [InlineData(500)]
+        [InlineData(5000)]
+        [InlineData(50000)]
+        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+            return base.CanRemoveByPrefixMultipleEntriesAsync(count);
+        }
+
         [Fact]
         public override Task CanUseScopedCachesAsync() {
             return base.CanUseScopedCachesAsync();
