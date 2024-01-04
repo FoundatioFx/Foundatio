@@ -8,6 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Collections.Immutable" Version="6.0" />
-    <PackageReference Include="xunit.core" Version="2.4.2" />
+    <PackageReference Include="xunit.core" Version="2.6.4" />
   </ItemGroup>
 </Project>
