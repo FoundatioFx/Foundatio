@@ -71,7 +71,7 @@ namespace Foundatio.Tests.Storage {
                 await storage.SaveFileAsync(@"q\new.txt", "new");
                 await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
 
-                Assert.Equal(1, (await storage.GetFileListAsync(@"archived\archived.txt")).Count);
+                Assert.Single(await storage.GetFileListAsync(@"archived\archived.txt"));
             }
         }
 
@@ -85,26 +85,26 @@ namespace Foundatio.Tests.Storage {
             using (storage) {
                 var result = await storage.GetPagedFileListAsync(1);
                 Assert.False(result.HasMore);
-                Assert.Equal(0, result.Files.Count);
+                Assert.Empty(result.Files);
                 Assert.False(await result.NextPageAsync());
                 Assert.False(result.HasMore);
-                Assert.Equal(0, result.Files.Count);
+                Assert.Empty(result.Files);
 
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
                 result = await storage.GetPagedFileListAsync(1);
                 Assert.False(result.HasMore);
-                Assert.Equal(1, result.Files.Count);
+                Assert.Single(result.Files);
                 Assert.False(await result.NextPageAsync());
                 Assert.False(result.HasMore);
-                Assert.Equal(1, result.Files.Count);
+                Assert.Single(result.Files);
 
                 await storage.SaveFileAsync(@"q\new.txt", "new");
                 result = await storage.GetPagedFileListAsync(1);
                 Assert.True(result.HasMore);
-                Assert.Equal(1, result.Files.Count);
+                Assert.Single(result.Files);
                 Assert.True(await result.NextPageAsync());
                 Assert.False(result.HasMore);
-                Assert.Equal(1, result.Files.Count);
+                Assert.Single(result.Files);
 
                 await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
 

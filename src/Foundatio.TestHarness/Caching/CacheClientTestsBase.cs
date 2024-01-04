@@ -690,7 +690,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.ListRemoveAsync("test1", new[] { 1, 2, 3 });
                 result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
-                Assert.Equal(0, result.Value.Count);
+                Assert.Empty(result.Value);
 
                 // test single strings don't get handled as char arrays
                 await cache.RemoveAllAsync();
@@ -722,7 +722,7 @@ namespace Foundatio.Tests.Caching {
                 await cache.ListRemoveAsync("test1", 3);
                 result = await cache.GetListAsync<int>("test1");
                 Assert.NotNull(result);
-                Assert.Equal(0, result.Value.Count);
+                Assert.Empty(result.Value);
 
                 await Assert.ThrowsAnyAsync<Exception>(async () => {
                     await cache.AddAsync("key1", 1);

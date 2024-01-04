@@ -381,7 +381,7 @@ namespace Foundatio.Tests.Messaging {
             try {
                 var countdown = new AsyncCountdownEvent(1);
                 await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
-                    Assert.True(false, "Received wrong message type");
+                    Assert.Fail("Received wrong message type");
                 });
                 await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
                     Assert.Equal("Hello", msg.Data);
@@ -517,10 +517,10 @@ namespace Foundatio.Tests.Messaging {
 
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(async msg => {
                     _logger.LogTrace("SimpleAMessage received");
                     Interlocked.Increment(ref messageCount);
-                    cancellationTokenSource.Cancel();
+                    await cancellationTokenSource.CancelAsync();
                     countdown.Signal();
                 }, cancellationTokenSource.Token);
 
