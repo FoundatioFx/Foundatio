@@ -146,7 +146,7 @@ namespace Foundatio.Tests.Jobs {
                     var queue = queues[index - 1];
                     var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, metrics, Log);
                     await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
-                    cancellationTokenSource.Cancel();
+                    await cancellationTokenSource.CancelAsync();
                 });
                 _logger.LogInformation("Done running jobs until empty");
 
