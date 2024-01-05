@@ -515,13 +515,12 @@ namespace Foundatio.Tests.Storage
 
             using (storage)
             {
-
-                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, StreamMode.Write), Encoding.UTF8, 1024, false))
+                await using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, StreamMode.Write), Encoding.UTF8, 1024, false))
                 {
                     await writer.WriteAsync(testContent);
                 }
 
-                var content = await storage.GetFileContentsAsync(path);
+                string content = await storage.GetFileContentsAsync(path);
 
                 Assert.Equal(testContent, content);
             }

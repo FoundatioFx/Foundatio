@@ -69,7 +69,7 @@ namespace Foundatio.Storage
                 throw new ArgumentNullException(nameof(path));
 
             string normalizedPath = path.NormalizePath();
-            var fullPath = Path.Combine(Folder, normalizedPath);
+            string fullPath = Path.Combine(Folder, normalizedPath);
             if (fileAccess != FileAccess.Read)
             {
                 CreateFileStream(fullPath).Dispose();
