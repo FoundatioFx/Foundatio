@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,13 +14,13 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Tests.Metrics {
     public class DiagnosticsMetricsCollector : IDisposable {
         private readonly MeterListener _meterListener = new();
-        private readonly Queue<RecordedMeasurement<byte>> _byteMeasurements = new();
-        private readonly Queue<RecordedMeasurement<short>> _shortMeasurements = new();
-        private readonly Queue<RecordedMeasurement<int>> _intMeasurements = new();
-        private readonly Queue<RecordedMeasurement<long>> _longMeasurements = new();
-        private readonly Queue<RecordedMeasurement<float>> _floatMeasurements = new();
-        private readonly Queue<RecordedMeasurement<double>> _doubleMeasurements = new();
-        private readonly Queue<RecordedMeasurement<decimal>> _decimalMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<byte>> _byteMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<short>> _shortMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<int>> _intMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<long>> _longMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<float>> _floatMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<double>> _doubleMeasurements = new();
+        private readonly ConcurrentQueue<RecordedMeasurement<decimal>> _decimalMeasurements = new();
         private readonly int _maxMeasurementCountPerType = 1000;
         private readonly AsyncAutoResetEvent _measurementEvent = new(false);
         private readonly ILogger _logger;
@@ -38,49 +39,49 @@ namespace Foundatio.Tests.Metrics {
             _meterListener.SetMeasurementEventCallback<byte>((instrument, measurement, tags, state) => {
                 _byteMeasurements.Enqueue(new RecordedMeasurement<byte>(instrument, measurement, ref tags, state));
                 if (_byteMeasurements.Count > _maxMeasurementCountPerType)
-                    _byteMeasurements.Dequeue();
+                    _byteMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<short>((instrument, measurement, tags, state) => {
                 _shortMeasurements.Enqueue(new RecordedMeasurement<short>(instrument, measurement, ref tags, state));
                 if (_shortMeasurements.Count > _maxMeasurementCountPerType)
-                    _shortMeasurements.Dequeue();
+                    _shortMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<int>((instrument, measurement, tags, state) => {
                 _intMeasurements.Enqueue(new RecordedMeasurement<int>(instrument, measurement, ref tags, state));
                 if (_intMeasurements.Count > _maxMeasurementCountPerType)
-                    _intMeasurements.Dequeue();
+                    _intMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) => {
                 _longMeasurements.Enqueue(new RecordedMeasurement<long>(instrument, measurement, ref tags, state));
                 if (_longMeasurements.Count > _maxMeasurementCountPerType)
-                    _longMeasurements.Dequeue();
+                    _longMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<float>((instrument, measurement, tags, state) => {
                 _floatMeasurements.Enqueue(new RecordedMeasurement<float>(instrument, measurement, ref tags, state));
                 if (_floatMeasurements.Count > _maxMeasurementCountPerType)
-                    _floatMeasurements.Dequeue();
+                    _floatMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) => {
                 _doubleMeasurements.Enqueue(new RecordedMeasurement<double>(instrument, measurement, ref tags, state));
                 if (_doubleMeasurements.Count > _maxMeasurementCountPerType)
-                    _doubleMeasurements.Dequeue();
+                    _doubleMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
             _meterListener.SetMeasurementEventCallback<decimal>((instrument, measurement, tags, state) => {
                 _decimalMeasurements.Enqueue(new RecordedMeasurement<decimal>(instrument, measurement, ref tags, state));
                 if (_decimalMeasurements.Count > _maxMeasurementCountPerType)
-                    _decimalMeasurements.Dequeue();
+                    _decimalMeasurements.TryDequeue(out _);
                 _measurementEvent.Set();
             });
 
