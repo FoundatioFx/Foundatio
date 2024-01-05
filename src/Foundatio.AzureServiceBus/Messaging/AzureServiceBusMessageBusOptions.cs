@@ -2,8 +2,10 @@
 using Microsoft.Azure.ServiceBus;
 using Microsoft.Azure.ServiceBus.Management;
 
-namespace Foundatio.Messaging {
-    public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions {
+namespace Foundatio.Messaging
+{
+    public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
+    {
         public string ConnectionString { get; set; }
 
         /// <summary>
@@ -148,154 +150,185 @@ namespace Foundatio.Messaging {
     }
 
     public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<
-        AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder> {
+        AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder>
+    {
 
-        public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString) {
+        public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString)
+        {
             Target.ConnectionString = connectionString;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder PrefetchCount(int prefetchCount) {
+        public AzureServiceBusMessageBusOptionsBuilder PrefetchCount(int prefetchCount)
+        {
             Target.PrefetchCount = prefetchCount;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicAutoDeleteOnIdle(TimeSpan topicAutoDeleteOnIdle) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicAutoDeleteOnIdle(TimeSpan topicAutoDeleteOnIdle)
+        {
             Target.TopicAutoDeleteOnIdle = topicAutoDeleteOnIdle;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicDefaultMessageTimeToLive(TimeSpan topicDefaultMessageTimeToLive) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicDefaultMessageTimeToLive(TimeSpan topicDefaultMessageTimeToLive)
+        {
             Target.TopicDefaultMessageTimeToLive = topicDefaultMessageTimeToLive;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicMaxSizeInMegabytes(long topicMaxSizeInMegabytes) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicMaxSizeInMegabytes(long topicMaxSizeInMegabytes)
+        {
             Target.TopicMaxSizeInMegabytes = topicMaxSizeInMegabytes;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicRequiresDuplicateDetection(bool topicRequiresDuplicateDetection) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicRequiresDuplicateDetection(bool topicRequiresDuplicateDetection)
+        {
             Target.TopicRequiresDuplicateDetection = topicRequiresDuplicateDetection;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicDuplicateDetectionHistoryTimeWindow(TimeSpan topicDuplicateDetectionHistoryTimeWindow) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicDuplicateDetectionHistoryTimeWindow(TimeSpan topicDuplicateDetectionHistoryTimeWindow)
+        {
             Target.TopicDuplicateDetectionHistoryTimeWindow = topicDuplicateDetectionHistoryTimeWindow;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicEnableBatchedOperations(bool topicEnableBatchedOperations) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicEnableBatchedOperations(bool topicEnableBatchedOperations)
+        {
             Target.TopicEnableBatchedOperations = topicEnableBatchedOperations;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicEnableFilteringMessagesBeforePublishing(bool topicEnableFilteringMessagesBeforePublishing) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicEnableFilteringMessagesBeforePublishing(bool topicEnableFilteringMessagesBeforePublishing)
+        {
             Target.TopicEnableFilteringMessagesBeforePublishing = topicEnableFilteringMessagesBeforePublishing;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicIsAnonymousAccessible(bool topicIsAnonymousAccessible) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicIsAnonymousAccessible(bool topicIsAnonymousAccessible)
+        {
             Target.TopicIsAnonymousAccessible = topicIsAnonymousAccessible;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicStatus(EntityStatus topicStatus) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicStatus(EntityStatus topicStatus)
+        {
             Target.TopicStatus = topicStatus;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicSupportOrdering(bool topicSupportOrdering) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicSupportOrdering(bool topicSupportOrdering)
+        {
             Target.TopicSupportOrdering = topicSupportOrdering;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicEnablePartitioning(bool topicEnablePartitioning) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicEnablePartitioning(bool topicEnablePartitioning)
+        {
             Target.TopicEnablePartitioning = topicEnablePartitioning;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicEnableExpress(bool topicEnableExpress) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicEnableExpress(bool topicEnableExpress)
+        {
             Target.TopicEnableExpress = topicEnableExpress;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder TopicUserMetadata(string topicUserMetadata) {
+        public AzureServiceBusMessageBusOptionsBuilder TopicUserMetadata(string topicUserMetadata)
+        {
             Target.TopicUserMetadata = topicUserMetadata ?? throw new ArgumentNullException(nameof(topicUserMetadata));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionName(string subscriptionName) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionName(string subscriptionName)
+        {
             Target.SubscriptionName = subscriptionName ?? throw new ArgumentNullException(nameof(subscriptionName));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionAutoDeleteOnIdle(TimeSpan subscriptionAutoDeleteOnIdle) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionAutoDeleteOnIdle(TimeSpan subscriptionAutoDeleteOnIdle)
+        {
             Target.SubscriptionAutoDeleteOnIdle = subscriptionAutoDeleteOnIdle;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionDefaultMessageTimeToLive(TimeSpan subscriptionDefaultMessageTimeToLive) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionDefaultMessageTimeToLive(TimeSpan subscriptionDefaultMessageTimeToLive)
+        {
             Target.SubscriptionDefaultMessageTimeToLive = subscriptionDefaultMessageTimeToLive;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionWorkItemTimeout(TimeSpan subscriptionWorkItemTimeout) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionWorkItemTimeout(TimeSpan subscriptionWorkItemTimeout)
+        {
             Target.SubscriptionWorkItemTimeout = subscriptionWorkItemTimeout;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionRequiresSession(bool subscriptionRequiresSession) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionRequiresSession(bool subscriptionRequiresSession)
+        {
             Target.SubscriptionRequiresSession = subscriptionRequiresSession;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableDeadLetteringOnMessageExpiration(bool subscriptionEnableDeadLetteringOnMessageExpiration) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableDeadLetteringOnMessageExpiration(bool subscriptionEnableDeadLetteringOnMessageExpiration)
+        {
             Target.SubscriptionEnableDeadLetteringOnMessageExpiration = subscriptionEnableDeadLetteringOnMessageExpiration;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableDeadLetteringOnFilterEvaluationExceptions(bool subscriptionEnableDeadLetteringOnFilterEvaluationExceptions) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableDeadLetteringOnFilterEvaluationExceptions(bool subscriptionEnableDeadLetteringOnFilterEvaluationExceptions)
+        {
             Target.SubscriptionEnableDeadLetteringOnFilterEvaluationExceptions = subscriptionEnableDeadLetteringOnFilterEvaluationExceptions;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionMaxDeliveryCount(int subscriptionMaxDeliveryCount) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionMaxDeliveryCount(int subscriptionMaxDeliveryCount)
+        {
             Target.SubscriptionMaxDeliveryCount = subscriptionMaxDeliveryCount;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableBatchedOperations(bool subscriptionEnableBatchedOperations) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionEnableBatchedOperations(bool subscriptionEnableBatchedOperations)
+        {
             Target.SubscriptionEnableBatchedOperations = subscriptionEnableBatchedOperations;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionStatus(EntityStatus subscriptionStatus) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionStatus(EntityStatus subscriptionStatus)
+        {
             Target.SubscriptionStatus = subscriptionStatus;
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardTo(string subscriptionForwardTo) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardTo(string subscriptionForwardTo)
+        {
             Target.SubscriptionForwardTo = subscriptionForwardTo ?? throw new ArgumentNullException(nameof(subscriptionForwardTo));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardDeadLetteredMessagesTo(string subscriptionForwardDeadLetteredMessagesTo) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardDeadLetteredMessagesTo(string subscriptionForwardDeadLetteredMessagesTo)
+        {
             Target.SubscriptionForwardDeadLetteredMessagesTo = subscriptionForwardDeadLetteredMessagesTo ?? throw new ArgumentNullException(nameof(subscriptionForwardDeadLetteredMessagesTo));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionUserMetadata(string subscriptionUserMetadata) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionUserMetadata(string subscriptionUserMetadata)
+        {
             Target.SubscriptionUserMetadata = subscriptionUserMetadata ?? throw new ArgumentNullException(nameof(subscriptionUserMetadata));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionRetryPolicy(RetryPolicy subscriptionRetryPolicy) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionRetryPolicy(RetryPolicy subscriptionRetryPolicy)
+        {
             Target.SubscriptionRetryPolicy = subscriptionRetryPolicy ?? throw new ArgumentNullException(nameof(subscriptionRetryPolicy));
             return this;
         }
 
-        public AzureServiceBusMessageBusOptionsBuilder SubscriptionReceiveMode(ReceiveMode receiveMode) {
+        public AzureServiceBusMessageBusOptionsBuilder SubscriptionReceiveMode(ReceiveMode receiveMode)
+        {
             Target.SubscriptionReceiveMode = receiveMode;
             return this;
         }
