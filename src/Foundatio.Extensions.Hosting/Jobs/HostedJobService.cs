@@ -50,16 +50,16 @@ namespace Foundatio.Extensions.Hosting.Jobs
             var runner = new JobRunner(_jobOptions, _loggerFactory);
 
             try
-/* Unmerged change from project 'Foundatio.Extensions.Hosting(net8.0)'
-Before:
-                _stoppingCts.Cancel();
-After:
-                await _stoppingCts.CancelAsync();
-*/
+            /* Unmerged change from project 'Foundatio.Extensions.Hosting(net8.0)'
+            Before:
+                            _stoppingCts.Cancel();
+            After:
+                            await _stoppingCts.CancelAsync();
+            */
 
             {
                 await runner.RunAsync(stoppingToken).AnyContext();
-                _stoppingCts.Cancel();
+                await _stoppingCts.CancelAsync();
             }
             finally
             {
@@ -80,15 +80,15 @@ After:
                 return;
 
             try
-/* Unmerged change from project 'Foundatio.Extensions.Hosting(net8.0)'
-Before:
-                _stoppingCts.Cancel();
-After:
-                await _stoppingCts.CancelAsync();
-*/
+            /* Unmerged change from project 'Foundatio.Extensions.Hosting(net8.0)'
+            Before:
+                            _stoppingCts.Cancel();
+            After:
+                            await _stoppingCts.CancelAsync();
+            */
 
             {
-                _stoppingCts.Cancel();
+                await _stoppingCts.CancelAsync();
             }
             finally
             {
