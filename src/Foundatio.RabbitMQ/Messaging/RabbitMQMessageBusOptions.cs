@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Messaging {
-    public class RabbitMQMessageBusOptions : SharedMessageBusOptions {
+namespace Foundatio.Messaging
+{
+    public class RabbitMQMessageBusOptions : SharedMessageBusOptions
+    {
         /// <summary>
         /// The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.
         /// </summary>
@@ -43,44 +45,53 @@ namespace Foundatio.Messaging {
         /// </summary>
         public AcknowledgementStrategy AcknowledgementStrategy { get; set; } = AcknowledgementStrategy.FireAndForget;
     }
-    
-    public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder> {
-        public RabbitMQMessageBusOptionsBuilder ConnectionString(string connectionString) {
+
+    public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder>
+    {
+        public RabbitMQMessageBusOptionsBuilder ConnectionString(string connectionString)
+        {
             Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder DefaultMessageTimeToLive(TimeSpan defaultMessageTimeToLive) {
+        public RabbitMQMessageBusOptionsBuilder DefaultMessageTimeToLive(TimeSpan defaultMessageTimeToLive)
+        {
             Target.DefaultMessageTimeToLive = defaultMessageTimeToLive;
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder Arguments(IDictionary<string, object> arguments) {
+        public RabbitMQMessageBusOptionsBuilder Arguments(IDictionary<string, object> arguments)
+        {
             Target.Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments));
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder IsDurable(bool isDurable) {
+        public RabbitMQMessageBusOptionsBuilder IsDurable(bool isDurable)
+        {
             Target.IsDurable = isDurable;
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder IsSubscriptionQueueExclusive(bool isExclusive) {
+        public RabbitMQMessageBusOptionsBuilder IsSubscriptionQueueExclusive(bool isExclusive)
+        {
             Target.IsSubscriptionQueueExclusive = isExclusive;
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueAutoDelete(bool autoDelete) {
+        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueAutoDelete(bool autoDelete)
+        {
             Target.SubscriptionQueueAutoDelete = autoDelete;
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueName(string subscriptionQueueName) {
+        public RabbitMQMessageBusOptionsBuilder SubscriptionQueueName(string subscriptionQueueName)
+        {
             Target.SubscriptionQueueName = subscriptionQueueName;
             return this;
         }
 
-        public RabbitMQMessageBusOptionsBuilder AcknowledgementStrategy(AcknowledgementStrategy acknowledgementStrategy) {
+        public RabbitMQMessageBusOptionsBuilder AcknowledgementStrategy(AcknowledgementStrategy acknowledgementStrategy)
+        {
             Target.AcknowledgementStrategy = acknowledgementStrategy;
             return this;
         }

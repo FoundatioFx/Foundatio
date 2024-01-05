@@ -1,5 +1,7 @@
-namespace Foundatio.Messaging {
-    public enum AcknowledgementStrategy {
+namespace Foundatio.Messaging
+{
+    public enum AcknowledgementStrategy
+    {
         FireAndForget,
         Automatic
     }
