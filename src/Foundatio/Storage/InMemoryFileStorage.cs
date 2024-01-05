@@ -55,13 +55,40 @@ public class InMemoryFileStorage : IFileStorage
 
         using (await _lock.LockAsync().AnyContext())
         {
-            if (!_storage.ContainsKey(normalizedPath))
+            if (streamMode is StreamMode.Read)
             {
+                if (_storage.TryGetValue(normalizedPath, out var container))
+                    return new MemoryStream(container.Item2);
+
                 _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
                 return null;
             }
 
-            return new MemoryStream(_storage[normalizedPath].Item2);
+            var stream = new MemoryStream();
+            return new ActionableStream(stream, () =>
+            {
+                stream.Position = 0;
+
+                // Copied from SaveFileAsync
+                _logger.LogTrace("Saving {Path}", normalizedPath);
+                byte[] contents = ReadBytes(stream);
+                if (contents.Length > MaxFileSize)
+                    throw new ArgumentException($"File size {contents.Length.ToFileSizeDisplay()} exceeds the maximum size of {MaxFileSize.ToFileSizeDisplay()}.");
+
+                using (_lock.Lock())
+                {
+                    _storage[normalizedPath] = Tuple.Create(new FileSpec
+                    {
+                        Created = SystemClock.UtcNow,
+                        Modified = SystemClock.UtcNow,
+                        Path = normalizedPath,
+                        Size = contents.Length
+                    }, contents);
+
+                    if (_storage.Count > MaxFiles)
+                        _storage.Remove(_storage.OrderByDescending(kvp => kvp.Value.Item1.Created).First().Key);
+                }
+            });
         }
     }
 
