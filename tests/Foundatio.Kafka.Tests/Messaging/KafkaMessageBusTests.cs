@@ -11,91 +11,110 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Kafka.Tests.Messaging;
 
-public class KafkaMessageBusTests : KafkaMessageBusTestBase {
+public class KafkaMessageBusTests : KafkaMessageBusTestBase
+{
     public KafkaMessageBusTests(ITestOutputHelper output) : base(output) { }
 
     [Fact]
-    public override Task CanUseMessageOptionsAsync() {
+    public override Task CanUseMessageOptionsAsync()
+    {
         return base.CanUseMessageOptionsAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task CanSendMessageAsync() {
+    public override Task CanSendMessageAsync()
+    {
         return base.CanSendMessageAsync();
     }
 
     [Fact]
-    public override Task CanHandleNullMessageAsync() {
+    public override Task CanHandleNullMessageAsync()
+    {
         return base.CanHandleNullMessageAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task CanSendDerivedMessageAsync() {
+    public override Task CanSendDerivedMessageAsync()
+    {
         return base.CanSendDerivedMessageAsync();
     }
 
     [Fact]
-    public override Task CanSendDelayedMessageAsync() {
+    public override Task CanSendDelayedMessageAsync()
+    {
         return base.CanSendDelayedMessageAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task WillReceiveDerivedMessageTypesAsync() {
+    public override Task WillReceiveDerivedMessageTypesAsync()
+    {
         return base.WillReceiveDerivedMessageTypesAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task CanSubscribeToAllMessageTypesAsync() {
+    public override Task CanSubscribeToAllMessageTypesAsync()
+    {
         return base.CanSubscribeToAllMessageTypesAsync();
     }
 
     [Fact]
-    public override Task CanSubscribeToRawMessagesAsync() {
+    public override Task CanSubscribeToRawMessagesAsync()
+    {
         return base.CanSubscribeToRawMessagesAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task CanTolerateSubscriberFailureAsync() {
+    public override Task CanTolerateSubscriberFailureAsync()
+    {
         return base.CanTolerateSubscriberFailureAsync();
     }
 
     [Fact]
-    public override Task CanSendMessageToMultipleSubscribersAsync() {
+    public override Task CanSendMessageToMultipleSubscribersAsync()
+    {
         return base.CanSendMessageToMultipleSubscribersAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task CanSubscribeConcurrentlyAsync() {
+    public override Task CanSubscribeConcurrentlyAsync()
+    {
         return base.CanSubscribeConcurrentlyAsync();
     }
 
     [Fact(Skip = "https://github.com/confluentinc/confluent-kafka-dotnet/issues/1832")]
-    public override Task WillOnlyReceiveSubscribedMessageTypeAsync() {
+    public override Task WillOnlyReceiveSubscribedMessageTypeAsync()
+    {
         return base.WillOnlyReceiveSubscribedMessageTypeAsync();
     }
 
     [Fact]
-    public override Task CanCancelSubscriptionAsync() {
+    public override Task CanCancelSubscriptionAsync()
+    {
         return base.CanCancelSubscriptionAsync();
     }
 
     [Fact]
-    public override Task WontKeepMessagesWithNoSubscribersAsync() {
+    public override Task WontKeepMessagesWithNoSubscribersAsync()
+    {
         return base.WontKeepMessagesWithNoSubscribersAsync();
     }
 
     [Fact]
-    public override void CanDisposeWithNoSubscribersOrPublishers() {
+    public override void CanDisposeWithNoSubscribersOrPublishers()
+    {
         base.CanDisposeWithNoSubscribersOrPublishers();
     }
 
     [Fact]
-    public async Task CanPersistAndNotLoseMessages() {
+    public async Task CanPersistAndNotLoseMessages()
+    {
         var messageBus1 = GetMessageBus();
-        try {
+        try
+        {
             var countdownEvent = new AsyncCountdownEvent(1);
             var cts = new CancellationTokenSource();
-            await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+            await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+            {
                 _logger.LogInformation("[Subscriber1] Got message: {Message}", msg.Data);
                 countdownEvent.Signal();
             }, cts.Token);
@@ -103,19 +122,20 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
             await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
             await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(0, countdownEvent.CurrentCount);
-            cts.Cancel();
+            await cts.CancelAsync();
 
             await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
 
             cts = new CancellationTokenSource();
             countdownEvent.AddCount(1);
-            await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+            await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+            {
                 _logger.LogInformation("[Subscriber2] Got message: {Message}", msg.Data);
                 countdownEvent.Signal();
             }, cts.Token);
             await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(0, countdownEvent.CurrentCount);
-            cts.Cancel();
+            await cts.CancelAsync();
 
             await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
             await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
@@ -127,14 +147,17 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase {
 
             cts = new CancellationTokenSource();
             countdownEvent.AddCount(4);
-            await messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
+            await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+            {
                 _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
                 countdownEvent.Signal();
             }, cts.Token);
             await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
             await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(0, countdownEvent.CurrentCount);
-        } finally {
+        }
+        finally
+        {
             await CleanupMessageBusAsync(messageBus1);
         }
     }

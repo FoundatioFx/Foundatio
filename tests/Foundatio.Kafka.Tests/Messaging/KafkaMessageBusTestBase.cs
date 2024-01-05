@@ -7,16 +7,19 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Kafka.Tests.Messaging;
 
-public class KafkaMessageBusTestBase : MessageBusTestBase {
+public class KafkaMessageBusTestBase : MessageBusTestBase
+{
     protected readonly string Topic = $"test_{Guid.NewGuid():N}";
     protected readonly string GroupId = $"group_{Guid.NewGuid():N}";
 
-    public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output) {
+    public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output)
+    {
         //Log.MinimumLevel = LogLevel.Trace;
         EnableTopicDeletion = true;
     }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
+    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    {
         return new KafkaMessageBus(o => o
             .BootstrapServers("127.0.0.1:9092")
             .Topic(Topic)
@@ -31,7 +34,8 @@ public class KafkaMessageBusTestBase : MessageBusTestBase {
         );
     }
 
-    protected override async Task CleanupMessageBusAsync(IMessageBus messageBus) {
+    protected override async Task CleanupMessageBusAsync(IMessageBus messageBus)
+    {
         await base.CleanupMessageBusAsync(messageBus);
 
         if (EnableTopicDeletion && messageBus is IKafkaMessageBus kafkaMessageBus)
