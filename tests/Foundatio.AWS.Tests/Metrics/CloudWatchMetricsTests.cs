@@ -6,18 +6,22 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.AWS.Tests.Metrics {
-    public class CloudWatchMetricsTests : MetricsClientTestBase {
-        public CloudWatchMetricsTests(ITestOutputHelper output) : base(output) {
+namespace Foundatio.AWS.Tests.Metrics
+{
+    public class CloudWatchMetricsTests : MetricsClientTestBase
+    {
+        public CloudWatchMetricsTests(ITestOutputHelper output) : base(output)
+        {
             Log.MinimumLevel = LogLevel.Trace;
         }
 
 #pragma warning disable CS0618 // Type or member is obsolete
-        public override IMetricsClient GetMetricsClient(bool buffered = false) {
+        public override IMetricsClient GetMetricsClient(bool buffered = false)
+        {
             // Don't run this as part of the tests because it doesn't work reliably since CloudWatch can take a long time for the stats to show up.	
             // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.	
             return null;
-            
+
 #pragma warning disable CS0162 // Unreachable code detected
             string id = Guid.NewGuid().ToString("N").Substring(0, 10);
             return new CloudWatchMetricsClient(
@@ -30,32 +34,38 @@ namespace Foundatio.AWS.Tests.Metrics {
 #pragma warning restore CS0618 // Type or member is obsolete
 
         [Fact]
-        public override Task CanSetGaugesAsync() {
+        public override Task CanSetGaugesAsync()
+        {
             return base.CanSetGaugesAsync();
         }
 
         [Fact]
-        public override Task CanIncrementCounterAsync() {
+        public override Task CanIncrementCounterAsync()
+        {
             return base.CanIncrementCounterAsync();
         }
 
         [Fact]
-        public override Task CanWaitForCounterAsync() {
+        public override Task CanWaitForCounterAsync()
+        {
             return base.CanWaitForCounterAsync();
         }
 
         [Fact]
-        public override Task CanGetBufferedQueueMetricsAsync() {
+        public override Task CanGetBufferedQueueMetricsAsync()
+        {
             return base.CanGetBufferedQueueMetricsAsync();
         }
 
         [Fact]
-        public override Task CanIncrementBufferedCounterAsync() {
+        public override Task CanIncrementBufferedCounterAsync()
+        {
             return base.CanIncrementBufferedCounterAsync();
         }
 
         [Fact]
-        public override Task CanSendBufferedMetricsAsync() {
+        public override Task CanSendBufferedMetricsAsync()
+        {
             return base.CanSendBufferedMetricsAsync();
         }
     }

@@ -7,15 +7,17 @@ using Amazon;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Foundatio.Extensions;
-using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
-using ThirdParty.Json.LitJson;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using ThirdParty.Json.LitJson;
 
-namespace Foundatio.Queues {
-    public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class {
+namespace Foundatio.Queues
+{
+    public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
+    {
         private readonly AsyncLock _lock = new();
         private readonly Lazy<AmazonSQSClient> _client;
         private string _queueUrl;
@@ -27,19 +29,23 @@ namespace Foundatio.Queues {
         private long _abandonedCount;
         private long _workerErrorCount;
 
-        public SQSQueue(SQSQueueOptions<T> options) : base(options) {
+        public SQSQueue(SQSQueueOptions<T> options) : base(options)
+        {
             // TODO: Flow through the options like retries and the like.
-            _client = new Lazy<AmazonSQSClient>(() => {
+            _client = new Lazy<AmazonSQSClient>(() =>
+            {
                 var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
-                if (String.IsNullOrEmpty(options.ServiceUrl)) {
+                if (String.IsNullOrEmpty(options.ServiceUrl))
+                {
                     var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
                     return new AmazonSQSClient(credentials, region);
                 }
 
                 return new AmazonSQSClient(
                     credentials,
-                    new AmazonSQSConfig {
+                    new AmazonSQSConfig
+                    {
                         RegionEndpoint = RegionEndpoint.USEast1,
                         ServiceURL = options.ServiceUrl
                     });
@@ -51,18 +57,23 @@ namespace Foundatio.Queues {
 
         public AmazonSQSClient Client => _client.Value;
 
-        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken()) {
+        protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken())
+        {
             if (!String.IsNullOrEmpty(_queueUrl))
                 return;
 
-            using (await _lock.LockAsync(cancellationToken).AnyContext()) {
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
+            {
                 if (!String.IsNullOrEmpty(_queueUrl))
                     return;
 
-                try {
+                try
+                {
                     var urlResponse = await _client.Value.GetQueueUrlAsync(_options.Name, cancellationToken).AnyContext();
                     _queueUrl = urlResponse.QueueUrl;
-                } catch (QueueDoesNotExistException) {
+                }
+                catch (QueueDoesNotExistException)
+                {
                     if (!_options.CanCreateQueue)
                         throw;
                 }
@@ -74,7 +85,8 @@ namespace Foundatio.Queues {
             }
         }
 
-        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options) {
+        protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options)
+        {
             if (!await OnEnqueuingAsync(data, options).AnyContext())
                 return null;
 
@@ -82,7 +94,8 @@ namespace Foundatio.Queues {
             if (delaySeconds < 0)
                 delaySeconds = 0;
 
-            var message = new SendMessageRequest {
+            var message = new SendMessageRequest
+            {
                 QueueUrl = _queueUrl,
                 DelaySeconds = delaySeconds,
                 MessageBody = _serializer.SerializeToString(data)
@@ -92,14 +105,17 @@ namespace Foundatio.Queues {
                 message.MessageDeduplicationId = options.UniqueId;
 
             if (!String.IsNullOrEmpty(options?.CorrelationId))
-                message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue {
+                message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue
+                {
                     DataType = "String",
                     StringValue = options.CorrelationId
                 });
 
-            if (options?.Properties != null) {
+            if (options?.Properties != null)
+            {
                 foreach (var property in options.Properties)
-                    message.MessageAttributes.Add(property.Key, new MessageAttributeValue {
+                    message.MessageAttributes.Add(property.Key, new MessageAttributeValue
+                    {
                         DataType = "String",
                         StringValue = property.Value.ToString() // TODO: Support more than string data types
                     });
@@ -118,11 +134,13 @@ namespace Foundatio.Queues {
             return response.MessageId;
         }
 
-        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken) {
+        protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
+        {
             // sqs doesn't support already canceled token, change timeout and token for sqs pattern
             int waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : (int)_options.ReadQueueTimeout.TotalSeconds;
 
-            var request = new ReceiveMessageRequest {
+            var request = new ReceiveMessageRequest
+            {
                 QueueUrl = _queueUrl,
                 MaxNumberOfMessages = 1,
                 VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
@@ -132,7 +150,8 @@ namespace Foundatio.Queues {
             };
 
             // receive message local function
-            Task<ReceiveMessageResponse> ReceiveMessageAsync() {
+            Task<ReceiveMessageResponse> ReceiveMessageAsync()
+            {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("Checking for SQS message... Cancel Requested: {IsCancellationRequested}", linkedCancellationToken.IsCancellationRequested);
 
@@ -143,13 +162,18 @@ namespace Foundatio.Queues {
             }
 
             var response = await ReceiveMessageAsync().AnyContext();
-            
+
             // retry loop
-            while ((response == null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested) {
-                if (_options.DequeueInterval > TimeSpan.Zero) {
-                    try {
+            while ((response == null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested)
+            {
+                if (_options.DequeueInterval > TimeSpan.Zero)
+                {
+                    try
+                    {
                         await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
-                    } catch (OperationCanceledException) {
+                    }
+                    catch (OperationCanceledException)
+                    {
                         _logger.LogTrace("Operation cancelled while waiting to retry dequeue");
                     }
                 }
@@ -157,7 +181,8 @@ namespace Foundatio.Queues {
                 response = await ReceiveMessageAsync().AnyContext();
             }
 
-            if (response == null || response.Messages.Count == 0) {
+            if (response == null || response.Messages.Count == 0)
+            {
                 _logger.LogTrace("Response null or 0 message count");
                 return null;
             }
@@ -166,7 +191,7 @@ namespace Foundatio.Queues {
 
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Received message {MessageId} Cancel Requested: {IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
-            
+
             var message = response.Messages.First();
             string body = message.Body;
             var data = _serializer.Deserialize<T>(body);
@@ -177,11 +202,13 @@ namespace Foundatio.Queues {
             return entry;
         }
 
-        public override async Task RenewLockAsync(IQueueEntry<T> queueEntry) {
+        public override async Task RenewLockAsync(IQueueEntry<T> queueEntry)
+        {
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, queueEntry.Id);
 
             var entry = ToQueueEntry(queueEntry);
-            var request = new ChangeMessageVisibilityRequest {
+            var request = new ChangeMessageVisibilityRequest
+            {
                 QueueUrl = _queueUrl,
                 VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle
@@ -191,13 +218,15 @@ namespace Foundatio.Queues {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", queueEntry.Id);
         }
 
-        public override async Task CompleteAsync(IQueueEntry<T> queueEntry) {
+        public override async Task CompleteAsync(IQueueEntry<T> queueEntry)
+        {
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} complete item: {EntryId}", _options.Name, queueEntry.Id);
             if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             var entry = ToQueueEntry(queueEntry);
-            var request = new DeleteMessageRequest {
+            var request = new DeleteMessageRequest
+            {
                 QueueUrl = _queueUrl,
                 ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle,
             };
@@ -210,14 +239,16 @@ namespace Foundatio.Queues {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {EntryId}", queueEntry.Id);
         }
 
-        public override async Task AbandonAsync(IQueueEntry<T> entry) {
+        public override async Task AbandonAsync(IQueueEntry<T> entry)
+        {
             if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
             if (entry.IsAbandoned || entry.IsCompleted)
                 throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
             var sqsQueueEntry = ToQueueEntry(entry);
             // re-queue and wait for processing
-            var request = new ChangeMessageVisibilityRequest {
+            var request = new ChangeMessageVisibilityRequest
+            {
                 QueueUrl = _queueUrl,
                 VisibilityTimeout = (int)_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds,
                 ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
@@ -232,13 +263,16 @@ namespace Foundatio.Queues {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
         }
 
-        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken) {
+        protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken)
+        {
             throw new NotImplementedException();
         }
 
-        protected override async Task<QueueStats> GetQueueStatsImplAsync() {
+        protected override async Task<QueueStats> GetQueueStatsImplAsync()
+        {
             if (String.IsNullOrEmpty(_queueUrl))
-                return new QueueStats {
+                return new QueueStats
+                {
                     Queued = 0,
                     Working = 0,
                     Deadletter = 0,
@@ -259,8 +293,10 @@ namespace Foundatio.Queues {
             int deadCount = 0;
 
             // dead letter supported
-            if (!_options.SupportDeadLetter) {
-                return new QueueStats {
+            if (!_options.SupportDeadLetter)
+            {
+                return new QueueStats
+                {
                     Queued = queueCount,
                     Working = workingCount,
                     Deadletter = deadCount,
@@ -274,22 +310,26 @@ namespace Foundatio.Queues {
             }
 
             // lookup dead letter url
-            if (String.IsNullOrEmpty(_deadUrl)) {
+            if (String.IsNullOrEmpty(_deadUrl))
+            {
                 string deadLetterName = queueAttributes.Attributes.DeadLetterQueue();
-                if (!String.IsNullOrEmpty(deadLetterName)) {
+                if (!String.IsNullOrEmpty(deadLetterName))
+                {
                     var deadResponse = await _client.Value.GetQueueUrlAsync(deadLetterName).AnyContext();
                     _deadUrl = deadResponse.QueueUrl;
                 }
             }
 
             // get attributes from dead letter
-            if (!String.IsNullOrEmpty(_deadUrl)) {
+            if (!String.IsNullOrEmpty(_deadUrl))
+            {
                 var deadRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
                 var deadAttributes = await _client.Value.GetQueueAttributesAsync(deadRequest).AnyContext();
                 deadCount = deadAttributes.ApproximateNumberOfMessages;
             }
 
-            return new QueueStats {
+            return new QueueStats
+            {
                 Queued = queueCount,
                 Working = workingCount,
                 Deadletter = deadCount,
@@ -302,11 +342,14 @@ namespace Foundatio.Queues {
             };
         }
 
-        public override async Task DeleteQueueAsync() {
-            if (!String.IsNullOrEmpty(_queueUrl)) {
+        public override async Task DeleteQueueAsync()
+        {
+            if (!String.IsNullOrEmpty(_queueUrl))
+            {
                 var response = await _client.Value.DeleteQueueAsync(_queueUrl).AnyContext();
             }
-            if (!String.IsNullOrEmpty(_deadUrl)) {
+            if (!String.IsNullOrEmpty(_deadUrl))
+            {
                 var response = await _client.Value.DeleteQueueAsync(_deadUrl).AnyContext();
             }
 
@@ -317,32 +360,40 @@ namespace Foundatio.Queues {
             _workerErrorCount = 0;
         }
 
-        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken) {
+        protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
+        {
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
             var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 bool isTraceLevelLogging = _logger.IsEnabled(LogLevel.Trace);
                 if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
 
-                while (!linkedCancellationToken.IsCancellationRequested) {
+                while (!linkedCancellationToken.IsCancellationRequested)
+                {
                     if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
 
                     IQueueEntry<T> entry = null;
-                    try {
+                    try
+                    {
                         entry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
-                    } catch (OperationCanceledException) { }
+                    }
+                    catch (OperationCanceledException) { }
 
                     if (linkedCancellationToken.IsCancellationRequested || entry == null)
                         continue;
 
-                    try {
+                    try
+                    {
                         await handler(entry, linkedCancellationToken.Token).AnyContext();
                         if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
                             await entry.CompleteAsync().AnyContext();
-                    } catch (Exception ex) {
+                    }
+                    catch (Exception ex)
+                    {
                         Interlocked.Increment(ref _workerErrorCount);
                         if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
@@ -355,23 +406,29 @@ namespace Foundatio.Queues {
             }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
         }
 
-        public override void Dispose() {
+        public override void Dispose()
+        {
             base.Dispose();
 
             if (_client.IsValueCreated)
                 _client.Value.Dispose();
         }
 
-        protected virtual async Task CreateQueueAsync() {
+        protected virtual async Task CreateQueueAsync()
+        {
             // step 1, create queue
-            var createQueueRequest = new CreateQueueRequest {
+            var createQueueRequest = new CreateQueueRequest
+            {
                 QueueName = _options.Name,
                 Attributes = new Dictionary<string, string>()
             };
 
-            if (_options.SqsManagedSseEnabled) {
+            if (_options.SqsManagedSseEnabled)
+            {
                 createQueueRequest.Attributes[QueueAttributeName.SqsManagedSseEnabled] = "true";
-            } else if (!String.IsNullOrEmpty(_options.KmsMasterKeyId)) {
+            }
+            else if (!String.IsNullOrEmpty(_options.KmsMasterKeyId))
+            {
                 createQueueRequest.Attributes[QueueAttributeName.KmsMasterKeyId] = _options.KmsMasterKeyId;
                 createQueueRequest.Attributes[QueueAttributeName.KmsDataKeyReusePeriodSeconds] = _options.KmsDataKeyReusePeriodSeconds.ToString();
             }
@@ -395,12 +452,14 @@ namespace Foundatio.Queues {
 
             var maxReceiveCount = Math.Max(_options.Retries + 1, 1);
             // step 4, set retry policy
-            var redrivePolicy = new JsonData {
+            var redrivePolicy = new JsonData
+            {
                 ["maxReceiveCount"] = maxReceiveCount.ToString(),
                 ["deadLetterTargetArn"] = deadAttributeResponse.QueueARN
             };
 
-            var attributes = new Dictionary<string, string> {
+            var attributes = new Dictionary<string, string>
+            {
                 [QueueAttributeName.RedrivePolicy] = JsonMapper.ToJson(redrivePolicy)
             };
 
@@ -408,7 +467,8 @@ namespace Foundatio.Queues {
             var setAttributeResponse = await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();
         }
 
-        private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry) {
+        private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry)
+        {
             var result = entry as SQSQueueEntry<T>;
             if (result == null)
                 throw new ArgumentException($"Expected {nameof(SQSQueueEntry<T>)} but received unknown queue entry type {entry.GetType()}");

@@ -1,44 +1,55 @@
 ﻿using Foundatio.Storage;
 using Xunit;
 
-namespace Foundatio.AWS.Tests.Storage {
-    public class S3FileStorageConnectionStringBuilderTests : ConnectionStringBuilderTests {
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString) {
+namespace Foundatio.AWS.Tests.Storage
+{
+    public class S3FileStorageConnectionStringBuilderTests : ConnectionStringBuilderTests
+    {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString)
+        {
             return new S3FileStorageConnectionStringBuilder(connectionString);
         }
 
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder() {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder()
+        {
             return new S3FileStorageConnectionStringBuilder();
         }
 
         [Fact]
-        public override void InvalidKeyShouldThrow() {
+        public override void InvalidKeyShouldThrow()
+        {
             base.InvalidKeyShouldThrow();
         }
 
         [Fact]
-        public override void CanParseAccessKey() {
+        public override void CanParseAccessKey()
+        {
             base.CanParseAccessKey();
         }
 
         [Fact]
-        public override void CanParseSecretKey() {
+        public override void CanParseSecretKey()
+        {
             base.CanParseSecretKey();
         }
 
         [Fact]
-        public override void CanParseRegion() {
+        public override void CanParseRegion()
+        {
             base.CanParseRegion();
         }
 
         [Fact]
-        public override void CanGenerateConnectionString() {
+        public override void CanGenerateConnectionString()
+        {
             base.CanGenerateConnectionString();
         }
 
         [Fact]
-        public void CanParseBucket() {
-            foreach (var key in new[] { "Bucket", "bucket" }) {
+        public void CanParseBucket()
+        {
+            foreach (var key in new[] { "Bucket", "bucket" })
+            {
                 var connectionStringBuilder = CreateConnectionStringBuilder($"AccessKey=TestAccessKey;SecretKey=TestSecretKey;{key}=TestBucket");
                 Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
                 Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
@@ -48,7 +59,8 @@ namespace Foundatio.AWS.Tests.Storage {
         }
 
         [Fact]
-        public void CanGenerateConnectionStringWithBucket() {
+        public void CanGenerateConnectionStringWithBucket()
+        {
             var connectionStringBuilder = (S3FileStorageConnectionStringBuilder)CreateConnectionStringBuilder();
             connectionStringBuilder.AccessKey = "TestAccessKey";
             connectionStringBuilder.SecretKey = "TestSecretKey";

@@ -1,38 +1,47 @@
 ﻿using Foundatio.Queues;
 using Xunit;
 
-namespace Foundatio.AWS.Tests.Queues {
-    public class SQSQueueConnectionStringBuilderTests: ConnectionStringBuilderTests {
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString) {
+namespace Foundatio.AWS.Tests.Queues
+{
+    public class SQSQueueConnectionStringBuilderTests : ConnectionStringBuilderTests
+    {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString)
+        {
             return new SQSQueueConnectionStringBuilder(connectionString);
         }
 
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder() {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder()
+        {
             return new SQSQueueConnectionStringBuilder();
         }
 
         [Fact]
-        public override void InvalidKeyShouldThrow() {
+        public override void InvalidKeyShouldThrow()
+        {
             base.InvalidKeyShouldThrow();
         }
 
         [Fact]
-        public override void CanParseAccessKey() {
+        public override void CanParseAccessKey()
+        {
             base.CanParseAccessKey();
         }
 
         [Fact]
-        public override void CanParseSecretKey() {
+        public override void CanParseSecretKey()
+        {
             base.CanParseSecretKey();
         }
 
         [Fact]
-        public override void CanParseRegion() {
+        public override void CanParseRegion()
+        {
             base.CanParseRegion();
         }
 
         [Fact]
-        public override void CanGenerateConnectionString() {
+        public override void CanGenerateConnectionString()
+        {
             base.CanGenerateConnectionString();
         }
     }

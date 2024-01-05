@@ -17,8 +17,10 @@ using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Storage {
-    public class S3FileStorage : IFileStorage {
+namespace Foundatio.Storage
+{
+    public class S3FileStorage : IFileStorage
+    {
         private readonly string _bucket;
         private readonly ISerializer _serializer;
         private readonly AmazonS3Client _client;
@@ -26,7 +28,8 @@ namespace Foundatio.Storage {
         private readonly S3CannedACL _cannedAcl;
         private readonly ILogger _logger;
 
-        public S3FileStorage(S3FileStorageOptions options) {
+        public S3FileStorage(S3FileStorageOptions options)
+        {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
@@ -39,11 +42,15 @@ namespace Foundatio.Storage {
 
             var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
-            if (String.IsNullOrEmpty(options.ServiceUrl)) {
+            if (String.IsNullOrEmpty(options.ServiceUrl))
+            {
                 var region = options.Region ?? FallbackRegionFactory.GetRegionEndpoint();
                 _client = new AmazonS3Client(credentials, region);
-            } else {
-                _client = new AmazonS3Client(credentials, new AmazonS3Config {
+            }
+            else
+            {
+                _client = new AmazonS3Client(credentials, new AmazonS3Config
+                {
                     RegionEndpoint = RegionEndpoint.USEast1,
                     ServiceURL = options.ServiceUrl,
                     ForcePathStyle = true,
@@ -73,7 +80,8 @@ namespace Foundatio.Storage {
             if (streamMode is StreamMode.Write)
                 throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
 
-            var req = new GetObjectRequest {
+            var req = new GetObjectRequest
+            {
                 BucketName = _bucket,
                 Key = NormalizePath(path)
             };
@@ -81,86 +89,105 @@ namespace Foundatio.Storage {
             _logger.LogTrace("Getting file stream for {Path}", req.Key);
 
             var response = await _client.GetObjectAsync(req, cancellationToken).AnyContext();
-            if (!response.HttpStatusCode.IsSuccessful()) {
+            if (!response.HttpStatusCode.IsSuccessful())
+            {
                 _logger.LogError("[{HttpStatusCode}] Unable to get file stream for {Path}", response.HttpStatusCode, req.Key);
                 return null;
             }
 
-            return new ActionableStream(response.ResponseStream, () => {
+            return new ActionableStream(response.ResponseStream, () =>
+            {
                 _logger.LogTrace("Disposing file stream for {Path}", req.Key);
                 response.Dispose();
             });
         }
 
-        public async Task<FileSpec> GetFileInfoAsync(string path) {
+        public async Task<FileSpec> GetFileInfoAsync(string path)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            var req = new GetObjectMetadataRequest {
+            var req = new GetObjectMetadataRequest
+            {
                 BucketName = _bucket,
                 Key = NormalizePath(path)
             };
 
             _logger.LogTrace("Getting file info for {Path}", req.Key);
-            
-            try {
+
+            try
+            {
                 var response = await _client.GetObjectMetadataAsync(req).AnyContext();
-                if (!response.HttpStatusCode.IsSuccessful()) {
+                if (!response.HttpStatusCode.IsSuccessful())
+                {
                     _logger.LogDebug("[{HttpStatusCode}] Unable to get file info for {Path}", response.HttpStatusCode, req.Key);
                     return null;
                 }
 
-                return new FileSpec {
+                return new FileSpec
+                {
                     Path = req.Key,
                     Size = response.ContentLength,
                     Created = response.LastModified.ToUniversalTime(),  // TODO: Need to fix this
                     Modified = response.LastModified.ToUniversalTime()
                 };
-            } catch (AmazonS3Exception ex) {
+            }
+            catch (AmazonS3Exception ex)
+            {
                 _logger.LogError(ex, "Unable to get file info for {Path}: {Message}", req.Key, ex.Message);
                 return null;
             }
         }
 
-        public async Task<bool> ExistsAsync(string path) {
+        public async Task<bool> ExistsAsync(string path)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            var req = new GetObjectMetadataRequest {
+            var req = new GetObjectMetadataRequest
+            {
                 BucketName = _bucket,
                 Key = NormalizePath(path)
             };
 
             _logger.LogTrace("Getting file info for {Path}", req.Key);
-            
-            try {
+
+            try
+            {
                 var response = await _client.GetObjectMetadataAsync(req).AnyContext();
                 if (response.HttpStatusCode.IsSuccessful())
                     return true;
 
                 if (response.HttpStatusCode == HttpStatusCode.NotFound)
                     return false;
-                
-                if (!response.HttpStatusCode.IsSuccessful()) {
+
+                if (!response.HttpStatusCode.IsSuccessful())
+                {
                     _logger.LogDebug("[{HttpStatusCode}] Unable to get file info for {Path}", response.HttpStatusCode, req.Key);
                     return false;
                 }
-            } catch (AmazonS3Exception ex) when (ex.StatusCode is HttpStatusCode.NotFound) {
+            }
+            catch (AmazonS3Exception ex) when (ex.StatusCode is HttpStatusCode.NotFound)
+            {
                 return false;
-            } catch (AmazonS3Exception ex) {
+            }
+            catch (AmazonS3Exception ex)
+            {
                 _logger.LogError(ex, "Unable to get file info for {Path}: {Message}", req.Key, ex.Message);
             }
 
             return false;
         }
 
-        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            var req = new PutObjectRequest {
+            var req = new PutObjectRequest
+            {
                 CannedACL = _cannedAcl,
                 BucketName = _bucket,
                 Key = NormalizePath(path),
@@ -175,13 +202,15 @@ namespace Foundatio.Storage {
             return response.HttpStatusCode.IsSuccessful();
         }
 
-        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(newPath))
                 throw new ArgumentNullException(nameof(newPath));
 
-            var request = new CopyObjectRequest {
+            var request = new CopyObjectRequest
+            {
                 CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = NormalizePath(path),
@@ -191,19 +220,22 @@ namespace Foundatio.Storage {
 
             _logger.LogInformation("Renaming {Path} to {NewPath}", request.SourceKey, request.DestinationKey);
             var response = await _client.CopyObjectAsync(request, cancellationToken).AnyContext();
-            if (!response.HttpStatusCode.IsSuccessful()) {
+            if (!response.HttpStatusCode.IsSuccessful())
+            {
                 _logger.LogError("[{HttpStatusCode}] Unable to rename {Path} to {NewPath}", response.HttpStatusCode, request.SourceKey, request.DestinationKey);
                 return false;
             }
 
-            var deleteRequest = new DeleteObjectRequest {
+            var deleteRequest = new DeleteObjectRequest
+            {
                 BucketName = _bucket,
                 Key = NormalizePath(path)
             };
 
             _logger.LogDebug("Deleting renamed {Path}", deleteRequest.Key);
             var deleteResponse = await _client.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
-            if (!deleteResponse.HttpStatusCode.IsSuccessful()) {
+            if (!deleteResponse.HttpStatusCode.IsSuccessful())
+            {
                 _logger.LogError("[{HttpStatusCode}] Unable to delete renamed {Path}", deleteResponse.HttpStatusCode, deleteRequest.Key);
                 return false;
             }
@@ -211,13 +243,15 @@ namespace Foundatio.Storage {
             return true;
         }
 
-        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
             if (String.IsNullOrEmpty(targetPath))
                 throw new ArgumentNullException(nameof(targetPath));
 
-            var request = new CopyObjectRequest {
+            var request = new CopyObjectRequest
+            {
                 CannedACL = _cannedAcl,
                 SourceBucket = _bucket,
                 SourceKey = NormalizePath(path),
@@ -230,11 +264,13 @@ namespace Foundatio.Storage {
             return response.HttpStatusCode.IsSuccessful();
         }
 
-        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken)) {
+        public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
-            var request = new DeleteObjectRequest {
+            var request = new DeleteObjectRequest
+            {
                 BucketName = _bucket,
                 Key = NormalizePath(path)
             };
@@ -244,7 +280,8 @@ namespace Foundatio.Storage {
             return response.HttpStatusCode.IsSuccessful();
         }
 
-        public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken()) {
+        public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = new CancellationToken())
+        {
             var criteria = GetRequestCriteria(searchPattern);
             int count = 0;
             const int PAGE_SIZE = 100;
@@ -254,7 +291,8 @@ namespace Foundatio.Storage {
             var errors = new List<DeleteError>();
 
             ListObjectsV2Response listResponse;
-            do {
+            do
+            {
                 listResponse = await _client.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
                 listRequest.ContinuationToken = listResponse.NextContinuationToken;
 
@@ -266,7 +304,8 @@ namespace Foundatio.Storage {
 
                 _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", keys.Length, searchPattern);
                 var deleteResponse = await _client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
-                if (deleteResponse.DeleteErrors.Count > 0) {
+                if (deleteResponse.DeleteErrors.Count > 0)
+                {
                     // retry 1 time, continue on.
                     var deleteRetryRequest = new DeleteObjectsRequest { BucketName = _bucket };
                     deleteRetryRequest.Objects.AddRange(deleteResponse.DeleteErrors.Select(e => new KeyVersion { Key = e.Key }));
@@ -280,7 +319,8 @@ namespace Foundatio.Storage {
                 deleteRequest.Objects.Clear();
             } while (listResponse.IsTruncated && !cancellationToken.IsCancellationRequested);
 
-            if (errors.Count > 0) {
+            if (errors.Count > 0)
+            {
                 int more = errors.Count > 20 ? errors.Count - 20 : 0;
                 throw new Exception($"Unable to delete all S3 entries \"{String.Join(",", errors.Take(20).Select(e => e.Key))}\"{(more > 0 ? $" plus {more} more" : "")}.");
             }
@@ -289,7 +329,8 @@ namespace Foundatio.Storage {
             return count;
         }
 
-        public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default) {
+        public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+        {
             if (pageSize <= 0)
                 return PagedFileListResult.Empty;
 
@@ -300,8 +341,10 @@ namespace Foundatio.Storage {
             return result;
         }
 
-        private async Task<NextPageResult> GetFiles(SearchCriteria criteria, int pageSize, CancellationToken cancellationToken, string continuationToken = null) {
-            var req = new ListObjectsV2Request {
+        private async Task<NextPageResult> GetFiles(SearchCriteria criteria, int pageSize, CancellationToken cancellationToken, string continuationToken = null)
+        {
+            var req = new ListObjectsV2Request
+            {
                 BucketName = _bucket,
                 MaxKeys = pageSize,
                 Prefix = criteria.Prefix,
@@ -314,7 +357,8 @@ namespace Foundatio.Storage {
             );
 
             var response = await _client.ListObjectsV2Async(req, cancellationToken).AnyContext();
-            return new NextPageResult {
+            return new NextPageResult
+            {
                 Success = response.HttpStatusCode.IsSuccessful(),
                 HasMore = response.IsTruncated,
                 Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
@@ -322,16 +366,19 @@ namespace Foundatio.Storage {
             };
         }
 
-        private string NormalizePath(string path) {
+        private string NormalizePath(string path)
+        {
             return path?.Replace('\\', '/');
         }
 
-        private class SearchCriteria {
+        private class SearchCriteria
+        {
             public string Prefix { get; set; }
             public Regex Pattern { get; set; }
         }
 
-        private SearchCriteria GetRequestCriteria(string searchPattern) {
+        private SearchCriteria GetRequestCriteria(string searchPattern)
+        {
             if (String.IsNullOrEmpty(searchPattern))
                 return new SearchCriteria { Prefix = String.Empty };
 
@@ -342,19 +389,22 @@ namespace Foundatio.Storage {
             string prefix = normalizedSearchPattern;
             Regex patternRegex = null;
 
-            if (hasWildcard) {
+            if (hasWildcard)
+            {
                 patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
                 int slashPos = normalizedSearchPattern.LastIndexOf('/');
                 prefix = slashPos >= 0 ? normalizedSearchPattern.Substring(0, slashPos) : String.Empty;
             }
 
-            return new SearchCriteria {
+            return new SearchCriteria
+            {
                 Prefix = prefix,
                 Pattern = patternRegex
             };
         }
 
-        public void Dispose() {
+        public void Dispose()
+        {
             _client?.Dispose();
         }
     }

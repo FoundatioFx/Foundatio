@@ -4,9 +4,12 @@ using System.Linq;
 using Amazon.SQS.Model;
 using ThirdParty.Json.LitJson;
 
-namespace Foundatio.Queues {
-    public static class AttributeExtensions {
-        public static int ApproximateReceiveCount(this IDictionary<string, string> attributes) {
+namespace Foundatio.Queues
+{
+    public static class AttributeExtensions
+    {
+        public static int ApproximateReceiveCount(this IDictionary<string, string> attributes)
+        {
             if (attributes == null)
                 return 0;
 
@@ -17,7 +20,8 @@ namespace Foundatio.Queues {
             return value;
         }
 
-        public static DateTime SentTimestamp(this IDictionary<string, string> attributes) {
+        public static DateTime SentTimestamp(this IDictionary<string, string> attributes)
+        {
             // message was sent to the queue (epoch time in milliseconds)
             if (attributes == null)
                 return DateTime.MinValue;
@@ -31,7 +35,8 @@ namespace Foundatio.Queues {
             return DateTimeOffset.FromUnixTimeMilliseconds(value).DateTime;
         }
 
-        public static string CorrelationId(this IDictionary<string, MessageAttributeValue> attributes) {
+        public static string CorrelationId(this IDictionary<string, MessageAttributeValue> attributes)
+        {
             if (attributes == null)
                 return null;
 
@@ -41,7 +46,8 @@ namespace Foundatio.Queues {
             return v.StringValue;
         }
 
-        public static string RedrivePolicy(this IDictionary<string, string> attributes) {
+        public static string RedrivePolicy(this IDictionary<string, string> attributes)
+        {
             if (attributes == null)
                 return null;
 
@@ -51,7 +57,8 @@ namespace Foundatio.Queues {
             return v;
         }
 
-        public static string DeadLetterQueue(this IDictionary<string, string> attributes) {
+        public static string DeadLetterQueue(this IDictionary<string, string> attributes)
+        {
             if (attributes == null)
                 return null;
 
@@ -63,7 +70,7 @@ namespace Foundatio.Queues {
 
             var redrivePolicy = JsonMapper.ToObject(v);
 
-            string arn =  redrivePolicy["deadLetterTargetArn"]?.ToString();
+            string arn = redrivePolicy["deadLetterTargetArn"]?.ToString();
             if (string.IsNullOrEmpty(arn))
                 return null;
 

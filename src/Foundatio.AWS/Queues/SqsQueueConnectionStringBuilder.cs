@@ -1,9 +1,13 @@
-﻿namespace Foundatio.Queues {
-    public class SQSQueueConnectionStringBuilder : AmazonConnectionStringBuilder {
-        public SQSQueueConnectionStringBuilder() {
+﻿namespace Foundatio.Queues
+{
+    public class SQSQueueConnectionStringBuilder : AmazonConnectionStringBuilder
+    {
+        public SQSQueueConnectionStringBuilder()
+        {
         }
 
-        public SQSQueueConnectionStringBuilder(string connectionString) : base(connectionString) {
+        public SQSQueueConnectionStringBuilder(string connectionString) : base(connectionString)
+        {
         }
     }
 }

@@ -7,16 +7,20 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.AWS.Tests.Queues {
-    public class SQSQueueTests : QueueTestBase {
+namespace Foundatio.AWS.Tests.Queues
+{
+    public class SQSQueueTests : QueueTestBase
+    {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
-        public SQSQueueTests(ITestOutputHelper output) : base(output) {
+        public SQSQueueTests(ITestOutputHelper output) : base(output)
+        {
             // SQS queue stats are approximate and unreliable
             _assertStats = false;
         }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+        {
             var queue = new SQSQueue<SimpleWorkItem>(
                 o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                     .Name(_queueName)
@@ -30,8 +34,9 @@ namespace Foundatio.AWS.Tests.Queues {
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
         }
-        
-        protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null) {
+
+        protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null)
+        {
             var queue = new SQSQueue<SimpleWorkItem>(
                 o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                     .Name(_queueName)
@@ -47,7 +52,8 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public void RetryBackoff() {
+        public void RetryBackoff()
+        {
             var options = new SQSQueueOptions<SimpleWorkItem>();
             var backoff1 = options.RetryDelay(1);
             Assert.InRange(backoff1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
@@ -72,83 +78,99 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItemAsync() {
+        public override Task CanQueueAndDequeueWorkItemAsync()
+        {
             return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueOptionsAsync() {
+        public override Task CanUseQueueOptionsAsync()
+        {
             return base.CanUseQueueOptionsAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithCancelledTokenAsync() {
+        public override Task CanDequeueWithCancelledTokenAsync()
+        {
             return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync()
+        {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact(Skip = "Some issue where this test fails if it's run with others")]
-        public override async Task WillWaitForItemAsync() {
+        public override async Task WillWaitForItemAsync()
+        {
             await Task.Delay(5000);
             await base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override Task DequeueWaitWillGetSignaledAsync() {
+        public override Task DequeueWaitWillGetSignaledAsync()
+        {
             return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueWorkerAsync() {
+        public override Task CanUseQueueWorkerAsync()
+        {
             return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorkerAsync() {
+        public override Task CanHandleErrorInWorkerAsync()
+        {
             return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillTimeoutAsync() {
+        public override Task WorkItemsWillTimeoutAsync()
+        {
             return base.WorkItemsWillTimeoutAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+        public override Task WorkItemsWillGetMovedToDeadletterAsync()
+        {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override Task CanAutoCompleteWorkerAsync() {
+        public override Task CanAutoCompleteWorkerAsync()
+        {
             return base.CanAutoCompleteWorkerAsync();
         }
 
         [Fact(Skip = "Doesn't work well on SQS")]
-        public override Task CanHaveMultipleQueueInstancesAsync() {
+        public override Task CanHaveMultipleQueueInstancesAsync()
+        {
             return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override Task CanRunWorkItemWithMetricsAsync() {
+        public override Task CanRunWorkItemWithMetricsAsync()
+        {
             return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override Task CanRenewLockAsync() {
+        public override Task CanRenewLockAsync()
+        {
             return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override Task CanAbandonQueueEntryOnceAsync() {
+        public override Task CanAbandonQueueEntryOnceAsync()
+        {
             return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanCompleteQueueEntryOnceAsync() {
+        public override Task CanCompleteQueueEntryOnceAsync()
+        {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
@@ -165,12 +187,14 @@ namespace Foundatio.AWS.Tests.Queues {
         }
 
         [Fact]
-        public async Task CanGetQueueItemWithDeliveryDelayAndEnsureMessageNotMarkedWorkingWhileWaiting() {
+        public async Task CanGetQueueItemWithDeliveryDelayAndEnsureMessageNotMarkedWorkingWhileWaiting()
+        {
             var queue = GetQueue(dequeueInterval: TimeSpan.Zero, readQueueTimeout: TimeSpan.FromSeconds(2));
             if (queue == null)
                 return;
 
-            try {
+            try
+            {
                 await queue.DeleteQueueAsync();
                 // await AssertEmptyQueueAsync(queue); // TODO: Uncomment once foundatio is updated.
 
@@ -178,7 +202,8 @@ namespace Foundatio.AWS.Tests.Queues {
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
                 Assert.Null(workItem);
 
-                if (_assertStats) {
+                if (_assertStats)
+                {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(0, stats.Dequeued);
                     Assert.Equal(1, stats.Enqueued);
@@ -187,8 +212,9 @@ namespace Foundatio.AWS.Tests.Queues {
                 }
 
                 await SystemClock.SleepAsync(TimeSpan.FromSeconds(3));
-                
-                if (_assertStats) {
+
+                if (_assertStats)
+                {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(0, stats.Dequeued);
                     Assert.Equal(1, stats.Enqueued);
@@ -200,26 +226,31 @@ namespace Foundatio.AWS.Tests.Queues {
                 workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
-                
-                if (_assertStats) {
+
+                if (_assertStats)
+                {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(1, stats.Dequeued);
                     Assert.Equal(1, stats.Enqueued);
                     Assert.Equal(0, stats.Queued);
                     Assert.Equal(1, stats.Working);
                 }
-            } finally {
+            }
+            finally
+            {
                 await CleanupQueueAsync(queue);
             }
         }
 
         [Fact]
-        public async Task CanGetQueueItemWithTimeoutCancelledTokenWithDeliveryDelayMaxWaitOverlap() {
+        public async Task CanGetQueueItemWithTimeoutCancelledTokenWithDeliveryDelayMaxWaitOverlap()
+        {
             var queue = GetQueue(dequeueInterval: TimeSpan.Zero, readQueueTimeout: TimeSpan.FromSeconds(2));
             if (queue == null)
                 return;
 
-            try {
+            try
+            {
                 await queue.DeleteQueueAsync();
                 // await AssertEmptyQueueAsync(queue); // TODO: Uncomment once foundatio is updated.
 
@@ -228,19 +259,23 @@ namespace Foundatio.AWS.Tests.Queues {
                 Assert.NotNull(workItem);
                 Assert.Equal("Hello", workItem.Value.Data);
 
-                if (_assertStats) {
+                if (_assertStats)
+                {
                     var stats = await queue.GetQueueStatsAsync();
                     Assert.Equal(1, stats.Dequeued);
                     Assert.Equal(1, stats.Enqueued);
                     Assert.Equal(0, stats.Queued);
                     Assert.Equal(1, stats.Working);
                 }
-            } finally {
+            }
+            finally
+            {
                 await CleanupQueueAsync(queue);
             }
         }
-        
-        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+
+        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue)
+        {
             await base.CleanupQueueAsync(queue);
             await Task.Delay(TimeSpan.FromSeconds(2));
         }

@@ -2,39 +2,49 @@
 using Foundatio.Metrics;
 using Xunit;
 
-namespace Foundatio.AWS.Tests.Metrics {
-    public class CloudWatchMetricsConnectionStringBuilderTests : ConnectionStringBuilderTests {
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString) {
+namespace Foundatio.AWS.Tests.Metrics
+{
+    public class CloudWatchMetricsConnectionStringBuilderTests : ConnectionStringBuilderTests
+    {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder(string connectionString)
+        {
             return new CloudWatchMetricsConnectionStringBuilder(connectionString);
         }
 
-        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder() {
+        protected override AmazonConnectionStringBuilder CreateConnectionStringBuilder()
+        {
             return new CloudWatchMetricsConnectionStringBuilder();
         }
 
         [Fact]
-        public override void CanParseAccessKey() {
+        public override void CanParseAccessKey()
+        {
             base.CanParseAccessKey();
         }
 
         [Fact]
-        public override void CanParseSecretKey() {
+        public override void CanParseSecretKey()
+        {
             base.CanParseSecretKey();
         }
 
         [Fact]
-        public override void CanParseRegion() {
+        public override void CanParseRegion()
+        {
             base.CanParseRegion();
         }
 
         [Fact]
-        public override void CanGenerateConnectionString() {
+        public override void CanGenerateConnectionString()
+        {
             base.CanGenerateConnectionString();
         }
 
         [Fact]
-        public void CanParseNamespace() {
-            foreach (var key in new[] { "Namespace", "namespace" }) {
+        public void CanParseNamespace()
+        {
+            foreach (var key in new[] { "Namespace", "namespace" })
+            {
                 var connectionStringBuilder = CreateConnectionStringBuilder($"AccessKey=TestAccessKey;SecretKey=TestSecretKey;{key}=TestNamespace");
                 Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
                 Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
@@ -45,7 +55,8 @@ namespace Foundatio.AWS.Tests.Metrics {
         }
 
         [Fact]
-        public void UnknownKeyWillBeDimensions() {
+        public void UnknownKeyWillBeDimensions()
+        {
             var connectionStringBuilder = CreateConnectionStringBuilder("AccessKey=TestAccessKey;SecretKey=TestSecretKey;Namespace=TestNamespace;key1=value1;key2=value2");
             Assert.Equal("TestAccessKey", connectionStringBuilder.AccessKey);
             Assert.Equal("TestSecretKey", connectionStringBuilder.SecretKey);
@@ -59,7 +70,8 @@ namespace Foundatio.AWS.Tests.Metrics {
         }
 
         [Fact]
-        public void CanGenerateConnectionStringWithNamespace() {
+        public void CanGenerateConnectionStringWithNamespace()
+        {
             var connectionStringBuilder = (CloudWatchMetricsConnectionStringBuilder)CreateConnectionStringBuilder();
             connectionStringBuilder.AccessKey = "TestAccessKey";
             connectionStringBuilder.SecretKey = "TestSecretKey";
@@ -70,7 +82,8 @@ namespace Foundatio.AWS.Tests.Metrics {
         }
 
         [Fact]
-        public void CanGenerateConnectionStringWithDimensions() {
+        public void CanGenerateConnectionStringWithDimensions()
+        {
             var connectionStringBuilder = (CloudWatchMetricsConnectionStringBuilder)CreateConnectionStringBuilder();
             connectionStringBuilder.AccessKey = "TestAccessKey";
             connectionStringBuilder.SecretKey = "TestSecretKey";
@@ -82,7 +95,8 @@ namespace Foundatio.AWS.Tests.Metrics {
         }
 
         [Fact]
-        public void CanGenerateConnectionStringWithAll() {
+        public void CanGenerateConnectionStringWithAll()
+        {
             var connectionStringBuilder = (CloudWatchMetricsConnectionStringBuilder)CreateConnectionStringBuilder();
             connectionStringBuilder.AccessKey = "TestAccessKey";
             connectionStringBuilder.SecretKey = "TestSecretKey";
