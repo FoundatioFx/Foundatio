@@ -1,6 +1,5 @@
-﻿namespace Foundatio.Metrics
-{
-    public class InMemoryMetricsClientOptions : SharedMetricsClientOptions { }
+﻿namespace Foundatio.Metrics;
 
-    public class InMemoryMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<InMemoryMetricsClientOptions, InMemoryMetricsClientOptionsBuilder> { }
-}
+public class InMemoryMetricsClientOptions : SharedMetricsClientOptions { }
+
+public class InMemoryMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<InMemoryMetricsClientOptions, InMemoryMetricsClientOptionsBuilder> { }

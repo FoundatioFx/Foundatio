@@ -3,88 +3,87 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.Storage
+namespace Foundatio.Storage;
+
+public class ActionableStream : Stream
 {
-    public class ActionableStream : Stream
+    private readonly Action _disposeAction;
+    private readonly Stream _stream;
+
+    protected override void Dispose(bool disposing)
     {
-        private readonly Action _disposeAction;
-        private readonly Stream _stream;
-
-        protected override void Dispose(bool disposing)
+        try
         {
-            try
-            {
-                _disposeAction.Invoke();
-            }
-            catch { /* ignore if these are already disposed;  this is to make sure they are */ }
-
-            _stream.Dispose();
-            base.Dispose(disposing);
+            _disposeAction.Invoke();
         }
+        catch { /* ignore if these are already disposed;  this is to make sure they are */ }
 
-        public ActionableStream(Stream stream, Action disposeAction)
-        {
-            _stream = stream ?? throw new ArgumentNullException();
-            _disposeAction = disposeAction;
-        }
+        _stream.Dispose();
+        base.Dispose(disposing);
+    }
 
-        public override bool CanRead => _stream.CanRead;
+    public ActionableStream(Stream stream, Action disposeAction)
+    {
+        _stream = stream ?? throw new ArgumentNullException();
+        _disposeAction = disposeAction;
+    }
 
-        public override bool CanSeek => _stream.CanSeek;
+    public override bool CanRead => _stream.CanRead;
 
-        public override bool CanWrite => _stream.CanWrite;
+    public override bool CanSeek => _stream.CanSeek;
 
-        public override long Length => _stream.Length;
+    public override bool CanWrite => _stream.CanWrite;
 
-        public override long Position
-        {
-            get => _stream.Position;
-            set => _stream.Position = value;
-        }
+    public override long Length => _stream.Length;
 
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            return _stream.Seek(offset, origin);
-        }
+    public override long Position
+    {
+        get => _stream.Position;
+        set => _stream.Position = value;
+    }
 
-        public override void SetLength(long value)
-        {
-            _stream.SetLength(value);
-        }
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        return _stream.Seek(offset, origin);
+    }
 
-        public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
-        {
-            return _stream.CopyToAsync(destination, bufferSize, cancellationToken);
-        }
+    public override void SetLength(long value)
+    {
+        _stream.SetLength(value);
+    }
 
-        public override void Flush()
-        {
-            _stream.Flush();
-        }
+    public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+    {
+        return _stream.CopyToAsync(destination, bufferSize, cancellationToken);
+    }
 
-        public override Task FlushAsync(CancellationToken cancellationToken)
-        {
-            return _stream.FlushAsync(cancellationToken);
-        }
+    public override void Flush()
+    {
+        _stream.Flush();
+    }
 
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            return _stream.Read(buffer, offset, count);
-        }
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+        return _stream.FlushAsync(cancellationToken);
+    }
 
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return _stream.ReadAsync(buffer, offset, count, cancellationToken);
-        }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        return _stream.Read(buffer, offset, count);
+    }
 
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            _stream.Write(buffer, offset, count);
-        }
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return _stream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
 
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return _stream.WriteAsync(buffer, offset, count, cancellationToken);
-        }
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        _stream.Write(buffer, offset, count);
+    }
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return _stream.WriteAsync(buffer, offset, count, cancellationToken);
     }
 }

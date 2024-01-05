@@ -2,28 +2,27 @@ using System;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio
+namespace Foundatio;
+
+public class SharedOptions
 {
-    public class SharedOptions
+    public ISerializer Serializer { get; set; }
+    public ILoggerFactory LoggerFactory { get; set; }
+}
+
+public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
+    where TOption : SharedOptions, new()
+    where TBuilder : SharedOptionsBuilder<TOption, TBuilder>
+{
+    public TBuilder Serializer(ISerializer serializer)
     {
-        public ISerializer Serializer { get; set; }
-        public ILoggerFactory LoggerFactory { get; set; }
+        Target.Serializer = serializer;
+        return (TBuilder)this;
     }
 
-    public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
-        where TOption : SharedOptions, new()
-        where TBuilder : SharedOptionsBuilder<TOption, TBuilder>
+    public TBuilder LoggerFactory(ILoggerFactory loggerFactory)
     {
-        public TBuilder Serializer(ISerializer serializer)
-        {
-            Target.Serializer = serializer;
-            return (TBuilder)this;
-        }
-
-        public TBuilder LoggerFactory(ILoggerFactory loggerFactory)
-        {
-            Target.LoggerFactory = loggerFactory;
-            return (TBuilder)this;
-        }
+        Target.LoggerFactory = loggerFactory;
+        return (TBuilder)this;
     }
 }

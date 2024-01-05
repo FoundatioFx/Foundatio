@@ -20,4 +20,3 @@ namespace Foundatio.Messaging
 
         public void Dispose() { }
     }
-}

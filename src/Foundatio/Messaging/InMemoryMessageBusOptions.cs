@@ -1,6 +1,5 @@
-namespace Foundatio.Messaging
-{
-    public class InMemoryMessageBusOptions : SharedMessageBusOptions { }
+namespace Foundatio.Messaging;
 
-    public class InMemoryMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<InMemoryMessageBusOptions, InMemoryMessageBusOptionsBuilder> { }
-}
+public class InMemoryMessageBusOptions : SharedMessageBusOptions { }
+
+public class InMemoryMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<InMemoryMessageBusOptions, InMemoryMessageBusOptionsBuilder> { }

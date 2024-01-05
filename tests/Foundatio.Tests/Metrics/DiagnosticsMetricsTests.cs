@@ -8,107 +8,106 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Metrics
+namespace Foundatio.Tests.Metrics;
+
+public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
 {
-    public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
+    private readonly DiagnosticsMetricsClient _client;
+
+    public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output)
     {
-        private readonly DiagnosticsMetricsClient _client;
+        Log.MinimumLevel = LogLevel.Trace;
+        _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
+    }
 
-        public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output)
+    [Fact]
+    public void Counter()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+
+        _client.Counter("counter");
+
+        Assert.Single(metricsCollector.GetMeasurements<int>());
+        Assert.Equal("counter", metricsCollector.GetMeasurements<int>().Single().Name);
+        Assert.Equal(1, metricsCollector.GetMeasurements<int>().Single().Value);
+    }
+
+    [Fact]
+    public void CounterWithValue()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+
+        _client.Counter("counter", 5);
+        _client.Counter("counter", 3);
+
+        Assert.Equal(2, metricsCollector.GetMeasurements<int>().Count);
+        Assert.All(metricsCollector.GetMeasurements<int>(), m =>
         {
-            Log.MinimumLevel = LogLevel.Trace;
-            _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
-        }
+            Assert.Equal("counter", m.Name);
+        });
+        Assert.Equal(8, metricsCollector.GetSum<int>("counter"));
+        Assert.Equal(2, metricsCollector.GetCount<int>("counter"));
+    }
 
-        [Fact]
-        public void Counter()
+    [Fact]
+    public void Gauge()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+
+        _client.Gauge("gauge", 1.1);
+
+        metricsCollector.RecordObservableInstruments();
+
+        Assert.Single(metricsCollector.GetMeasurements<double>()); ;
+        Assert.Equal("gauge", metricsCollector.GetMeasurements<double>().Single().Name);
+        Assert.Equal(1.1, metricsCollector.GetMeasurements<double>().Single().Value);
+    }
+
+    [Fact]
+    public void Timer()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+
+        _client.Timer("timer", 450);
+        _client.Timer("timer", 220);
+
+        Assert.Equal(670, metricsCollector.GetSum<double>("timer"));
+        Assert.Equal(2, metricsCollector.GetCount<double>("timer"));
+    }
+
+    [Fact]
+    public async Task CanWaitForCounter()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+
+        var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
         {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+            _client.Counter("timer", 1);
+            _client.Counter("timer", 2);
+            return Task.CompletedTask;
+        }, 3);
 
-            _client.Counter("counter");
+        Assert.True(success);
+    }
 
-            Assert.Single(metricsCollector.GetMeasurements<int>());
-            Assert.Equal("counter", metricsCollector.GetMeasurements<int>().Single().Name);
-            Assert.Equal(1, metricsCollector.GetMeasurements<int>().Single().Value);
-        }
+    [Fact]
+    public async Task CanTimeoutWaitingForCounter()
+    {
+        using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
-        [Fact]
-        public void CounterWithValue()
+        var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
         {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
+            _client.Counter("timer", 1);
+            _client.Counter("timer", 2);
+            return Task.CompletedTask;
+        }, 4, new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token);
 
-            _client.Counter("counter", 5);
-            _client.Counter("counter", 3);
+        Assert.False(success);
+    }
 
-            Assert.Equal(2, metricsCollector.GetMeasurements<int>().Count);
-            Assert.All(metricsCollector.GetMeasurements<int>(), m =>
-            {
-                Assert.Equal("counter", m.Name);
-            });
-            Assert.Equal(8, metricsCollector.GetSum<int>("counter"));
-            Assert.Equal(2, metricsCollector.GetCount<int>("counter"));
-        }
-
-        [Fact]
-        public void Gauge()
-        {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
-
-            _client.Gauge("gauge", 1.1);
-
-            metricsCollector.RecordObservableInstruments();
-
-            Assert.Single(metricsCollector.GetMeasurements<double>()); ;
-            Assert.Equal("gauge", metricsCollector.GetMeasurements<double>().Single().Name);
-            Assert.Equal(1.1, metricsCollector.GetMeasurements<double>().Single().Value);
-        }
-
-        [Fact]
-        public void Timer()
-        {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
-
-            _client.Timer("timer", 450);
-            _client.Timer("timer", 220);
-
-            Assert.Equal(670, metricsCollector.GetSum<double>("timer"));
-            Assert.Equal(2, metricsCollector.GetCount<double>("timer"));
-        }
-
-        [Fact]
-        public async Task CanWaitForCounter()
-        {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
-
-            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
-            {
-                _client.Counter("timer", 1);
-                _client.Counter("timer", 2);
-                return Task.CompletedTask;
-            }, 3);
-
-            Assert.True(success);
-        }
-
-        [Fact]
-        public async Task CanTimeoutWaitingForCounter()
-        {
-            using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
-
-            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
-            {
-                _client.Counter("timer", 1);
-                _client.Counter("timer", 2);
-                return Task.CompletedTask;
-            }, 4, new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token);
-
-            Assert.False(success);
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-            GC.SuppressFinalize(this);
-        }
+    public void Dispose()
+    {
+        _client.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

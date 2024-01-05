@@ -4,155 +4,154 @@ using Foundatio.Messaging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Messaging
+namespace Foundatio.Tests.Messaging;
+
+public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
 {
-    public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
+    private IMessageBus _messageBus;
+
+    public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) { }
+
+    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
     {
-        private IMessageBus _messageBus;
-
-        public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) { }
-
-        protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
-        {
-            if (_messageBus != null)
-                return _messageBus;
-
-            _messageBus = new InMemoryMessageBus(o =>
-            {
-                o.LoggerFactory(Log);
-                if (config != null)
-                    config(o.Target);
-
-                return o;
-            });
+        if (_messageBus != null)
             return _messageBus;
-        }
 
-        [Fact]
-        public override Task CanUseMessageOptionsAsync()
+        _messageBus = new InMemoryMessageBus(o =>
         {
-            return base.CanUseMessageOptionsAsync();
-        }
+            o.LoggerFactory(Log);
+            if (config != null)
+                config(o.Target);
 
-        [Fact]
-        public async Task CanCheckMessageCounts()
-        {
-            var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
-            await messageBus.PublishAsync(new SimpleMessageA
-            {
-                Data = "Hello"
-            });
-            Assert.Equal(1, messageBus.MessagesSent);
-            Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
-            Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
-        }
+            return o;
+        });
+        return _messageBus;
+    }
 
-        [Fact]
-        public override Task CanSendMessageAsync()
-        {
-            return base.CanSendMessageAsync();
-        }
+    [Fact]
+    public override Task CanUseMessageOptionsAsync()
+    {
+        return base.CanUseMessageOptionsAsync();
+    }
 
-        [Fact]
-        public override Task CanHandleNullMessageAsync()
+    [Fact]
+    public async Task CanCheckMessageCounts()
+    {
+        var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        await messageBus.PublishAsync(new SimpleMessageA
         {
-            return base.CanHandleNullMessageAsync();
-        }
+            Data = "Hello"
+        });
+        Assert.Equal(1, messageBus.MessagesSent);
+        Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
+        Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
+    }
 
-        [Fact]
-        public override Task CanSendDerivedMessageAsync()
-        {
-            return base.CanSendDerivedMessageAsync();
-        }
+    [Fact]
+    public override Task CanSendMessageAsync()
+    {
+        return base.CanSendMessageAsync();
+    }
 
-        [Fact]
-        public override Task CanSendMappedMessageAsync()
-        {
-            return base.CanSendMappedMessageAsync();
-        }
+    [Fact]
+    public override Task CanHandleNullMessageAsync()
+    {
+        return base.CanHandleNullMessageAsync();
+    }
 
-        [Fact]
-        public override Task CanSendDelayedMessageAsync()
-        {
-            return base.CanSendDelayedMessageAsync();
-        }
+    [Fact]
+    public override Task CanSendDerivedMessageAsync()
+    {
+        return base.CanSendDerivedMessageAsync();
+    }
 
-        [Fact]
-        public override Task CanSubscribeConcurrentlyAsync()
-        {
-            return base.CanSubscribeConcurrentlyAsync();
-        }
+    [Fact]
+    public override Task CanSendMappedMessageAsync()
+    {
+        return base.CanSendMappedMessageAsync();
+    }
 
-        [Fact]
-        public override Task CanReceiveMessagesConcurrentlyAsync()
-        {
-            return base.CanReceiveMessagesConcurrentlyAsync();
-        }
+    [Fact]
+    public override Task CanSendDelayedMessageAsync()
+    {
+        return base.CanSendDelayedMessageAsync();
+    }
 
-        [Fact]
-        public override Task CanSendMessageToMultipleSubscribersAsync()
-        {
-            return base.CanSendMessageToMultipleSubscribersAsync();
-        }
+    [Fact]
+    public override Task CanSubscribeConcurrentlyAsync()
+    {
+        return base.CanSubscribeConcurrentlyAsync();
+    }
 
-        [Fact]
-        public override Task CanTolerateSubscriberFailureAsync()
-        {
-            return base.CanTolerateSubscriberFailureAsync();
-        }
+    [Fact]
+    public override Task CanReceiveMessagesConcurrentlyAsync()
+    {
+        return base.CanReceiveMessagesConcurrentlyAsync();
+    }
 
-        [Fact]
-        public override Task WillOnlyReceiveSubscribedMessageTypeAsync()
-        {
-            return base.WillOnlyReceiveSubscribedMessageTypeAsync();
-        }
+    [Fact]
+    public override Task CanSendMessageToMultipleSubscribersAsync()
+    {
+        return base.CanSendMessageToMultipleSubscribersAsync();
+    }
 
-        [Fact]
-        public override Task WillReceiveDerivedMessageTypesAsync()
-        {
-            return base.WillReceiveDerivedMessageTypesAsync();
-        }
+    [Fact]
+    public override Task CanTolerateSubscriberFailureAsync()
+    {
+        return base.CanTolerateSubscriberFailureAsync();
+    }
 
-        [Fact]
-        public override Task CanSubscribeToAllMessageTypesAsync()
-        {
-            return base.CanSubscribeToAllMessageTypesAsync();
-        }
+    [Fact]
+    public override Task WillOnlyReceiveSubscribedMessageTypeAsync()
+    {
+        return base.WillOnlyReceiveSubscribedMessageTypeAsync();
+    }
 
-        [Fact]
-        public override Task CanSubscribeToRawMessagesAsync()
-        {
-            return base.CanSubscribeToRawMessagesAsync();
-        }
+    [Fact]
+    public override Task WillReceiveDerivedMessageTypesAsync()
+    {
+        return base.WillReceiveDerivedMessageTypesAsync();
+    }
 
-        [Fact]
-        public override Task CanCancelSubscriptionAsync()
-        {
-            return base.CanCancelSubscriptionAsync();
-        }
+    [Fact]
+    public override Task CanSubscribeToAllMessageTypesAsync()
+    {
+        return base.CanSubscribeToAllMessageTypesAsync();
+    }
 
-        [Fact]
-        public override Task WontKeepMessagesWithNoSubscribersAsync()
-        {
-            return base.WontKeepMessagesWithNoSubscribersAsync();
-        }
+    [Fact]
+    public override Task CanSubscribeToRawMessagesAsync()
+    {
+        return base.CanSubscribeToRawMessagesAsync();
+    }
 
-        [Fact]
-        public override Task CanReceiveFromMultipleSubscribersAsync()
-        {
-            return base.CanReceiveFromMultipleSubscribersAsync();
-        }
+    [Fact]
+    public override Task CanCancelSubscriptionAsync()
+    {
+        return base.CanCancelSubscriptionAsync();
+    }
 
-        [Fact]
-        public override void CanDisposeWithNoSubscribersOrPublishers()
-        {
-            base.CanDisposeWithNoSubscribersOrPublishers();
-        }
+    [Fact]
+    public override Task WontKeepMessagesWithNoSubscribersAsync()
+    {
+        return base.WontKeepMessagesWithNoSubscribersAsync();
+    }
 
-        public void Dispose()
-        {
-            _messageBus?.Dispose();
-            _messageBus = null;
-        }
+    [Fact]
+    public override Task CanReceiveFromMultipleSubscribersAsync()
+    {
+        return base.CanReceiveFromMultipleSubscribersAsync();
+    }
+
+    [Fact]
+    public override void CanDisposeWithNoSubscribersOrPublishers()
+    {
+        base.CanDisposeWithNoSubscribersOrPublishers();
+    }
+
+    public void Dispose()
+    {
+        _messageBus?.Dispose();
+        _messageBus = null;
     }
 }

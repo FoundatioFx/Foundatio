@@ -1,18 +1,17 @@
 ﻿using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Xunit
+namespace Foundatio.Xunit;
+
+public abstract class TestWithLoggingBase
 {
-    public abstract class TestWithLoggingBase
+    protected readonly ILogger _logger;
+
+    protected TestWithLoggingBase(ITestOutputHelper output)
     {
-        protected readonly ILogger _logger;
-
-        protected TestWithLoggingBase(ITestOutputHelper output)
-        {
-            Log = new TestLoggerFactory(output);
-            _logger = Log.CreateLogger(GetType());
-        }
-
-        protected TestLoggerFactory Log { get; }
+        Log = new TestLoggerFactory(output);
+        _logger = Log.CreateLogger(GetType());
     }
+
+    protected TestLoggerFactory Log { get; }
 }

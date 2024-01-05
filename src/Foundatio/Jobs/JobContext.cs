@@ -2,25 +2,24 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
 
-namespace Foundatio.Jobs
+namespace Foundatio.Jobs;
+
+public class JobContext
 {
-    public class JobContext
+    public JobContext(CancellationToken cancellationToken, ILock lck = null)
     {
-        public JobContext(CancellationToken cancellationToken, ILock lck = null)
-        {
-            Lock = lck;
-            CancellationToken = cancellationToken;
-        }
+        Lock = lck;
+        CancellationToken = cancellationToken;
+    }
 
-        public ILock Lock { get; }
-        public CancellationToken CancellationToken { get; }
+    public ILock Lock { get; }
+    public CancellationToken CancellationToken { get; }
 
-        public virtual Task RenewLockAsync()
-        {
-            if (Lock != null)
-                return Lock.RenewAsync();
+    public virtual Task RenewLockAsync()
+    {
+        if (Lock != null)
+            return Lock.RenewAsync();
 
-            return Task.CompletedTask;
-        }
+        return Task.CompletedTask;
     }
 }

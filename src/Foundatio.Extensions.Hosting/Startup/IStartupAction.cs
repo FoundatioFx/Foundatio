@@ -2,10 +2,9 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.Extensions.Hosting.Startup
+namespace Foundatio.Extensions.Hosting.Startup;
+
+public interface IStartupAction
 {
-    public interface IStartupAction
-    {
-        Task RunAsync(CancellationToken shutdownToken = default);
-    }
+    Task RunAsync(CancellationToken shutdownToken = default);
 }

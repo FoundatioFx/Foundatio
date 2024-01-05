@@ -8,114 +8,113 @@ using Foundatio.Metrics;
 using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Tests.Jobs
+namespace Foundatio.Tests.Jobs;
+
+public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueueWorkItem>
 {
-    public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueueWorkItem>
+    private readonly IMetricsClient _metrics;
+
+    public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
     {
-        private readonly IMetricsClient _metrics;
-
-        public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
-        {
-            _metrics = metrics ?? NullMetricsClient.Instance;
-        }
-
-        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
-        {
-            _metrics.Counter("dequeued");
-
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("errors");
-                throw new Exception("Boom!");
-            }
-
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("abandoned");
-                return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
-            }
-
-            _metrics.Counter("completed");
-            return Task.FromResult(JobResult.Success);
-        }
+        _metrics = metrics ?? NullMetricsClient.Instance;
     }
 
-    public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem>
+    protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
     {
-        private readonly IMetricsClient _metrics;
+        _metrics.Counter("dequeued");
 
-        public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
+        if (RandomData.GetBool(10))
         {
-            _metrics = metrics ?? NullMetricsClient.Instance;
+            _metrics.Counter("errors");
+            throw new Exception("Boom!");
         }
 
-        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
+        if (RandomData.GetBool(10))
         {
-            _metrics.Counter("dequeued");
-            _metrics.Counter("completed");
-            return Task.FromResult(JobResult.Success);
+            _metrics.Counter("abandoned");
+            return Task.FromResult(JobResult.FailedWithMessage("Abandoned"));
         }
+
+        _metrics.Counter("completed");
+        return Task.FromResult(JobResult.Success);
+    }
+}
+
+public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem>
+{
+    private readonly IMetricsClient _metrics;
+
+    public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
+    {
+        _metrics = metrics ?? NullMetricsClient.Instance;
     }
 
-    public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
+    protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
     {
-        private readonly IMetricsClient _metrics;
-        private readonly ILockProvider _lockProvider;
+        _metrics.Counter("dequeued");
+        _metrics.Counter("completed");
+        return Task.FromResult(JobResult.Success);
+    }
+}
 
-        public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILockProvider lockProvider, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
-        {
-            _metrics = metrics ?? NullMetricsClient.Instance;
-            _lockProvider = lockProvider;
-        }
+public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
+{
+    private readonly IMetricsClient _metrics;
+    private readonly ILockProvider _lockProvider;
 
-        protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            if (_lockProvider != null)
-                return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
-
-            return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
-        }
-
-        protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
-        {
-            _metrics.Counter("completed");
-            return Task.FromResult(JobResult.Success);
-        }
+    public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, IMetricsClient metrics, ILockProvider lockProvider, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory)
+    {
+        _metrics = metrics ?? NullMetricsClient.Instance;
+        _lockProvider = lockProvider;
     }
 
-    public class SampleQueueWorkItem
+    protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
     {
-        public string Path { get; set; }
-        public DateTime Created { get; set; }
+        if (_lockProvider != null)
+            return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
+
+        return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
     }
 
-    public class SampleJob : JobBase
+    protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
     {
-        private readonly IMetricsClient _metrics;
+        _metrics.Counter("completed");
+        return Task.FromResult(JobResult.Success);
+    }
+}
 
-        public SampleJob(IMetricsClient metrics, ILoggerFactory loggerFactory) : base(loggerFactory)
+public class SampleQueueWorkItem
+{
+    public string Path { get; set; }
+    public DateTime Created { get; set; }
+}
+
+public class SampleJob : JobBase
+{
+    private readonly IMetricsClient _metrics;
+
+    public SampleJob(IMetricsClient metrics, ILoggerFactory loggerFactory) : base(loggerFactory)
+    {
+        _metrics = metrics;
+    }
+
+    protected override Task<JobResult> RunInternalAsync(JobContext context)
+    {
+        _metrics.Counter("runs");
+
+        if (RandomData.GetBool(10))
         {
-            _metrics = metrics;
+            _metrics.Counter("errors");
+            throw new Exception("Boom!");
         }
 
-        protected override Task<JobResult> RunInternalAsync(JobContext context)
+        if (RandomData.GetBool(10))
         {
-            _metrics.Counter("runs");
-
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("errors");
-                throw new Exception("Boom!");
-            }
-
-            if (RandomData.GetBool(10))
-            {
-                _metrics.Counter("failed");
-                return Task.FromResult(JobResult.FailedWithMessage("Failed"));
-            }
-
-            _metrics.Counter("completed");
-            return Task.FromResult(JobResult.Success);
+            _metrics.Counter("failed");
+            return Task.FromResult(JobResult.FailedWithMessage("Failed"));
         }
+
+        _metrics.Counter("completed");
+        return Task.FromResult(JobResult.Success);
     }
 }

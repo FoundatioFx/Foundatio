@@ -1,22 +1,21 @@
 ﻿using System;
 
-namespace Foundatio.Metrics
-{
-    public class StatsDMetricsClientOptions : SharedMetricsClientOptions
-    {
-        public string ServerName { get; set; }
-        public int Port { get; set; } = 8125;
-    }
+namespace Foundatio.Metrics;
 
-    public class StatsDMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<StatsDMetricsClientOptions, StatsDMetricsClientOptionsBuilder>
+public class StatsDMetricsClientOptions : SharedMetricsClientOptions
+{
+    public string ServerName { get; set; }
+    public int Port { get; set; } = 8125;
+}
+
+public class StatsDMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<StatsDMetricsClientOptions, StatsDMetricsClientOptionsBuilder>
+{
+    public StatsDMetricsClientOptionsBuilder Server(string serverName, int port = 8125)
     {
-        public StatsDMetricsClientOptionsBuilder Server(string serverName, int port = 8125)
-        {
-            if (String.IsNullOrEmpty(serverName))
-                throw new ArgumentNullException(nameof(serverName));
-            Target.ServerName = serverName;
-            Target.Port = port;
-            return this;
-        }
+        if (String.IsNullOrEmpty(serverName))
+            throw new ArgumentNullException(nameof(serverName));
+        Target.ServerName = serverName;
+        Target.Port = port;
+        return this;
     }
 }

@@ -4,23 +4,22 @@ using Foundatio.Lock;
 using Foundatio.Queues;
 using Foundatio.Utility;
 
-namespace Foundatio.Jobs
+namespace Foundatio.Jobs;
+
+public class QueueEntryContext<T> : JobContext where T : class
 {
-    public class QueueEntryContext<T> : JobContext where T : class
+    public QueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default) : base(cancellationToken, queueEntryLock)
     {
-        public QueueEntryContext(IQueueEntry<T> queueEntry, ILock queueEntryLock, CancellationToken cancellationToken = default) : base(cancellationToken, queueEntryLock)
-        {
-            QueueEntry = queueEntry;
-        }
+        QueueEntry = queueEntry;
+    }
 
-        public IQueueEntry<T> QueueEntry { get; private set; }
+    public IQueueEntry<T> QueueEntry { get; private set; }
 
-        public override async Task RenewLockAsync()
-        {
-            if (QueueEntry != null)
-                await QueueEntry.RenewLockAsync().AnyContext();
+    public override async Task RenewLockAsync()
+    {
+        if (QueueEntry != null)
+            await QueueEntry.RenewLockAsync().AnyContext();
 
-            await base.RenewLockAsync().AnyContext();
-        }
+        await base.RenewLockAsync().AnyContext();
     }
 }

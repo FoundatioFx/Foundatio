@@ -1,10 +1,9 @@
 using System;
 
-namespace Foundatio.Queues
+namespace Foundatio.Queues;
+
+public interface IQueueActivity
 {
-    public interface IQueueActivity
-    {
-        DateTime? LastEnqueueActivity { get; }
-        DateTime? LastDequeueActivity { get; }
-    }
+    DateTime? LastEnqueueActivity { get; }
+    DateTime? LastDequeueActivity { get; }
 }

@@ -6,108 +6,107 @@ using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Xunit
+namespace Foundatio.Xunit;
+
+internal class TestLogger : ILogger
 {
-    internal class TestLogger : ILogger
+    private readonly TestLoggerFactory _loggerFactory;
+    private readonly string _categoryName;
+
+    public TestLogger(string categoryName, TestLoggerFactory loggerFactory)
     {
-        private readonly TestLoggerFactory _loggerFactory;
-        private readonly string _categoryName;
+        _loggerFactory = loggerFactory;
+        _categoryName = categoryName;
+    }
 
-        public TestLogger(string categoryName, TestLoggerFactory loggerFactory)
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+    {
+        if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
+            return;
+
+        object[] scopes = CurrentScopeStack.Reverse().ToArray();
+        var logEntry = new LogEntry
         {
-            _loggerFactory = loggerFactory;
-            _categoryName = categoryName;
-        }
+            Date = SystemClock.UtcNow,
+            LogLevel = logLevel,
+            EventId = eventId,
+            State = state,
+            Exception = exception,
+            Formatter = (s, e) => formatter((TState)s, e),
+            CategoryName = _categoryName,
+            Scopes = scopes
+        };
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        switch (state)
         {
-            if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
-                return;
+            //case LogData logData:
+            //    logEntry.Properties["CallerMemberName"] = logData.MemberName;
+            //    logEntry.Properties["CallerFilePath"] = logData.FilePath;
+            //    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
 
-            object[] scopes = CurrentScopeStack.Reverse().ToArray();
-            var logEntry = new LogEntry
-            {
-                Date = SystemClock.UtcNow,
-                LogLevel = logLevel,
-                EventId = eventId,
-                State = state,
-                Exception = exception,
-                Formatter = (s, e) => formatter((TState)s, e),
-                CategoryName = _categoryName,
-                Scopes = scopes
-            };
-
-            switch (state)
-            {
-                //case LogData logData:
-                //    logEntry.Properties["CallerMemberName"] = logData.MemberName;
-                //    logEntry.Properties["CallerFilePath"] = logData.FilePath;
-                //    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
-
-                //    foreach (var property in logData.Properties)
-                //        logEntry.Properties[property.Key] = property.Value;
-                //    break;
-                case IDictionary<string, object> logDictionary:
-                    foreach (var property in logDictionary)
-                        logEntry.Properties[property.Key] = property.Value;
-                    break;
-            }
-
-            foreach (object scope in scopes)
-            {
-                if (!(scope is IDictionary<string, object> scopeData))
-                    continue;
-
-                foreach (var property in scopeData)
+            //    foreach (var property in logData.Properties)
+            //        logEntry.Properties[property.Key] = property.Value;
+            //    break;
+            case IDictionary<string, object> logDictionary:
+                foreach (var property in logDictionary)
                     logEntry.Properties[property.Key] = property.Value;
-            }
-
-            _loggerFactory.AddLogEntry(logEntry);
+                break;
         }
 
-        public bool IsEnabled(LogLevel logLevel)
+        foreach (object scope in scopes)
         {
-            return _loggerFactory.IsEnabled(_categoryName, logLevel);
+            if (!(scope is IDictionary<string, object> scopeData))
+                continue;
+
+            foreach (var property in scopeData)
+                logEntry.Properties[property.Key] = property.Value;
         }
 
-        public IDisposable BeginScope<TState>(TState state)
-        {
-            if (state == null)
-                throw new ArgumentNullException(nameof(state));
+        _loggerFactory.AddLogEntry(logEntry);
+    }
 
-            return Push(state);
-        }
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return _loggerFactory.IsEnabled(_categoryName, logLevel);
+    }
 
-        public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
-        {
-            if (state == null)
-                throw new ArgumentNullException(nameof(state));
+    public IDisposable BeginScope<TState>(TState state)
+    {
+        if (state == null)
+            throw new ArgumentNullException(nameof(state));
 
-            return Push(scopeFactory(state));
-        }
+        return Push(state);
+    }
 
-        private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();
+    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
+    {
+        if (state == null)
+            throw new ArgumentNullException(nameof(state));
 
-        private sealed class Wrapper
-        {
-            public ImmutableStack<object> Value { get; set; }
-        }
+        return Push(scopeFactory(state));
+    }
 
-        private static ImmutableStack<object> CurrentScopeStack
-        {
-            get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
-            set => _currentScopeStack.Value = new Wrapper { Value = value };
-        }
+    private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();
 
-        private static IDisposable Push(object state)
-        {
-            CurrentScopeStack = CurrentScopeStack.Push(state);
-            return new DisposableAction(Pop);
-        }
+    private sealed class Wrapper
+    {
+        public ImmutableStack<object> Value { get; set; }
+    }
 
-        private static void Pop()
-        {
-            CurrentScopeStack = CurrentScopeStack.Pop();
-        }
+    private static ImmutableStack<object> CurrentScopeStack
+    {
+        get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
+        set => _currentScopeStack.Value = new Wrapper { Value = value };
+    }
+
+    private static IDisposable Push(object state)
+    {
+        CurrentScopeStack = CurrentScopeStack.Push(state);
+        return new DisposableAction(Pop);
+    }
+
+    private static void Pop()
+    {
+        CurrentScopeStack = CurrentScopeStack.Pop();
     }
 }

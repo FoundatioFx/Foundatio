@@ -3,26 +3,25 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.HostingSample
+namespace Foundatio.HostingSample;
+
+[Job(Description = "Sample 1 job", Interval = "5s", IterationLimit = 5)]
+public class Sample1Job : IJob
 {
-    [Job(Description = "Sample 1 job", Interval = "5s", IterationLimit = 5)]
-    public class Sample1Job : IJob
+    private readonly ILogger _logger;
+    private int _iterationCount = 0;
+
+    public Sample1Job(ILoggerFactory loggerFactory)
     {
-        private readonly ILogger _logger;
-        private int _iterationCount = 0;
+        _logger = loggerFactory.CreateLogger<Sample1Job>();
+    }
 
-        public Sample1Job(ILoggerFactory loggerFactory)
-        {
-            _logger = loggerFactory.CreateLogger<Sample1Job>();
-        }
+    public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _iterationCount);
+        if (_logger.IsEnabled(LogLevel.Information))
+            _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
-        {
-            Interlocked.Increment(ref _iterationCount);
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
-
-            return Task.FromResult(JobResult.Success);
-        }
+        return Task.FromResult(JobResult.Success);
     }
 }
