@@ -32,7 +32,7 @@ public class ScopedFileStorage : IFileStorage
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
-        return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), cancellationToken);
+        return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), streamMode, cancellationToken);
     }
 
     public async Task<FileSpec> GetFileInfoAsync(string path)
@@ -126,7 +126,7 @@ public class ScopedFileStorage : IFileStorage
             Success = success,
             HasMore = result.HasMore,
             Files = result.Files,
-            NextPageFunc = s => NextPage(result)
+            NextPageFunc = _ => NextPage(result)
         };
     }
 
