@@ -88,7 +88,6 @@ public class FolderFileStorage : IFileStorage
         }
     }
 
-
     private FileMode GetFileModeForFileAccess(FileAccess fileAccess)
     {
         return fileAccess switch
