@@ -3,18 +3,21 @@ using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
-using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Storage.RetryPolicies;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Azure.Tests.Queue {
-    public class AzureStorageQueueTests : QueueTestBase {
+namespace Foundatio.Azure.Tests.Queue
+{
+    public class AzureStorageQueueTests : QueueTestBase
+    {
         private readonly string _queueName = "foundatio-" + Guid.NewGuid().ToString("N").Substring(10);
 
-        public AzureStorageQueueTests(ITestOutputHelper output) : base(output) {}
+        public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+        {
             string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
             if (String.IsNullOrEmpty(connectionString))
                 return null;
@@ -31,109 +34,130 @@ namespace Foundatio.Azure.Tests.Queue {
                 .LoggerFactory(Log));
         }
 
-        protected override Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+        protected override Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue)
+        {
             // Don't delete the queue, it's super expensive and will be cleaned up later.
             queue?.Dispose();
             return Task.CompletedTask;
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItemAsync() {
+        public override Task CanQueueAndDequeueWorkItemAsync()
+        {
             return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithCancelledTokenAsync() {
+        public override Task CanDequeueWithCancelledTokenAsync()
+        {
             return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync()
+        {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact]
-        public override Task WillWaitForItemAsync() {
+        public override Task WillWaitForItemAsync()
+        {
             return base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override Task DequeueWaitWillGetSignaledAsync() {
+        public override Task DequeueWaitWillGetSignaledAsync()
+        {
             return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueWorkerAsync() {
+        public override Task CanUseQueueWorkerAsync()
+        {
             return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorkerAsync() {
+        public override Task CanHandleErrorInWorkerAsync()
+        {
             return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact(Skip = "Complete after timeout does not throw")]
-        public override Task WorkItemsWillTimeoutAsync() {
+        public override Task WorkItemsWillTimeoutAsync()
+        {
             return base.WorkItemsWillTimeoutAsync();
         }
 
         [Fact(Skip = "Dequeue Time takes forever")]
-        public override Task WillNotWaitForItemAsync() {
+        public override Task WillNotWaitForItemAsync()
+        {
             return base.WillNotWaitForItemAsync();
         }
 
         [Fact(Skip = "Dequeue Time takes forever")]
-        public override Task CanResumeDequeueEfficientlyAsync() {
+        public override Task CanResumeDequeueEfficientlyAsync()
+        {
             return base.CanResumeDequeueEfficientlyAsync();
         }
 
         [Fact(Skip = "Dequeue Time takes forever")]
-        public override Task CanDequeueEfficientlyAsync() {
+        public override Task CanDequeueEfficientlyAsync()
+        {
             return base.CanDequeueEfficientlyAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithLockingAsync() {
+        public override Task CanDequeueWithLockingAsync()
+        {
             return base.CanDequeueWithLockingAsync();
         }
 
         [Fact]
-        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync()
+        {
             return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+        public override Task WorkItemsWillGetMovedToDeadletterAsync()
+        {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override Task CanAutoCompleteWorkerAsync() {
+        public override Task CanAutoCompleteWorkerAsync()
+        {
             return base.CanAutoCompleteWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHaveMultipleQueueInstancesAsync() {
+        public override Task CanHaveMultipleQueueInstancesAsync()
+        {
             return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override Task CanRunWorkItemWithMetricsAsync() {
+        public override Task CanRunWorkItemWithMetricsAsync()
+        {
             return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override Task CanRenewLockAsync() {
+        public override Task CanRenewLockAsync()
+        {
             return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override Task CanAbandonQueueEntryOnceAsync() {
+        public override Task CanAbandonQueueEntryOnceAsync()
+        {
             return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanCompleteQueueEntryOnceAsync() {
+        public override Task CanCompleteQueueEntryOnceAsync()
+        {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
