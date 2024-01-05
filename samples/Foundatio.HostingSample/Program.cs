@@ -1,20 +1,23 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Jobs;
+using Foundatio.Extensions.Hosting.Startup;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using Serilog;
-using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
-using Foundatio.Extensions.Hosting.Startup;
+using Microsoft.Extensions.Logging;
+using Serilog;
 using Serilog.Events;
-using Foundatio.Extensions.Hosting.Jobs;
 
-namespace Foundatio.HostingSample {
-    public class Program {
-        public static int Main(string[] args) {
+namespace Foundatio.HostingSample
+{
+    public class Program
+    {
+        public static int Main(string[] args)
+        {
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
@@ -22,23 +25,29 @@ namespace Foundatio.HostingSample {
                 .Enrich.FromLogContext()
                 .WriteTo.Console()
                 .CreateLogger();
-            
-            try {
+
+            try
+            {
                 Log.Information("Starting host");
                 CreateHostBuilder(args).Build().Run();
                 return 0;
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 Log.Fatal(ex, "Host terminated unexpectedly");
                 return 1;
-            } finally {
+            }
+            finally
+            {
                 Log.CloseAndFlush();
-                
+
                 if (Debugger.IsAttached)
                     Console.ReadKey();
             }
         }
-                
-        public static IHostBuilder CreateHostBuilder(string[] args) {
+
+        public static IHostBuilder CreateHostBuilder(string[] args)
+        {
             bool all = args.Contains("all", StringComparer.OrdinalIgnoreCase);
             bool sample1 = all || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
             bool sample2 = all || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
@@ -47,10 +56,12 @@ namespace Foundatio.HostingSample {
 
             var builder = Host.CreateDefaultBuilder(args)
                 .UseSerilog()
-                .ConfigureWebHostDefaults(webBuilder => {
-                    webBuilder.Configure(app => {
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.Configure(app =>
+                    {
                         app.UseSerilogRequestLogging();
-                        
+
                         app.UseHealthChecks("/health");
                         app.UseReadyHealthChecks("Critical");
 
@@ -60,7 +71,8 @@ namespace Foundatio.HostingSample {
                         // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
                     });
                 })
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     // will shutdown the host if no jobs are running
                     s.AddJobLifetimeService();
 
@@ -83,16 +95,19 @@ namespace Foundatio.HostingSample {
                     if (sample1)
                         s.AddJob(sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(4)));
 
-                    if (sample2) {
+                    if (sample2)
+                    {
                         s.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
                         s.AddJob<Sample2Job>(true);
                     }
 
                     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
-                    s.AddStartupAction("Test1", async sp => {
+                    s.AddStartupAction("Test1", async sp =>
+                    {
                         var logger = sp.GetRequiredService<ILogger<Program>>();
                         logger.LogTrace("Running startup 1 action");
-                        for (int i = 0; i < 3; i++) {
+                        for (int i = 0; i < 3; i++)
+                        {
                             await Task.Delay(1000);
                             logger.LogTrace("Running startup 1 action...");
                         }
@@ -104,17 +119,19 @@ namespace Foundatio.HostingSample {
                     s.AddStartupAction<MyStartupAction>(priority: 100);
                     s.AddStartupAction<OtherStartupAction>(priority: 100);
 
-                    s.AddStartupAction("Test2", async sp => {
+                    s.AddStartupAction("Test2", async sp =>
+                    {
                         var logger = sp.GetRequiredService<ILogger<Program>>();
                         logger.LogTrace("Running startup 2 action");
-                        for (int i = 0; i < 2; i++) {
+                        for (int i = 0; i < 2; i++)
+                        {
                             await Task.Delay(1500);
                             logger.LogTrace("Running startup 2 action...");
                         }
                         //throw new ApplicationException("Boom goes the startup");
                         logger.LogTrace("Done running startup 2 action");
                     });
-                    
+
                     //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
                 });
 

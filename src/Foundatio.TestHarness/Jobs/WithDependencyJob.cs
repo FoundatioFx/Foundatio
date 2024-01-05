@@ -2,9 +2,12 @@
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Tests.Jobs {
-    public class WithDependencyJob : JobBase {
-        public WithDependencyJob(MyDependency dependency, ILoggerFactory loggerFactory = null) : base(loggerFactory) {
+namespace Foundatio.Tests.Jobs
+{
+    public class WithDependencyJob : JobBase
+    {
+        public WithDependencyJob(MyDependency dependency, ILoggerFactory loggerFactory = null) : base(loggerFactory)
+        {
             Dependency = dependency;
         }
 
@@ -12,14 +15,16 @@ namespace Foundatio.Tests.Jobs {
 
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+        protected override Task<JobResult> RunInternalAsync(JobContext context)
+        {
             RunCount++;
 
             return Task.FromResult(JobResult.Success);
         }
     }
 
-    public class MyDependency {
+    public class MyDependency
+    {
         public int MyProperty { get; set; }
     }
 }

@@ -2,14 +2,17 @@
 using Foundatio.Tests.Messaging;
 using Foundatio.Utility;
 
-namespace Foundatio.Tests.Messaging {
-    public class SimpleMessageA : ISimpleMessage {
-        public SimpleMessageA() {
+namespace Foundatio.Tests.Messaging
+{
+    public class SimpleMessageA : ISimpleMessage
+    {
+        public SimpleMessageA()
+        {
             Items = new DataDictionary();
         }
         public string Data { get; set; }
         public int Count { get; set; }
-            
+
         public IDictionary<string, object> Items { get; set; }
     }
 
@@ -25,27 +28,33 @@ namespace Foundatio.Tests.Messaging {
     public class Derived10SimpleMessageA : SimpleMessageA { }
     public class NeverPublishedMessage { }
 
-    public class SimpleMessageB : ISimpleMessage {
+    public class SimpleMessageB : ISimpleMessage
+    {
         public string Data { get; set; }
     }
 
-    public class SimpleMessageC {
+    public class SimpleMessageC
+    {
         public string Data { get; set; }
     }
 
-    public interface ISimpleMessage {
+    public interface ISimpleMessage
+    {
         string Data { get; set; }
     }
 }
 
-namespace Foundatio.Tests.MessagingAlt {
-    public class SimpleMessageA : ISimpleMessage {
-        public SimpleMessageA() {
+namespace Foundatio.Tests.MessagingAlt
+{
+    public class SimpleMessageA : ISimpleMessage
+    {
+        public SimpleMessageA()
+        {
             Items = new DataDictionary();
         }
         public string Data { get; set; }
         public int Count { get; set; }
-            
+
         public IDictionary<string, object> Items { get; set; }
     }
 }

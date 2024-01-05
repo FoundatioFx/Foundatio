@@ -5,40 +5,46 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Caching {
-    public abstract class CacheClientTestsBase : TestWithLoggingBase {
-        protected CacheClientTestsBase(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Tests.Caching
+{
+    public abstract class CacheClientTestsBase : TestWithLoggingBase
+    {
+        protected CacheClientTestsBase(ITestOutputHelper output) : base(output)
+        {
         }
 
-        protected virtual ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+        protected virtual ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+        {
             return null;
         }
 
-        public virtual async Task CanGetAllAsync() {
+        public virtual async Task CanGetAllAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 await cache.SetAsync("test1", 1);
                 await cache.SetAsync("test2", 2);
                 await cache.SetAsync("test3", 3);
-                var result = await cache.GetAllAsync<int>(new [] { "test1", "test2", "test3" });
+                var result = await cache.GetAllAsync<int>(new[] { "test1", "test2", "test3" });
                 Assert.NotNull(result);
                 Assert.Equal(3, result.Count);
                 Assert.Equal(1, result["test1"].Value);
                 Assert.Equal(2, result["test2"].Value);
                 Assert.Equal(3, result["test3"].Value);
 
-                await cache.SetAsync("obj1", new SimpleModel {Data1 = "data 1", Data2 = 1 });
+                await cache.SetAsync("obj1", new SimpleModel { Data1 = "data 1", Data2 = 1 });
                 await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
                 await cache.SetAsync("obj3", (SimpleModel)null);
                 await cache.SetAsync("obj4", new SimpleModel { Data1 = "test 1", Data2 = 4 });
@@ -62,12 +68,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanGetAllWithOverlapAsync() {
+        public virtual async Task CanGetAllWithOverlapAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 await cache.SetAsync("test1", 1.0);
@@ -90,12 +98,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetAsync() {
+        public virtual async Task CanSetAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 Assert.Equal(3, await cache.ListAddAsync("set", new List<int> { 1, 1, 2, 3 }));
@@ -110,12 +120,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetAndGetValueAsync() {
+        public virtual async Task CanSetAndGetValueAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 Assert.False((await cache.GetAsync<int>("donkey")).HasValue);
@@ -159,12 +171,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanAddAsync() {
+        public virtual async Task CanAddAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 const string key = "type-id";
@@ -184,17 +198,20 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanAddConcurrentlyAsync() {
+        public virtual async Task CanAddConcurrentlyAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
                 long adds = 0;
-                await Run.InParallelAsync(5, async i => {
+                await Run.InParallelAsync(5, async i =>
+                {
                     if (await cache.AddAsync(cacheKey, i, TimeSpan.FromMinutes(1)))
                         Interlocked.Increment(ref adds);
                 });
@@ -203,12 +220,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanGetAsync() {
+        public virtual async Task CanGetAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 await cache.SetAsync<int>("test", 1);
@@ -222,7 +241,8 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1L, cacheValue2.Value);
 
                 await cache.SetAsync<long>("test", Int64.MaxValue);
-                await Assert.ThrowsAnyAsync<Exception>(async () => {
+                await Assert.ThrowsAnyAsync<Exception>(async () =>
+                {
                     var cacheValue3 = await cache.GetAsync<int>("test");
                     Assert.False(cacheValue3.HasValue);
                 });
@@ -233,12 +253,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanTryGetAsync() {
+        public virtual async Task CanTryGetAsync()
+        {
             var cache = GetCacheClient(false);
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 await cache.SetAsync<int>("test", 1);
@@ -259,7 +281,8 @@ namespace Foundatio.Tests.Caching {
                 Assert.True(cacheValue.HasValue);
                 Assert.Equal(Int64.MaxValue, cacheValue.Value);
 
-                await cache.SetAsync<MyData>("test", new MyData {
+                await cache.SetAsync<MyData>("test", new MyData
+                {
                     Message = "test"
                 });
                 cacheValue = await cache.GetAsync<long>("test");
@@ -267,12 +290,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanUseScopedCachesAsync() {
+        public virtual async Task CanUseScopedCachesAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
@@ -329,12 +354,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanRemoveByPrefixAsync() {
+        public virtual async Task CanRemoveByPrefixAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 string prefix = "blah:";
@@ -353,13 +380,15 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(1, await cache.RemoveByPrefixAsync(String.Empty));
             }
         }
-        
-        public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+
+        public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count)
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
                 const string prefix = "prefix:";
                 await cache.SetAsync("test", 1);
@@ -374,16 +403,19 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetAndGetObjectAsync() {
+        public virtual async Task CanSetAndGetObjectAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var dt = DateTimeOffset.Now;
-                var value = new MyData {
+                var value = new MyData
+                {
                     Type = "test",
                     Date = dt,
                     Message = "Hello World"
@@ -399,12 +431,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetExpirationAsync() {
+        public virtual async Task CanSetExpirationAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var expiresAt = SystemClock.UtcNow.AddMilliseconds(300);
@@ -423,15 +457,18 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanSetMinMaxExpirationAsync() {
+        public virtual async Task CanSetMinMaxExpirationAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
-                using (TestSystemClock.Install()) {
+                using (TestSystemClock.Install())
+                {
                     var now = DateTime.UtcNow;
                     TestSystemClock.SetFrozenTime(now);
 
@@ -440,7 +477,7 @@ namespace Foundatio.Tests.Caching {
                     Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
                     Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
                     Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
-                    
+
                     Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
                     Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
 
@@ -453,12 +490,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanIncrementAsync() {
+        public virtual async Task CanIncrementAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 Assert.True(await cache.SetAsync("test", 0));
@@ -467,19 +506,22 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(0, await cache.IncrementAsync("test3", 0));
 
                 // The following is not supported by redis.
-                if (cache is InMemoryCacheClient) {
+                if (cache is InMemoryCacheClient)
+                {
                     Assert.True(await cache.SetAsync("test2", "stringValue"));
                     Assert.Equal(1, await cache.IncrementAsync("test2"));
                 }
             }
         }
 
-        public virtual async Task CanIncrementAndExpireAsync() {
+        public virtual async Task CanIncrementAndExpireAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 bool success = await cache.SetAsync("test", 0);
@@ -494,13 +536,15 @@ namespace Foundatio.Tests.Caching {
                 Assert.False((await cache.GetAsync<int>("test")).HasValue);
             }
         }
-        
-        public virtual async Task CanReplaceIfEqual() {
+
+        public virtual async Task CanReplaceIfEqual()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 const string cacheKey = "replace-if-equal";
@@ -518,13 +562,15 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(await cache.GetExpirationAsync(cacheKey));
             }
         }
-        
-        public virtual async Task CanRemoveIfEqual() {
+
+        public virtual async Task CanRemoveIfEqual()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 Assert.True(await cache.AddAsync("remove-if-equal", "123"));
@@ -540,14 +586,16 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanRoundTripLargeNumbersAsync() {
+        public virtual async Task CanRoundTripLargeNumbersAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
-                
+
                 double value = 2 * 1000 * 1000 * 1000;
                 Assert.True(await cache.SetAsync("test", value));
                 Assert.Equal(value, await cache.GetAsync<double>("test", 0));
@@ -567,12 +615,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanGetAndSetDateTimeAsync() {
+        public virtual async Task CanGetAndSetDateTimeAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 DateTime value = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
@@ -605,25 +655,25 @@ namespace Foundatio.Tests.Caching {
                 Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
 
                 await cache.RemoveAsync("test");
-                
+
                 Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
                 Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-                
+
                 Assert.Equal(0, await cache.SetIfLowerAsync("test", value.AddHours(1)));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
                 Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-                
+
                 await cache.RemoveAsync("test");
-                
+
                 Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
                 Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-                
+
                 Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
                 Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
                 Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-                
+
                 var higherValue = value + TimeSpan.FromHours(1);
                 var higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
                 Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfHigherAsync("test", higherValue));
@@ -632,12 +682,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync() {
+        public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var minExpiration = TimeSpan.FromHours(1).Add(TimeSpan.FromMinutes(59)).Add(TimeSpan.FromSeconds(55));
@@ -665,12 +717,14 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task CanManageListsAsync() {
+        public virtual async Task CanManageListsAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
@@ -699,7 +753,7 @@ namespace Foundatio.Tests.Caching {
                 var stringResult = await cache.GetListAsync<string>("stringlist");
                 Assert.Single(stringResult.Value);
                 Assert.Equal("myvalue", stringResult.Value.First());
-                
+
                 await cache.ListRemoveAsync("stringlist", "myvalue");
                 stringResult = await cache.GetListAsync<string>("stringlist");
                 Assert.Empty(stringResult.Value);
@@ -724,25 +778,26 @@ namespace Foundatio.Tests.Caching {
                 Assert.NotNull(result);
                 Assert.Empty(result.Value);
 
-                await Assert.ThrowsAnyAsync<Exception>(async () => {
+                await Assert.ThrowsAnyAsync<Exception>(async () =>
+                {
                     await cache.AddAsync("key1", 1);
                     await cache.ListAddAsync("key1", 1);
                 });
-                
+
                 // test paging through items in list
                 await cache.ListAddAsync("testpaging", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 });
                 var pagedResult = await cache.GetListAsync<int>("testpaging", 1, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
                 Assert.Equal(pagedResult.Value.ToArray(), new[] { 1, 2, 3, 4, 5 });
-                
+
                 pagedResult = await cache.GetListAsync<int>("testpaging", 2, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
                 Assert.Equal(pagedResult.Value.ToArray(), new[] { 6, 7, 8, 9, 10 });
-                
+
                 await cache.ListAddAsync("testpaging", new[] { 21, 22 });
-                
+
                 pagedResult = await cache.GetListAsync<int>("testpaging", 5, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(2, pagedResult.Value.Count);
@@ -756,18 +811,21 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task MeasureThroughputAsync() {
+        public virtual async Task MeasureThroughputAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
-                for (int i = 0; i < itemCount; i++) {
+                for (int i = 0; i < itemCount; i++)
+                {
                     await cache.SetAsync("test", 13422);
                     await cache.SetAsync("flag", true);
                     Assert.Equal(13422, (await cache.GetAsync<int>("test")).Value);
@@ -780,22 +838,26 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task MeasureSerializerSimpleThroughputAsync() {
+        public virtual async Task MeasureSerializerSimpleThroughputAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
-                for (int i = 0; i < itemCount; i++) {
-                    await cache.SetAsync("test", new SimpleModel {
-                                             Data1 = "Hello",
-                                             Data2 = 12
-                                         });
+                for (int i = 0; i < itemCount; i++)
+                {
+                    await cache.SetAsync("test", new SimpleModel
+                    {
+                        Data1 = "Hello",
+                        Data2 = 12
+                    });
                     var model = await cache.GetAsync<SimpleModel>("test");
                     Assert.True(model.HasValue);
                     Assert.Equal("Hello", model.Value.Data1);
@@ -807,23 +869,28 @@ namespace Foundatio.Tests.Caching {
             }
         }
 
-        public virtual async Task MeasureSerializerComplexThroughputAsync() {
+        public virtual async Task MeasureSerializerComplexThroughputAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var start = SystemClock.UtcNow;
                 const int itemCount = 10000;
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
-                for (int i = 0; i < itemCount; i++) {
-                    await cache.SetAsync("test", new ComplexModel {
+                for (int i = 0; i < itemCount; i++)
+                {
+                    await cache.SetAsync("test", new ComplexModel
+                    {
                         Data1 = "Hello",
                         Data2 = 12,
                         Data3 = true,
-                        Simple = new SimpleModel {
+                        Simple = new SimpleModel
+                        {
                             Data1 = "hi",
                             Data2 = 13
                         },
@@ -858,12 +925,14 @@ namespace Foundatio.Tests.Caching {
         }
     }
 
-    public class SimpleModel {
+    public class SimpleModel
+    {
         public string Data1 { get; set; }
         public int Data2 { get; set; }
     }
 
-    public class ComplexModel {
+    public class ComplexModel
+    {
         public string Data1 { get; set; }
         public int Data2 { get; set; }
         public SimpleModel Simple { get; set; }
@@ -873,7 +942,8 @@ namespace Foundatio.Tests.Caching {
         public SampleDictionary<string, SimpleModel> DerivedDictionarySimples { get; set; }
     }
 
-    public class MyData {
+    public class MyData
+    {
         private readonly string _blah = "blah";
         public string Blah => _blah;
         public string Type { get; set; }
@@ -881,58 +951,72 @@ namespace Foundatio.Tests.Caching {
         public string Message { get; set; }
     }
 
-    public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue> {
+    public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue>
+    {
         private readonly IDictionary<TKey, TValue> _dictionary;
 
-        public SampleDictionary() {
+        public SampleDictionary()
+        {
             _dictionary = new Dictionary<TKey, TValue>();
         }
 
-        public SampleDictionary(IDictionary<TKey, TValue> dictionary) {
+        public SampleDictionary(IDictionary<TKey, TValue> dictionary)
+        {
             _dictionary = new Dictionary<TKey, TValue>(dictionary);
         }
 
-        public SampleDictionary(IEqualityComparer<TKey> comparer) {
+        public SampleDictionary(IEqualityComparer<TKey> comparer)
+        {
             _dictionary = new Dictionary<TKey, TValue>(comparer);
         }
 
-        public SampleDictionary(IDictionary<TKey, TValue> dictionary, IEqualityComparer<TKey> comparer) {
+        public SampleDictionary(IDictionary<TKey, TValue> dictionary, IEqualityComparer<TKey> comparer)
+        {
             _dictionary = new Dictionary<TKey, TValue>(dictionary, comparer);
         }
 
-        public void Add(TKey key, TValue value) {
+        public void Add(TKey key, TValue value)
+        {
             _dictionary.Add(key, value);
         }
 
-        public void Add(KeyValuePair<TKey, TValue> item) {
+        public void Add(KeyValuePair<TKey, TValue> item)
+        {
             _dictionary.Add(item);
         }
 
-        public bool Remove(TKey key) {
+        public bool Remove(TKey key)
+        {
             return _dictionary.Remove(key);
         }
 
-        public bool Remove(KeyValuePair<TKey, TValue> item) {
+        public bool Remove(KeyValuePair<TKey, TValue> item)
+        {
             return _dictionary.Remove(item);
         }
 
-        public void Clear() {
+        public void Clear()
+        {
             _dictionary.Clear();
         }
 
-        public bool ContainsKey(TKey key) {
+        public bool ContainsKey(TKey key)
+        {
             return _dictionary.ContainsKey(key);
         }
 
-        public bool Contains(KeyValuePair<TKey, TValue> item) {
+        public bool Contains(KeyValuePair<TKey, TValue> item)
+        {
             return _dictionary.Contains(item);
         }
 
-        public bool TryGetValue(TKey key, out TValue value) {
+        public bool TryGetValue(TKey key, out TValue value)
+        {
             return _dictionary.TryGetValue(key, out value);
         }
 
-        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex) {
+        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+        {
             _dictionary.CopyTo(array, arrayIndex);
         }
 
@@ -944,16 +1028,19 @@ namespace Foundatio.Tests.Caching {
 
         public bool IsReadOnly => _dictionary.IsReadOnly;
 
-        public TValue this[TKey key] {
+        public TValue this[TKey key]
+        {
             get => _dictionary[key];
             set => _dictionary[key] = value;
         }
 
-        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() {
+        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+        {
             return _dictionary.GetEnumerator();
         }
 
-        IEnumerator IEnumerable.GetEnumerator() {
+        IEnumerator IEnumerable.GetEnumerator()
+        {
             return GetEnumerator();
         }
     }

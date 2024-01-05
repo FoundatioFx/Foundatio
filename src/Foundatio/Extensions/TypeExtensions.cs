@@ -3,9 +3,12 @@ using System.ComponentModel;
 using System.Reflection;
 using Foundatio.Serializer;
 
-namespace Foundatio.Utility {
-    internal static class TypeExtensions {
-        public static bool IsNumeric(this Type type) {
+namespace Foundatio.Utility
+{
+    internal static class TypeExtensions
+    {
+        public static bool IsNumeric(this Type type)
+        {
             if (type.IsArray)
                 return false;
 
@@ -22,7 +25,8 @@ namespace Foundatio.Utility {
                 type == TypeHelper.UInt64Type)
                 return true;
 
-            switch (Type.GetTypeCode(type)) {
+            switch (Type.GetTypeCode(type))
+            {
                 case TypeCode.Byte:
                 case TypeCode.Decimal:
                 case TypeCode.Double:
@@ -40,7 +44,8 @@ namespace Foundatio.Utility {
             return false;
         }
 
-        public static bool IsNullableNumeric(this Type type) {
+        public static bool IsNullableNumeric(this Type type)
+        {
             if (type.IsArray)
                 return false;
 
@@ -48,12 +53,17 @@ namespace Foundatio.Utility {
             return t != null && t.IsNumeric();
         }
 
-        public static T ToType<T>(this object value, ISerializer serializer = null) {
+        public static T ToType<T>(this object value, ISerializer serializer = null)
+        {
             var targetType = typeof(T);
-            if (value == null) {
-                try {
+            if (value == null)
+            {
+                try
+                {
                     return (T)Convert.ChangeType(value, targetType);
-                } catch {
+                }
+                catch
+                {
                     throw new ArgumentNullException(nameof(value));
                 }
             }
@@ -65,9 +75,11 @@ namespace Foundatio.Utility {
                 return (T)value;
 
             var targetTypeInfo = targetType.GetTypeInfo();
-            if (targetTypeInfo.IsEnum && (value is string || valueType.GetTypeInfo().IsEnum)) {
+            if (targetTypeInfo.IsEnum && (value is string || valueType.GetTypeInfo().IsEnum))
+            {
                 // attempt to match enum by name.
-                if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString())) {
+                if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString()))
+                {
                     object parsedValue = Enum.Parse(targetType, value.ToString(), false);
                     return (T)parsedValue;
                 }
@@ -79,28 +91,38 @@ namespace Foundatio.Utility {
             if (targetTypeInfo.IsEnum && valueType.IsNumeric())
                 return (T)Enum.ToObject(targetType, value);
 
-            if (converter.CanConvertFrom(valueType)) {
+            if (converter.CanConvertFrom(valueType))
+            {
                 object convertedValue = converter.ConvertFrom(value);
                 return (T)convertedValue;
             }
 
-            if (serializer != null && value is byte[] data) {
-                try {
+            if (serializer != null && value is byte[] data)
+            {
+                try
+                {
                     return serializer.Deserialize<T>(data);
-                } catch { }
+                }
+                catch { }
             }
 
-            if (serializer != null && value is string stringValue) {
-                try {
+            if (serializer != null && value is string stringValue)
+            {
+                try
+                {
                     return serializer.Deserialize<T>(stringValue);
-                } catch { }
+                }
+                catch { }
             }
 
-            if (value is IConvertible) {
-                try {
+            if (value is IConvertible)
+            {
+                try
+                {
                     object convertedValue = Convert.ChangeType(value, targetType);
                     return (T)convertedValue;
-                } catch { }
+                }
+                catch { }
             }
 
             throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value));

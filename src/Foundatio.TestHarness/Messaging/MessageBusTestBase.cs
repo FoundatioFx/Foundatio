@@ -4,40 +4,48 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
-using Foundatio.Tests.Extensions;
-using Foundatio.Xunit;
-using Foundatio.Messaging;
-using Foundatio.Utility;
-using Xunit;
 using Foundatio.AsyncEx;
-using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
+using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Metrics;
+using Foundatio.Utility;
+using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
+using Xunit;
+using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Messaging {
-    public abstract class MessageBusTestBase : TestWithLoggingBase {
-        protected MessageBusTestBase(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Tests.Messaging
+{
+    public abstract class MessageBusTestBase : TestWithLoggingBase
+    {
+        protected MessageBusTestBase(ITestOutputHelper output) : base(output)
+        {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
         }
 
-        protected virtual IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null) {
+        protected virtual IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+        {
             return null;
         }
 
-        protected virtual Task CleanupMessageBusAsync(IMessageBus messageBus) {
+        protected virtual Task CleanupMessageBusAsync(IMessageBus messageBus)
+        {
             messageBus?.Dispose();
             return Task.CompletedTask;
         }
 
-        public virtual async Task CanUseMessageOptionsAsync() {
+        public virtual async Task CanUseMessageOptionsAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
 
-            try {
-                using var listener = new ActivityListener {
+            try
+            {
+                using var listener = new ActivityListener
+                {
                     ShouldListenTo = s => s.Name == FoundatioDiagnostics.ActivitySource.Name,
                     Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
                     ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
@@ -50,7 +58,8 @@ namespace Foundatio.Tests.Messaging {
                 Assert.Equal(Activity.Current, activity);
 
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg => {
+                await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
+                {
                     _logger.LogTrace("Got message");
 
                     Assert.Equal("Hello", msg.Body.Data);
@@ -65,10 +74,12 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await SystemClock.SleepAsync(1000);
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello",
                     Items = { { "Test", "Test" } }
-                }, new MessageOptions {
+                }, new MessageOptions
+                {
                     Properties = new Dictionary<string, string> {
                         { "hey", "now" }
                     }
@@ -77,19 +88,24 @@ namespace Foundatio.Tests.Messaging {
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSendMessageAsync() {
+        public virtual async Task CanSendMessageAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     Assert.True(msg.Items.ContainsKey("Test"));
@@ -98,7 +114,8 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await SystemClock.SleepAsync(100);
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello",
                     Items = { { "Test", "Test" } }
                 });
@@ -106,19 +123,24 @@ namespace Foundatio.Tests.Messaging {
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanHandleNullMessageAsync() {
+        public virtual async Task CanHandleNullMessageAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<object>(msg => {
+                await messageBus.SubscribeAsync<object>(msg =>
+                {
                     countdown.Signal();
                     throw new Exception();
                 });
@@ -129,19 +151,24 @@ namespace Foundatio.Tests.Messaging {
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(1));
                 Assert.Equal(1, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSendDerivedMessageAsync() {
+        public virtual async Task CanSendDerivedMessageAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
@@ -149,28 +176,35 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await SystemClock.SleepAsync(100);
-                await messageBus.PublishAsync(new DerivedSimpleMessageA {
+                await messageBus.PublishAsync(new DerivedSimpleMessageA
+                {
                     Data = "Hello"
                 });
                 _logger.LogTrace("Published one...");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSendMappedMessageAsync() {
-            var messageBus = GetMessageBus(b => {
+        public virtual async Task CanSendMappedMessageAsync()
+        {
+            var messageBus = GetMessageBus(b =>
+            {
                 b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
                 return b;
             });
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     _logger.LogTrace("Got message");
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
@@ -178,28 +212,34 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 await SystemClock.SleepAsync(100);
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
                 _logger.LogTrace("Published one...");
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSendDelayedMessageAsync() {
+        public virtual async Task CanSendDelayedMessageAsync()
+        {
             const int numConcurrentMessages = 1000;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(numConcurrentMessages);
 
                 int messages = 0;
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     if (++messages % 50 == 0)
                         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Total Processed {Messages} messages", messages);
 
@@ -208,8 +248,10 @@ namespace Foundatio.Tests.Messaging {
                 });
 
                 var sw = Stopwatch.StartNew();
-                await Run.InParallelAsync(numConcurrentMessages, async i => {
-                    await messageBus.PublishAsync(new SimpleMessageA {
+                await Run.InParallelAsync(numConcurrentMessages, async i =>
+                {
+                    await messageBus.PublishAsync(new SimpleMessageA
+                    {
                         Data = "Hello",
                         Count = i
                     }, new MessageOptions { DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)) });
@@ -223,21 +265,27 @@ namespace Foundatio.Tests.Messaging {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSubscribeConcurrentlyAsync() {
+        public virtual async Task CanSubscribeConcurrentlyAsync()
+        {
             const int iterations = 100;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(iterations * 10);
-                await Run.InParallelAsync(10, i => {
-                    return messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await Run.InParallelAsync(10, i =>
+                {
+                    return messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                    {
                         Assert.Equal("Hello", msg.Data);
                         countdown.Signal();
                     });
@@ -247,23 +295,28 @@ namespace Foundatio.Tests.Messaging {
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
             }
-            finally {
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanReceiveMessagesConcurrentlyAsync() {
+        public virtual async Task CanReceiveMessagesConcurrentlyAsync()
+        {
             const int iterations = 100;
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
             var messageBuses = new List<IMessageBus>(10);
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(iterations * 10);
-                await Run.InParallelAsync(10, async i => {
+                await Run.InParallelAsync(10, async i =>
+                {
                     var bus = GetMessageBus();
-                    await bus.SubscribeAsync<SimpleMessageA>(msg => {
+                    await bus.SubscribeAsync<SimpleMessageA>(msg =>
+                    {
                         Assert.Equal("Hello", msg.Data);
                         countdown.Signal();
                     });
@@ -271,13 +324,16 @@ namespace Foundatio.Tests.Messaging {
                     messageBuses.Add(bus);
                 });
                 var subscribe = Run.InParallelAsync(iterations,
-                    i => {
+                    i =>
+                    {
                         SystemClock.Sleep(RandomData.GetInt(0, 10));
                         return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
                     });
 
-                var publish = Run.InParallelAsync(iterations + 3, i => {
-                    return i switch {
+                var publish = Run.InParallelAsync(iterations + 3, i =>
+                {
+                    return i switch
+                    {
                         1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }),
                         2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }),
                         3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }),
@@ -298,7 +354,9 @@ namespace Foundatio.Tests.Messaging {
                 await Task.WhenAll(subscribe, publish);
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 foreach (var mb in messageBuses)
                     await CleanupMessageBusAsync(mb);
 
@@ -306,218 +364,276 @@ namespace Foundatio.Tests.Messaging {
             }
         }
 
-        public virtual async Task CanSendMessageToMultipleSubscribersAsync() {
+        public virtual async Task CanSendMessageToMultipleSubscribersAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(3);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanTolerateSubscriberFailureAsync() {
+        public virtual async Task CanTolerateSubscriberFailureAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(4);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     throw new Exception();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task WillOnlyReceiveSubscribedMessageTypeAsync() {
+        public virtual async Task WillOnlyReceiveSubscribedMessageTypeAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.SubscribeAsync<SimpleMessageB>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageB>(msg =>
+                {
                     Assert.Fail("Received wrong message type");
                 });
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task WillReceiveDerivedMessageTypesAsync() {
+        public virtual async Task WillReceiveDerivedMessageTypesAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(2);
-                await messageBus.SubscribeAsync<ISimpleMessage>(msg => {
+                await messageBus.SubscribeAsync<ISimpleMessage>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageB {
+                await messageBus.PublishAsync(new SimpleMessageB
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageC {
+                await messageBus.PublishAsync(new SimpleMessageC
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSubscribeToRawMessagesAsync() {
+        public virtual async Task CanSubscribeToRawMessagesAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(3);
-                await messageBus.SubscribeAsync(msg => {
+                await messageBus.SubscribeAsync(msg =>
+                {
                     Assert.True(msg.Type.Contains(nameof(SimpleMessageA))
                         || msg.Type.Contains(nameof(SimpleMessageB))
                         || msg.Type.Contains(nameof(SimpleMessageC)));
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageB {
+                await messageBus.PublishAsync(new SimpleMessageB
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageC {
+                await messageBus.PublishAsync(new SimpleMessageC
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanSubscribeToAllMessageTypesAsync() {
+        public virtual async Task CanSubscribeToAllMessageTypesAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(3);
-                await messageBus.SubscribeAsync<object>(msg => {
+                await messageBus.SubscribeAsync<object>(msg =>
+                {
                     countdown.Signal();
                 });
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageB {
+                await messageBus.PublishAsync(new SimpleMessageB
+                {
                     Data = "Hello"
                 });
-                await messageBus.PublishAsync(new SimpleMessageC {
+                await messageBus.PublishAsync(new SimpleMessageC
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task WontKeepMessagesWithNoSubscribersAsync() {
+        public virtual async Task WontKeepMessagesWithNoSubscribersAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(1);
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
                 await SystemClock.SleepAsync(100);
-                await messageBus.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 });
-                
+
                 await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
                 Assert.Equal(1, countdown.CurrentCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanCancelSubscriptionAsync() {
+        public virtual async Task CanCancelSubscriptionAsync()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown = new AsyncCountdownEvent(2);
 
                 long messageCount = 0;
                 var cancellationTokenSource = new CancellationTokenSource();
-                await messageBus.SubscribeAsync<SimpleMessageA>(async msg => {
+                await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+                {
                     _logger.LogTrace("SimpleAMessage received");
                     Interlocked.Increment(ref messageCount);
                     await cancellationTokenSource.CancelAsync();
@@ -526,7 +642,8 @@ namespace Foundatio.Tests.Messaging {
 
                 await messageBus.SubscribeAsync<object>(msg => countdown.Signal());
 
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
@@ -535,39 +652,48 @@ namespace Foundatio.Tests.Messaging {
                 Assert.Equal(1, messageCount);
 
                 countdown = new AsyncCountdownEvent(1);
-                await messageBus.PublishAsync(new SimpleMessageA {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
                     Data = "Hello"
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(0, countdown.CurrentCount);
                 Assert.Equal(1, messageCount);
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus);
             }
         }
 
-        public virtual async Task CanReceiveFromMultipleSubscribersAsync() {
+        public virtual async Task CanReceiveFromMultipleSubscribersAsync()
+        {
             var messageBus1 = GetMessageBus();
             if (messageBus1 == null)
                 return;
 
-            try {
+            try
+            {
                 var countdown1 = new AsyncCountdownEvent(1);
-                await messageBus1.SubscribeAsync<SimpleMessageA>(msg => {
+                await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+                {
                     Assert.Equal("Hello", msg.Data);
                     countdown1.Signal();
                 });
 
                 var messageBus2 = GetMessageBus();
-                try {
+                try
+                {
                     var countdown2 = new AsyncCountdownEvent(1);
-                    await messageBus2.SubscribeAsync<SimpleMessageA>(msg => {
+                    await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+                    {
                         Assert.Equal("Hello", msg.Data);
                         countdown2.Signal();
                     });
 
-                    await messageBus1.PublishAsync(new SimpleMessageA {
+                    await messageBus1.PublishAsync(new SimpleMessageA
+                    {
                         Data = "Hello"
                     });
 
@@ -575,20 +701,25 @@ namespace Foundatio.Tests.Messaging {
                     Assert.Equal(0, countdown1.CurrentCount);
                     await countdown2.WaitAsync(TimeSpan.FromSeconds(20));
                     Assert.Equal(0, countdown2.CurrentCount);
-                } finally {
+                }
+                finally
+                {
                     await CleanupMessageBusAsync(messageBus2);
                 }
-            } finally {
+            }
+            finally
+            {
                 await CleanupMessageBusAsync(messageBus1);
             }
         }
 
-        public virtual void CanDisposeWithNoSubscribersOrPublishers() {
+        public virtual void CanDisposeWithNoSubscribersOrPublishers()
+        {
             var messageBus = GetMessageBus();
             if (messageBus == null)
                 return;
 
-            using (messageBus) {}
+            using (messageBus) { }
         }
     }
 }

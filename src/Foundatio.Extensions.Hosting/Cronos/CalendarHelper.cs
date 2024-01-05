@@ -70,13 +70,13 @@ namespace Cronos
         public static void FillDateTimeParts(long ticks, out int second, out int minute, out int hour,
             out int day, out int month, out int year)
         {
-            second = (int) (ticks / TicksPerSecond % 60);
+            second = (int)(ticks / TicksPerSecond % 60);
             if (ticks % TicksPerSecond != 0) second++;
-            minute = (int) (ticks / TicksPerMinute % 60);
-            hour = (int) (ticks / TicksPerHour % 24);
+            minute = (int)(ticks / TicksPerMinute % 60);
+            hour = (int)(ticks / TicksPerHour % 24);
 
             // n = number of days since 1/1/0001
-            int n = (int) (ticks / TicksPerDay);
+            int n = (int)(ticks / TicksPerDay);
             // y400 = number of whole 400-year periods since 1/1/0001
             int y400 = n / DaysPer400Years;
             // n = day number within 400-year period

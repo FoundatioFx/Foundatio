@@ -1,43 +1,52 @@
-﻿using Foundatio.Xunit;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Utility;
+using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using System.Threading.Tasks;
-using System;
-using System.Threading;
-using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Tests.Utility {
-    public class RunTests : TestWithLoggingBase {
+namespace Foundatio.Tests.Utility
+{
+    public class RunTests : TestWithLoggingBase
+    {
         public RunTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public async Task CanRunWithRetries() {
-            var task = Task.Run(() => {
+        public async Task CanRunWithRetries()
+        {
+            var task = Task.Run(() =>
+            {
                 _logger.LogInformation("Hi");
             });
 
             await task;
             await task;
 
-            await Run.WithRetriesAsync(() => {
+            await Run.WithRetriesAsync(() =>
+            {
                 return DoStuff();
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
 
-            await Run.WithRetriesAsync(async () => {
+            await Run.WithRetriesAsync(async () =>
+            {
                 await DoStuff();
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
         }
 
         [Fact]
-        public async Task CanRunWithRetriesAndResult() {
-            var result = await Run.WithRetriesAsync(() => {
+        public async Task CanRunWithRetriesAndResult()
+        {
+            var result = await Run.WithRetriesAsync(() =>
+            {
                 return ReturnStuff();
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
 
             Assert.Equal(1, result);
 
-            result = await Run.WithRetriesAsync(async () => {
+            result = await Run.WithRetriesAsync(async () =>
+            {
                 return await ReturnStuff();
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
 
@@ -45,30 +54,37 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanBoomWithRetries() {
-            var exception = await Assert.ThrowsAsync<ApplicationException>(async () => {
-                await Run.WithRetriesAsync(() => {
+        public async Task CanBoomWithRetries()
+        {
+            var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+            {
+                await Run.WithRetriesAsync(() =>
+                {
                     return DoBoom();
                 }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
             });
             Assert.Equal("Hi", exception.Message);
 
-            exception = await Assert.ThrowsAsync<ApplicationException>(async () => {
-                await Run.WithRetriesAsync(async () => {
+            exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+            {
+                await Run.WithRetriesAsync(async () =>
+                {
                     await DoBoom();
                 }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
             });
             Assert.Equal("Hi", exception.Message);
 
             int attempt = 0;
-            await Run.WithRetriesAsync(() => {
+            await Run.WithRetriesAsync(() =>
+            {
                 attempt++;
                 return DoBoom(attempt < 5);
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
             Assert.Equal(5, attempt);
 
             attempt = 0;
-            await Run.WithRetriesAsync(async () => {
+            await Run.WithRetriesAsync(async () =>
+            {
                 attempt++;
                 await DoBoom(attempt < 5);
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
@@ -76,9 +92,12 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanBoomWithRetriesAndResult() {
-            var exception = await Assert.ThrowsAsync<ApplicationException>(async () => {
-                var result = await Run.WithRetriesAsync(() => {
+        public async Task CanBoomWithRetriesAndResult()
+        {
+            var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+            {
+                var result = await Run.WithRetriesAsync(() =>
+                {
                     return ReturnBoom();
                 }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
 
@@ -86,8 +105,10 @@ namespace Foundatio.Tests.Utility {
             });
             Assert.Equal("Hi", exception.Message);
 
-            exception = await Assert.ThrowsAsync<ApplicationException>(async () => {
-                var result = await Run.WithRetriesAsync(async () => {
+            exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+            {
+                var result = await Run.WithRetriesAsync(async () =>
+                {
                     return await ReturnBoom();
                 }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
 
@@ -96,7 +117,8 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal("Hi", exception.Message);
 
             int attempt = 0;
-            var result = await Run.WithRetriesAsync(() => {
+            var result = await Run.WithRetriesAsync(() =>
+            {
                 attempt++;
                 return ReturnBoom(attempt < 5);
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
@@ -104,7 +126,8 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal(1, result);
 
             attempt = 0;
-            result = await Run.WithRetriesAsync(async () => {
+            result = await Run.WithRetriesAsync(async () =>
+            {
                 attempt++;
                 return await ReturnBoom(attempt < 5);
             }, maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), cancellationToken: CancellationToken.None, logger: _logger);
@@ -112,16 +135,19 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal(1, result);
         }
 
-        private async Task<int> ReturnStuff() {
+        private async Task<int> ReturnStuff()
+        {
             await Task.Delay(10);
             return 1;
         }
 
-        private Task DoStuff() {
+        private Task DoStuff()
+        {
             return Task.Delay(10);
         }
 
-        private async Task<int> ReturnBoom(bool shouldThrow = true) {
+        private async Task<int> ReturnBoom(bool shouldThrow = true)
+        {
             await Task.Delay(10);
 
             if (shouldThrow)
@@ -130,7 +156,8 @@ namespace Foundatio.Tests.Utility {
             return 1;
         }
 
-        private async Task DoBoom(bool shouldThrow = true) {
+        private async Task DoBoom(bool shouldThrow = true)
+        {
             await Task.Delay(10);
 
             if (shouldThrow)

@@ -31,7 +31,7 @@ namespace Cronos
     /// <summary>
     /// Provides a parser and scheduler for cron expressions.
     /// </summary>
-    public sealed class CronExpression: IEquatable<CronExpression>
+    public sealed class CronExpression : IEquatable<CronExpression>
     {
         private const long NotFound = 0;
 
@@ -63,15 +63,15 @@ namespace Cronos
             50, 31, 19, 15, 30, 14, 13, 12
         };
 
-        private long  _second;     // 60 bits -> from 0 bit to 59 bit
-        private long  _minute;     // 60 bits -> from 0 bit to 59 bit
-        private int   _hour;       // 24 bits -> from 0 bit to 23 bit
-        private int   _dayOfMonth; // 31 bits -> from 1 bit to 31 bit
+        private long _second;     // 60 bits -> from 0 bit to 59 bit
+        private long _minute;     // 60 bits -> from 0 bit to 59 bit
+        private int _hour;       // 24 bits -> from 0 bit to 23 bit
+        private int _dayOfMonth; // 31 bits -> from 1 bit to 31 bit
         private short _month;      // 12 bits -> from 1 bit to 12 bit
-        private byte  _dayOfWeek;  // 8 bits  -> from 0 bit to 7 bit
+        private byte _dayOfWeek;  // 8 bits  -> from 0 bit to 7 bit
 
-        private byte  _nthDayOfWeek;
-        private byte  _lastMonthOffset;
+        private byte _nthDayOfWeek;
+        private byte _lastMonthOffset;
 
         private CronExpressionFlag _flags;
 
@@ -286,7 +286,7 @@ namespace Cronos
         public override string ToString()
         {
             var expressionBuilder = new StringBuilder();
-            
+
             AppendFieldValue(expressionBuilder, CronField.Seconds, _second).Append(' ');
             AppendFieldValue(expressionBuilder, CronField.Minutes, _minute).Append(' ');
             AppendFieldValue(expressionBuilder, CronField.Hours, _hour).Append(' ');
@@ -374,7 +374,7 @@ namespace Cronos
             {
                 var currentOffset = from.Offset;
                 var standardOffset = zone.BaseUtcOffset;
-               
+
                 if (standardOffset != currentOffset)
                 {
                     var daylightOffset = TimeZoneHelper.GetDaylightOffset(zone, fromLocal);
@@ -478,11 +478,11 @@ namespace Cronos
                 if (minute > startMinute) goto RolloverMinute;
                 goto ReturnResult;
 
-                RolloverDay: hour = GetFirstSet(_hour);
-                RolloverHour: minute = GetFirstSet(_minute);
-                RolloverMinute: second = GetFirstSet(_second);
+            RolloverDay: hour = GetFirstSet(_hour);
+            RolloverHour: minute = GetFirstSet(_minute);
+            RolloverMinute: second = GetFirstSet(_second);
 
-                ReturnResult:
+            ReturnResult:
 
                 var found = CalendarHelper.DateTimeToTicks(year, month, day, hour, minute, second);
                 if (found >= ticks) return found;
@@ -876,7 +876,7 @@ namespace Cronos
             // Unset 7 bit for Day of week field because both 0 and 7 stand for Sunday.
             if (field == CronField.DaysOfWeek) fieldValue &= ~(1 << field.Last);
 
-            for (var i = GetFirstSet(fieldValue);; i = GetFirstSet(fieldValue >> i << i))
+            for (var i = GetFirstSet(fieldValue); ; i = GetFirstSet(fieldValue >> i << i))
             {
                 expressionBuilder.Append(i);
                 if (fieldValue >> ++i == 0) break;
@@ -951,7 +951,7 @@ namespace Cronos
             if (field == CronField.DaysOfWeek) high--;
 
             var bits = GetRangeBits(num1, high, step);
-            
+
             num1 = field.First + step - (high - num1) % step - 1;
             return bits | GetRangeBits(num1, num2, step);
         }

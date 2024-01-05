@@ -1,24 +1,28 @@
 ﻿using System;
-using Foundatio.Xunit;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Metrics;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Threading;
 
-namespace Foundatio.Tests.Metrics {
-    public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable {
+namespace Foundatio.Tests.Metrics
+{
+    public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
+    {
         private readonly DiagnosticsMetricsClient _client;
 
-        public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output) {
+        public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output)
+        {
             Log.MinimumLevel = LogLevel.Trace;
             _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
         }
 
         [Fact]
-        public void Counter() {
+        public void Counter()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
             _client.Counter("counter");
@@ -29,14 +33,16 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public void CounterWithValue() {
+        public void CounterWithValue()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
             _client.Counter("counter", 5);
             _client.Counter("counter", 3);
 
             Assert.Equal(2, metricsCollector.GetMeasurements<int>().Count);
-            Assert.All(metricsCollector.GetMeasurements<int>(), m => {
+            Assert.All(metricsCollector.GetMeasurements<int>(), m =>
+            {
                 Assert.Equal("counter", m.Name);
             });
             Assert.Equal(8, metricsCollector.GetSum<int>("counter"));
@@ -44,20 +50,22 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public void Gauge() {
+        public void Gauge()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
             _client.Gauge("gauge", 1.1);
 
             metricsCollector.RecordObservableInstruments();
 
-            Assert.Single(metricsCollector.GetMeasurements<double>());;
+            Assert.Single(metricsCollector.GetMeasurements<double>()); ;
             Assert.Equal("gauge", metricsCollector.GetMeasurements<double>().Single().Name);
             Assert.Equal(1.1, metricsCollector.GetMeasurements<double>().Single().Value);
         }
 
         [Fact]
-        public void Timer() {
+        public void Timer()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
             _client.Timer("timer", 450);
@@ -68,10 +76,12 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanWaitForCounter() {
+        public async Task CanWaitForCounter()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
-            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () => {
+            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
+            {
                 _client.Counter("timer", 1);
                 _client.Counter("timer", 2);
                 return Task.CompletedTask;
@@ -81,10 +91,12 @@ namespace Foundatio.Tests.Metrics {
         }
 
         [Fact]
-        public async Task CanTimeoutWaitingForCounter() {
+        public async Task CanTimeoutWaitingForCounter()
+        {
             using var metricsCollector = new DiagnosticsMetricsCollector("Test", _logger);
 
-            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () => {
+            var success = await metricsCollector.WaitForCounterAsync<int>("timer", () =>
+            {
                 _client.Counter("timer", 1);
                 _client.Counter("timer", 2);
                 return Task.CompletedTask;
@@ -93,7 +105,8 @@ namespace Foundatio.Tests.Metrics {
             Assert.False(success);
         }
 
-        public void Dispose() {
+        public void Dispose()
+        {
             _client.Dispose();
             GC.SuppressFinalize(this);
         }

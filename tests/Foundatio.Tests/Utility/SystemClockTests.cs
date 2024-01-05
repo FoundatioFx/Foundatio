@@ -1,18 +1,22 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Foundatio.Xunit;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Utility {
-    public class SystemClockTests : TestWithLoggingBase {
-        public SystemClockTests(ITestOutputHelper output) : base(output) {}
+namespace Foundatio.Tests.Utility
+{
+    public class SystemClockTests : TestWithLoggingBase
+    {
+        public SystemClockTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public void CanGetTime() {
-            using (TestSystemClock.Install()) {
+        public void CanGetTime()
+        {
+            using (TestSystemClock.Install())
+            {
                 var now = DateTime.UtcNow;
                 TestSystemClock.SetFrozenTime(now);
                 Assert.Equal(now, SystemClock.UtcNow);
@@ -24,8 +28,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanSleep() {
-            using (TestSystemClock.Install()) {
+        public void CanSleep()
+        {
+            using (TestSystemClock.Install())
+            {
                 var sw = Stopwatch.StartNew();
                 SystemClock.Sleep(250);
                 sw.Stop();
@@ -46,8 +52,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanSleepAsync() {
-            using (TestSystemClock.Install()) {
+        public async Task CanSleepAsync()
+        {
+            using (TestSystemClock.Install())
+            {
                 var sw = Stopwatch.StartNew();
                 await SystemClock.SleepAsync(250);
                 sw.Stop();
@@ -69,8 +77,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanSetTimeZone() {
-            using (TestSystemClock.Install()) {
+        public void CanSetTimeZone()
+        {
+            using (TestSystemClock.Install())
+            {
                 var utcNow = DateTime.UtcNow;
                 var now = new DateTime(utcNow.AddHours(1).Ticks, DateTimeKind.Local);
                 TestSystemClock.SetFrozenTime(utcNow);
@@ -85,8 +95,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanSetLocalFixedTime() {
-            using (TestSystemClock.Install()) {
+        public void CanSetLocalFixedTime()
+        {
+            using (TestSystemClock.Install())
+            {
                 var now = DateTime.Now;
                 var utcNow = now.ToUniversalTime();
                 TestSystemClock.SetFrozenTime(now);
@@ -100,8 +112,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanSetUtcFixedTime() {
-            using (TestSystemClock.Install()) {
+        public void CanSetUtcFixedTime()
+        {
+            using (TestSystemClock.Install())
+            {
                 var utcNow = DateTime.UtcNow;
                 var now = utcNow.ToLocalTime();
                 TestSystemClock.SetFrozenTime(utcNow);

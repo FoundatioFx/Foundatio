@@ -1,20 +1,25 @@
 ﻿using System;
 
-namespace Foundatio.Metrics {
-    public class SharedMetricsClientOptions : SharedOptions {
+namespace Foundatio.Metrics
+{
+    public class SharedMetricsClientOptions : SharedOptions
+    {
         public bool Buffered { get; set; } = true;
         public string Prefix { get; set; }
     }
 
-    public class SharedMetricsClientOptionsBuilder<TOption,TBuilder> : SharedOptionsBuilder<TOption, TBuilder>
-        where TOption: SharedMetricsClientOptions ,new()
-        where TBuilder: SharedMetricsClientOptionsBuilder<TOption, TBuilder> {
-        public TBuilder Buffered(bool buffered) {
+    public class SharedMetricsClientOptionsBuilder<TOption, TBuilder> : SharedOptionsBuilder<TOption, TBuilder>
+        where TOption : SharedMetricsClientOptions, new()
+        where TBuilder : SharedMetricsClientOptionsBuilder<TOption, TBuilder>
+    {
+        public TBuilder Buffered(bool buffered)
+        {
             Target.Buffered = buffered;
             return (TBuilder)this;
         }
 
-        public TBuilder Prefix(string prefix) {
+        public TBuilder Prefix(string prefix)
+        {
             Target.Prefix = prefix;
             return (TBuilder)this;
         }

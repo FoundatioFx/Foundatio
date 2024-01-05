@@ -4,16 +4,20 @@ using System.Diagnostics;
 using System.Linq;
 using Foundatio.Utility;
 
-namespace Foundatio.Metrics {
+namespace Foundatio.Metrics
+{
     [DebuggerDisplay("Time: {Time} Count: {Count}")]
-    public class CounterStat {
+    public class CounterStat
+    {
         public DateTime Time { get; set; }
         public long Count { get; set; }
     }
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count}")]
-    public class CounterStatSummary {
-        public CounterStatSummary(string name, ICollection<CounterStat> stats, DateTime start, DateTime end) {
+    public class CounterStatSummary
+    {
+        public CounterStatSummary(string name, ICollection<CounterStat> stats, DateTime start, DateTime end)
+        {
             Name = name;
             Stats.AddRange(stats);
             Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
@@ -27,7 +31,8 @@ namespace Foundatio.Metrics {
         public ICollection<CounterStat> Stats { get; } = new List<CounterStat>();
         public long Count { get; private set; }
 
-        public override string ToString() {
+        public override string ToString()
+        {
             return $"Counter: {Name} Value: {Count}";
         }
     }

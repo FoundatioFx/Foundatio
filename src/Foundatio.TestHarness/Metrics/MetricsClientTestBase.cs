@@ -2,25 +2,28 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Xunit;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable AsyncFixer04 // A disposable object used in a fire & forget async call
 
-namespace Foundatio.Tests.Metrics {
-    public abstract class MetricsClientTestBase : TestWithLoggingBase {
-        public MetricsClientTestBase(ITestOutputHelper output) : base(output) {}
+namespace Foundatio.Tests.Metrics
+{
+    public abstract class MetricsClientTestBase : TestWithLoggingBase
+    {
+        public MetricsClientTestBase(ITestOutputHelper output) : base(output) { }
 
         public abstract IMetricsClient GetMetricsClient(bool buffered = false);
 
-        public virtual async Task CanSetGaugesAsync() {
+        public virtual async Task CanSetGaugesAsync()
+        {
             using var metrics = GetMetricsClient();
-            
+
             if (metrics is not IMetricsClientStats stats)
                 return;
 
@@ -34,7 +37,8 @@ namespace Foundatio.Tests.Metrics {
             Assert.Equal(20d, (await stats.GetGaugeStatsAsync("mygauge")).Last);
         }
 
-        public virtual async Task CanIncrementCounterAsync() {
+        public virtual async Task CanIncrementCounterAsync()
+        {
             using var metrics = GetMetricsClient();
 
             if (metrics is not IMetricsClientStats stats)
@@ -57,22 +61,25 @@ namespace Foundatio.Tests.Metrics {
                 _logger.LogInformation((await stats.GetCounterStatsAsync("c1")).ToString());
         }
 
-        private Task AssertCounterAsync(IMetricsClientStats client, string name, long expected) {
-            return Run.WithRetriesAsync(async () => {
+        private Task AssertCounterAsync(IMetricsClientStats client, string name, long expected)
+        {
+            return Run.WithRetriesAsync(async () =>
+            {
                 long actual = await client.GetCounterCountAsync(name, SystemClock.UtcNow.Subtract(TimeSpan.FromHours(1)));
                 Assert.Equal(expected, actual);
             }, 8, logger: _logger);
         }
 
-        public virtual async Task CanGetBufferedQueueMetricsAsync() {
+        public virtual async Task CanGetBufferedQueueMetricsAsync()
+        {
             using var metrics = GetMetricsClient(true) as IBufferedMetricsClient;
-            
+
             if (metrics is not IMetricsClientStats stats)
                 return;
 
             using var behavior = new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(25), loggerFactory: Log);
             using var queue = new InMemoryQueue<SimpleWorkItem>(new InMemoryQueueOptions<SimpleWorkItem> { Behaviors = new[] { behavior }, LoggerFactory = Log });
-            
+
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 1, Data = "1" });
             await SystemClock.SleepAsync(50);
             var entry = await queue.DequeueAsync(TimeSpan.Zero);
@@ -91,9 +98,10 @@ namespace Foundatio.Tests.Metrics {
             Assert.InRange(queueStats.ProcessTime.AverageDuration, 10, 250);
         }
 
-        public virtual async Task CanIncrementBufferedCounterAsync() {
+        public virtual async Task CanIncrementBufferedCounterAsync()
+        {
             using var metrics = GetMetricsClient(true) as IBufferedMetricsClient;
-            
+
             if (metrics is not IMetricsClientStats stats)
                 return;
 
@@ -134,14 +142,16 @@ namespace Foundatio.Tests.Metrics {
         }
 
 #pragma warning disable 4014
-        public virtual async Task CanWaitForCounterAsync() {
+        public virtual async Task CanWaitForCounterAsync()
+        {
             const string CounterName = "Test";
             using var metrics = GetMetricsClient() as CacheBucketMetricsClientBase;
-            
+
             if (metrics is not IMetricsClientStats stats)
                 return;
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 metrics.Counter(CounterName);
             });
@@ -151,7 +161,8 @@ namespace Foundatio.Tests.Metrics {
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
             Assert.True(await task, $"Expected at least 1 count within 500 ms... Took: {sw.Elapsed:g}");
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 metrics.Counter(CounterName);
             });
@@ -161,7 +172,8 @@ namespace Foundatio.Tests.Metrics {
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
             Assert.True(await task, $"Expected at least 2 count within 500 ms... Took: {sw.Elapsed:g}");
 
-            Task.Run(async () => {
+            Task.Run(async () =>
+            {
                 await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
                 metrics.Counter(CounterName, 2);
             });
@@ -171,9 +183,11 @@ namespace Foundatio.Tests.Metrics {
             await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(100));
             Assert.True(await task, $"Expected at least 4 count within 500 ms... Took: {sw.Elapsed:g}");
 
-            using (var timeoutCancellationTokenSource = new CancellationTokenSource(500)) {
+            using (var timeoutCancellationTokenSource = new CancellationTokenSource(500))
+            {
                 sw.Restart();
-                task = metrics.WaitForCounterAsync(CounterName, () => {
+                task = metrics.WaitForCounterAsync(CounterName, () =>
+                {
                     metrics.Counter(CounterName);
                     return Task.CompletedTask;
                 }, cancellationToken: timeoutCancellationTokenSource.Token);
@@ -186,9 +200,10 @@ namespace Foundatio.Tests.Metrics {
         }
 #pragma warning restore 4014
 
-        public virtual async Task CanSendBufferedMetricsAsync() {
+        public virtual async Task CanSendBufferedMetricsAsync()
+        {
             using var metrics = GetMetricsClient(true) as IBufferedMetricsClient;
-            
+
             if (metrics is not IMetricsClientStats stats)
                 return;
 

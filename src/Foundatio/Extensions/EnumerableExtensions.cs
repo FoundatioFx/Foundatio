@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Utility {
-    internal static class EnumerableExtensions {
-        public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action) {
+namespace Foundatio.Utility
+{
+    internal static class EnumerableExtensions
+    {
+        public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action)
+        {
             if (collection == null || action == null)
                 return;
 
@@ -11,7 +14,8 @@ namespace Foundatio.Utility {
                 action(item);
         }
 
-        public static void AddRange<T>(this ICollection<T> list, IEnumerable<T> range) {
+        public static void AddRange<T>(this ICollection<T> list, IEnumerable<T> range)
+        {
             if (list == null || range == null)
                 return;
 

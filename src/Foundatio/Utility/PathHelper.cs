@@ -1,11 +1,14 @@
 ﻿using System;
 using System.IO;
 
-namespace Foundatio.Utility {
-    public static class PathHelper {
+namespace Foundatio.Utility
+{
+    public static class PathHelper
+    {
         private const string DATA_DIRECTORY = "|DataDirectory|";
 
-        public static string ExpandPath(string path) {
+        public static string ExpandPath(string path)
+        {
             if (String.IsNullOrEmpty(path))
                 return path;
 
@@ -32,15 +35,19 @@ namespace Foundatio.Utility {
             return fullPath;
         }
 
-        public static string GetDataDirectory() {
-            try {
+        public static string GetDataDirectory()
+        {
+            try
+            {
                 string dataDirectory = AppDomain.CurrentDomain.GetData("DataDirectory") as string;
                 if (String.IsNullOrEmpty(dataDirectory))
                     dataDirectory = AppContext.BaseDirectory;
 
                 if (!String.IsNullOrEmpty(dataDirectory))
                     return Path.GetFullPath(dataDirectory);
-            } catch (Exception) {
+            }
+            catch (Exception)
+            {
                 return null;
             }
 

@@ -6,22 +6,27 @@ using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Xunit {
-    internal class TestLogger : ILogger {
+namespace Foundatio.Xunit
+{
+    internal class TestLogger : ILogger
+    {
         private readonly TestLoggerFactory _loggerFactory;
         private readonly string _categoryName;
 
-        public TestLogger(string categoryName, TestLoggerFactory loggerFactory) {
+        public TestLogger(string categoryName, TestLoggerFactory loggerFactory)
+        {
             _loggerFactory = loggerFactory;
             _categoryName = categoryName;
         }
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) {
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+        {
             if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
                 return;
 
             object[] scopes = CurrentScopeStack.Reverse().ToArray();
-            var logEntry = new LogEntry {
+            var logEntry = new LogEntry
+            {
                 Date = SystemClock.UtcNow,
                 LogLevel = logLevel,
                 EventId = eventId,
@@ -32,7 +37,8 @@ namespace Foundatio.Xunit {
                 Scopes = scopes
             };
 
-            switch (state) {
+            switch (state)
+            {
                 //case LogData logData:
                 //    logEntry.Properties["CallerMemberName"] = logData.MemberName;
                 //    logEntry.Properties["CallerFilePath"] = logData.FilePath;
@@ -47,7 +53,8 @@ namespace Foundatio.Xunit {
                     break;
             }
 
-            foreach (object scope in scopes) {
+            foreach (object scope in scopes)
+            {
                 if (!(scope is IDictionary<string, object> scopeData))
                     continue;
 
@@ -58,41 +65,48 @@ namespace Foundatio.Xunit {
             _loggerFactory.AddLogEntry(logEntry);
         }
 
-        public bool IsEnabled(LogLevel logLevel) {
+        public bool IsEnabled(LogLevel logLevel)
+        {
             return _loggerFactory.IsEnabled(_categoryName, logLevel);
         }
 
-        public IDisposable BeginScope<TState>(TState state) {
+        public IDisposable BeginScope<TState>(TState state)
+        {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
 
             return Push(state);
         }
 
-        public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) {
+        public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
+        {
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
 
             return Push(scopeFactory(state));
         }
-        
+
         private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();
 
-        private sealed class Wrapper {
+        private sealed class Wrapper
+        {
             public ImmutableStack<object> Value { get; set; }
         }
 
-        private static ImmutableStack<object> CurrentScopeStack {
+        private static ImmutableStack<object> CurrentScopeStack
+        {
             get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
             set => _currentScopeStack.Value = new Wrapper { Value = value };
         }
 
-        private static IDisposable Push(object state) {
+        private static IDisposable Push(object state)
+        {
             CurrentScopeStack = CurrentScopeStack.Push(state);
             return new DisposableAction(Pop);
         }
 
-        private static void Pop() {
+        private static void Pop()
+        {
             CurrentScopeStack = CurrentScopeStack.Pop();
         }
     }

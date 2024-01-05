@@ -1,7 +1,7 @@
 ﻿using System;
-using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace Foundatio.AsyncEx
 {
@@ -166,9 +166,9 @@ namespace Foundatio.AsyncEx
         /// </summary>
         public void Start()
         {
-// ReSharper disable UnusedVariable
+            // ReSharper disable UnusedVariable
             var unused = Task;
-// ReSharper restore UnusedVariable
+            // ReSharper restore UnusedVariable
         }
 
         internal enum LazyState

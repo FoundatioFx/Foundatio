@@ -7,135 +7,163 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Caching {
-    public class InMemoryCacheClientTests : CacheClientTestsBase {
-        public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) {}
+namespace Foundatio.Tests.Caching
+{
+    public class InMemoryCacheClientTests : CacheClientTestsBase
+    {
+        public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) { }
 
-        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+        {
             return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
         }
 
         [Fact]
-        public override Task CanGetAllAsync() {
+        public override Task CanGetAllAsync()
+        {
             return base.CanGetAllAsync();
         }
 
         [Fact]
-        public override Task CanGetAllWithOverlapAsync() {
+        public override Task CanGetAllWithOverlapAsync()
+        {
             return base.CanGetAllWithOverlapAsync();
         }
 
         [Fact]
-        public override Task CanSetAsync() {
+        public override Task CanSetAsync()
+        {
             return base.CanSetAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetValueAsync() {
+        public override Task CanSetAndGetValueAsync()
+        {
             return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanAddAsync() {
+        public override Task CanAddAsync()
+        {
             return base.CanAddAsync();
         }
 
         [Fact]
-        public override Task CanAddConcurrentlyAsync() {
+        public override Task CanAddConcurrentlyAsync()
+        {
             return base.CanAddConcurrentlyAsync();
         }
 
         [Fact]
-        public override Task CanGetAsync() {
+        public override Task CanGetAsync()
+        {
             return base.CanGetAsync();
         }
 
         [Fact]
-        public override Task CanTryGetAsync() {
+        public override Task CanTryGetAsync()
+        {
             return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCachesAsync() {
+        public override Task CanUseScopedCachesAsync()
+        {
             return base.CanUseScopedCachesAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetObjectAsync() {
+        public override Task CanSetAndGetObjectAsync()
+        {
             return base.CanSetAndGetObjectAsync();
         }
 
         [Fact]
-        public override Task CanRemoveByPrefixAsync() {
+        public override Task CanRemoveByPrefixAsync()
+        {
             return base.CanRemoveByPrefixAsync();
         }
 
         [Theory]
         [InlineData(50)]
         [InlineData(500)]
-        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count)
+        {
             return base.CanRemoveByPrefixMultipleEntriesAsync(count);
         }
 
         [Fact]
-        public override Task CanSetExpirationAsync() {
+        public override Task CanSetExpirationAsync()
+        {
             return base.CanSetExpirationAsync();
         }
 
         [Fact]
-        public override Task CanSetMinMaxExpirationAsync() {
+        public override Task CanSetMinMaxExpirationAsync()
+        {
             return base.CanSetMinMaxExpirationAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAsync() {
+        public override Task CanIncrementAsync()
+        {
             return base.CanIncrementAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAndExpireAsync() {
+        public override Task CanIncrementAndExpireAsync()
+        {
             return base.CanIncrementAndExpireAsync();
         }
 
         [Fact]
-        public override Task CanReplaceIfEqual() {
+        public override Task CanReplaceIfEqual()
+        {
             return base.CanReplaceIfEqual();
         }
 
         [Fact]
-        public override Task CanRemoveIfEqual() {
+        public override Task CanRemoveIfEqual()
+        {
             return base.CanRemoveIfEqual();
         }
 
         [Fact]
-        public override Task CanGetAndSetDateTimeAsync() {
+        public override Task CanGetAndSetDateTimeAsync()
+        {
             return base.CanGetAndSetDateTimeAsync();
         }
 
         [Fact]
-        public override Task CanRoundTripLargeNumbersAsync() {
+        public override Task CanRoundTripLargeNumbersAsync()
+        {
             return base.CanRoundTripLargeNumbersAsync();
         }
 
         [Fact]
-        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync()
+        {
             return base.CanRoundTripLargeNumbersWithExpirationAsync();
         }
 
         [Fact]
-        public override Task CanManageListsAsync() {
+        public override Task CanManageListsAsync()
+        {
             return base.CanManageListsAsync();
         }
 
         [Fact]
-        public async Task CanSetMaxItems() {
+        public async Task CanSetMaxItems()
+        {
             Log.MinimumLevel = LogLevel.Trace;
 
             // run in tight loop so that the code is warmed up and we can catch timing issues
-            for (int x = 0; x < 5; x++) {
+            for (int x = 0; x < 5; x++)
+            {
                 var cache = new InMemoryCacheClient(o => o.MaxItems(10).CloneValues(true));
 
-                using (cache) {
+                using (cache)
+                {
                     await cache.RemoveAllAsync();
 
                     for (int i = 0; i < cache.MaxItems; i++)
@@ -162,7 +190,8 @@ namespace Foundatio.Tests.Caching {
         }
 
         [Fact]
-        public async Task SetAllShouldExpire() {
+        public async Task SetAllShouldExpire()
+        {
             var client = GetCacheClient();
 
             var expiry = TimeSpan.FromMilliseconds(50);

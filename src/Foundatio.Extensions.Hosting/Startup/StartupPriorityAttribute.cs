@@ -1,8 +1,11 @@
 ﻿using System;
 
-namespace Foundatio.Extensions.Hosting.Startup {
-    public class StartupPriorityAttribute : Attribute {
-        public StartupPriorityAttribute(int priority) {
+namespace Foundatio.Extensions.Hosting.Startup
+{
+    public class StartupPriorityAttribute : Attribute
+    {
+        public StartupPriorityAttribute(int priority)
+        {
             Priority = priority;
         }
 

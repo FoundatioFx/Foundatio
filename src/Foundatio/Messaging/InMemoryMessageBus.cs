@@ -5,12 +5,14 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Messaging {
-    public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions> {
+namespace Foundatio.Messaging
+{
+    public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
+    {
         private readonly ConcurrentDictionary<string, long> _messageCounts = new();
         private long _messagesSent;
 
-        public InMemoryMessageBus() : this(o => o) {}
+        public InMemoryMessageBus() : this(o => o) { }
 
         public InMemoryMessageBus(InMemoryMessageBusOptions options) : base(options) { }
 
@@ -19,20 +21,24 @@ namespace Foundatio.Messaging {
 
         public long MessagesSent => _messagesSent;
 
-        public long GetMessagesSent(Type messageType) {
+        public long GetMessagesSent(Type messageType)
+        {
             return _messageCounts.TryGetValue(GetMappedMessageType(messageType), out long count) ? count : 0;
         }
 
-        public long GetMessagesSent<T>() {
+        public long GetMessagesSent<T>()
+        {
             return _messageCounts.TryGetValue(GetMappedMessageType(typeof(T)), out long count) ? count : 0;
         }
 
-        public void ResetMessagesSent() {
+        public void ResetMessagesSent()
+        {
             Interlocked.Exchange(ref _messagesSent, 0);
             _messageCounts.Clear();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+        {
             Interlocked.Increment(ref _messagesSent);
             _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
             var mappedType = GetMappedMessageType(messageType);
@@ -41,15 +47,17 @@ namespace Foundatio.Messaging {
                 return;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+            {
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
                 SendDelayedMessage(mappedType, message, options.DeliveryDelay.Value);
                 return;
             }
-            
+
             byte[] body = SerializeMessageBody(messageType, message);
-            var messageData = new Message(body, DeserializeMessageBody) {
+            var messageData = new Message(body, DeserializeMessageBody)
+            {
                 CorrelationId = options.CorrelationId,
                 UniqueId = options.UniqueId,
                 Type = messageType,
@@ -59,9 +67,12 @@ namespace Foundatio.Messaging {
             foreach (var property in options.Properties)
                 messageData.Properties[property.Key] = property.Value;
 
-            try {
+            try
+            {
                 await SendMessageToSubscribersAsync(messageData).AnyContext();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 // swallow exceptions from subscriber handlers for the in memory bus
                 _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
             }

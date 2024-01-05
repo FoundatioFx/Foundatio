@@ -14,12 +14,15 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Extensions.Hosting.Jobs {
-    public class ScheduledJobService : BackgroundService, IJobStatus {
+namespace Foundatio.Extensions.Hosting.Jobs
+{
+    public class ScheduledJobService : BackgroundService, IJobStatus
+    {
         private readonly List<ScheduledJobRunner> _jobs;
         private readonly IServiceProvider _serviceProvider;
 
-        public ScheduledJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory) {
+        public ScheduledJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+        {
             _serviceProvider = serviceProvider;
             var cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient();
             _jobs = new List<ScheduledJobRunner>(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.JobFactory, j.Schedule, cacheClient, loggerFactory)));
@@ -30,18 +33,22 @@ namespace Foundatio.Extensions.Hosting.Jobs {
 
         public bool IsRunning { get; private set; } = true;
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
             // TODO: Add more logging throughout
             var startupContext = _serviceProvider.GetService<StartupActionsContext>();
-            if (startupContext != null) {
+            if (startupContext != null)
+            {
                 var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
-                if (!result.Success) {
+                if (!result.Success)
+                {
                     IsRunning = false;
                     throw new ApplicationException("Failed to wait for startup actions to complete");
                 }
             }
 
-            while (!stoppingToken.IsCancellationRequested) {
+            while (!stoppingToken.IsCancellationRequested)
+            {
                 var jobsToRun = _jobs.Where(j => j.ShouldRun()).ToArray();
 
                 foreach (var jobToRun in jobsToRun)
@@ -55,7 +62,8 @@ namespace Foundatio.Extensions.Hosting.Jobs {
             }
         }
 
-        private class ScheduledJobRunner {
+        private class ScheduledJobRunner
+        {
             private readonly Func<IJob> _jobFactory;
             private readonly CronExpression _cronSchedule;
             private readonly ILockProvider _lockProvider;
@@ -63,7 +71,8 @@ namespace Foundatio.Extensions.Hosting.Jobs {
             private readonly DateTime _baseDate = new(2010, 1, 1);
             private string _cacheKeyPrefix;
 
-            public ScheduledJobRunner(Func<IJob> jobFactory, string schedule, ICacheClient cacheClient, ILoggerFactory loggerFactory = null) {
+            public ScheduledJobRunner(Func<IJob> jobFactory, string schedule, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
+            {
                 _jobFactory = jobFactory;
                 Schedule = schedule;
                 _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
@@ -75,7 +84,8 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 var interval = TimeSpan.FromDays(1);
 
                 var nextOccurrence = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
-                if (nextOccurrence.HasValue) {
+                if (nextOccurrence.HasValue)
+                {
                     var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
                     if (nextNextOccurrence.HasValue)
                         interval = nextNextOccurrence.Value.Subtract(nextOccurrence.Value);
@@ -91,7 +101,8 @@ namespace Foundatio.Extensions.Hosting.Jobs {
             public DateTime? NextRun { get; private set; }
             public Task RunTask { get; private set; }
 
-            public bool ShouldRun() {
+            public bool ShouldRun()
+            {
                 if (!NextRun.HasValue)
                     return false;
 
@@ -106,12 +117,15 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 return true;
             }
 
-            public Task<bool> StartAsync(CancellationToken cancellationToken = default) {
+            public Task<bool> StartAsync(CancellationToken cancellationToken = default)
+            {
                 // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
                 // TODO: provide ability to run cron jobs on a per host isolated schedule
-                return _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t => {
+                return _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t =>
+                {
                     // start running the job in a thread
-                    RunTask = Task.Factory.StartNew(async () => {
+                    RunTask = Task.Factory.StartNew(async () =>
+                    {
                         var job = _jobFactory();
                         // TODO: Don't calculate job name every time
                         string jobName = job.GetType().Name;
@@ -127,7 +141,8 @@ namespace Foundatio.Extensions.Hosting.Jobs {
                 }, TimeSpan.Zero, TimeSpan.Zero);
             }
 
-            private string GetLockKey(DateTime date) {
+            private string GetLockKey(DateTime date)
+            {
                 if (_cacheKeyPrefix == null)
                     _cacheKeyPrefix = TypeHelper.GetTypeDisplayName(_jobFactory().GetType());
 

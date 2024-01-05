@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 
-namespace Foundatio.Queues {
-    public interface IQueue<T> : IQueue where T : class {
+namespace Foundatio.Queues
+{
+    public interface IQueue<T> : IQueue where T : class
+    {
         AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
         AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
         AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
@@ -40,19 +42,22 @@ namespace Foundatio.Queues {
         Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default);
     }
 
-    public interface IQueue : IHaveSerializer, IDisposable {
+    public interface IQueue : IHaveSerializer, IDisposable
+    {
         Task<QueueStats> GetQueueStatsAsync();
         Task DeleteQueueAsync();
         string QueueId { get; }
     }
 
-    public static class QueueExtensions {
+    public static class QueueExtensions
+    {
         public static Task StartWorkingAsync<T>(this IQueue<T> queue, Func<IQueueEntry<T>, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default) where T : class
             => queue.StartWorkingAsync((entry, token) => handler(entry), autoComplete, cancellationToken);
     }
 
     [DebuggerDisplay("Queued={Queued}, Working={Working}, Deadletter={Deadletter}, Enqueued={Enqueued}, Dequeued={Dequeued}, Completed={Completed}, Abandoned={Abandoned}, Errors={Errors}, Timeouts={Timeouts}")]
-    public class QueueStats {
+    public class QueueStats
+    {
         public long Queued { get; set; }
         public long Working { get; set; }
         public long Deadletter { get; set; }
@@ -63,41 +68,48 @@ namespace Foundatio.Queues {
         public long Errors { get; set; }
         public long Timeouts { get; set; }
     }
-    
-    public class QueueEntryOptions {
+
+    public class QueueEntryOptions
+    {
         public string UniqueId { get; set; }
         public string CorrelationId { get; set; }
         public TimeSpan? DeliveryDelay { get; set; }
         public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     }
 
-    public class EnqueuingEventArgs<T> : CancelEventArgs where T : class {
+    public class EnqueuingEventArgs<T> : CancelEventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public T Data { get; set; }
         public QueueEntryOptions Options { get; set; }
     }
 
-    public class EnqueuedEventArgs<T> : EventArgs where T : class {
+    public class EnqueuedEventArgs<T> : EventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }
 
-    public class DequeuedEventArgs<T> : EventArgs where T : class {
+    public class DequeuedEventArgs<T> : EventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }
 
-    public class LockRenewedEventArgs<T> : EventArgs where T : class {
+    public class LockRenewedEventArgs<T> : EventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }
 
-    public class CompletedEventArgs<T> : EventArgs where T : class {
+    public class CompletedEventArgs<T> : EventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }
 
-    public class AbandonedEventArgs<T> : EventArgs where T : class {
+    public class AbandonedEventArgs<T> : EventArgs where T : class
+    {
         public IQueue<T> Queue { get; set; }
         public IQueueEntry<T> Entry { get; set; }
     }

@@ -1,5 +1,7 @@
-﻿namespace Foundatio.Serializer {
-    public interface IHaveSerializer {
+﻿namespace Foundatio.Serializer
+{
+    public interface IHaveSerializer
+    {
         ISerializer Serializer { get; }
     }
 }

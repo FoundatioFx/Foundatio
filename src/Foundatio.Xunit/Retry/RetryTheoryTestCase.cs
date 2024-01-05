@@ -5,9 +5,11 @@ using System.Threading.Tasks;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-namespace Foundatio.Xunit {
+namespace Foundatio.Xunit
+{
     [Serializable]
-    public class RetryTheoryTestCase : XunitTheoryTestCase {
+    public class RetryTheoryTestCase : XunitTheoryTestCase
+    {
         private int maxRetries;
 
         [EditorBrowsable(EditorBrowsableState.Never)]
@@ -15,7 +17,8 @@ namespace Foundatio.Xunit {
         public RetryTheoryTestCase() { }
 
         public RetryTheoryTestCase(IMessageSink diagnosticMessageSink, TestMethodDisplay testMethodDisplay, TestMethodDisplayOptions testMethodDisplayOptions, ITestMethod testMethod, int maxRetries)
-            : base(diagnosticMessageSink, testMethodDisplay, testMethodDisplayOptions, testMethod) {
+            : base(diagnosticMessageSink, testMethodDisplay, testMethodDisplayOptions, testMethod)
+        {
             this.maxRetries = maxRetries;
         }
 
@@ -27,16 +30,19 @@ namespace Foundatio.Xunit {
                                                         IMessageBus messageBus,
                                                         object[] constructorArguments,
                                                         ExceptionAggregator aggregator,
-                                                        CancellationTokenSource cancellationTokenSource) {
+                                                        CancellationTokenSource cancellationTokenSource)
+        {
             var runCount = 0;
 
-            while (true) {
+            while (true)
+            {
                 // This is really the only tricky bit: we need to capture and delay messages (since those will
                 // contain run status) until we know we've decided to accept the final result;
                 var delayedMessageBus = new DelayedMessageBus(messageBus);
 
                 var summary = await base.RunAsync(diagnosticMessageSink, delayedMessageBus, constructorArguments, aggregator, cancellationTokenSource);
-                if (aggregator.HasExceptions || summary.Failed == 0 || ++runCount >= maxRetries) {
+                if (aggregator.HasExceptions || summary.Failed == 0 || ++runCount >= maxRetries)
+                {
                     delayedMessageBus.Dispose();  // Sends all the delayed messages
                     return summary;
                 }
@@ -45,13 +51,15 @@ namespace Foundatio.Xunit {
             }
         }
 
-        public override void Serialize(IXunitSerializationInfo data) {
+        public override void Serialize(IXunitSerializationInfo data)
+        {
             base.Serialize(data);
 
             data.AddValue("MaxRetries", maxRetries);
         }
 
-        public override void Deserialize(IXunitSerializationInfo data) {
+        public override void Deserialize(IXunitSerializationInfo data)
+        {
             base.Deserialize(data);
 
             maxRetries = data.GetValue<int>("MaxRetries");

@@ -1,15 +1,18 @@
 ﻿using System;
 using System.Reflection;
 
-namespace Foundatio.Utility {
-    internal static class EnumExtensions {
+namespace Foundatio.Utility
+{
+    internal static class EnumExtensions
+    {
         /// <summary>
         /// Will try and parse an enum and it's default type.
         /// </summary>
         /// <param name="type"></param>
         /// <param name="value"></param>
         /// <returns>True if the enum value is defined.</returns>
-        public static bool TryEnumIsDefined(Type type, object value) {
+        public static bool TryEnumIsDefined(Type type, object value)
+        {
             if (type == null || value == null || !type.GetTypeInfo().IsEnum)
                 return false;
 
@@ -39,12 +42,15 @@ namespace Foundatio.Utility {
             return false;
         }
 
-        public static bool TryEnumIsDefined<T>(Type type, object value) {
+        public static bool TryEnumIsDefined<T>(Type type, object value)
+        {
             // Catch any casting errors that can occur or if 0 is not defined as a default value.
-            try {
+            try
+            {
                 if (value is T && Enum.IsDefined(type, (T)value))
                     return true;
-            } catch (Exception) {}
+            }
+            catch (Exception) { }
 
             return false;
         }

@@ -1,19 +1,22 @@
-﻿using Foundatio.Xunit;
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Text.Json;
+using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Xunit;
 using Xunit.Abstractions;
-using System.Text.Json;
-using System.Text;
-using Foundatio.Serializer;
-using System;
-using System.Collections.Generic;
 
-namespace Foundatio.Tests.Utility {
-    public class DataDictionaryTests : TestWithLoggingBase {
+namespace Foundatio.Tests.Utility
+{
+    public class DataDictionaryTests : TestWithLoggingBase
+    {
         public DataDictionaryTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public void CanGetData() {
+        public void CanGetData()
+        {
             var serializer = new SystemTextJsonSerializer();
 
             var model = new MyModel();
@@ -66,20 +69,22 @@ namespace Foundatio.Tests.Utility {
             Assert.Equal(12, model.GetDataOrDefault<long>("Int16"));
             Assert.Equal(12, model.GetDataOrDefault<long>("Int32"));
             Assert.Equal(12, model.GetDataOrDefault<long>("Int64"));
-            
+
             Assert.Equal(1, model.GetDataOrDefault<long>("bool"));
         }
     }
 
-    public class MyModel : IHaveData, IHaveSerializer {
+    public class MyModel : IHaveData, IHaveSerializer
+    {
         public int IntProperty { get; set; }
         public string StringProperty { get; set; }
         public IDictionary<string, object> Data { get; } = new DataDictionary();
 
-        public ISerializer Serializer { get; set; } 
+        public ISerializer Serializer { get; set; }
     }
 
-    public class MyDataModel {
+    public class MyDataModel
+    {
         public int IntProperty { get; set; }
         public string StringProperty { get; set; }
     }

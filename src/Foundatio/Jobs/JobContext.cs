@@ -2,9 +2,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
 
-namespace Foundatio.Jobs {
-    public class JobContext {
-        public JobContext(CancellationToken cancellationToken, ILock lck = null) {
+namespace Foundatio.Jobs
+{
+    public class JobContext
+    {
+        public JobContext(CancellationToken cancellationToken, ILock lck = null)
+        {
             Lock = lck;
             CancellationToken = cancellationToken;
         }
@@ -12,7 +15,8 @@ namespace Foundatio.Jobs {
         public ILock Lock { get; }
         public CancellationToken CancellationToken { get; }
 
-        public virtual Task RenewLockAsync() {
+        public virtual Task RenewLockAsync()
+        {
             if (Lock != null)
                 return Lock.RenewAsync();
 

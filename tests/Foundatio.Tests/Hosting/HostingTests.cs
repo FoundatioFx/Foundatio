@@ -14,117 +14,135 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Hosting {
-    public class HostingTests : TestWithLoggingBase {
-        public HostingTests(ITestOutputHelper output) : base(output) {}
+namespace Foundatio.Tests.Hosting
+{
+    public class HostingTests : TestWithLoggingBase
+    {
+        public HostingTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public async Task WillRunSyncStartupAction() {
+        public async Task WillRunSyncStartupAction()
+        {
             var resetEvent = new AsyncManualResetEvent(false);
             var builder = new WebHostBuilder()
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     s.AddSingleton<ILoggerFactory>(Log);
                     s.AddStartupAction("Hey", () => resetEvent.Set());
                     s.AddHealthChecks().AddCheckForStartupActions("Critical");
                 })
-                .Configure(app => {
+                .Configure(app =>
+                {
                     app.UseReadyHealthChecks("Critical");
                 });
-            
+
             var server = new TestServer(builder);
-            
+
             await server.WaitForReadyAsync();
             await resetEvent.WaitAsync();
-            
+
             var client = server.CreateClient();
             var response = await client.GetAsync("/ready");
-            
+
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         [Fact]
-        public async Task WillRunAsyncStartupAction() {
+        public async Task WillRunAsyncStartupAction()
+        {
             var resetEvent = new AsyncManualResetEvent(false);
             var builder = new WebHostBuilder()
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     s.AddSingleton<ILoggerFactory>(Log);
-                    s.AddStartupAction("Hey", () => {
+                    s.AddStartupAction("Hey", () =>
+                    {
                         resetEvent.Set();
                         return Task.CompletedTask;
                     });
                     s.AddHealthChecks().AddCheckForStartupActions("Critical");
                 })
-                .Configure(app => {
+                .Configure(app =>
+                {
                     app.UseReadyHealthChecks("Critical");
                 });
-            
+
             var server = new TestServer(builder);
-            
+
             await server.WaitForReadyAsync();
             await resetEvent.WaitAsync();
-            
+
             var client = server.CreateClient();
             var response = await client.GetAsync("/ready");
-            
+
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         [Fact]
-        public async Task WillRunClassStartupAction() {
+        public async Task WillRunClassStartupAction()
+        {
             var builder = new WebHostBuilder()
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     s.AddSingleton<ILoggerFactory>(Log);
                     s.AddStartupAction<TestStartupAction>("Hey");
                     s.AddHealthChecks().AddCheckForStartupActions("Critical");
                 })
-                .Configure(app => {
+                .Configure(app =>
+                {
                     app.UseReadyHealthChecks("Critical");
                 });
-            
+
             var server = new TestServer(builder);
-            
+
             await server.WaitForReadyAsync();
             Assert.True(TestStartupAction.HasRun);
-            
+
             var client = server.CreateClient();
             var response = await client.GetAsync("/ready");
-            
+
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
-        
-        
+
+
         [Fact]
-        public async Task WillStopWaitingWhenStartupActionFails() {
+        public async Task WillStopWaitingWhenStartupActionFails()
+        {
             var builder = new WebHostBuilder()
                 .CaptureStartupErrors(true)
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     s.AddSingleton<ILoggerFactory>(Log);
                     s.AddStartupAction("Boom", () => throw new ApplicationException("Boom"));
                     s.AddHealthChecks().AddCheckForStartupActions("Critical");
                 })
-                .Configure(app => {
+                .Configure(app =>
+                {
                     app.UseReadyHealthChecks("Critical");
                 });
-            
+
             var server = new TestServer(builder);
 
             var sw = Stopwatch.StartNew();
             await Assert.ThrowsAsync<OperationCanceledException>(() => server.WaitForReadyAsync());
             sw.Stop();
-            
+
             Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
         }
 
         [Fact]
-        public async Task WillHandleNoRegisteredStartupActions() {
+        public async Task WillHandleNoRegisteredStartupActions()
+        {
             var builder = new WebHostBuilder()
                 .UseEnvironment(Environments.Development)
                 .CaptureStartupErrors(true)
-                .ConfigureServices(s => {
+                .ConfigureServices(s =>
+                {
                     s.AddSingleton<ILoggerFactory>(Log);
                     s.AddHealthChecks().AddCheckForStartupActions("Critical");
                 })
-                .Configure(app => {
+                .Configure(app =>
+                {
                     app.UseReadyHealthChecks("Critical");
                     app.UseWaitForStartupActionsBeforeServingRequests();
                 });
@@ -140,10 +158,12 @@ namespace Foundatio.Tests.Hosting {
 
     }
 
-    public class TestStartupAction : IStartupAction {
+    public class TestStartupAction : IStartupAction
+    {
         public static bool HasRun { get; private set; }
 
-        public Task RunAsync(CancellationToken shutdownToken = default) {
+        public Task RunAsync(CancellationToken shutdownToken = default)
+        {
             HasRun = true;
             return Task.CompletedTask;
         }

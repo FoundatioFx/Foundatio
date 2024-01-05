@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Foundatio.Queues;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Jobs {
-    public interface IQueueJob<T> : IJob where T : class {
+namespace Foundatio.Jobs
+{
+    public interface IQueueJob<T> : IJob where T : class
+    {
         /// <summary>
         /// Processes a queue entry and returns the result. This method is typically called from RunAsync() 
         /// but can also be called from a function passing in the queue entry.
@@ -16,10 +18,13 @@ namespace Foundatio.Jobs {
         IQueue<T> Queue { get; }
     }
 
-    public static class QueueJobExtensions {
-        public static Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class {
+    public static class QueueJobExtensions
+    {
+        public static Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
+        {
             var logger = job.GetLogger();
-            return job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () => {
+            return job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
+            {
                 // Allow abandoned items to be added in a background task.
                 Thread.Yield();
 

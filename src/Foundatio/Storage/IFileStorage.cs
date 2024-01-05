@@ -9,8 +9,10 @@ using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 
-namespace Foundatio.Storage {
-    public interface IFileStorage : IHaveSerializer, IDisposable {
+namespace Foundatio.Storage
+{
+    public interface IFileStorage : IHaveSerializer, IDisposable
+    {
         [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
         Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
         /// <summary>
@@ -31,34 +33,40 @@ namespace Foundatio.Storage {
         Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default);
     }
 
-    public interface IHasNextPageFunc {
+    public interface IHasNextPageFunc
+    {
         Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
     }
 
-    public class NextPageResult {
+    public class NextPageResult
+    {
         public bool Success { get; set; }
         public bool HasMore { get; set; }
         public IReadOnlyCollection<FileSpec> Files { get; set; }
         public Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
     }
 
-    public class PagedFileListResult : IHasNextPageFunc {
+    public class PagedFileListResult : IHasNextPageFunc
+    {
         private static readonly IReadOnlyCollection<FileSpec> _empty = new ReadOnlyCollection<FileSpec>(Array.Empty<FileSpec>());
         public static readonly PagedFileListResult Empty = new(_empty);
 
-        public PagedFileListResult(IReadOnlyCollection<FileSpec> files) {
+        public PagedFileListResult(IReadOnlyCollection<FileSpec> files)
+        {
             Files = files;
             HasMore = false;
             ((IHasNextPageFunc)this).NextPageFunc = null;
         }
 
-        public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc)
+        {
             Files = files;
             HasMore = hasMore;
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
-        public PagedFileListResult(Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc) {
+        public PagedFileListResult(Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc)
+        {
             ((IHasNextPageFunc)this).NextPageFunc = nextPageFunc;
         }
 
@@ -67,16 +75,20 @@ namespace Foundatio.Storage {
         protected IDictionary<string, object> Data { get; } = new DataDictionary();
         Func<PagedFileListResult, Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
 
-        public async Task<bool> NextPageAsync() {
+        public async Task<bool> NextPageAsync()
+        {
             if (((IHasNextPageFunc)this).NextPageFunc == null)
                 return false;
 
             var result = await ((IHasNextPageFunc)this).NextPageFunc(this).AnyContext();
-            if (result.Success) {
+            if (result.Success)
+            {
                 Files = result.Files;
                 HasMore = result.HasMore;
                 ((IHasNextPageFunc)this).NextPageFunc = result.NextPageFunc;
-            } else {
+            }
+            else
+            {
                 Files = _empty;
                 HasMore = false;
                 ((IHasNextPageFunc)this).NextPageFunc = null;
@@ -87,7 +99,8 @@ namespace Foundatio.Storage {
     }
 
     [DebuggerDisplay("Path = {Path}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
-    public class FileSpec {
+    public class FileSpec
+    {
         public string Path { get; set; }
         public DateTime Created { get; set; }
         public DateTime Modified { get; set; }
@@ -99,8 +112,10 @@ namespace Foundatio.Storage {
         // TODO: Add metadata object for custom properties
     }
 
-    public static class FileStorageExtensions {
-        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default) {
+    public static class FileStorageExtensions
+    {
+        public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -108,7 +123,8 @@ namespace Foundatio.Storage {
             return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
         }
 
-        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default) {
+        public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -119,7 +135,8 @@ namespace Foundatio.Storage {
             return default;
         }
 
-        public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files) {
+        public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)
+        {
             if (files == null)
                 throw new ArgumentNullException(nameof(files));
 
@@ -127,7 +144,8 @@ namespace Foundatio.Storage {
                 await storage.DeleteFileAsync(file.Path).AnyContext();
         }
 
-        public static async Task<string> GetFileContentsAsync(this IFileStorage storage, string path) {
+        public static async Task<string> GetFileContentsAsync(this IFileStorage storage, string path)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -138,7 +156,8 @@ namespace Foundatio.Storage {
             return null;
         }
 
-        public static async Task<byte[]> GetFileContentsRawAsync(this IFileStorage storage, string path) {
+        public static async Task<byte[]> GetFileContentsRawAsync(this IFileStorage storage, string path)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
@@ -149,25 +168,29 @@ namespace Foundatio.Storage {
             var buffer = new byte[16 * 1024];
             using var ms = new MemoryStream();
             int read;
-            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0) {
+            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length).AnyContext()) > 0)
+            {
                 await ms.WriteAsync(buffer, 0, read).AnyContext();
             }
 
             return ms.ToArray();
         }
 
-        public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents) {
+        public static Task<bool> SaveFileAsync(this IFileStorage storage, string path, string contents)
+        {
             if (String.IsNullOrEmpty(path))
                 throw new ArgumentNullException(nameof(path));
 
             return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
         }
 
-        public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default) {
+        public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default)
+        {
             var files = new List<FileSpec>();
             limit ??= Int32.MaxValue;
             var result = await storage.GetPagedFileListAsync(limit.Value, searchPattern, cancellationToken).AnyContext();
-            do {
+            do
+            {
                 files.AddRange(result.Files);
             } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync().AnyContext());
 

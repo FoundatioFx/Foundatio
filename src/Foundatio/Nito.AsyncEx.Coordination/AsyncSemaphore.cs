@@ -6,7 +6,8 @@ using Foundatio.AsyncEx.Synchronous;
 
 // Original idea from Stephen Toub: http://blogs.msdn.com/b/pfxteam/archive/2012/02/12/10266983.aspx
 
-namespace Foundatio.AsyncEx {
+namespace Foundatio.AsyncEx
+{
     /// <summary>
     /// An async-compatible semaphore. Alternatively, you could use <c>SemaphoreSlim</c>.
     /// </summary>

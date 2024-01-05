@@ -5,13 +5,15 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Utility;
 using Foundatio.AsyncEx;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Metrics {
-    public abstract class BufferedMetricsClientBase : IBufferedMetricsClient {
+namespace Foundatio.Metrics
+{
+    public abstract class BufferedMetricsClientBase : IBufferedMetricsClient
+    {
         protected readonly List<TimeBucket> _timeBuckets = new() {
             new TimeBucket { Size = TimeSpan.FromMinutes(1) }
         };
@@ -21,7 +23,8 @@ namespace Foundatio.Metrics {
         private readonly SharedMetricsClientOptions _options;
         protected readonly ILogger _logger;
 
-        public BufferedMetricsClientBase(SharedMetricsClientOptions options) {
+        public BufferedMetricsClientBase(SharedMetricsClientOptions options)
+        {
             _options = options;
             _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
             if (options.Buffered)
@@ -30,7 +33,8 @@ namespace Foundatio.Metrics {
 
         public AsyncEvent<CountedEventArgs> Counted { get; } = new AsyncEvent<CountedEventArgs>(true);
 
-        protected virtual Task OnCountedAsync(long value) {
+        protected virtual Task OnCountedAsync(long value)
+        {
             var counted = Counted;
             if (counted == null)
                 return Task.CompletedTask;
@@ -39,7 +43,8 @@ namespace Foundatio.Metrics {
             return counted.InvokeAsync(this, args);
         }
 
-        public void Counter(string name, int value = 1) {
+        public void Counter(string name, int value = 1)
+        {
             var entry = new MetricEntry { Name = name, Type = MetricType.Counter, Counter = value };
             if (!_options.Buffered)
                 SubmitMetric(entry);
@@ -47,7 +52,8 @@ namespace Foundatio.Metrics {
                 _queue.Enqueue(entry);
         }
 
-        public void Gauge(string name, double value) {
+        public void Gauge(string name, double value)
+        {
             var entry = new MetricEntry { Name = name, Type = MetricType.Gauge, Gauge = value };
             if (!_options.Buffered)
                 SubmitMetric(entry);
@@ -55,7 +61,8 @@ namespace Foundatio.Metrics {
                 _queue.Enqueue(entry);
         }
 
-        public void Timer(string name, int milliseconds) {
+        public void Timer(string name, int milliseconds)
+        {
             var entry = new MetricEntry { Name = name, Type = MetricType.Timing, Timing = milliseconds };
             if (!_options.Buffered)
                 SubmitMetric(entry);
@@ -63,32 +70,39 @@ namespace Foundatio.Metrics {
                 _queue.Enqueue(entry);
         }
 
-        private void OnMetricsTimer(object state) {
+        private void OnMetricsTimer(object state)
+        {
             if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
-            try {
+            try
+            {
                 FlushAsync().AnyContext().GetAwaiter().GetResult();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error flushing metrics: {Message}", ex.Message);
             }
         }
 
         private bool _sendingMetrics = false;
-        public async Task FlushAsync() {
+        public async Task FlushAsync()
+        {
             if (_sendingMetrics || _queue.IsEmpty)
                 return;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("Flushing metrics: count={Count}", _queue.Count);
 
-            try {
+            try
+            {
                 _sendingMetrics = true;
 
                 var startTime = SystemClock.UtcNow;
                 var entries = new List<MetricEntry>();
-                while (_queue.TryDequeue(out var entry)) {
+                while (_queue.TryDequeue(out var entry))
+                {
                     entries.Add(entry);
                     if (entry.EnqueuedDate > startTime)
                         break;
@@ -99,24 +113,31 @@ namespace Foundatio.Metrics {
 
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeued {Count} metrics", entries.Count);
                 await SubmitMetricsAsync(entries).AnyContext();
-            } finally {
+            }
+            finally
+            {
                 _sendingMetrics = false;
             }
         }
 
-        private void SubmitMetric(MetricEntry metric) {
+        private void SubmitMetric(MetricEntry metric)
+        {
             SubmitMetricsAsync(new List<MetricEntry> { metric }).AnyContext().GetAwaiter().GetResult();
         }
 
-        protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics) {
+        protected virtual async Task SubmitMetricsAsync(List<MetricEntry> metrics)
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            foreach (var timeBucket in _timeBuckets) {
-                try {
+            foreach (var timeBucket in _timeBuckets)
+            {
+                try
+                {
                     // counters
                     var counters = metrics.Where(e => e.Type == MetricType.Counter).ToList();
                     var groupedCounters = counters
                         .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(timeBucket.Size), timeBucket.Size, e.Name))
-                        .Select(e => new AggregatedCounterMetric {
+                        .Select(e => new AggregatedCounterMetric
+                        {
                             Key = e.Key,
                             Value = e.Sum(c => c.Counter),
                             Entries = e.ToList()
@@ -129,7 +150,8 @@ namespace Foundatio.Metrics {
                     var gauges = metrics.Where(e => e.Type == MetricType.Gauge).ToList();
                     var groupedGauges = gauges
                         .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(timeBucket.Size), timeBucket.Size, e.Name))
-                        .Select(e => new AggregatedGaugeMetric {
+                        .Select(e => new AggregatedGaugeMetric
+                        {
                             Key = e.Key,
                             Count = e.Count(),
                             Total = e.Sum(c => c.Gauge),
@@ -146,7 +168,8 @@ namespace Foundatio.Metrics {
                     var timings = metrics.Where(e => e.Type == MetricType.Timing).ToList();
                     var groupedTimings = timings
                         .GroupBy(e => new MetricKey(e.EnqueuedDate.Floor(timeBucket.Size), timeBucket.Size, e.Name))
-                        .Select(e => new AggregatedTimingMetric {
+                        .Select(e => new AggregatedTimingMetric
+                        {
                             Key = e.Key,
                             Count = e.Count(),
                             TotalDuration = e.Sum(c => (long)c.Timing),
@@ -161,7 +184,9 @@ namespace Foundatio.Metrics {
                     // store aggregated metrics
                     if (counters.Count > 0 || gauges.Count > 0 || timings.Count > 0)
                         await StoreAggregatedMetricsInternalAsync(timeBucket, groupedCounters, groupedGauges, groupedTimings).AnyContext();
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     if (_logger.IsEnabled(LogLevel.Error))
                         _logger.LogError(ex, "Error aggregating metrics: {Message}", ex.Message);
                     throw;
@@ -169,14 +194,18 @@ namespace Foundatio.Metrics {
             }
         }
 
-        private async Task StoreAggregatedMetricsInternalAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings) {
+        private async Task StoreAggregatedMetricsInternalAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings)
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Storing {CountersCount} counters, {GaugesCount} gauges, {TimingsCount} timings.", counters.Count, gauges.Count, timings.Count);
 
-            try {
+            try
+            {
                 await Run.WithRetriesAsync(() => StoreAggregatedMetricsAsync(timeBucket, counters, gauges, timings)).AnyContext();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error storing aggregated metrics: {Message}", ex.Message);
                 throw;
@@ -188,12 +217,14 @@ namespace Foundatio.Metrics {
 
         protected abstract Task StoreAggregatedMetricsAsync(TimeBucket timeBucket, ICollection<AggregatedCounterMetric> counters, ICollection<AggregatedGaugeMetric> gauges, ICollection<AggregatedTimingMetric> timings);
 
-        public async Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null) {
+        public async Task<bool> WaitForCounterAsync(string statName, long count = 1, TimeSpan? timeout = null)
+        {
             using var cancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(10));
             return await WaitForCounterAsync(statName, () => Task.CompletedTask, count, cancellationTokenSource.Token).AnyContext();
         }
 
-        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default) {
+        public async Task<bool> WaitForCounterAsync(string statName, Func<Task> work, long count = 1, CancellationToken cancellationToken = default)
+        {
             if (count <= 0)
                 return true;
 
@@ -202,11 +233,13 @@ namespace Foundatio.Metrics {
             var start = SystemClock.UtcNow;
 
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            using (Counted.AddHandler((s, e) => {
+            using (Counted.AddHandler((s, e) =>
+            {
                 currentCount -= e.Value;
                 resetEvent.Set();
                 return Task.CompletedTask;
-            })) {
+            }))
+            {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Wait: count={Count}", currentCount);
 
                 if (work != null)
@@ -215,10 +248,13 @@ namespace Foundatio.Metrics {
                 if (currentCount <= 0)
                     return true;
 
-                do {
-                    try {
+                do
+                {
+                    try
+                    {
                         await resetEvent.WaitAsync(cancellationToken).AnyContext();
-                    } catch (OperationCanceledException) { }
+                    }
+                    catch (OperationCanceledException) { }
 
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Got signal: count={CurrentCount} expected={Count}", currentCount, count);
@@ -231,14 +267,16 @@ namespace Foundatio.Metrics {
             return currentCount <= 0;
         }
 
-        public virtual void Dispose() {
+        public virtual void Dispose()
+        {
             _flushTimer?.Dispose();
             FlushAsync().AnyContext().GetAwaiter().GetResult();
             _queue?.Clear();
         }
 
         [DebuggerDisplay("Date: {EnqueuedDate} Type: {Type} Name: {Name} Counter: {Counter} Gauge: {Gauge} Timing: {Timing}")]
-        protected class MetricEntry {
+        protected class MetricEntry
+        {
             public DateTime EnqueuedDate { get; } = SystemClock.UtcNow;
             public string Name { get; set; }
             public MetricType Type { get; set; }
@@ -247,35 +285,41 @@ namespace Foundatio.Metrics {
             public int Timing { get; set; }
         }
 
-        protected enum MetricType {
+        protected enum MetricType
+        {
             Counter,
             Gauge,
             Timing
         }
 
         [DebuggerDisplay("Time: {Time} Key: {Key}")]
-        protected class MetricBucket {
+        protected class MetricBucket
+        {
             public string Key { get; set; }
             public DateTime Time { get; set; }
         }
 
-        protected interface IAggregatedMetric<T> where T: class {
+        protected interface IAggregatedMetric<T> where T : class
+        {
             MetricKey Key { get; set; }
             ICollection<MetricEntry> Entries { get; set; }
             T Add(T other);
         }
 
-        protected class AggregatedCounterMetric : IAggregatedMetric<AggregatedCounterMetric> {
+        protected class AggregatedCounterMetric : IAggregatedMetric<AggregatedCounterMetric>
+        {
             public MetricKey Key { get; set; }
             public long Value { get; set; }
             public ICollection<MetricEntry> Entries { get; set; }
 
-            public AggregatedCounterMetric Add(AggregatedCounterMetric other) {
+            public AggregatedCounterMetric Add(AggregatedCounterMetric other)
+            {
                 return this;
             }
         }
 
-        protected class AggregatedGaugeMetric : IAggregatedMetric<AggregatedGaugeMetric> {
+        protected class AggregatedGaugeMetric : IAggregatedMetric<AggregatedGaugeMetric>
+        {
             public MetricKey Key { get; set; }
             public int Count { get; set; }
             public double Total { get; set; }
@@ -284,12 +328,14 @@ namespace Foundatio.Metrics {
             public double Max { get; set; }
             public ICollection<MetricEntry> Entries { get; set; }
 
-            public AggregatedGaugeMetric Add(AggregatedGaugeMetric other) {
+            public AggregatedGaugeMetric Add(AggregatedGaugeMetric other)
+            {
                 return this;
             }
         }
 
-        protected class AggregatedTimingMetric : IAggregatedMetric<AggregatedTimingMetric> {
+        protected class AggregatedTimingMetric : IAggregatedMetric<AggregatedTimingMetric>
+        {
             public MetricKey Key { get; set; }
             public int Count { get; set; }
             public long TotalDuration { get; set; }
@@ -297,19 +343,22 @@ namespace Foundatio.Metrics {
             public int MaxDuration { get; set; }
             public ICollection<MetricEntry> Entries { get; set; }
 
-            public AggregatedTimingMetric Add(AggregatedTimingMetric other) {
+            public AggregatedTimingMetric Add(AggregatedTimingMetric other)
+            {
                 return this;
             }
         }
 
         [DebuggerDisplay("Size: {Size} Ttl: {Ttl}")]
-        protected struct TimeBucket {
+        protected struct TimeBucket
+        {
             public TimeSpan Size { get; set; }
             public TimeSpan Ttl { get; set; }
         }
     }
 
-    public class CountedEventArgs : EventArgs {
+    public class CountedEventArgs : EventArgs
+    {
         public long Value { get; set; }
     }
 }

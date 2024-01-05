@@ -4,13 +4,17 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Utility {
-    public static class Run {
-        public static Task DelayedAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default) {
+namespace Foundatio.Utility
+{
+    public static class Run
+    {
+        public static Task DelayedAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default)
+        {
             if (cancellationToken.IsCancellationRequested)
                 return Task.CompletedTask;
 
-            return Task.Run(async () => {
+            return Task.Run(async () =>
+            {
                 if (delay.Ticks > 0)
                     await SystemClock.SleepAsync(delay, cancellationToken).AnyContext();
 
@@ -21,18 +25,22 @@ namespace Foundatio.Utility {
             }, cancellationToken);
         }
 
-        public static Task InParallelAsync(int iterations, Func<int, Task> work) {
+        public static Task InParallelAsync(int iterations, Func<int, Task> work)
+        {
             return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
         }
 
-        public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
-            return WithRetriesAsync<object>(async () => {
+        public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null)
+        {
+            return WithRetriesAsync<object>(async () =>
+            {
                 await action().AnyContext();
                 return null;
             }, maxAttempts, retryInterval, cancellationToken, logger);
         }
 
-        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null) {
+        public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null)
+        {
             if (action == null)
                 throw new ArgumentNullException(nameof(action));
 
@@ -42,13 +50,17 @@ namespace Foundatio.Utility {
             if (retryInterval != null)
                 currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
 
-            do {
+            do
+            {
                 if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
 
-                try {
+                try
+                {
                     return await action().AnyContext();
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     if (attempts >= maxAttempts)
                         throw;
 

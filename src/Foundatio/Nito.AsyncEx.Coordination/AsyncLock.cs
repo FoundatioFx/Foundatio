@@ -70,7 +70,7 @@ namespace Foundatio.AsyncEx
         /// Creates a new async-compatible mutual exclusion lock.
         /// </summary>
         public AsyncLock()
-            :this(null)
+            : this(null)
         {
         }
 

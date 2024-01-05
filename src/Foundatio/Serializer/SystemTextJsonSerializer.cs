@@ -3,40 +3,53 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Foundatio.Serializer {
-    public class SystemTextJsonSerializer : ITextSerializer {
+namespace Foundatio.Serializer
+{
+    public class SystemTextJsonSerializer : ITextSerializer
+    {
         private readonly JsonSerializerOptions _serializeOptions;
         private readonly JsonSerializerOptions _deserializeOptions;
 
-        public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null) {
-            if (serializeOptions != null) {
+        public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null)
+        {
+            if (serializeOptions != null)
+            {
                 _serializeOptions = serializeOptions;
-            } else {
+            }
+            else
+            {
                 _serializeOptions = new JsonSerializerOptions();
             }
 
-            if (deserializeOptions != null) {
+            if (deserializeOptions != null)
+            {
                 _deserializeOptions = deserializeOptions;
-            } else {
+            }
+            else
+            {
                 _deserializeOptions = new JsonSerializerOptions();
                 _deserializeOptions.Converters.Add(new ObjectToInferredTypesConverter());
             }
         }
 
-        public void Serialize(object data, Stream outputStream) {
+        public void Serialize(object data, Stream outputStream)
+        {
             var writer = new Utf8JsonWriter(outputStream);
             JsonSerializer.Serialize(writer, data, data.GetType(), _serializeOptions);
             writer.Flush();
         }
 
-        public object Deserialize(Stream inputStream, Type objectType) {
+        public object Deserialize(Stream inputStream, Type objectType)
+        {
             using var reader = new StreamReader(inputStream);
             return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
         }
     }
 
-    public class ObjectToInferredTypesConverter : JsonConverter<object> {
-        public override object Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+    public class ObjectToInferredTypesConverter : JsonConverter<object>
+    {
+        public override object Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
             if (reader.TokenType == JsonTokenType.True)
                 return true;
 
@@ -54,7 +67,8 @@ namespace Foundatio.Serializer {
             return document.RootElement.Clone();
         }
 
-        public override void Write(Utf8JsonWriter writer, object objectToWrite, JsonSerializerOptions options) {
+        public override void Write(Utf8JsonWriter writer, object objectToWrite, JsonSerializerOptions options)
+        {
             throw new InvalidOperationException();
         }
     }

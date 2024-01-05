@@ -14,34 +14,41 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Storage {
-    public abstract class FileStorageTestsBase : TestWithLoggingBase {
-        protected FileStorageTestsBase(ITestOutputHelper output) : base(output) {}
+namespace Foundatio.Tests.Storage
+{
+    public abstract class FileStorageTestsBase : TestWithLoggingBase
+    {
+        protected FileStorageTestsBase(ITestOutputHelper output) : base(output) { }
 
-        protected virtual IFileStorage GetStorage() {
+        protected virtual IFileStorage GetStorage()
+        {
             return null;
         }
 
-        public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync() {
+        public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 Assert.Empty(await storage.GetFileListAsync(Guid.NewGuid() + "\\*"));
             }
         }
 
-        public virtual async Task CanGetFileListForSingleFolderAsync() {
+        public virtual async Task CanGetFileListForSingleFolderAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
                 await storage.SaveFileAsync(@"q\new.txt", "new");
                 await storage.SaveFileAsync(@"long/path/in/here/1.hey.stuff-2.json", "archived");
@@ -58,14 +65,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanGetFileListForSingleFileAsync() {
+        public virtual async Task CanGetFileListForSingleFileAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"archived\archived.txt", "archived");
                 await storage.SaveFileAsync(@"archived\archived.csv", "archived");
                 await storage.SaveFileAsync(@"q\new.txt", "new");
@@ -75,14 +84,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanGetPagedFileListForSingleFolderAsync() {
+        public virtual async Task CanGetPagedFileListForSingleFolderAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 var result = await storage.GetPagedFileListAsync(1);
                 Assert.False(result.HasMore);
                 Assert.Empty(result.Files);
@@ -112,22 +123,24 @@ namespace Foundatio.Tests.Storage {
                 Assert.Single((await storage.GetPagedFileListAsync(1)).Files);
                 Assert.Single((await storage.GetPagedFileListAsync(2, @"long\path\in\here\*stuff*.json")).Files);
 
-                Assert.Single((await storage.GetPagedFileListAsync(2,@"archived\*")).Files);
+                Assert.Single((await storage.GetPagedFileListAsync(2, @"archived\*")).Files);
                 Assert.Equal("archived", await storage.GetFileContentsAsync(@"archived\archived.txt"));
 
-                Assert.Single((await storage.GetPagedFileListAsync(2,@"q\*")).Files);
+                Assert.Single((await storage.GetPagedFileListAsync(2, @"q\*")).Files);
                 Assert.Equal("new", await storage.GetFileContentsAsync(@"q\new.txt"));
             }
         }
 
-        public virtual async Task CanGetFileInfoAsync() {
+        public virtual async Task CanGetFileInfoAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
                 Assert.Null(fileInfo);
 
@@ -157,27 +170,31 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanGetNonExistentFileInfoAsync() {
+        public virtual async Task CanGetNonExistentFileInfoAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
                 Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
             }
         }
 
-        public virtual async Task CanManageFilesAsync() {
+        public virtual async Task CanManageFilesAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync("test.txt", "test");
                 var file = (await storage.GetFileListAsync()).Single();
                 Assert.NotNull(file);
@@ -191,14 +208,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanRenameFilesAsync() {
+        public virtual async Task CanRenameFilesAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 Assert.True(await storage.SaveFileAsync("test.txt", "test"));
                 Assert.True(await storage.RenameFileAsync("test.txt", @"archive\new.txt"));
                 Assert.Equal("test", await storage.GetFileContentsAsync(@"archive\new.txt"));
@@ -211,10 +230,12 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected virtual string GetTestFilePath() {
+        protected virtual string GetTestFilePath()
+        {
             var currentDirectory = new DirectoryInfo(PathHelper.ExpandPath(@"|DataDirectory|\"));
             var currentFilePath = Path.Combine(currentDirectory.FullName, "README.md");
-            while (!File.Exists(currentFilePath) && currentDirectory.Parent != null) {
+            while (!File.Exists(currentFilePath) && currentDirectory.Parent != null)
+            {
                 currentDirectory = currentDirectory.Parent;
                 currentFilePath = Path.Combine(currentDirectory.FullName, "README.md");
             }
@@ -225,7 +246,8 @@ namespace Foundatio.Tests.Storage {
             throw new ApplicationException("Unable to find test README.md file in path hierarchy.");
         }
 
-        public virtual async Task CanSaveFilesAsync() {
+        public virtual async Task CanSaveFilesAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
@@ -233,10 +255,12 @@ namespace Foundatio.Tests.Storage {
             await ResetAsync(storage);
 
             string readmeFile = GetTestFilePath();
-            using (storage) {
+            using (storage)
+            {
                 Assert.False(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
-                await using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read))) {
+                await using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read)))
+                {
                     bool result = await storage.SaveFileAsync("Foundatio.Tests.csproj", stream);
                     Assert.True(result);
                 }
@@ -244,21 +268,24 @@ namespace Foundatio.Tests.Storage {
                 Assert.Single(await storage.GetFileListAsync());
                 Assert.True(await storage.ExistsAsync("Foundatio.Tests.csproj"));
 
-                await using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj")) {
+                await using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj"))
+                {
                     string result = await new StreamReader(stream).ReadToEndAsync();
                     Assert.Equal(File.ReadAllText(readmeFile), result);
                 }
             }
         }
 
-        public virtual async Task CanDeleteEntireFolderAsync() {
+        public virtual async Task CanDeleteEntireFolderAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 Assert.Equal(2, (await storage.GetFileListAsync()).Count);
@@ -268,14 +295,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanDeleteEntireFolderWithWildcardAsync() {
+        public virtual async Task CanDeleteEntireFolderWithWildcardAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 Assert.Equal(2, (await storage.GetFileListAsync()).Count);
@@ -288,18 +317,22 @@ namespace Foundatio.Tests.Storage {
                 Assert.Empty(await storage.GetFileListAsync());
             }
         }
-        
-        public virtual async Task CanDeleteFolderWithMultiFolderWildcardsAsync() {
+
+        public virtual async Task CanDeleteFolderWithMultiFolderWildcardsAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 const int filesPerMonth = 5;
-                for (int year = 2020; year <= 2021; year++) {
-                    for (int month = 1; month <= 12; month++) {
+                for (int year = 2020; year <= 2021; year++)
+                {
+                    for (int month = 1; month <= 12; month++)
+                    {
                         for (int index = 0; index < filesPerMonth; index++)
                             await storage.SaveFileAsync($"archive\\year-{year}\\month-{month:00}\\file-{index:00}.txt", "hello");
                     }
@@ -319,14 +352,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanDeleteSpecificFilesAsync() {
+        public virtual async Task CanDeleteSpecificFilesAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
@@ -345,14 +380,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanDeleteNestedFolderAsync() {
+        public virtual async Task CanDeleteNestedFolderAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
                 await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
@@ -371,14 +408,16 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanDeleteSpecificFilesInNestedFolderAsync() {
+        public virtual async Task CanDeleteSpecificFilesInNestedFolderAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 await storage.SaveFileAsync(@"x\hello.txt", "hello");
                 await storage.SaveFileAsync(@"x\world.csv", "world");
                 await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
@@ -401,18 +440,21 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task CanRoundTripSeekableStreamAsync() {
+        public virtual async Task CanRoundTripSeekableStreamAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 const string path = "user.xml";
                 var element = XElement.Parse("<user>Blake</user>");
 
-                using (var memoryStream = new MemoryStream()) {
+                using (var memoryStream = new MemoryStream())
+                {
                     _logger.LogTrace("Saving xml to stream with position {Position}.", memoryStream.Position);
                     element.Save(memoryStream, SaveOptions.DisableFormatting);
 
@@ -428,18 +470,22 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task WillRespectStreamOffsetAsync() {
+        public virtual async Task WillRespectStreamOffsetAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 string path = "blake.txt";
-                using (var memoryStream = new MemoryStream()) {
+                using (var memoryStream = new MemoryStream())
+                {
                     long offset;
-                    await using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true)) {
+                    await using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true))
+                    {
                         writer.AutoFlush = true;
                         await writer.WriteAsync("Eric");
                         offset = memoryStream.Position;
@@ -455,7 +501,8 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        public virtual async Task WillWriteStreamContentAsync() {
+        public virtual async Task WillWriteStreamContentAsync()
+        {
 
             const string testContent = "test";
             const string path = "created.txt";
@@ -466,9 +513,11 @@ namespace Foundatio.Tests.Storage {
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
 
-                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, StreamMode.Write), Encoding.UTF8, 1024, false)) {
+                using (var writer = new StreamWriter(await storage.GetFileStreamAsync(path, StreamMode.Write), Encoding.UTF8, 1024, false))
+                {
                     await writer.WriteAsync(testContent);
                 }
 
@@ -478,7 +527,8 @@ namespace Foundatio.Tests.Storage {
             }
         }
 
-        protected virtual async Task ResetAsync(IFileStorage storage) {
+        protected virtual async Task ResetAsync(IFileStorage storage)
+        {
             if (storage == null)
                 return;
 
@@ -488,22 +538,26 @@ namespace Foundatio.Tests.Storage {
             Assert.Empty(await storage.GetFileListAsync(limit: 10000));
         }
 
-        public virtual async Task CanConcurrentlyManageFilesAsync() {
+        public virtual async Task CanConcurrentlyManageFilesAsync()
+        {
             var storage = GetStorage();
             if (storage == null)
                 return;
 
             await ResetAsync(storage);
 
-            using (storage) {
+            using (storage)
+            {
                 const string queueFolder = "q";
                 var queueItems = new BlockingCollection<int>();
 
                 var info = await storage.GetFileInfoAsync("nope");
                 Assert.Null(info);
 
-                await Run.InParallelAsync(10, async i => {
-                    var ev = new PostInfo {
+                await Run.InParallelAsync(10, async i =>
+                {
+                    var ev = new PostInfo
+                    {
                         ApiVersion = 2,
                         CharSet = "utf8",
                         ContentEncoding = "application/json",
@@ -520,24 +574,29 @@ namespace Foundatio.Tests.Storage {
 
                 Assert.Equal(10, (await storage.GetFileListAsync()).Count);
 
-                await Run.InParallelAsync(10, async i => {
+                await Run.InParallelAsync(10, async i =>
+                {
                     string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                     var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);
                     if (eventPost == null)
                         return;
 
-                    if (RandomData.GetBool()) {
+                    if (RandomData.GetBool())
+                    {
                         await storage.CompleteEventPostAsync(path, eventPost.ProjectId, SystemClock.UtcNow, true, _logger);
-                    } else
+                    }
+                    else
                         await storage.SetNotActiveAsync(path, _logger);
                 });
             }
         }
 
-        public virtual void CanUseDataDirectory() {
+        public virtual void CanUseDataDirectory()
+        {
             const string DATA_DIRECTORY_QUEUE_FOLDER = @"|DataDirectory|\Queue";
 
-            var storage = new FolderFileStorage(new FolderFileStorageOptions {
+            var storage = new FolderFileStorage(new FolderFileStorageOptions
+            {
                 Folder = DATA_DIRECTORY_QUEUE_FOLDER
             });
             Assert.NotNull(storage.Folder);
@@ -546,7 +605,8 @@ namespace Foundatio.Tests.Storage {
         }
     }
 
-    public class PostInfo {
+    public class PostInfo
+    {
         public int ApiVersion { get; set; }
         public string CharSet { get; set; }
         public string ContentEncoding { get; set; }
@@ -557,17 +617,22 @@ namespace Foundatio.Tests.Storage {
         public string UserAgent { get; set; }
     }
 
-    public static class StorageExtensions {
-        public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path, ILogger logger = null) {
+    public static class StorageExtensions
+    {
+        public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path, ILogger logger = null)
+        {
             PostInfo eventPostInfo = null;
-            try {
+            try
+            {
                 eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
                 if (eventPostInfo == null)
                     return null;
 
                 if (!await storage.ExistsAsync(path + ".x") && !await storage.SaveFileAsync(path + ".x", String.Empty))
                     return null;
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (logger != null && logger.IsEnabled(LogLevel.Error))
                     logger.LogError(ex, "Error retrieving event post data {Path}: {Message}", path, ex.Message);
                 return null;
@@ -576,10 +641,14 @@ namespace Foundatio.Tests.Storage {
             return eventPostInfo;
         }
 
-        public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path, ILogger logger = null) {
-            try {
+        public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path, ILogger logger = null)
+        {
+            try
+            {
                 return await storage.DeleteFileAsync(path + ".x");
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (logger != null && logger.IsEnabled(LogLevel.Error))
                     logger.LogError(ex, "Error deleting work marker {Path}: {Message}", path, ex.Message);
             }
@@ -587,22 +656,29 @@ namespace Foundatio.Tests.Storage {
             return false;
         }
 
-        public static async Task<bool> CompleteEventPostAsync(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null) {
+        public static async Task<bool> CompleteEventPostAsync(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null)
+        {
             // don't move files that are already in the archive
             if (path.StartsWith("archive"))
                 return true;
 
             string archivePath = $"archive\\{projectId}\\{created.ToString("yy\\\\MM\\\\dd")}\\{Path.GetFileName(path)}";
 
-            try {
-                if (shouldArchive) {
+            try
+            {
+                if (shouldArchive)
+                {
                     if (!await storage.RenameFileAsync(path, archivePath))
                         return false;
-                } else {
+                }
+                else
+                {
                     if (!await storage.DeleteFileAsync(path))
                         return false;
                 }
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (logger != null && logger.IsEnabled(LogLevel.Error))
                     logger?.LogError(ex, "Error archiving event post data {Path}: {Message}", path, ex.Message);
                 return false;

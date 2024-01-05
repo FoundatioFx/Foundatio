@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
-namespace Foundatio.Queues {
-    public interface IQueueEntry {
+namespace Foundatio.Queues
+{
+    public interface IQueueEntry
+    {
         string Id { get; }
         string CorrelationId { get; }
         IDictionary<string, string> Properties { get; }
@@ -20,8 +22,9 @@ namespace Foundatio.Queues {
         Task CompleteAsync();
         ValueTask DisposeAsync();
     }
-    
-    public interface IQueueEntry<T> : IQueueEntry  where T : class {
+
+    public interface IQueueEntry<T> : IQueueEntry where T : class
+    {
         T Value { get; }
     }
 }

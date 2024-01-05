@@ -1,26 +1,30 @@
 ﻿using System;
 using System.Collections.Generic;
-using Foundatio.Xunit;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Newtonsoft.Json.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Utility {
-    public class CloneTests : TestWithLoggingBase {
+namespace Foundatio.Tests.Utility
+{
+    public class CloneTests : TestWithLoggingBase
+    {
         public CloneTests(ITestOutputHelper output) : base(output) { }
 
         [Fact]
-        public void CanCloneModel() {
-            var model = new CloneModel {
+        public void CanCloneModel()
+        {
+            var model = new CloneModel
+            {
                 IntProperty = 1,
                 StringProperty = "test",
                 ListProperty = new List<int> { 1 },
                 HashSet = new HashSet<string>(),
-                ObjectProperty = new CloneModel { IntProperty =  1 }
+                ObjectProperty = new CloneModel { IntProperty = 1 }
             };
-            
+
             var cloned = model.DeepClone();
             Assert.Equal(model.IntProperty, cloned.IntProperty);
             Assert.Equal(model.StringProperty, cloned.StringProperty);
@@ -32,8 +36,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanCloneJsonSerializedModel() {
-            var model = new CloneModel {
+        public void CanCloneJsonSerializedModel()
+        {
+            var model = new CloneModel
+            {
                 IntProperty = 1,
                 StringProperty = "test",
                 ListProperty = new List<int> { 1 },
@@ -58,8 +64,10 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public void CanCloneMessagePackSerializedModel() {
-            var model = new CloneModel {
+        public void CanCloneMessagePackSerializedModel()
+        {
+            var model = new CloneModel
+            {
                 IntProperty = 1,
                 StringProperty = "test",
                 ListProperty = new List<int> { 1 },
@@ -84,7 +92,8 @@ namespace Foundatio.Tests.Utility {
         }
     }
 
-    public class CloneModel {
+    public class CloneModel
+    {
         public int IntProperty { get; set; }
         public string StringProperty { get; set; }
         public List<int> ListProperty { get; set; }

@@ -8,18 +8,21 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Queue {
-    public class InMemoryQueueTests : QueueTestBase {
+namespace Foundatio.Tests.Queue
+{
+    public class InMemoryQueueTests : QueueTestBase
+    {
         private IQueue<SimpleWorkItem> _queue;
 
-        public InMemoryQueueTests(ITestOutputHelper output) : base(output) {}
+        public InMemoryQueueTests(ITestOutputHelper output) : base(output) { }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+        {
             if (_queue == null)
                 _queue = new InMemoryQueue<SimpleWorkItem>(o => o
                         .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
                         .Retries(retries)
-                        .RetryMultipliers(retryMultipliers ?? new [] { 1, 3, 5, 10 })
+                        .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                         .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                         .LoggerFactory(Log));
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -27,35 +30,45 @@ namespace Foundatio.Tests.Queue {
             return _queue;
         }
 
-        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue) {
+        protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue)
+        {
             if (queue == null)
                 return;
 
-            try {
+            try
+            {
                 await queue.DeleteQueueAsync();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 _logger.LogError(ex, "Error cleaning up queue");
             }
         }
 
         [Fact]
-        public async Task TestAsyncEvents() {
+        public async Task TestAsyncEvents()
+        {
             using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
             var disposables = new List<IDisposable>(5);
-            try {
-                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
+            try
+            {
+                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
+                {
                     await SystemClock.SleepAsync(250);
                     _logger.LogInformation("First Enqueuing");
                 }));
-                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) => {
+                disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
+                {
                     await SystemClock.SleepAsync(250);
                     _logger.LogInformation("Second Enqueuing");
                 }));
-                disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
+                disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
+                {
                     await SystemClock.SleepAsync(250);
                     _logger.LogInformation("First");
                 }));
-                disposables.Add(q.Enqueued.AddHandler(async (sender, args) => {
+                disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
+                {
                     await SystemClock.SleepAsync(250);
                     _logger.LogInformation("Second");
                 }));
@@ -69,14 +82,17 @@ namespace Foundatio.Tests.Queue {
                 await q.EnqueueAsync(new SimpleWorkItem());
                 sw.Stop();
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
-            } finally {
+            }
+            finally
+            {
                 foreach (var disposable in disposables)
                     disposable.Dispose();
             }
         }
 
         [Fact]
-        public async Task CanGetCompletedEntries() {
+        public async Task CanGetCompletedEntries()
+        {
             using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log).CompletedEntryRetentionLimit(10));
 
             await q.EnqueueAsync(new SimpleWorkItem());
@@ -94,7 +110,8 @@ namespace Foundatio.Tests.Queue {
             Assert.Empty(q.GetDequeuedEntries());
             Assert.Single(q.GetCompletedEntries());
 
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 100; i++)
+            {
                 await q.EnqueueAsync(new SimpleWorkItem());
                 item = await q.DequeueAsync();
                 await item.CompleteAsync();
@@ -106,156 +123,187 @@ namespace Foundatio.Tests.Queue {
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItemAsync() {
+        public override Task CanQueueAndDequeueWorkItemAsync()
+        {
             return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItemWithDelayAsync() {
+        public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
+        {
             return base.CanQueueAndDequeueWorkItemWithDelayAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueOptionsAsync() {
+        public override Task CanUseQueueOptionsAsync()
+        {
             return base.CanUseQueueOptionsAsync();
         }
 
         [Fact]
-        public override Task CanDiscardDuplicateQueueEntriesAsync() {
+        public override Task CanDiscardDuplicateQueueEntriesAsync()
+        {
             return base.CanDiscardDuplicateQueueEntriesAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithCancelledTokenAsync() {
+        public override Task CanDequeueWithCancelledTokenAsync()
+        {
             return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override Task CanDequeueEfficientlyAsync() {
+        public override Task CanDequeueEfficientlyAsync()
+        {
             return base.CanDequeueEfficientlyAsync();
         }
 
         [Fact]
-        public override Task CanResumeDequeueEfficientlyAsync() {
+        public override Task CanResumeDequeueEfficientlyAsync()
+        {
             return base.CanResumeDequeueEfficientlyAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync()
+        {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact]
-        public override Task WillNotWaitForItemAsync() {
+        public override Task WillNotWaitForItemAsync()
+        {
             return base.WillNotWaitForItemAsync();
         }
 
         [Fact]
-        public override Task WillWaitForItemAsync() {
+        public override Task WillWaitForItemAsync()
+        {
             return base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override Task DequeueWaitWillGetSignaledAsync() {
+        public override Task DequeueWaitWillGetSignaledAsync()
+        {
             return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueWorkerAsync() {
+        public override Task CanUseQueueWorkerAsync()
+        {
             return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorkerAsync() {
+        public override Task CanHandleErrorInWorkerAsync()
+        {
             return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillTimeoutAsync() {
-            using (TestSystemClock.Install()) {
+        public override Task WorkItemsWillTimeoutAsync()
+        {
+            using (TestSystemClock.Install())
+            {
                 return base.WorkItemsWillTimeoutAsync();
             }
         }
 
         [Fact]
-        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+        public override Task WorkItemsWillGetMovedToDeadletterAsync()
+        {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override Task CanAutoCompleteWorkerAsync() {
+        public override Task CanAutoCompleteWorkerAsync()
+        {
             return base.CanAutoCompleteWorkerAsync();
         }
 
         [Fact]
-        public override Task CanHaveMultipleQueueInstancesAsync() {
+        public override Task CanHaveMultipleQueueInstancesAsync()
+        {
             return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override Task CanDelayRetryAsync() {
+        public override Task CanDelayRetryAsync()
+        {
             return base.CanDelayRetryAsync();
         }
 
         [Fact]
-        public override Task CanRunWorkItemWithMetricsAsync() {
+        public override Task CanRunWorkItemWithMetricsAsync()
+        {
             return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override Task CanRenewLockAsync() {
+        public override Task CanRenewLockAsync()
+        {
             return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override Task CanAbandonQueueEntryOnceAsync() {
+        public override Task CanAbandonQueueEntryOnceAsync()
+        {
             return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanCompleteQueueEntryOnceAsync() {
+        public override Task CanCompleteQueueEntryOnceAsync()
+        {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithLockingAsync() {
+        public override Task CanDequeueWithLockingAsync()
+        {
             return base.CanDequeueWithLockingAsync();
         }
 
         [Fact]
-        public override Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+        public override Task CanHaveMultipleQueueInstancesWithLockingAsync()
+        {
             return base.CanHaveMultipleQueueInstancesWithLockingAsync();
         }
 
         [Fact]
-        public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry() {
+        public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
+        {
             return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
         }
 
         [Fact]
-        public override Task VerifyRetryAttemptsAsync() {
+        public override Task VerifyRetryAttemptsAsync()
+        {
             return base.VerifyRetryAttemptsAsync();
         }
 
         [Fact]
-        public override Task VerifyDelayedRetryAttemptsAsync() {
+        public override Task VerifyDelayedRetryAttemptsAsync()
+        {
             return base.VerifyDelayedRetryAttemptsAsync();
         }
 
         [Fact]
-        public override Task CanHandleAutoAbandonInWorker() {
+        public override Task CanHandleAutoAbandonInWorker()
+        {
             Log.MinimumLevel = LogLevel.Trace;
             return base.CanHandleAutoAbandonInWorker();
         }
 
         #region Issue239
 
-        class QueueEntry_Issue239<T> : IQueueEntry<T> where T : class {
+        class QueueEntry_Issue239<T> : IQueueEntry<T> where T : class
+        {
             IQueueEntry<T> _queueEntry;
 
-            public QueueEntry_Issue239(IQueueEntry<T> queueEntry) {
-                    _queueEntry = queueEntry;
-                }
+            public QueueEntry_Issue239(IQueueEntry<T> queueEntry)
+            {
+                _queueEntry = queueEntry;
+            }
 
             public T Value => _queueEntry.Value;
 
@@ -273,58 +321,69 @@ namespace Foundatio.Tests.Queue {
 
             public int Attempts => _queueEntry.Attempts;
 
-            public Task AbandonAsync() {
+            public Task AbandonAsync()
+            {
                 return _queueEntry.AbandonAsync();
             }
 
-            public Task CompleteAsync() {
+            public Task CompleteAsync()
+            {
                 return _queueEntry.CompleteAsync();
             }
 
-            public ValueTask DisposeAsync() {
+            public ValueTask DisposeAsync()
+            {
                 return _queueEntry.DisposeAsync();
             }
 
-            public object GetValue() {
+            public object GetValue()
+            {
                 return _queueEntry.GetValue();
             }
 
-            public void MarkAbandoned() {
+            public void MarkAbandoned()
+            {
                 // we want to simulate timing of user complete call between the maintenance abandon call to _dequeued.TryRemove and entry.MarkAbandoned();
                 Task.Delay(1500).Wait();
 
                 _queueEntry.MarkAbandoned();
             }
 
-            public void MarkCompleted() {
+            public void MarkCompleted()
+            {
                 _queueEntry.MarkCompleted();
             }
 
-            public Task RenewLockAsync() {
+            public Task RenewLockAsync()
+            {
                 return _queueEntry.RenewLockAsync();
             }
         }
 
-        class InMemoryQueue_Issue239<T> : InMemoryQueue<T> where T : class {
-            public override Task AbandonAsync(IQueueEntry<T> entry) {
+        class InMemoryQueue_Issue239<T> : InMemoryQueue<T> where T : class
+        {
+            public override Task AbandonAsync(IQueueEntry<T> entry)
+            {
                 // delay first abandon from maintenance (simulate timing issues which may occur to demonstrate the problem)
-                return base.AbandonAsync(new QueueEntry_Issue239<T>(entry));                
+                return base.AbandonAsync(new QueueEntry_Issue239<T>(entry));
             }
 
-            public InMemoryQueue_Issue239(ILoggerFactory loggerFactory) 
+            public InMemoryQueue_Issue239(ILoggerFactory loggerFactory)
                 : base(o => o
                         .RetryDelay(TimeSpan.FromMinutes(1))
                         .Retries(1)
                         .RetryMultipliers(new[] { 1, 3, 5, 10 })
                         .LoggerFactory(loggerFactory)
-                        .WorkItemTimeout(TimeSpan.FromMilliseconds(100))) {
+                        .WorkItemTimeout(TimeSpan.FromMilliseconds(100)))
+            {
             }
         }
 
         [Fact]
         // this test reproduce an issue which cause worker task loop to crash and stop processing items when auto abandoned item is ultimately processed and user call complete on
         // https://github.com/FoundatioFx/Foundatio/issues/239
-        public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239() {
+        public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239()
+        {
             // create queue with short work item timeout so it will be auto abandoned
             var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
 
@@ -332,16 +391,21 @@ namespace Foundatio.Tests.Queue {
             var taskCompletionSource = new TaskCompletionSource<bool>();
 
             // start handling items
-            await queue.StartWorkingAsync(async (item) => {
+            await queue.StartWorkingAsync(async (item) =>
+            {
                 // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
-                if (item.Value.Data == "Delay") {
+                if (item.Value.Data == "Delay")
+                {
                     await Task.Delay(TimeSpan.FromSeconds(1));
                 }
 
-                try {
+                try
+                {
                     // call complete on the auto abandoned item
                     await item.CompleteAsync();
-                } finally {
+                }
+                finally
+                {
                     // completeAsync will currently throw an exception becuase item can not be removed from dequeued list because it was already removed due to auto abandon
                     // infrastructure handles user exception incorrectly
                     taskCompletionSource.SetResult(true);

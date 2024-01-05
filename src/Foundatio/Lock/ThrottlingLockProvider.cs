@@ -7,14 +7,17 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Lock {
-    public class ThrottlingLockProvider : ILockProvider, IHaveLogger {
+namespace Foundatio.Lock
+{
+    public class ThrottlingLockProvider : ILockProvider, IHaveLogger
+    {
         private readonly ICacheClient _cacheClient;
         private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
         private readonly int _maxHitsPerPeriod;
         private readonly ILogger _logger;
 
-        public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null) {
+        public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null)
+        {
             _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger<ThrottlingLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
             _maxHitsPerPeriod = maxHitsPerPeriod;
@@ -25,10 +28,11 @@ namespace Foundatio.Lock {
             if (throttlingPeriod.HasValue)
                 _throttlingPeriod = throttlingPeriod.Value;
         }
-        
+
         ILogger IHaveLogger.Logger => _logger;
 
-        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 
@@ -37,27 +41,33 @@ namespace Foundatio.Lock {
 
             string lockId = Guid.NewGuid().ToString("N");
             var sw = Stopwatch.StartNew();
-            do {
+            do
+            {
                 string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
 
-                try {
+                try
+                {
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                     var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
-                    if (hitCount <= _maxHitsPerPeriod - 1) {
+                    if (hitCount <= _maxHitsPerPeriod - 1)
+                    {
                         hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
 
                         // make sure someone didn't beat us to it.
-                        if (hitCount <= _maxHitsPerPeriod) {
+                        if (hitCount <= _maxHitsPerPeriod)
+                        {
                             allowLock = true;
                             break;
                         }
 
                         if (isTraceLogLevelEnabled) _logger.LogTrace("Max hits exceeded after increment for {Resource}.", resource);
-                    } else if (isTraceLogLevelEnabled) {
+                    }
+                    else if (isTraceLogLevelEnabled)
+                    {
                         _logger.LogTrace("Max hits exceeded for {Resource}.", resource);
                     }
 
@@ -65,16 +75,23 @@ namespace Foundatio.Lock {
                         break;
 
                     var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
-                    if (sleepUntil > SystemClock.UtcNow) {
+                    if (sleepUntil > SystemClock.UtcNow)
+                    {
                         if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - SystemClock.UtcNow);
                         await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
-                    } else {
+                    }
+                    else
+                    {
                         if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep");
                         await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
                     }
-                } catch (OperationCanceledException) {
+                }
+                catch (OperationCanceledException)
+                {
                     return null;
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     _logger.LogError(ex, "Error acquiring throttled lock: name={Resource} message={Message}", resource, ex.Message);
                     errors++;
                     if (errors >= 3)
@@ -92,26 +109,30 @@ namespace Foundatio.Lock {
 
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Allowing lock: {Resource}", resource);
-            
+
             sw.Stop();
             return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
         }
 
-        public async Task<bool> IsLockedAsync(string resource) {
+        public async Task<bool> IsLockedAsync(string resource)
+        {
             string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
             long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
             return hitCount >= _maxHitsPerPeriod;
         }
 
-        public Task ReleaseAsync(string resource, string lockId) {
-            return Task.CompletedTask;
-        }
-        
-        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
+        public Task ReleaseAsync(string resource, string lockId)
+        {
             return Task.CompletedTask;
         }
 
-        private string GetCacheKey(string resource, DateTime now) {
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+        {
+            return Task.CompletedTask;
+        }
+
+        private string GetCacheKey(string resource, DateTime now)
+        {
             return String.Concat(resource, ":", now.Floor(_throttlingPeriod).Ticks);
         }
     }

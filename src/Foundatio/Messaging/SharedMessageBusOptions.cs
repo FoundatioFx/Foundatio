@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 
-namespace Foundatio.Messaging {
-    public class SharedMessageBusOptions : SharedOptions {
+namespace Foundatio.Messaging
+{
+    public class SharedMessageBusOptions : SharedOptions
+    {
         /// <summary>
         /// The topic name
         /// </summary>
@@ -16,26 +18,30 @@ namespace Foundatio.Messaging {
 
     public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
         where TOptions : SharedMessageBusOptions, new()
-        where TBuilder : SharedMessageBusOptionsBuilder<TOptions, TBuilder> {
-        public TBuilder Topic(string topic) {
+        where TBuilder : SharedMessageBusOptionsBuilder<TOptions, TBuilder>
+    {
+        public TBuilder Topic(string topic)
+        {
             if (string.IsNullOrEmpty(topic))
                 throw new ArgumentNullException(nameof(topic));
             Target.Topic = topic;
             return (TBuilder)this;
         }
 
-        public TBuilder MapMessageType<T>(string name) {
+        public TBuilder MapMessageType<T>(string name)
+        {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
+
             Target.MessageTypeMappings[name] = typeof(T);
             return (TBuilder)this;
         }
 
-        public TBuilder MapMessageTypeToClassName<T>() {
+        public TBuilder MapMessageTypeToClassName<T>()
+        {
             if (Target.MessageTypeMappings == null)
                 Target.MessageTypeMappings = new Dictionary<string, Type>();
-            
+
             Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
             return (TBuilder)this;
         }

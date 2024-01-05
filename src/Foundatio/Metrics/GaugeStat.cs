@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-namespace Foundatio.Metrics {
+namespace Foundatio.Metrics
+{
     [DebuggerDisplay("Time: {Time} Max: {Max} Last: {Last}")]
-    public class GaugeStat {
+    public class GaugeStat
+    {
         public DateTime Time { get; set; }
         public int Count { get; set; }
         public double Total { get; set; }
@@ -16,8 +18,10 @@ namespace Foundatio.Metrics {
     }
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}")]
-    public class GaugeStatSummary {
-        public GaugeStatSummary(string name, ICollection<GaugeStat> stats, DateTime start, DateTime end) {
+    public class GaugeStatSummary
+    {
+        public GaugeStatSummary(string name, ICollection<GaugeStat> stats, DateTime start, DateTime end)
+        {
             Name = name;
             Stats = stats;
             Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
@@ -41,7 +45,8 @@ namespace Foundatio.Metrics {
         public double Max { get; }
         public double Average { get; }
 
-        public override string ToString() {
+        public override string ToString()
+        {
             return $"Counter: {Name} Time: {StartTime}-{EndTime} Max: {Max} Last: {Last}";
         }
     }

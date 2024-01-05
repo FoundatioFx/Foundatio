@@ -1,5 +1,7 @@
-﻿namespace Foundatio.Metrics {
-    public interface IHaveSubMetricName {
+﻿namespace Foundatio.Metrics
+{
+    public interface IHaveSubMetricName
+    {
         string SubMetricName { get; }
     }
 }

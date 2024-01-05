@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Concurrent;
 
-namespace Foundatio.Utility {
-    internal static class ConcurrentDictionaryExtensions {
-        public static bool TryUpdate<TKey, TValue>(this ConcurrentDictionary<TKey,TValue> concurrentDictionary, TKey key, Func<TKey, TValue, TValue> updateValueFactory) {
+namespace Foundatio.Utility
+{
+    internal static class ConcurrentDictionaryExtensions
+    {
+        public static bool TryUpdate<TKey, TValue>(this ConcurrentDictionary<TKey, TValue> concurrentDictionary, TKey key, Func<TKey, TValue, TValue> updateValueFactory)
+        {
             if (key == null)
                 throw new ArgumentNullException(nameof(key));
 
@@ -12,10 +15,11 @@ namespace Foundatio.Utility {
 
             TValue comparisonValue;
             TValue newValue;
-            do {
+            do
+            {
                 if (!concurrentDictionary.TryGetValue(key, out comparisonValue))
                     return false;
-                
+
                 newValue = updateValueFactory(key, comparisonValue);
             } while (!concurrentDictionary.TryUpdate(key, newValue, comparisonValue));
 

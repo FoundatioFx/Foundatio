@@ -1,24 +1,29 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Xunit;
+using Foundatio.AsyncEx;
 using Foundatio.Tests.Extensions;
 using Foundatio.Utility;
-using Foundatio.AsyncEx;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Utility {
-    public class ScheduledTimerTests : TestWithLoggingBase {
-        public ScheduledTimerTests(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Tests.Utility
+{
+    public class ScheduledTimerTests : TestWithLoggingBase
+    {
+        public ScheduledTimerTests(ITestOutputHelper output) : base(output)
+        {
             Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
         }
 
         [Fact]
-        public Task CanRun() {
+        public Task CanRun()
+        {
             var resetEvent = new AsyncAutoResetEvent();
-            Task<DateTime?> Callback() {
+            Task<DateTime?> Callback()
+            {
                 resetEvent.Set();
                 return null;
             }
@@ -29,21 +34,25 @@ namespace Foundatio.Tests.Utility {
         }
 
         [RetryFact]
-        public Task CanRunAndScheduleConcurrently() {
+        public Task CanRunAndScheduleConcurrently()
+        {
             return CanRunConcurrentlyAsync();
         }
 
         [Fact]
-        public Task CanRunWithMinimumInterval() {
+        public Task CanRunWithMinimumInterval()
+        {
             return CanRunConcurrentlyAsync(TimeSpan.FromMilliseconds(100));
         }
 
-        private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null) {
+        private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null)
+        {
             Log.MinimumLevel = LogLevel.Trace;
             const int iterations = 2;
             var countdown = new AsyncCountdownEvent(iterations);
 
-            async Task<DateTime?> Callback() {
+            async Task<DateTime?> Callback()
+            {
                 _logger.LogInformation("Starting work");
                 await SystemClock.SleepAsync(250);
                 countdown.Signal();
@@ -53,8 +62,10 @@ namespace Foundatio.Tests.Utility {
 
             using var timer = new ScheduledTimer(Callback, minimumIntervalTime: minimumIntervalTime, loggerFactory: Log);
             timer.ScheduleNext();
-            _ = Task.Run(async () => {
-                for (int i = 0; i < iterations; i++) {
+            _ = Task.Run(async () =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
                     await SystemClock.SleepAsync(10);
                     timer.ScheduleNext();
                 }
@@ -72,11 +83,13 @@ namespace Foundatio.Tests.Utility {
         }
 
         [Fact]
-        public async Task CanRecoverFromError() {
+        public async Task CanRecoverFromError()
+        {
             int hits = 0;
             var resetEvent = new AsyncAutoResetEvent(false);
 
-            Task<DateTime?> Callback() {
+            Task<DateTime?> Callback()
+            {
                 Interlocked.Increment(ref hits);
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("Callback called for the #{Hits} time", hits);

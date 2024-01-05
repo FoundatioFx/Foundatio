@@ -2,9 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Foundatio.Utility {
-    internal static class CollectionExtensions {
-        public static ICollection<T> ReduceTimeSeries<T>(this ICollection<T> items, Func<T, DateTime> dateSelector, Func<ICollection<T>, DateTime, T> reducer, int dataPoints) {
+namespace Foundatio.Utility
+{
+    internal static class CollectionExtensions
+    {
+        public static ICollection<T> ReduceTimeSeries<T>(this ICollection<T> items, Func<T, DateTime> dateSelector, Func<ICollection<T>, DateTime, T> reducer, int dataPoints)
+        {
             if (items.Count <= dataPoints)
                 return items;
 
@@ -14,7 +17,8 @@ namespace Foundatio.Utility {
             var bucketSize = (maxTicks - minTicks) / dataPoints;
             var buckets = new List<long>();
             long currentTick = minTicks;
-            while (currentTick < maxTicks) {
+            while (currentTick < maxTicks)
+            {
                 buckets.Add(currentTick);
                 currentTick += bucketSize;
             }

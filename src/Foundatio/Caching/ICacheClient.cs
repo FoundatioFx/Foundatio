@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Foundatio.Caching {
-    public interface ICacheClient : IDisposable {
+namespace Foundatio.Caching
+{
+    public interface ICacheClient : IDisposable
+    {
         Task<bool> RemoveAsync(string key);
         Task<bool> RemoveIfEqualAsync<T>(string key, T expected);
         Task<int> RemoveAllAsync(IEnumerable<string> keys = null);

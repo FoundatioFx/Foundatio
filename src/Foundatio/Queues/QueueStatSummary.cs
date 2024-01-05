@@ -1,7 +1,9 @@
 ﻿using Foundatio.Metrics;
 
-namespace Foundatio.Queues {
-    public class QueueStatSummary {
+namespace Foundatio.Queues
+{
+    public class QueueStatSummary
+    {
         public GaugeStatSummary Count { get; set; }
         public GaugeStatSummary Working { get; set; }
         public GaugeStatSummary Deadletter { get; set; }

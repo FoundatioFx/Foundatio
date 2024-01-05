@@ -1,13 +1,16 @@
 ﻿using Xunit;
 using Xunit.Sdk;
 
-namespace Foundatio.Xunit {
+namespace Foundatio.Xunit
+{
     /// <summary>
     /// Works just like [Fact] except that failures are retried (by default, 3 times).
     /// </summary>
     [XunitTestCaseDiscoverer("Foundatio.Xunit.RetryFactDiscoverer", "Foundatio.TestHarness")]
-    public class RetryFactAttribute : FactAttribute {
-        public RetryFactAttribute(int maxRetries = 3) {
+    public class RetryFactAttribute : FactAttribute
+    {
+        public RetryFactAttribute(int maxRetries = 3)
+        {
             MaxRetries = maxRetries;
         }
 

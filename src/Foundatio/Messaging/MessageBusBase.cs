@@ -11,8 +11,10 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Messaging {
-    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions {
+namespace Foundatio.Messaging
+{
+    public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions
+    {
         private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
         protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
         protected readonly TOptions _options;
@@ -20,7 +22,8 @@ namespace Foundatio.Messaging {
         protected readonly ISerializer _serializer;
         private bool _isDisposed;
 
-        public MessageBusBase(TOptions options) {
+        public MessageBusBase(TOptions options)
+        {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
             _logger = loggerFactory.CreateLogger(GetType());
@@ -31,13 +34,15 @@ namespace Foundatio.Messaging {
 
         protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
-        public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default) {
+        public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default)
+        {
             if (messageType == null || message == null)
                 return;
 
             options ??= new MessageOptions();
 
-            if (String.IsNullOrEmpty(options.CorrelationId)) {
+            if (String.IsNullOrEmpty(options.CorrelationId))
+            {
                 options.CorrelationId = Activity.Current?.Id;
                 if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
                     options.Properties.Add("TraceState", Activity.Current.TraceStateString);
@@ -46,38 +51,48 @@ namespace Foundatio.Messaging {
             await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
         }
- 
+
         private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
-        protected string GetMappedMessageType(Type messageType) {
-            return _mappedMessageTypesCache.GetOrAdd(messageType, type => {
+        protected string GetMappedMessageType(Type messageType)
+        {
+            return _mappedMessageTypesCache.GetOrAdd(messageType, type =>
+            {
                 var reversedMap = _options.MessageTypeMappings.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
                 if (reversedMap.ContainsKey(type))
                     return reversedMap[type];
-                
+
                 return String.Concat(messageType.FullName, ", ", messageType.Assembly.GetName().Name);
             });
         }
 
         private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-        protected virtual Type GetMappedMessageType(string messageType) {
+        protected virtual Type GetMappedMessageType(string messageType)
+        {
             if (String.IsNullOrEmpty(messageType))
                 return null;
-            
-            return _knownMessageTypesCache.GetOrAdd(messageType, type => {
+
+            return _knownMessageTypesCache.GetOrAdd(messageType, type =>
+            {
                 if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
                     return _options.MessageTypeMappings[type];
-                
-                try {
+
+                try
+                {
                     return Type.GetType(type);
-                } catch (Exception) {
-                    try {
+                }
+                catch (Exception)
+                {
+                    try
+                    {
                         string[] typeParts = type.Split(',');
                         if (typeParts.Length >= 2)
                             type = String.Join(",", typeParts[0], typeParts[1]);
-                        
+
                         // try resolve type without version
                         return Type.GetType(type);
-                    } catch (Exception ex) {
+                    }
+                    catch (Exception ex)
+                    {
                         if (_logger.IsEnabled(LogLevel.Warning))
                             _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
 
@@ -90,12 +105,16 @@ namespace Foundatio.Messaging {
         protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
         protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class {
-            var subscriber = new Subscriber {
+        protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
+        {
+            var subscriber = new Subscriber
+            {
                 CancellationToken = cancellationToken,
                 Type = typeof(T),
-                Action = (message, token) => {
-                    if (message is not T) {
+                Action = (message, token) =>
+                {
+                    if (message is not T)
+                    {
                         if (_logger.IsEnabled(LogLevel.Trace))
                             _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                         return Task.CompletedTask;
@@ -105,15 +124,18 @@ namespace Foundatio.Messaging {
                 }
             };
 
-            if (cancellationToken != CancellationToken.None) {
-                cancellationToken.Register(() => {
+            if (cancellationToken != CancellationToken.None)
+            {
+                cancellationToken.Register(() =>
+                {
                     _subscribers.TryRemove(subscriber.Id, out _);
                     if (_subscribers.Count == 0)
                         RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
                 });
             }
 
-            if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1) {
+            if (subscriber.Type.Name == "IMessage`1" && subscriber.Type.GenericTypeArguments.Length == 1)
+            {
                 var modelType = subscriber.Type.GenericTypeArguments.Single();
                 subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
             }
@@ -124,7 +146,8 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class {
+        public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class
+        {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
 
@@ -132,44 +155,52 @@ namespace Foundatio.Messaging {
             await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
         }
 
-        protected List<Subscriber> GetMessageSubscribers(IMessage message) {
+        protected List<Subscriber> GetMessageSubscribers(IMessage message)
+        {
             return _subscribers.Values.Where(s => SubscriberHandlesMessage(s, message)).ToList();
         }
 
-        protected virtual bool SubscriberHandlesMessage(Subscriber subscriber, IMessage message) {
+        protected virtual bool SubscriberHandlesMessage(Subscriber subscriber, IMessage message)
+        {
             if (subscriber.Type == typeof(IMessage))
                 return true;
 
             var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
-            if (clrType is null) {
+            if (clrType is null)
+            {
                 if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning("Unable to resolve CLR type for message body type: ClrType={MessageClrType} Type={MessageType}", message.ClrType, message.Type);
-                
+
                 return false;
             }
 
             if (subscriber.IsAssignableFrom(clrType))
                 return true;
-            
+
             return false;
         }
 
-        protected virtual byte[] SerializeMessageBody(string messageType, object body) {
+        protected virtual byte[] SerializeMessageBody(string messageType, object body)
+        {
             if (body == null)
                 return Array.Empty<byte>();
 
             return _serializer.SerializeToBytes(body);
         }
 
-        protected virtual object DeserializeMessageBody(IMessage message) {
+        protected virtual object DeserializeMessageBody(IMessage message)
+        {
             if (message.Data is null || message.Data.Length == 0)
                 return null;
 
             object body;
-            try {
+            try
+            {
                 var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
                 body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
 
@@ -179,7 +210,8 @@ namespace Foundatio.Messaging {
             return body;
         }
 
-        protected async Task SendMessageToSubscribersAsync(IMessage message) {
+        protected async Task SendMessageToSubscribersAsync(IMessage message)
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             var subscribers = GetMessageSubscribers(message);
 
@@ -189,20 +221,27 @@ namespace Foundatio.Messaging {
             if (subscribers.Count == 0)
                 return;
 
-            var subscriberHandlers = subscribers.Select(subscriber => {
-                if (subscriber.CancellationToken.IsCancellationRequested) {
-                    if (_subscribers.TryRemove(subscriber.Id, out _)) {
+            var subscriberHandlers = subscribers.Select(subscriber =>
+            {
+                if (subscriber.CancellationToken.IsCancellationRequested)
+                {
+                    if (_subscribers.TryRemove(subscriber.Id, out _))
+                    {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
-                    } else if (isTraceLogLevelEnabled) {
+                    }
+                    else if (isTraceLogLevelEnabled)
+                    {
                         _logger.LogTrace("Unable to remove cancelled subscriber: {SubscriberId}", subscriber.Id);
                     }
 
                     return Task.CompletedTask;
                 }
 
-                return Task.Run(async () => {
-                    if (subscriber.CancellationToken.IsCancellationRequested) {
+                return Task.Run(async () =>
+                {
+                    if (subscriber.CancellationToken.IsCancellationRequested)
+                    {
                         if (isTraceLogLevelEnabled)
                             _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
 
@@ -216,14 +255,20 @@ namespace Foundatio.Messaging {
 
                     using (_logger.BeginScope(s => s
                             .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
-                            .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId)))) {
+                            .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId))))
+                    {
 
-                        if (subscriber.Type == typeof(IMessage)) {
+                        if (subscriber.Type == typeof(IMessage))
+                        {
                             await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
-                        } else if (subscriber.GenericType != null) {
+                        }
+                        else if (subscriber.GenericType != null)
+                        {
                             object typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
                             await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
-                        } else {
+                        }
+                        else
+                        {
                             await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
                         }
                     }
@@ -233,9 +278,12 @@ namespace Foundatio.Messaging {
                 });
             });
 
-            try {
+            try
+            {
                 await Task.WhenAll(subscriberHandlers.ToArray());
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
 
                 throw;
@@ -245,7 +293,8 @@ namespace Foundatio.Messaging {
                 _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
         }
 
-        protected virtual Activity StartHandleMessageActivity(IMessage message) {
+        protected virtual Activity StartHandleMessageActivity(IMessage message)
+        {
             var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Server, message.CorrelationId);
 
             if (activity == null)
@@ -261,7 +310,8 @@ namespace Foundatio.Messaging {
             return activity;
         }
 
-        protected virtual void EnrichHandleMessageActivity(Activity activity, IMessage message) {
+        protected virtual void EnrichHandleMessageActivity(Activity activity, IMessage message)
+        {
             if (!activity.IsAllDataRequested)
                 return;
 
@@ -273,13 +323,15 @@ namespace Foundatio.Messaging {
             if (message.Properties == null || message.Properties.Count <= 0)
                 return;
 
-            foreach (var p in message.Properties) {
+            foreach (var p in message.Properties)
+            {
                 if (p.Key != "TraceState")
                     activity.AddTag(p.Key, p.Value);
             }
         }
 
-        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay) {
+        protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay)
+        {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
 
@@ -288,24 +340,27 @@ namespace Foundatio.Messaging {
             return Task.CompletedTask;
         }
 
-        protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay) {
+        protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay)
+        {
             if (message == null)
                 throw new ArgumentNullException(nameof(message));
-            
+
             if (delay <= TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(delay));
 
             var sendTime = SystemClock.UtcNow.SafeAdd(delay);
-            Task.Factory.StartNew(async () => {
+            Task.Factory.StartNew(async () =>
+            {
                 await SystemClock.SleepSafeAsync(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
 
                 bool isTraceLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-                if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested) {
+                if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
+                {
                     if (isTraceLevelEnabled)
                         _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
                     return;
                 }
-                
+
                 if (isTraceLevelEnabled)
                     _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
 
@@ -315,14 +370,16 @@ namespace Foundatio.Messaging {
 
         public string MessageBusId { get; protected set; }
 
-        public virtual void Dispose() {
-            if (_isDisposed) {
+        public virtual void Dispose()
+        {
+            if (_isDisposed)
+            {
                 _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
                 return;
             }
-            
+
             _isDisposed = true;
-            
+
             _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
             _subscribers?.Clear();
             _messageBusDisposedCancellationTokenSource?.Cancel();
@@ -330,14 +387,16 @@ namespace Foundatio.Messaging {
         }
 
         [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
-        protected class DelayedMessage {
+        protected class DelayedMessage
+        {
             public DateTime SendTime { get; set; }
             public Type MessageType { get; set; }
             public object Message { get; set; }
         }
 
         [DebuggerDisplay("Id: {Id} Type: {Type} CancellationToken: {CancellationToken}")]
-        protected class Subscriber {
+        protected class Subscriber
+        {
             private readonly ConcurrentDictionary<Type, bool> _assignableTypesCache = new();
 
             public string Id { get; private set; } = Guid.NewGuid().ToString("N");
@@ -346,12 +405,15 @@ namespace Foundatio.Messaging {
             public Type GenericType { get; set; }
             public Func<object, CancellationToken, Task> Action { get; set; }
 
-            public bool IsAssignableFrom(Type type) {
+            public bool IsAssignableFrom(Type type)
+            {
                 if (type is null)
                     return false;
-                
-                return _assignableTypesCache.GetOrAdd(type, t => {
-                    if (t.IsClass) {
+
+                return _assignableTypesCache.GetOrAdd(type, t =>
+                {
+                    if (t.IsClass)
+                    {
                         var typedMessageType = typeof(IMessage<>).MakeGenericType(t);
                         if (Type == typedMessageType)
                             return true;

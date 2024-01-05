@@ -2,12 +2,15 @@
 using System.Threading.Tasks;
 using Foundatio.Lock;
 
-namespace Foundatio.Utility {
-    public class EmptyDisposable : IDisposable {
-        public void Dispose() {}
+namespace Foundatio.Utility
+{
+    public class EmptyDisposable : IDisposable
+    {
+        public void Dispose() { }
     }
 
-    public class EmptyLock : ILock {
+    public class EmptyLock : ILock
+    {
         public string LockId => String.Empty;
 
         public string Resource => String.Empty;
@@ -18,20 +21,24 @@ namespace Foundatio.Utility {
 
         public int RenewalCount => 0;
 
-        public ValueTask DisposeAsync() {
+        public ValueTask DisposeAsync()
+        {
             return new ValueTask();
         }
 
-        public Task RenewAsync(TimeSpan? lockExtension = null) {
+        public Task RenewAsync(TimeSpan? lockExtension = null)
+        {
             return Task.CompletedTask;
         }
 
-        public Task ReleaseAsync() {
+        public Task ReleaseAsync()
+        {
             return Task.CompletedTask;
         }
     }
 
-    public static class Disposable {
+    public static class Disposable
+    {
         public static IDisposable Empty = new EmptyDisposable();
         public static ILock EmptyLock = new EmptyLock();
     }

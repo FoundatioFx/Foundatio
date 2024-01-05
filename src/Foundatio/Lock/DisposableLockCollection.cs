@@ -6,19 +6,22 @@ using System.Threading.Tasks;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Lock {
-    internal class DisposableLockCollection : ILock {
+namespace Foundatio.Lock
+{
+    internal class DisposableLockCollection : ILock
+    {
         private readonly List<ILock> _locks = new();
         private readonly ILogger _logger;
         private bool _isReleased;
         private int _renewalCount;
         private readonly object _lock = new();
         private readonly Stopwatch _duration;
-       
-        public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, TimeSpan timeWaitedForLock, ILogger logger) {
+
+        public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, TimeSpan timeWaitedForLock, ILogger logger)
+        {
             if (locks == null)
                 throw new ArgumentNullException(nameof(locks));
-            
+
             _locks.AddRange(locks);
             Resource = String.Join("+", _locks.Select(l => l.Resource));
             LockId = lockId;
@@ -35,7 +38,8 @@ namespace Foundatio.Lock {
         public TimeSpan TimeWaitedForLock { get; }
         public int RenewalCount => _renewalCount;
 
-        public async Task RenewAsync(TimeSpan? lockExtension = null) {
+        public async Task RenewAsync(TimeSpan? lockExtension = null)
+        {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
 
@@ -46,11 +50,13 @@ namespace Foundatio.Lock {
                 _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
         }
 
-        public Task ReleaseAsync() {
+        public Task ReleaseAsync()
+        {
             if (_isReleased)
                 return Task.CompletedTask;
 
-            lock (_lock) {
+            lock (_lock)
+            {
                 if (_isReleased)
                     return Task.CompletedTask;
 
@@ -63,15 +69,19 @@ namespace Foundatio.Lock {
                 return Task.WhenAll(_locks.Select(l => l.ReleaseAsync()));
             }
         }
-        
-        public async ValueTask DisposeAsync() {
+
+        public async ValueTask DisposeAsync()
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (isTraceLogLevelEnabled)
                 _logger.LogTrace("Disposing {LockCount} locks {Resource}", _locks.Count, Resource);
 
-            try {
+            try
+            {
                 await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError(ex, "Unable to release {LockCount} locks {Resource}", _locks.Count, Resource);
             }

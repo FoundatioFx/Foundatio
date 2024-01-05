@@ -1,18 +1,20 @@
 ﻿using System;
-using Foundatio.Caching;
-using Foundatio.Messaging;
-using Foundatio.AsyncEx;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.AsyncEx;
+using Foundatio.Caching;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Diagnostics.Metrics;
 
-namespace Foundatio.Lock {
-    public class CacheLockProvider : ILockProvider, IHaveLogger {
+namespace Foundatio.Lock
+{
+    public class CacheLockProvider : ILockProvider, IHaveLogger
+    {
         private readonly ICacheClient _cacheClient;
         private readonly IMessageBus _messageBus;
         private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new();
@@ -22,7 +24,8 @@ namespace Foundatio.Lock {
         private readonly Histogram<double> _lockWaitTimeHistogram;
         private readonly Counter<int> _lockTimeoutCounter;
 
-        public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) {
+        public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null)
+        {
             _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
             _cacheClient = new ScopedCacheClient(cacheClient, "lock");
             _messageBus = messageBus;
@@ -33,11 +36,13 @@ namespace Foundatio.Lock {
 
         ILogger IHaveLogger.Logger => _logger;
 
-        private async Task EnsureTopicSubscriptionAsync() {
+        private async Task EnsureTopicSubscriptionAsync()
+        {
             if (_isSubscribed)
                 return;
 
-            using (await _lock.LockAsync().AnyContext()) {
+            using (await _lock.LockAsync().AnyContext())
+            {
                 if (_isSubscribed)
                     return;
 
@@ -49,17 +54,19 @@ namespace Foundatio.Lock {
             }
         }
 
-        private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default) {
+        private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default)
+        {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("Got lock released message: {Resource} ({LockId})", msg.Resource, msg.LockId);
-            
+
             if (_autoResetEvents.TryGetValue(msg.Resource, out var autoResetEvent))
                 autoResetEvent.Target.Set();
 
             return Task.CompletedTask;
         }
 
-        protected virtual Activity StartLockActivity(string resource) {
+        protected virtual Activity StartLockActivity(string resource)
+        {
             var activity = FoundatioDiagnostics.ActivitySource.StartActivity("AcquireLock");
 
             if (activity == null)
@@ -71,7 +78,8 @@ namespace Foundatio.Lock {
             return activity;
         }
 
-        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default) {
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+        {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             bool isDebugLogLevelEnabled = _logger.IsEnabled(LogLevel.Debug);
             bool shouldWait = !cancellationToken.IsCancellationRequested;
@@ -86,25 +94,30 @@ namespace Foundatio.Lock {
             bool gotLock = false;
             string lockId = GenerateNewLockId();
             var sw = Stopwatch.StartNew();
-            try {
-                do {
-                    try {
+            try
+            {
+                do
+                {
+                    try
+                    {
                         if (timeUntilExpires.Value == TimeSpan.Zero) // no lock timeout
                             gotLock = await _cacheClient.AddAsync(resource, lockId).AnyContext();
                         else
                             gotLock = await _cacheClient.AddAsync(resource, lockId, timeUntilExpires).AnyContext();
-                    } catch { }
+                    }
+                    catch { }
 
                     if (gotLock)
                         break;
 
                     if (isDebugLogLevelEnabled)
                         _logger.LogDebug("Failed to acquire lock: {Resource}", resource);
-                    
-                    if (cancellationToken.IsCancellationRequested) {
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
                         if (isTraceLogLevelEnabled && shouldWait)
                             _logger.LogTrace("Cancellation requested");
-                        
+
                         break;
                     }
 
@@ -114,31 +127,37 @@ namespace Foundatio.Lock {
 
                     var keyExpiration = SystemClock.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
                     var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow);
-                    
+
                     // delay a minimum of 50ms
                     if (delayAmount < TimeSpan.FromMilliseconds(50))
                         delayAmount = TimeSpan.FromMilliseconds(50);
-                    
+
                     // delay a maximum of 3 seconds
                     if (delayAmount > TimeSpan.FromSeconds(3))
                         delayAmount = TimeSpan.FromSeconds(3);
-                    
+
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock: {Resource}", delayAmount, resource);
 
                     // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                     using (var maxWaitCancellationTokenSource = new CancellationTokenSource(delayAmount))
-                    using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, maxWaitCancellationTokenSource.Token)) {
-                        try {
+                    using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, maxWaitCancellationTokenSource.Token))
+                    {
+                        try
+                        {
                             await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
-                        } catch (OperationCanceledException) {}
+                        }
+                        catch (OperationCanceledException) { }
                     }
-                    
+
                     Thread.Yield();
                 } while (!cancellationToken.IsCancellationRequested);
-            } finally {
+            }
+            finally
+            {
                 bool shouldRemove = false;
-                _autoResetEvents.TryUpdate(resource, (n, e) => {
+                _autoResetEvents.TryUpdate(resource, (n, e) =>
+                {
                     e.RefCount--;
                     if (e.RefCount == 0)
                         shouldRemove = true;
@@ -152,14 +171,15 @@ namespace Foundatio.Lock {
 
             _lockWaitTimeHistogram.Record(sw.Elapsed.TotalMilliseconds);
 
-            if (!gotLock) {
+            if (!gotLock)
+            {
                 _lockTimeoutCounter.Add(1);
 
                 if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
                     _logger.LogTrace("Cancellation requested for lock {Resource} after {Duration:g}", resource, sw.Elapsed);
                 else if (_logger.IsEnabled(LogLevel.Warning))
                     _logger.LogWarning("Failed to acquire lock {Resource} after {Duration:g}", resource, lockId, sw.Elapsed);
-                
+
                 return null;
             }
 
@@ -167,16 +187,18 @@ namespace Foundatio.Lock {
                 _logger.LogWarning("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
             else if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
-            
+
             return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
         }
 
-        public async Task<bool> IsLockedAsync(string resource) {
+        public async Task<bool> IsLockedAsync(string resource)
+        {
             var result = await Run.WithRetriesAsync(() => _cacheClient.ExistsAsync(resource), logger: _logger).AnyContext();
             return result;
         }
 
-        public async Task ReleaseAsync(string resource, string lockId) {
+        public async Task ReleaseAsync(string resource, string lockId)
+        {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
@@ -186,8 +208,9 @@ namespace Foundatio.Lock {
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
         }
-            
-        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) {
+
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+        {
             if (!timeUntilExpires.HasValue)
                 timeUntilExpires = TimeSpan.FromMinutes(20);
 
@@ -197,7 +220,8 @@ namespace Foundatio.Lock {
             return Run.WithRetriesAsync(() => _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value));
         }
 
-        private class ResetEventWithRefCount {
+        private class ResetEventWithRefCount
+        {
             public int RefCount { get; set; }
             public AsyncAutoResetEvent Target { get; set; }
         }
@@ -205,7 +229,8 @@ namespace Foundatio.Lock {
         private static string _allowedChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         private static Random _rng = new();
 
-        private string GenerateNewLockId() {
+        private string GenerateNewLockId()
+        {
             char[] chars = new char[16];
 
             for (int i = 0; i < 16; ++i)
@@ -215,7 +240,8 @@ namespace Foundatio.Lock {
         }
     }
 
-    public class CacheLockReleased {
+    public class CacheLockReleased
+    {
         public string Resource { get; set; }
         public string LockId { get; set; }
     }

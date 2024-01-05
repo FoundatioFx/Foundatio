@@ -1,17 +1,21 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
-using Foundatio.Utility;
 using Foundatio.Queues;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 
-namespace Foundatio.Jobs {
-    public static class WorkItemQueueExtensions {
-        public static async Task<string> EnqueueAsync<T>(this IQueue<WorkItemData> queue, T workItemData, bool includeProgressReporting = false) {
+namespace Foundatio.Jobs
+{
+    public static class WorkItemQueueExtensions
+    {
+        public static async Task<string> EnqueueAsync<T>(this IQueue<WorkItemData> queue, T workItemData, bool includeProgressReporting = false)
+        {
             string jobId = Guid.NewGuid().ToString("N");
             var bytes = queue.Serializer.SerializeToBytes(workItemData);
 
-            var data = new WorkItemData {
+            var data = new WorkItemData
+            {
                 Data = bytes,
                 WorkItemId = jobId,
                 Type = typeof(T).AssemblyQualifiedName,
@@ -31,7 +35,8 @@ namespace Foundatio.Jobs {
             return jobId;
         }
 
-        private static string GetDefaultSubMetricName(WorkItemData data) {
+        private static string GetDefaultSubMetricName(WorkItemData data)
+        {
             if (String.IsNullOrEmpty(data.Type))
                 return null;
 
@@ -42,13 +47,14 @@ namespace Foundatio.Jobs {
             return type?.ToLowerInvariant();
         }
 
-        private static string GetTypeName(string assemblyQualifiedName) {
+        private static string GetTypeName(string assemblyQualifiedName)
+        {
             if (String.IsNullOrEmpty(assemblyQualifiedName))
                 return null;
 
             var parts = assemblyQualifiedName.Split(',');
             int i = parts[0].LastIndexOf('.');
-            
+
             return i < 0 ? null : parts[0].Substring(i + 1);
         }
     }

@@ -503,7 +503,7 @@ namespace Foundatio.Collections
         /// </summary>
         /// <returns>The number of elements contained in this deque.</returns>
         public int Count { get; private set; }
-        
+
         /// <summary>
         /// Applies the offset to <paramref name="index"/>, resulting in a buffer index.
         /// </summary>

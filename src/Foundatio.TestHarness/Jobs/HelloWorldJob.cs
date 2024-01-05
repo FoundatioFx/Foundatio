@@ -4,18 +4,22 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Tests.Jobs {
-    public class HelloWorldJob : JobBase {
+namespace Foundatio.Tests.Jobs
+{
+    public class HelloWorldJob : JobBase
+    {
         private readonly string _id;
 
-        public HelloWorldJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+        public HelloWorldJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+        {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
         public static int GlobalRunCount;
         public int RunCount { get; set; }
 
-        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+        protected override Task<JobResult> RunInternalAsync(JobContext context)
+        {
             RunCount++;
             Interlocked.Increment(ref GlobalRunCount);
 
@@ -26,16 +30,19 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 
-    public class FailingJob : JobBase {
+    public class FailingJob : JobBase
+    {
         private readonly string _id;
 
         public int RunCount { get; set; }
 
-        public FailingJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+        public FailingJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+        {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
-        protected override Task<JobResult> RunInternalAsync(JobContext context) {
+        protected override Task<JobResult> RunInternalAsync(JobContext context)
+        {
             RunCount++;
 
             if (_logger.IsEnabled(LogLevel.Trace))
@@ -45,22 +52,26 @@ namespace Foundatio.Tests.Jobs {
         }
     }
 
-    public class LongRunningJob : JobBase {
+    public class LongRunningJob : JobBase
+    {
         private readonly string _id;
         private int _iterationCount;
 
-        public LongRunningJob(ILoggerFactory loggerFactory) : base(loggerFactory) {
+        public LongRunningJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+        {
             _id = Guid.NewGuid().ToString("N").Substring(0, 10);
         }
 
         public int IterationCount => _iterationCount;
 
-        protected override Task<JobResult> RunInternalAsync(JobContext context) {
-            do {
+        protected override Task<JobResult> RunInternalAsync(JobContext context)
+        {
+            do
+            {
                 Interlocked.Increment(ref _iterationCount);
                 if (context.CancellationToken.IsCancellationRequested)
                     break;
-                
+
                 if (_iterationCount % 10000 == 0 && _logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("LongRunningJob Running: instance={Id} iterations={IterationCount}", _id, IterationCount);
             } while (true);

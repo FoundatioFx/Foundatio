@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-namespace Foundatio.Metrics {
+namespace Foundatio.Metrics
+{
     [DebuggerDisplay("Time: {Time} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
-    public class TimingStat {
+    public class TimingStat
+    {
         public DateTime Time { get; set; }
         public int Count { get; set; }
         public long TotalDuration { get; set; }
@@ -15,8 +17,10 @@ namespace Foundatio.Metrics {
     }
 
     [DebuggerDisplay("Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}")]
-    public class TimingStatSummary {
-        public TimingStatSummary(string name, ICollection<TimingStat> stats, DateTime start, DateTime end) {
+    public class TimingStatSummary
+    {
+        public TimingStatSummary(string name, ICollection<TimingStat> stats, DateTime start, DateTime end)
+        {
             Name = name;
             Stats = stats;
             Count = stats.Count > 0 ? Stats.Sum(s => s.Count) : 0;
@@ -38,7 +42,8 @@ namespace Foundatio.Metrics {
         public long TotalDuration { get; }
         public double AverageDuration { get; }
 
-        public override string ToString() {
+        public override string ToString()
+        {
             return $"Timing: {Name} Time: {StartTime}-{EndTime} Count: {Count} Min: {MinDuration} Max: {MaxDuration} Total: {TotalDuration} Avg: {AverageDuration}";
         }
     }
