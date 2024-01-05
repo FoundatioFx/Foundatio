@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
-    <PackageReference Include="Foundatio" Version="10.6.1" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="Foundatio" Version="10.6.2-alpha.0.13" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
+
     <PackageReference Include="StackExchange.Redis" Version="2.7.10" />
   </ItemGroup>
   <ItemGroup>
