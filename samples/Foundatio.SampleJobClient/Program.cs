@@ -1,13 +1,13 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Queues;
 using Foundatio.Messaging;
+using Foundatio.Queues;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using System.Linq;
 
 namespace Foundatio.SampleJobClient
 {
@@ -56,7 +56,8 @@ namespace Foundatio.SampleJobClient
             } while (!token.IsCancellationRequested);
         }
 
-        private static void HandleKey(ConsoleKey key) {
+        private static void HandleKey(ConsoleKey key)
+        {
             if (key == ConsoleKey.D1)
             {
                 EnqueuePing(1);
@@ -88,11 +89,14 @@ namespace Foundatio.SampleJobClient
             }
         }
 
-        private static void MonitorKeyPress() {
-            Task.Run(() => {
+        private static void MonitorKeyPress()
+        {
+            Task.Run(() =>
+            {
                 while (_isRunning)
                 {
-                    while (!Console.KeyAvailable) {
+                    while (!Console.KeyAvailable)
+                    {
                         SystemClock.Sleep(250);
                     }
                     var key = Console.ReadKey(true).Key;
@@ -102,10 +106,12 @@ namespace Foundatio.SampleJobClient
             });
         }
 
-        private static void DrawLoop() {
+        private static void DrawLoop()
+        {
             Console.CursorVisible = false;
 
-            while (_isRunning) {
+            while (_isRunning)
+            {
                 ClearConsoleLines(0, OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT + _loggerFactory.MaxLogEntriesToStore);
 
                 DrawOptionsMenu();
@@ -138,14 +144,14 @@ namespace Foundatio.SampleJobClient
             Console.Write("3: ");
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine("Enqueue continuous");
-            
+
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("M: ");
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine("Send echo message");
-            
+
             Console.WriteLine();
-            
+
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("S: ");
             Console.ForegroundColor = ConsoleColor.White;
@@ -156,7 +162,8 @@ namespace Foundatio.SampleJobClient
             Console.WriteLine("Quit");
         }
 
-        private static void DrawLogMessages() {
+        private static void DrawLogMessages()
+        {
             Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT);
             foreach (var logEntry in _loggerFactory.LogEntries.ToArray())
             {
@@ -166,22 +173,24 @@ namespace Foundatio.SampleJobClient
                 Console.ForegroundColor = originalColor;
             }
         }
-        
-        private static void ClearConsoleLines(int startLine = 0, int endLine = -1) {
+
+        private static void ClearConsoleLines(int startLine = 0, int endLine = -1)
+        {
             if (endLine < 0)
                 endLine = Console.WindowHeight - 2;
 
             int currentLine = Console.CursorTop;
             int currentPosition = Console.CursorLeft;
 
-            for (int i = startLine; i <= endLine; i++) {
+            for (int i = startLine; i <= endLine; i++)
+            {
                 Console.SetCursorPosition(0, i);
                 Console.Write(new string(' ', Console.WindowWidth));
             }
 
             Console.SetCursorPosition(currentPosition, currentLine);
         }
-        
+
         private static ConsoleColor GetColor(LogEntry logEntry)
         {
             switch (logEntry.LogLevel)
@@ -204,7 +213,8 @@ namespace Foundatio.SampleJobClient
         }
     }
 
-    public class EchoMessage {
+    public class EchoMessage
+    {
         public string Message { get; set; }
     }
 

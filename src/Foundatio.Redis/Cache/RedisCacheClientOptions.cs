@@ -1,7 +1,9 @@
 ﻿using StackExchange.Redis;
 
-namespace Foundatio.Caching {
-    public class RedisCacheClientOptions : SharedOptions {
+namespace Foundatio.Caching
+{
+    public class RedisCacheClientOptions : SharedOptions
+    {
         public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
 
         /// <summary>
@@ -16,13 +18,16 @@ namespace Foundatio.Caching {
 
     }
 
-    public class RedisCacheClientOptionsBuilder : SharedOptionsBuilder<RedisCacheClientOptions, RedisCacheClientOptionsBuilder> {
-        public RedisCacheClientOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer) {
+    public class RedisCacheClientOptionsBuilder : SharedOptionsBuilder<RedisCacheClientOptions, RedisCacheClientOptionsBuilder>
+    {
+        public RedisCacheClientOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
+        {
             Target.ConnectionMultiplexer = connectionMultiplexer;
             return this;
         }
 
-        public RedisCacheClientOptionsBuilder ShouldThrowOnSerializationError(bool shouldThrow) {
+        public RedisCacheClientOptionsBuilder ShouldThrowOnSerializationError(bool shouldThrow)
+        {
             Target.ShouldThrowOnSerializationError = shouldThrow;
             return this;
         }

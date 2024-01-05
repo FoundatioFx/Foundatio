@@ -7,14 +7,18 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Redis.Tests.Caching {
-    public class RedisHybridCacheClientTests : HybridCacheClientTests {
-        public RedisHybridCacheClientTests(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Redis.Tests.Caching
+{
+    public class RedisHybridCacheClientTests : HybridCacheClientTests
+    {
+        public RedisHybridCacheClientTests(ITestOutputHelper output) : base(output)
+        {
             var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+        {
             return new RedisHybridCacheClient(o => o
                     .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
                     .LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError),
@@ -24,22 +28,26 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public override Task CanSetAndGetValueAsync() {
+        public override Task CanSetAndGetValueAsync()
+        {
             return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetObjectAsync() {
+        public override Task CanSetAndGetObjectAsync()
+        {
             return base.CanSetAndGetObjectAsync();
         }
-        
+
         [Fact]
-        public override Task CanTryGetAsync() {
+        public override Task CanTryGetAsync()
+        {
             return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanRemoveByPrefixAsync() {
+        public override Task CanRemoveByPrefixAsync()
+        {
             return base.CanRemoveByPrefixAsync();
         }
 
@@ -48,53 +56,63 @@ namespace Foundatio.Redis.Tests.Caching {
         [InlineData(500)]
         [InlineData(5000)]
         [InlineData(50000)]
-        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count)
+        {
             return base.CanRemoveByPrefixMultipleEntriesAsync(count);
         }
 
         [Fact]
-        public override Task CanUseScopedCachesAsync() {
+        public override Task CanUseScopedCachesAsync()
+        {
             return base.CanUseScopedCachesAsync();
         }
 
         [Fact]
-        public override Task CanSetExpirationAsync() {
+        public override Task CanSetExpirationAsync()
+        {
             return base.CanSetExpirationAsync();
         }
-        
+
         [Fact]
-        public override Task CanManageListsAsync() {
+        public override Task CanManageListsAsync()
+        {
             return base.CanManageListsAsync();
         }
 
         [Fact]
-        public override Task WillUseLocalCache() {
+        public override Task WillUseLocalCache()
+        {
             return base.WillUseLocalCache();
         }
 
         [Fact(Skip = "Skipping for now until we figure out a timing issue")]
-        public override Task WillExpireRemoteItems() {
+        public override Task WillExpireRemoteItems()
+        {
             Log.MinimumLevel = LogLevel.Trace;
             return base.WillExpireRemoteItems();
         }
 
         [Fact]
-        public override Task WillWorkWithSets() {
+        public override Task WillWorkWithSets()
+        {
             return base.WillWorkWithSets();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureThroughputAsync() {
+        public override Task MeasureThroughputAsync()
+        {
             return base.MeasureThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerSimpleThroughputAsync() {
+        public override Task MeasureSerializerSimpleThroughputAsync()
+        {
             return base.MeasureSerializerSimpleThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerComplexThroughputAsync() {
+        public override Task MeasureSerializerComplexThroughputAsync()
+        {
             return base.MeasureSerializerComplexThroughputAsync();
         }
     }

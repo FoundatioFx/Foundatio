@@ -4,14 +4,17 @@ using Foundatio.Caching;
 using Foundatio.Messaging;
 using StackExchange.Redis;
 
-namespace Foundatio.Benchmarks.Caching {
-    public class CacheBenchmarks {
+namespace Foundatio.Benchmarks.Caching
+{
+    public class CacheBenchmarks
+    {
         private const int ITEM_COUNT = 1000;
         private readonly ICacheClient _inMemoryCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
         private readonly ICacheClient _redisCache;
         private readonly ICacheClient _hybridCacheClient;
 
-        public CacheBenchmarks() {
+        public CacheBenchmarks()
+        {
             var muxer = ConnectionMultiplexer.Connect("localhost");
             _redisCache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
             _redisCache.RemoveAllAsync().GetAwaiter().GetResult();
@@ -19,62 +22,79 @@ namespace Foundatio.Benchmarks.Caching {
         }
 
         [Benchmark]
-        public void ProcessInMemoryCache() {
+        public void ProcessInMemoryCache()
+        {
             Process(_inMemoryCache);
         }
 
         [Benchmark]
-        public void ProcessRedisCache() {
+        public void ProcessRedisCache()
+        {
             Process(_redisCache);
         }
 
         [Benchmark]
-        public void ProcessHybridRedisCache() {
+        public void ProcessHybridRedisCache()
+        {
             Process(_hybridCacheClient);
         }
 
         [Benchmark]
-        public void ProcessInMemoryCacheWithConstantInvalidation() {
+        public void ProcessInMemoryCacheWithConstantInvalidation()
+        {
             Process(_inMemoryCache, true);
         }
 
         [Benchmark]
-        public void ProcessRedisCacheWithConstantInvalidation() {
+        public void ProcessRedisCacheWithConstantInvalidation()
+        {
             Process(_redisCache, true);
         }
 
         [Benchmark]
-        public void ProcessHybridRedisCacheWithConstantInvalidation() {
+        public void ProcessHybridRedisCacheWithConstantInvalidation()
+        {
             Process(_hybridCacheClient, true);
         }
 
-        private void Process(ICacheClient cache, bool useSingleKey = false) {
-            try {
-                for (int i = 0; i < ITEM_COUNT; i++) { 
+        private void Process(ICacheClient cache, bool useSingleKey = false)
+        {
+            try
+            {
+                for (int i = 0; i < ITEM_COUNT; i++)
+                {
                     string key = useSingleKey ? "test" : String.Concat("test", i);
                     cache.SetAsync(key, new CacheItem { Id = i }, TimeSpan.FromHours(1)).GetAwaiter().GetResult();
                 }
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 Console.WriteLine(ex);
             }
 
-            try {
-                for (int i = 0; i < ITEM_COUNT; i++) {
+            try
+            {
+                for (int i = 0; i < ITEM_COUNT; i++)
+                {
                     string key = useSingleKey ? "test" : String.Concat("test", i);
                     var entry = cache.GetAsync<string>(key).GetAwaiter().GetResult();
                 }
 
-                for (int i = 0; i < ITEM_COUNT; i++) {
+                for (int i = 0; i < ITEM_COUNT; i++)
+                {
                     string key = useSingleKey ? "test" : "test0";
                     var entry = cache.GetAsync<string>(key).GetAwaiter().GetResult();
                 }
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 Console.WriteLine(ex);
             }
         }
     }
 
-    public class CacheItem {
+    public class CacheItem
+    {
         public int Id { get; set; }
     }
 }

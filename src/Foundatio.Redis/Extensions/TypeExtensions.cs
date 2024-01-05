@@ -1,12 +1,15 @@
 ﻿using System;
 using Foundatio.Utility;
 
-namespace Foundatio.Extensions {
-    internal static class TypeExtensions {
-        public static bool IsNumeric(this Type type) {
+namespace Foundatio.Extensions
+{
+    internal static class TypeExtensions
+    {
+        public static bool IsNumeric(this Type type)
+        {
             if (type.IsArray)
                 return false;
-            
+
             if (type == TypeHelper.ByteType ||
                 type == TypeHelper.DecimalType ||
                 type == TypeHelper.DoubleType ||
@@ -19,8 +22,9 @@ namespace Foundatio.Extensions {
                 type == TypeHelper.UInt32Type ||
                 type == TypeHelper.UInt64Type)
                 return true;
-            
-            switch (Type.GetTypeCode(type)) {
+
+            switch (Type.GetTypeCode(type))
+            {
                 case TypeCode.Byte:
                 case TypeCode.Decimal:
                 case TypeCode.Double:
@@ -39,7 +43,8 @@ namespace Foundatio.Extensions {
         }
 
 
-        public static bool IsNullableNumeric(this Type type) {
+        public static bool IsNullableNumeric(this Type type)
+        {
             if (type.IsArray)
                 return false;
 

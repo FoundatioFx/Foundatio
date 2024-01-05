@@ -1,30 +1,35 @@
 ﻿using System;
-using System.Threading;using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Foundatio.AsyncEx;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using System.Collections.Generic;
-using System.Linq;
 
-namespace Foundatio.Messaging {
-    public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions> {
+namespace Foundatio.Messaging
+{
+    public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
+    {
         private readonly AsyncLock _lock = new();
         private bool _isSubscribed;
         private ChannelMessageQueue _channelMessageQueue = null;
 
-        public RedisMessageBus(RedisMessageBusOptions options) : base(options) {}
+        public RedisMessageBus(RedisMessageBusOptions options) : base(options) { }
 
         public RedisMessageBus(Builder<RedisMessageBusOptionsBuilder, RedisMessageBusOptions> config)
             : this(config(new RedisMessageBusOptionsBuilder()).Build()) { }
 
-        protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) {
+        protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
+        {
             if (_isSubscribed)
                 return;
 
-            using (await _lock.LockAsync().AnyContext()) {
+            using (await _lock.LockAsync().AnyContext())
+            {
                 if (_isSubscribed)
                     return;
 
@@ -37,20 +42,24 @@ namespace Foundatio.Messaging {
             }
         }
 
-        private async Task OnMessage(ChannelMessage channelMessage) {
+        private async Task OnMessage(ChannelMessage channelMessage)
+        {
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
 
-            if (_subscribers.IsEmpty || !channelMessage.Message.HasValue) {
+            if (_subscribers.IsEmpty || !channelMessage.Message.HasValue)
+            {
                 if (_logger.IsEnabled(LogLevel.Trace))
                     _logger.LogTrace("No subscribers ({Channel})", channelMessage.Channel);
                 return;
             }
-            
+
             IMessage message;
-            try {
+            try
+            {
                 var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])channelMessage.Message);
-                message = new Message(envelope.Data, DeserializeMessageBody) {
+                message = new Message(envelope.Data, DeserializeMessageBody)
+                {
                     Type = envelope.Type,
                     ClrType = GetMappedMessageType(envelope.Type),
                     CorrelationId = envelope.CorrelationId,
@@ -59,7 +68,9 @@ namespace Foundatio.Messaging {
 
                 foreach (var property in envelope.Properties)
                     message.Properties.Add(property.Key, property.Value);
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
                 _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
                 return;
             }
@@ -67,9 +78,11 @@ namespace Foundatio.Messaging {
             await SendMessageToSubscribersAsync(message).AnyContext();
         }
 
-        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken) {
+        protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+        {
             var mappedType = GetMappedMessageType(messageType);
-            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero) {
+            if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+            {
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
                 await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
                 return;
@@ -77,7 +90,8 @@ namespace Foundatio.Messaging {
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
             byte[] bodyData = SerializeMessageBody(messageType, message);
-            byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope {
+            byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope
+            {
                 Type = messageType,
                 Data = bodyData,
                 CorrelationId = options.CorrelationId,
@@ -90,11 +104,14 @@ namespace Foundatio.Messaging {
             await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
-        public override void Dispose() {
+        public override void Dispose()
+        {
             base.Dispose();
 
-            if (_isSubscribed) {
-                using (_lock.Lock()) {
+            if (_isSubscribed)
+            {
+                using (_lock.Lock())
+                {
                     if (!_isSubscribed)
                         return;
 
@@ -109,7 +126,8 @@ namespace Foundatio.Messaging {
         }
     }
 
-    public class RedisMessageEnvelope {
+    public class RedisMessageEnvelope
+    {
         public string UniqueId { get; set; }
         public string CorrelationId { get; set; }
         public string Type { get; set; }

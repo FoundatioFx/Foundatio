@@ -9,69 +9,84 @@ using StackExchange.Redis;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Redis.Tests.Caching {
-    public class RedisCacheClientTests : CacheClientTestsBase {
-        public RedisCacheClientTests(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Redis.Tests.Caching
+{
+    public class RedisCacheClientTests : CacheClientTestsBase
+    {
+        public RedisCacheClientTests(ITestOutputHelper output) : base(output)
+        {
             var muxer = SharedConnection.GetMuxer(Log);
             muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true) {
+        protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+        {
             return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer(Log)).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
         }
 
         [Fact]
-        public override Task CanGetAllAsync() {
+        public override Task CanGetAllAsync()
+        {
             return base.CanGetAllAsync();
         }
 
         [Fact]
-        public override Task CanGetAllWithOverlapAsync() {
+        public override Task CanGetAllWithOverlapAsync()
+        {
             return base.CanGetAllWithOverlapAsync();
         }
 
         [Fact]
-        public override Task CanSetAsync() {
+        public override Task CanSetAsync()
+        {
             return base.CanSetAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetValueAsync() {
+        public override Task CanSetAndGetValueAsync()
+        {
             return base.CanSetAndGetValueAsync();
         }
 
         [Fact]
-        public override Task CanAddAsync() {
+        public override Task CanAddAsync()
+        {
             return base.CanAddAsync();
         }
 
         [Fact]
-        public override Task CanAddConcurrentlyAsync() {
+        public override Task CanAddConcurrentlyAsync()
+        {
             return base.CanAddConcurrentlyAsync();
         }
 
         [Fact]
-        public override Task CanGetAsync() {
+        public override Task CanGetAsync()
+        {
             return base.CanGetAsync();
         }
 
         [Fact]
-        public override Task CanTryGetAsync() {
+        public override Task CanTryGetAsync()
+        {
             return base.CanTryGetAsync();
         }
 
         [Fact]
-        public override Task CanUseScopedCachesAsync() {
+        public override Task CanUseScopedCachesAsync()
+        {
             return base.CanUseScopedCachesAsync();
         }
 
         [Fact]
-        public override Task CanSetAndGetObjectAsync() {
+        public override Task CanSetAndGetObjectAsync()
+        {
             return base.CanSetAndGetObjectAsync();
         }
 
         [Fact]
-        public override Task CanRemoveByPrefixAsync() {
+        public override Task CanRemoveByPrefixAsync()
+        {
             return base.CanRemoveByPrefixAsync();
         }
 
@@ -80,63 +95,75 @@ namespace Foundatio.Redis.Tests.Caching {
         [InlineData(500)]
         [InlineData(5000)]
         [InlineData(50000)]
-        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count) {
+        public override Task CanRemoveByPrefixMultipleEntriesAsync(int count)
+        {
             return base.CanRemoveByPrefixMultipleEntriesAsync(count);
         }
 
         [Fact]
-        public override Task CanSetExpirationAsync() {
+        public override Task CanSetExpirationAsync()
+        {
             return base.CanSetExpirationAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAsync() {
+        public override Task CanIncrementAsync()
+        {
             return base.CanIncrementAsync();
         }
 
         [Fact]
-        public override Task CanIncrementAndExpireAsync() {
+        public override Task CanIncrementAndExpireAsync()
+        {
             return base.CanIncrementAndExpireAsync();
         }
 
         [Fact]
-        public override Task CanGetAndSetDateTimeAsync() {
+        public override Task CanGetAndSetDateTimeAsync()
+        {
             return base.CanGetAndSetDateTimeAsync();
         }
 
         [Fact]
-        public override Task CanRemoveIfEqual() {
+        public override Task CanRemoveIfEqual()
+        {
             return base.CanRemoveIfEqual();
         }
 
         [Fact]
-        public override Task CanReplaceIfEqual() {
+        public override Task CanReplaceIfEqual()
+        {
             return base.CanReplaceIfEqual();
         }
 
         [Fact]
-        public override Task CanRoundTripLargeNumbersAsync() {
+        public override Task CanRoundTripLargeNumbersAsync()
+        {
             return base.CanRoundTripLargeNumbersAsync();
         }
 
         [Fact]
-        public override Task CanRoundTripLargeNumbersWithExpirationAsync() {
+        public override Task CanRoundTripLargeNumbersWithExpirationAsync()
+        {
             return base.CanRoundTripLargeNumbersWithExpirationAsync();
         }
 
         [Fact]
-        public override Task CanManageListsAsync() {
+        public override Task CanManageListsAsync()
+        {
             return base.CanManageListsAsync();
         }
 
         [Fact]
-        public async Task CanUpgradeListType() {
+        public async Task CanUpgradeListType()
+        {
             var db = SharedConnection.GetMuxer(Log).GetDatabase();
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 var items = new List<RedisValue>();
                 for (int i = 1; i < 20001; i++)
                     items.Add(Guid.NewGuid().ToString());
@@ -161,12 +188,14 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact]
-        public async Task CanManageLargeListsAsync() {
+        public async Task CanManageLargeListsAsync()
+        {
             var cache = GetCacheClient();
             if (cache == null)
                 return;
 
-            using (cache) {
+            using (cache)
+            {
                 await cache.RemoveAllAsync();
 
                 var items = new List<string>();
@@ -176,12 +205,12 @@ namespace Foundatio.Redis.Tests.Caching {
 
                 foreach (var batch in Batch(items, 1000))
                     await cache.ListAddAsync("largelist", batch);
-                
+
                 var pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
                 Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[1], items[2], items[3], items[4] });
-                
+
                 pagedResult = await cache.GetListAsync<string>("largelist", 2, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
@@ -202,7 +231,7 @@ namespace Foundatio.Redis.Tests.Caching {
 
                 result = await cache.ListRemoveAsync("largelist", items[1]);
                 Assert.Equal(1, result);
-               
+
                 pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
@@ -211,20 +240,23 @@ namespace Foundatio.Redis.Tests.Caching {
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureThroughputAsync() {
+        public override Task MeasureThroughputAsync()
+        {
             return base.MeasureThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerSimpleThroughputAsync() {
+        public override Task MeasureSerializerSimpleThroughputAsync()
+        {
             return base.MeasureSerializerSimpleThroughputAsync();
         }
 
         [Fact(Skip = "Performance Test")]
-        public override Task MeasureSerializerComplexThroughputAsync() {
+        public override Task MeasureSerializerComplexThroughputAsync()
+        {
             return base.MeasureSerializerComplexThroughputAsync();
         }
-        
+
         private IEnumerable<IEnumerable<TSource>> Batch<TSource>(IList<TSource> source, int size)
         {
             if (size <= 0) throw new ArgumentOutOfRangeException(nameof(size));

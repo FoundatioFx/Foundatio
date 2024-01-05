@@ -4,16 +4,20 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
-namespace Foundatio.SampleJob {
-    public class SampleServiceProvider {
-        public static IServiceProvider Create(ILoggerFactory loggerFactory) {
+namespace Foundatio.SampleJob
+{
+    public class SampleServiceProvider
+    {
+        public static IServiceProvider Create(ILoggerFactory loggerFactory)
+        {
             var container = new ServiceCollection();
 
-            if (loggerFactory != null) {
+            if (loggerFactory != null)
+            {
                 container.AddSingleton<ILoggerFactory>(loggerFactory);
                 container.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
             }

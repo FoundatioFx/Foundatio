@@ -4,11 +4,14 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 using StackExchange.Redis;
 
-namespace Foundatio.Redis {
-    internal static class RedisValueExtensions {
+namespace Foundatio.Redis
+{
+    internal static class RedisValueExtensions
+    {
         private static readonly RedisValue _nullValue = "@@NULL";
 
-        public static T ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer) {
+        public static T ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer)
+        {
             T value;
             var type = typeof(T);
 
@@ -22,7 +25,8 @@ namespace Foundatio.Redis {
             return value;
         }
 
-        public static RedisValue ToRedisValue<T>(this T value, ISerializer serializer) {
+        public static RedisValue ToRedisValue<T>(this T value, ISerializer serializer)
+        {
             var redisValue = _nullValue;
             if (value == null)
                 return redisValue;
@@ -69,18 +73,23 @@ namespace Foundatio.Redis {
         }
     }
 
-    public static class RedisExtensions {
-        public static bool IsCluster(this IConnectionMultiplexer muxer) {
+    public static class RedisExtensions
+    {
+        public static bool IsCluster(this IConnectionMultiplexer muxer)
+        {
             var configuration = ConfigurationOptions.Parse(muxer.Configuration);
             if (configuration.Proxy == Proxy.Twemproxy)
                 return true;
 
             int standaloneCount = 0, clusterCount = 0, sentinelCount = 0;
-            foreach (var endPoint in muxer.GetEndPoints()) {
+            foreach (var endPoint in muxer.GetEndPoints())
+            {
                 var server = muxer.GetServer(endPoint);
-                if (server.IsConnected) {
+                if (server.IsConnected)
+                {
                     // count the server types
-                    switch (server.ServerType) {
+                    switch (server.ServerType)
+                    {
                         case ServerType.Twemproxy:
                         case ServerType.Standalone:
                             standaloneCount++;

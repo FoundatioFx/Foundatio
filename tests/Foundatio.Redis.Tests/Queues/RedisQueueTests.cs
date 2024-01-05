@@ -1,38 +1,42 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
+using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Lock;
-using Foundatio.Tests.Extensions;
 using Foundatio.Messaging;
 using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
+using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Queue;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
-using Foundatio.AsyncEx;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Xunit;
 using Xunit.Abstractions;
-using Foundatio.Xunit;
-using Foundatio.Tests.Utility;
-using StackExchange.Redis;
-using System.Diagnostics;
 
 #pragma warning disable 4014
 
-namespace Foundatio.Redis.Tests.Queues {
-    public class RedisQueueTests : QueueTestBase {
-        public RedisQueueTests(ITestOutputHelper output) : base(output) {
+namespace Foundatio.Redis.Tests.Queues
+{
+    public class RedisQueueTests : QueueTestBase
+    {
+        public RedisQueueTests(ITestOutputHelper output) : base(output)
+        {
             var muxer = SharedConnection.GetMuxer(Log);
             while (muxer.CountAllKeysAsync().GetAwaiter().GetResult() != 0)
                 muxer.FlushAllAsync().GetAwaiter().GetResult();
         }
 
-        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true) {
+        protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+        {
             var queue = new RedisQueue<SimpleWorkItem>(o => o
                 .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
                 .Retries(retries)
@@ -43,118 +47,140 @@ namespace Foundatio.Redis.Tests.Queues {
                 .RunMaintenanceTasks(runQueueMaintenance)
                 .LoggerFactory(Log)
             );
-            
+
             _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
             return queue;
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueWorkItemAsync() {
+        public override Task CanQueueAndDequeueWorkItemAsync()
+        {
             return base.CanQueueAndDequeueWorkItemAsync();
         }
 
         [Fact]
-        public override Task CanDequeueWithCancelledTokenAsync() {
+        public override Task CanDequeueWithCancelledTokenAsync()
+        {
             return base.CanDequeueWithCancelledTokenAsync();
         }
 
         [Fact]
-        public override Task CanDequeueEfficientlyAsync() {
+        public override Task CanDequeueEfficientlyAsync()
+        {
             return base.CanDequeueEfficientlyAsync();
         }
 
         [Fact]
-        public override Task CanResumeDequeueEfficientlyAsync() {
+        public override Task CanResumeDequeueEfficientlyAsync()
+        {
             return base.CanResumeDequeueEfficientlyAsync();
         }
 
         [Fact]
-        public override Task CanQueueAndDequeueMultipleWorkItemsAsync() {
+        public override Task CanQueueAndDequeueMultipleWorkItemsAsync()
+        {
             return base.CanQueueAndDequeueMultipleWorkItemsAsync();
         }
 
         [Fact]
-        public override Task WillNotWaitForItemAsync() {
+        public override Task WillNotWaitForItemAsync()
+        {
             return base.WillNotWaitForItemAsync();
         }
 
         [Fact]
-        public override Task WillWaitForItemAsync() {
+        public override Task WillWaitForItemAsync()
+        {
             return base.WillWaitForItemAsync();
         }
 
         [Fact]
-        public override Task DequeueWaitWillGetSignaledAsync() {
+        public override Task DequeueWaitWillGetSignaledAsync()
+        {
             return base.DequeueWaitWillGetSignaledAsync();
         }
 
         [Fact]
-        public override Task CanUseQueueWorkerAsync() {
+        public override Task CanUseQueueWorkerAsync()
+        {
             return base.CanUseQueueWorkerAsync();
         }
 
         [Fact]
-        public override Task CanRenewLockAsync() {
+        public override Task CanRenewLockAsync()
+        {
             return base.CanRenewLockAsync();
         }
 
         [Fact]
-        public override Task CanHandleErrorInWorkerAsync() {
+        public override Task CanHandleErrorInWorkerAsync()
+        {
             return base.CanHandleErrorInWorkerAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillTimeoutAsync() {
+        public override Task WorkItemsWillTimeoutAsync()
+        {
             return base.WorkItemsWillTimeoutAsync();
         }
 
         [Fact]
-        public override Task WorkItemsWillGetMovedToDeadletterAsync() {
+        public override Task WorkItemsWillGetMovedToDeadletterAsync()
+        {
             return base.WorkItemsWillGetMovedToDeadletterAsync();
         }
 
         [Fact]
-        public override Task CanAutoCompleteWorkerAsync() {
+        public override Task CanAutoCompleteWorkerAsync()
+        {
             return base.CanAutoCompleteWorkerAsync();
         }
 
         [RetryFact]
-        public override Task CanHaveMultipleQueueInstancesAsync() {
+        public override Task CanHaveMultipleQueueInstancesAsync()
+        {
             return base.CanHaveMultipleQueueInstancesAsync();
         }
 
         [Fact]
-        public override Task CanDelayRetryAsync() {
+        public override Task CanDelayRetryAsync()
+        {
             return base.CanDelayRetryAsync();
         }
 
         [Fact]
-        public override Task CanRunWorkItemWithMetricsAsync() {
+        public override Task CanRunWorkItemWithMetricsAsync()
+        {
             return base.CanRunWorkItemWithMetricsAsync();
         }
 
         [Fact]
-        public override Task CanAbandonQueueEntryOnceAsync() {
+        public override Task CanAbandonQueueEntryOnceAsync()
+        {
             return base.CanAbandonQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanCompleteQueueEntryOnceAsync() {
+        public override Task CanCompleteQueueEntryOnceAsync()
+        {
             return base.CanCompleteQueueEntryOnceAsync();
         }
 
         [Fact]
-        public override Task CanHandleAutoAbandonInWorker() {
+        public override Task CanHandleAutoAbandonInWorker()
+        {
             return base.CanHandleAutoAbandonInWorker();
         }
 
         [Fact(Skip = "Need to fix some sort of left over metrics from other tests issue")]
-        public override Task CanUseQueueOptionsAsync() {
+        public override Task CanUseQueueOptionsAsync()
+        {
             return base.CanUseQueueOptionsAsync();
         }
 
         [RetryFact]
-        public override async Task CanDequeueWithLockingAsync() {
+        public override async Task CanDequeueWithLockingAsync()
+        {
             var muxer = SharedConnection.GetMuxer(Log);
             using var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log });
             using var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log });
@@ -163,7 +189,8 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public override async Task CanHaveMultipleQueueInstancesWithLockingAsync() {
+        public override async Task CanHaveMultipleQueueInstancesWithLockingAsync()
+        {
             var muxer = SharedConnection.GetMuxer(Log);
             using var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer, LoggerFactory = Log });
             using var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log });
@@ -172,12 +199,14 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public async Task VerifyCacheKeysAreCorrect() {
+        public async Task VerifyCacheKeysAreCorrect()
+        {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero, runQueueMaintenance: false);
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 var muxer = SharedConnection.GetMuxer(Log);
                 var db = muxer.GetDatabase();
                 string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
@@ -224,18 +253,22 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public async Task VerifyCacheKeysAreCorrectAfterAbandon() {
+        public async Task VerifyCacheKeysAreCorrectAfterAbandon()
+        {
             var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
-            using (TestSystemClock.Install()) {
-                using (queue) {
+            using (TestSystemClock.Install())
+            {
+                using (queue)
+                {
                     var muxer = SharedConnection.GetMuxer(Log);
                     var db = muxer.GetDatabase();
                     string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    {
                         Data = "blah",
                         Id = 1
                     });
@@ -292,18 +325,22 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public async Task VerifyCacheKeysAreCorrectAfterAbandonWithRetryDelay() {
+        public async Task VerifyCacheKeysAreCorrectAfterAbandonWithRetryDelay()
+        {
             var queue = GetQueue(retries: 2, workItemTimeout: TimeSpan.FromMilliseconds(100), retryDelay: TimeSpan.FromMilliseconds(250), runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
-            using (TestSystemClock.Install()) {
-                using (queue) {
+            using (TestSystemClock.Install())
+            {
+                using (queue)
+                {
                     var muxer = SharedConnection.GetMuxer(Log);
                     var db = muxer.GetDatabase();
                     string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem {
+                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    {
                         Data = "blah",
                         Id = 1
                     });
@@ -355,24 +392,28 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public async Task CanTrimDeadletterItems() {
+        public async Task CanTrimDeadletterItems()
+        {
             var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromMilliseconds(50), deadLetterMaxItems: 3, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 var muxer = SharedConnection.GetMuxer(Log);
                 var db = muxer.GetDatabase();
                 string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
                 var workItemIds = new List<string>();
-                for (int i = 0; i < 10; i++) {
+                for (int i = 0; i < 10; i++)
+                {
                     string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = i });
                     _logger.LogTrace(id);
                     workItemIds.Add(id);
                 }
 
-                for (int i = 0; i < 10; i++) {
+                for (int i = 0; i < 10; i++)
+                {
                     var workItem = await queue.DequeueAsync();
                     await workItem.AbandonAsync();
                     _logger.LogTrace("Abandoning: " + workItem.Id);
@@ -381,7 +422,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 workItemIds.Reverse();
                 await queue.DoMaintenanceWorkAsync();
 
-                foreach (object id in workItemIds.Take(3)) {
+                foreach (object id in workItemIds.Take(3))
+                {
                     _logger.LogTrace("Checking: " + id);
                     Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
                 }
@@ -395,7 +437,8 @@ namespace Foundatio.Redis.Tests.Queues {
         }
 
         [Fact]
-        public async Task VerifyFirstDequeueTimeout() {
+        public async Task VerifyFirstDequeueTimeout()
+        {
 
             var workItemTimeout = TimeSpan.FromMilliseconds(100);
             var itemData = "blah";
@@ -405,7 +448,8 @@ namespace Foundatio.Redis.Tests.Queues {
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 await queue.DeleteQueueAsync();
 
                 // Start DequeueAsync but allow it to yield.
@@ -416,7 +460,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 await SystemClock.SleepAsync(workItemTimeout.Add(TimeSpan.FromMilliseconds(1)));
 
                 // Add an item. DequeueAsync can now return.
-                string id = await queue.EnqueueAsync(new SimpleWorkItem {
+                string id = await queue.EnqueueAsync(new SimpleWorkItem
+                {
                     Data = itemData,
                     Id = itemId
                 });
@@ -438,7 +483,8 @@ namespace Foundatio.Redis.Tests.Queues {
         // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
         //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
         [Fact]
-        public async Task DatabaseTimeoutDuringDequeueHandledCorectly_Issue64() {
+        public async Task DatabaseTimeoutDuringDequeueHandledCorectly_Issue64()
+        {
             // not using GetQueue() here because I need to change the ops timeout in the redis connection string
             const int OPS_TIMEOUT_MS = 100;
             string connectionString = Configuration.GetConnectionString("RedisConnectionString") + $",syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}"; ;
@@ -452,7 +498,8 @@ namespace Foundatio.Redis.Tests.Queues {
                 .RunMaintenanceTasks(false)
             );
 
-            using (queue) {
+            using (queue)
+            {
                 await queue.DeleteQueueAsync();
 
                 // enqueue item to queue, no reader yet
@@ -477,7 +524,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
                 database.ScriptEvaluateAsync(databaseDelayScript);
 
                 var completion = new TaskCompletionSource<bool>();
-                await queue.StartWorkingAsync(async (item) => {
+                await queue.StartWorkingAsync(async (item) =>
+                {
                     await item.CompleteAsync();
                     completion.SetResult(true);
                 });
@@ -489,14 +537,16 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
                 // or it might have moved to work, in this case we want to make sure the correct keys were created            
                 var stopwatch = Stopwatch.StartNew();
                 bool success = false;
-                while (stopwatch.Elapsed.TotalSeconds < 10) {
+                while (stopwatch.Elapsed.TotalSeconds < 10)
+                {
 
                     string workListName = $"q:{QUEUE_NAME}:work";
                     long workListLen = await database.ListLengthAsync(new RedisKey(workListName));
                     var item = await database.ListLeftPopAsync(workListName);
                     string dequeuedItemKey = String.Concat("q:", QUEUE_NAME, ":", item, ":dequeued");
                     bool dequeuedItemKeyExists = await database.KeyExistsAsync(new RedisKey(dequeuedItemKey));
-                    if (workListLen == 1) {
+                    if (workListLen == 1)
+                    {
                         Assert.True(dequeuedItemKeyExists);
                         success = true;
                         break;
@@ -504,7 +554,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
                     var timeoutCancellationTokenSource = new CancellationTokenSource();
                     var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100), timeoutCancellationTokenSource.Token));
-                    if (completion.Task == completedTask) {
+                    if (completion.Task == completedTask)
+                    {
                         success = true;
                         break;
                     }
@@ -513,21 +564,25 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
                 Assert.True(success);
             }
         }
-        
+
         // TODO: Need to write tests that verify the cache data is correct after each operation.
 
         [Fact(Skip = "Performance Test")]
-        public async Task MeasureThroughputWithRandomFailures() {
+        public async Task MeasureThroughputWithRandomFailures()
+        {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.Zero);
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 await queue.DeleteQueueAsync();
 
                 const int workItemCount = 1000;
-                for (int i = 0; i < workItemCount; i++) {
-                    await queue.EnqueueAsync(new SimpleWorkItem {
+                for (int i = 0; i < workItemCount; i++)
+                {
+                    await queue.EnqueueAsync(new SimpleWorkItem
+                    {
                         Data = "Hello"
                     });
                 }
@@ -535,7 +590,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-                while (workItem != null) {
+                while (workItem != null)
+                {
                     Assert.Equal("Hello", workItem.Value.Data);
                     if (RandomData.GetBool(10))
                         await workItem.AbandonAsync();
@@ -558,17 +614,21 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         }
 
         [Fact(Skip = "Performance Test")]
-        public async Task MeasureThroughput() {
+        public async Task MeasureThroughput()
+        {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 await queue.DeleteQueueAsync();
 
                 const int workItemCount = 1000;
-                for (int i = 0; i < workItemCount; i++) {
-                    await queue.EnqueueAsync(new SimpleWorkItem {
+                for (int i = 0; i < workItemCount; i++)
+                {
+                    await queue.EnqueueAsync(new SimpleWorkItem
+                    {
                         Data = "Hello"
                     });
                 }
@@ -576,7 +636,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
                 var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-                while (workItem != null) {
+                while (workItem != null)
+                {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
                     metrics.Counter("work");
@@ -596,17 +657,21 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         }
 
         [Fact(Skip = "Performance Test")]
-        public async Task MeasureWorkerThroughput() {
+        public async Task MeasureWorkerThroughput()
+        {
             var queue = GetQueue(retries: 3, workItemTimeout: TimeSpan.FromSeconds(2), retryDelay: TimeSpan.FromSeconds(1));
             if (queue == null)
                 return;
 
-            using (queue) {
+            using (queue)
+            {
                 await queue.DeleteQueueAsync();
 
                 const int workItemCount = 1;
-                for (int i = 0; i < workItemCount; i++) {
-                    await queue.EnqueueAsync(new SimpleWorkItem {
+                for (int i = 0; i < workItemCount; i++)
+                {
+                    await queue.EnqueueAsync(new SimpleWorkItem
+                    {
                         Data = "Hello"
                     });
                 }
@@ -614,7 +679,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
                 var countdown = new AsyncCountdownEvent(workItemCount);
                 var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
-                await queue.StartWorkingAsync(async workItem => {
+                await queue.StartWorkingAsync(async workItem =>
+                {
                     Assert.Equal("Hello", workItem.Value.Data);
                     await workItem.CompleteAsync();
                     metrics.Counter("work");
@@ -636,17 +702,20 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         }
 
         [Fact]
-        public override Task VerifyRetryAttemptsAsync() {
+        public override Task VerifyRetryAttemptsAsync()
+        {
             return base.VerifyRetryAttemptsAsync();
         }
 
         [Fact]
-        public override Task VerifyDelayedRetryAttemptsAsync() {
+        public override Task VerifyDelayedRetryAttemptsAsync()
+        {
             return base.VerifyDelayedRetryAttemptsAsync();
         }
 
         [Fact]
-        public async Task CanHaveDifferentMessageTypeInQueueWithSameNameAsync() {
+        public async Task CanHaveDifferentMessageTypeInQueueWithSameNameAsync()
+        {
             await HandlerCommand1Async();
             await HandlerCommand2Async();
 
@@ -656,7 +725,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             await Publish2Async();
         }
 
-        private IQueue<T> CreateQueue<T>(bool allQueuesTheSameName = true) where T : class {
+        private IQueue<T> CreateQueue<T>(bool allQueuesTheSameName = true) where T : class
+        {
             var name = typeof(T).FullName.Trim().Replace(".", string.Empty).ToLower();
 
             if (allQueuesTheSameName)
@@ -672,7 +742,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             return queue;
         }
 
-        private Task HandlerCommand1Async() {
+        private Task HandlerCommand1Async()
+        {
             var q = CreateQueue<Command1>();
 
             return q.StartWorkingAsync((entry, token) =>
@@ -683,7 +754,8 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             });
         }
 
-        private Task HandlerCommand2Async() {
+        private Task HandlerCommand2Async()
+        {
             var q = CreateQueue<Command2>();
 
             return q.StartWorkingAsync((entry, token) =>
@@ -694,40 +766,48 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             }, true);
         }
 
-        private async Task Publish1Async() {
+        private async Task Publish1Async()
+        {
             var q = CreateQueue<Command1>();
 
-            for (var i = 0; i < 10; i++) {
+            for (var i = 0; i < 10; i++)
+            {
                 var cmd = new Command1(100 + i);
                 _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand1 {cmd.Id}");
                 await q.EnqueueAsync(cmd);
             }
         }
 
-        private async Task Publish2Async() {
+        private async Task Publish2Async()
+        {
             var q = CreateQueue<Command2>();
 
-            for (var i = 0; i < 10; i++) {
+            for (var i = 0; i < 10; i++)
+            {
                 var cmd = new Command2(200 + i);
                 _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand2 {cmd.Id}");
                 await q.EnqueueAsync(cmd);
             }
         }
 
-        public class Command1 {
+        public class Command1
+        {
             public Command1() { }
 
-            public Command1(int id) {
+            public Command1(int id)
+            {
                 Id = id;
             }
 
             public int Id { get; set; }
         }
 
-        public class Command2 {
-            public Command2() {}
+        public class Command2
+        {
+            public Command2() { }
 
-            public Command2(int id) {
+            public Command2(int id)
+            {
                 Id = id;
             }
 

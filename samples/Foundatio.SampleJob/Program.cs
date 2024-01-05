@@ -5,11 +5,14 @@ using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.SampleJob {
-    public class Program {
+namespace Foundatio.SampleJob
+{
+    public class Program
+    {
         private static ILogger _logger;
 
-        public static int Main() {
+        public static int Main()
+        {
             var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
             _logger = loggerFactory.CreateLogger("MessageBus");
 
@@ -20,12 +23,14 @@ namespace Foundatio.SampleJob {
             return new JobRunner(jobOptions).RunInConsoleAsync().GetAwaiter().GetResult();
         }
 
-        private static void HandleEchoMessage(EchoMessage m) {
+        private static void HandleEchoMessage(EchoMessage m)
+        {
             _logger.LogInformation($"Got message: {m.Message}");
         }
     }
 
-    public class EchoMessage {
+    public class EchoMessage
+    {
         public string Message { get; set; }
     }
 }
