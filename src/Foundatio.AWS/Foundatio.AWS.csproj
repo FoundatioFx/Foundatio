@@ -1,13 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
     <PackageTags>$(PackageTags);Amazon;AWS;S3</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.301.13" />
-    <PackageReference Include="AWSSDK.S3" Version="3.7.305.4" />
-    <PackageReference Include="AWSSDK.SQS" Version="3.7.300.29" />
-    <PackageReference Include="Foundatio" Version="10.6.1" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.301.14" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.305.5" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.7.300.30" />
+
+    <PackageReference Include="Foundatio" Version="10.6.2-alpha.0.13" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>
