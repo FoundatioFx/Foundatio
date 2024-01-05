@@ -65,7 +65,7 @@ public class InMemoryFileStorage : IFileStorage
                 var actionableStream = new ActionableStream(stream, () =>
                 {
                     stream.Position = 0;
-                    var contents = ReadBytes(stream);
+                    byte[] contents = stream.ToArray();
                     if (contents.Length > MaxFileSize)
                         throw new ArgumentException($"File size {contents.Length.ToFileSizeDisplay()} exceeds the maximum size of {MaxFileSize.ToFileSizeDisplay()}.");
 
