@@ -13,7 +13,7 @@ namespace Foundatio.Storage;
 
 public interface IFileStorage : IHaveSerializer, IDisposable
 {
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
     Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
     /// <summary>
     /// Gets a file stream in the specified mode

@@ -40,7 +40,7 @@ public class InMemoryFileStorage : IFileStorage
     public long MaxFiles { get; set; }
     ISerializer IHaveSerializer.Serializer => _serializer;
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
         GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
