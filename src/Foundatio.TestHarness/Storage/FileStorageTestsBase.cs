@@ -257,21 +257,22 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         string readmeFile = GetTestFilePath();
         using (storage)
         {
-            Assert.False(await storage.ExistsAsync("Foundatio.Tests.csproj"));
+            const string path = "cansavefiles.txt";
+            Assert.False(await storage.ExistsAsync(path));
 
             await using (var stream = new NonSeekableStream(File.Open(readmeFile, FileMode.Open, FileAccess.Read)))
             {
-                bool result = await storage.SaveFileAsync("Foundatio.Tests.csproj", stream);
+                bool result = await storage.SaveFileAsync(path, stream);
                 Assert.True(result);
             }
 
             Assert.Single(await storage.GetFileListAsync());
-            Assert.True(await storage.ExistsAsync("Foundatio.Tests.csproj"));
+            Assert.True(await storage.ExistsAsync(path));
 
-            await using (var stream = await storage.GetFileStreamAsync("Foundatio.Tests.csproj"))
+            await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Read))
             {
                 string result = await new StreamReader(stream).ReadToEndAsync();
-                Assert.Equal(File.ReadAllText(readmeFile), result);
+                Assert.Equal(await File.ReadAllTextAsync(readmeFile), result);
             }
         }
     }

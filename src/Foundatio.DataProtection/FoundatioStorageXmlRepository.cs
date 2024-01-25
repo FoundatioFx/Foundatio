@@ -51,12 +51,12 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
             return new XElement[0];
         }
 
-        _logger.LogTrace("Found {FileCount} elements.", files.Count);
+        _logger.LogTrace("Found {FileCount} elements", files.Count);
         var elements = new List<XElement>(files.Count);
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.Path);
-            using (var stream = await _storage.GetFileStreamAsync(file.Path).AnyContext())
+            using (var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext())
             {
                 elements.Add(XElement.Load(stream));
             }

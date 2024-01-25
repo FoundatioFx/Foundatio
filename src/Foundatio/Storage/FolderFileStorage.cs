@@ -53,50 +53,15 @@ public class FolderFileStorage : IFileStorage
 
     public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
-        var stream = streamMode switch
-        {
-            StreamMode.Read => GetFileStreamAsync(path, FileAccess.Read),
-            StreamMode.Write => GetFileStreamAsync(path, FileAccess.Write),
-            _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported."),
-        };
-
-        return Task.FromResult(stream);
-    }
-
-    public Stream GetFileStreamAsync(string path, FileAccess fileAccess)
-    {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
         string normalizedPath = path.NormalizePath();
         string fullPath = Path.Combine(Folder, normalizedPath);
-        if (fileAccess != FileAccess.Read)
-        {
-            CreateFileStream(fullPath).Dispose();
-        }
+        EnsureDirectory(fullPath);
 
-        var fileMode = GetFileModeForFileAccess(fileAccess);
-
-        try
-        {
-            return File.Open(fullPath, fileMode, fileAccess);
-        }
-        catch (IOException ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-        {
-            _logger.LogError(ex, "Unable to get file stream for {Path}: {Message}", normalizedPath, ex.Message);
-            return null;
-        }
-    }
-
-    private FileMode GetFileModeForFileAccess(FileAccess fileAccess)
-    {
-        return fileAccess switch
-        {
-            FileAccess.Read => FileMode.Open,
-            FileAccess.Write => FileMode.Create,
-            FileAccess.ReadWrite => FileMode.OpenOrCreate,
-            _ => throw new ArgumentOutOfRangeException(nameof(fileAccess), fileAccess, null)
-        };
+        var stream = streamMode == StreamMode.Read ? File.OpenRead(fullPath) : File.OpenWrite(fullPath);
+        return Task.FromResult<Stream>(stream);
     }
 
     public Task<FileSpec> GetFileInfoAsync(string path)
@@ -140,39 +105,27 @@ public class FolderFileStorage : IFileStorage
         if (stream == null)
             throw new ArgumentNullException(nameof(stream));
 
-        string normalizedPath = path.NormalizePath();
-        _logger.LogTrace("Saving {Path}", normalizedPath);
-        string file = Path.Combine(Folder, normalizedPath);
-
         try
         {
-            using var fileStream = CreateFileStream(file);
+            using var fileStream = await GetFileStreamAsync(path, StreamMode.Write, cancellationToken);
             await stream.CopyToAsync(fileStream).AnyContext();
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error saving {Path}: {Message}", normalizedPath, ex.Message);
+            _logger.LogError(ex, "Error saving {Path}: {Message}", path, ex.Message);
             return false;
         }
     }
 
-    private Stream CreateFileStream(string filePath)
+    private void EnsureDirectory(string normalizedPath)
     {
-        try
-        {
-            return File.Create(filePath);
-        }
-        catch (DirectoryNotFoundException) { }
+        string directory = Path.GetDirectoryName(normalizedPath);
+        if (directory == null)
+            return;
 
-        string directory = Path.GetDirectoryName(filePath);
-        if (directory != null)
-        {
-            _logger.LogInformation("Creating {Directory} directory", directory);
-            Directory.CreateDirectory(directory);
-        }
-
-        return File.Create(filePath);
+        _logger.LogTrace("Ensuring director: {Directory}", directory);
+        Directory.CreateDirectory(directory);
     }
 
     public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default)
