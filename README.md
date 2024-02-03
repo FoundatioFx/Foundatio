@@ -23,7 +23,7 @@ When building several big cloud applications we found a lack of great solutions 
 - Wanted to build against abstract interfaces so that we could easily change implementations.
 - Wanted the blocks to be dependency injection friendly.
 - Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there weren't any in memory implementations so every developer was required to set up and configure Redis.
-- Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
+- Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) (another great product) but found Azure support lacking at the time and local set up a pain (for in memory). We wanted a simple message bus that just worked locally or in the cloud.
 - Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
