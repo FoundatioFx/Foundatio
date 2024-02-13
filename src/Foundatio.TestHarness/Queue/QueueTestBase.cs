@@ -23,7 +23,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue;
 
-public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
+public abstract class QueueTestBase : TestLoggerBase, IDisposable
 {
     protected QueueTestBase(ITestOutputHelper output) : base(output)
     {
@@ -631,7 +631,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WillWaitForItemAsync()
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         var queue = GetQueue();
         if (queue == null)
             return;
@@ -792,7 +792,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WorkItemsWillTimeoutAsync()
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         Log.SetLogLevel("Foundatio.Queues.RedisQueue", LogLevel.Trace);
         var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
         if (queue == null)
@@ -1313,7 +1313,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
 
-            Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+            Log.DefaultMinimumLevel = LogLevel.Trace;
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
 
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));

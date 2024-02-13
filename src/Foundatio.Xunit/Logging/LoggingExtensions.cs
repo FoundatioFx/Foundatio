@@ -13,7 +13,7 @@ public static class LoggingExtensions
         return serviceProvider.GetRequiredService<TestLogger>();
     }
 
-    public static ILoggingBuilder AddXUnit(this ILoggingBuilder builder, ITestOutputHelper outputHelper,
+    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, ITestOutputHelper outputHelper,
         Action<TestLoggerOptions> configure = null)
     {
 
@@ -26,17 +26,17 @@ public static class LoggingExtensions
 
         configure?.Invoke(options);
 
-        return builder.AddXUnit(options);
+        return builder.AddTestLogger(options);
     }
 
-    public static ILoggingBuilder AddXUnit(this ILoggingBuilder builder, Action<TestLoggerOptions> configure)
+    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, Action<TestLoggerOptions> configure)
     {
         var options = new TestLoggerOptions();
         configure?.Invoke(options);
-        return builder.AddXUnit(options);
+        return builder.AddTestLogger(options);
     }
 
-    public static ILoggingBuilder AddXUnit(this ILoggingBuilder builder, TestLoggerOptions options = null)
+    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, TestLoggerOptions options = null)
     {
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
@@ -48,7 +48,7 @@ public static class LoggingExtensions
         return builder;
     }
 
-    public static ILoggerFactory AddXUnit(this ILoggerFactory factory, Action<TestLoggerOptions> configure = null)
+    public static ILoggerFactory AddTestLogger(this ILoggerFactory factory, Action<TestLoggerOptions> configure = null)
     {
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
@@ -79,6 +79,6 @@ public static class LoggingExtensions
         return testLogger;
     }
 
-    public static ILogger<T> ToLogger<T>(this ITestOutputHelper outputHelper, Action<TestLoggerOptions> configure = null)
+    public static ILogger<T> ToTestLogger<T>(this ITestOutputHelper outputHelper, Action<TestLoggerOptions> configure = null)
         => outputHelper.ToTestLogger(configure).CreateLogger<T>();
 }

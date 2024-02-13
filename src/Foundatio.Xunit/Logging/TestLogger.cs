@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Xunit.Abstractions;
 
 namespace Foundatio.Xunit;
 
@@ -11,9 +12,22 @@ public class TestLogger : ILoggerFactory
     private readonly Dictionary<string, LogLevel> _logLevels = new();
     private readonly Queue<LogEntry> _logEntries = new();
 
-    public TestLogger()
+    public TestLogger(Action<TestLoggerOptions> configure = null)
     {
         Options = new TestLoggerOptions();
+        configure?.Invoke(Options);
+    }
+
+    public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions> configure = null)
+    {
+        Options = new TestLoggerOptions {
+            WriteLogEntryFunc = logEntry =>
+            {
+                output.WriteLine(logEntry.ToString(false));
+            }
+        };
+
+        configure?.Invoke(Options);
     }
 
     public TestLogger(TestLoggerOptions options)
@@ -22,7 +36,34 @@ public class TestLogger : ILoggerFactory
     }
 
     public TestLoggerOptions Options { get; }
+
+    [Obsolete("Use DefaultMinimumLevel instead.")]
+    public LogLevel MinimumLevel
+    {
+        get => Options.DefaultMinimumLevel;
+        set => Options.DefaultMinimumLevel = value;
+    }
+
+    public LogLevel DefaultMinimumLevel
+    {
+        get => Options.DefaultMinimumLevel;
+        set => Options.DefaultMinimumLevel = value;
+    }
+
+    public int MaxLogEntriesToStore
+    {
+        get => Options.MaxLogEntriesToStore;
+        set => Options.MaxLogEntriesToStore = value;
+    }
+
+    public int MaxLogEntriesToWrite
+    {
+        get => Options.MaxLogEntriesToWrite;
+        set => Options.MaxLogEntriesToWrite = value;
+    }
+
     public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
+
 
     public void Clear() => _logEntries.Clear();
 

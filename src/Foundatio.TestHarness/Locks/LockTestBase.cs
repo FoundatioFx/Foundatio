@@ -14,7 +14,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks;
 
-public abstract class LockTestBase : TestWithLoggingBase
+public abstract class LockTestBase : TestLoggerBase
 {
     protected LockTestBase(ITestOutputHelper output) : base(output) { }
 
@@ -271,7 +271,7 @@ public abstract class LockTestBase : TestWithLoggingBase
 
     public virtual async Task WillThrottleCallsAsync()
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
         Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
 

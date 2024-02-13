@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class ScheduledTimerTests : TestWithLoggingBase
+public class ScheduledTimerTests : TestLoggerBase
 {
     public ScheduledTimerTests(ITestOutputHelper output) : base(output)
     {
@@ -47,7 +47,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
 
     private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null)
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         const int iterations = 2;
         var countdown = new AsyncCountdownEvent(iterations);
 

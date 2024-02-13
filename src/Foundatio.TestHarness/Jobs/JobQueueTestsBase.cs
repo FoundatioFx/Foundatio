@@ -18,7 +18,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs;
 
-public abstract class JobQueueTestsBase : TestWithLoggingBase
+public abstract class JobQueueTestsBase : TestLoggerBase
 {
     private readonly ActivitySource _activitySource = new(nameof(JobQueueTestsBase));
 

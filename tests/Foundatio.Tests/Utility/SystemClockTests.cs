@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class SystemClockTests : TestWithLoggingBase
+public class SystemClockTests : TestLoggerBase
 {
     public SystemClockTests(ITestOutputHelper output) : base(output) { }
 

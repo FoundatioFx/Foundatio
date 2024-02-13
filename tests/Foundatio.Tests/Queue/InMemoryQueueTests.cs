@@ -290,7 +290,7 @@ public class InMemoryQueueTests : QueueTestBase
     [Fact]
     public override Task CanHandleAutoAbandonInWorker()
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.CanHandleAutoAbandonInWorker();
     }
 

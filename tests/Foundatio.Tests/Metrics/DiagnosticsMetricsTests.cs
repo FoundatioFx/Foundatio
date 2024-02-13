@@ -10,13 +10,13 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics;
 
-public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
+public class DiagnosticsMetricsTests : TestLoggerBase, IDisposable
 {
     private readonly DiagnosticsMetricsClient _client;
 
     public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output)
     {
-        Log.Options.DefaultMinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
     }
 

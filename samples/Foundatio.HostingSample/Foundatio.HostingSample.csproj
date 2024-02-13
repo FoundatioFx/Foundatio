@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Extensions.Hosting\Foundatio.Extensions.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Xunit\Foundatio.Xunit.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
