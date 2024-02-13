@@ -1,112 +1,81 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Linq;
 using System.Threading;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Xunit;
 
-internal class TestLogger : ILogger
+public class TestLogger : ILoggerFactory
 {
-    private readonly TestLoggerFactory _loggerFactory;
-    private readonly string _categoryName;
+    private readonly Dictionary<string, LogLevel> _logLevels = new();
+    private readonly Queue<LogEntry> _logEntries = new();
 
-    public TestLogger(string categoryName, TestLoggerFactory loggerFactory)
+    public TestLogger()
     {
-        _loggerFactory = loggerFactory;
-        _categoryName = categoryName;
+        Options = new TestLoggerOptions();
     }
 
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+    public TestLogger(TestLoggerOptions options)
     {
-        if (!_loggerFactory.IsEnabled(_categoryName, logLevel))
+        Options = options ?? new TestLoggerOptions();
+    }
+
+    public TestLoggerOptions Options { get; }
+    public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
+
+    public void Clear() => _logEntries.Clear();
+
+    internal void AddLogEntry(LogEntry logEntry)
+    {
+        lock (_logEntries)
+        {
+            _logEntries.Enqueue(logEntry);
+
+            if (_logEntries.Count > Options.MaxLogEntriesToStore)
+                _logEntries.Dequeue();
+        }
+
+        if (Options.WriteLogEntryFunc == null || _logEntriesWritten >= Options.MaxLogEntriesToWrite)
             return;
 
-        object[] scopes = CurrentScopeStack.Reverse().ToArray();
-        var logEntry = new LogEntry
+        try
         {
-            Date = SystemClock.UtcNow,
-            LogLevel = logLevel,
-            EventId = eventId,
-            State = state,
-            Exception = exception,
-            Formatter = (s, e) => formatter((TState)s, e),
-            CategoryName = _categoryName,
-            Scopes = scopes
-        };
-
-        switch (state)
-        {
-            //case LogData logData:
-            //    logEntry.Properties["CallerMemberName"] = logData.MemberName;
-            //    logEntry.Properties["CallerFilePath"] = logData.FilePath;
-            //    logEntry.Properties["CallerLineNumber"] = logData.LineNumber;
-
-            //    foreach (var property in logData.Properties)
-            //        logEntry.Properties[property.Key] = property.Value;
-            //    break;
-            case IDictionary<string, object> logDictionary:
-                foreach (var property in logDictionary)
-                    logEntry.Properties[property.Key] = property.Value;
-                break;
+            Options.WriteLogEntry(logEntry);
+            Interlocked.Increment(ref _logEntriesWritten);
         }
-
-        foreach (object scope in scopes)
+        catch (Exception)
         {
-            if (!(scope is IDictionary<string, object> scopeData))
-                continue;
-
-            foreach (var property in scopeData)
-                logEntry.Properties[property.Key] = property.Value;
+            // ignored
         }
-
-        _loggerFactory.AddLogEntry(logEntry);
     }
 
-    public bool IsEnabled(LogLevel logLevel)
+    private int _logEntriesWritten = 0;
+
+    public ILogger CreateLogger(string categoryName)
     {
-        return _loggerFactory.IsEnabled(_categoryName, logLevel);
+        return new TestLoggerLogger(categoryName, this);
     }
 
-    public IDisposable BeginScope<TState>(TState state)
+    public void AddProvider(ILoggerProvider loggerProvider) { }
+
+    public bool IsEnabled(string category, LogLevel logLevel)
     {
-        if (state == null)
-            throw new ArgumentNullException(nameof(state));
+        if (_logLevels.TryGetValue(category, out var categoryLevel))
+            return logLevel >= categoryLevel;
 
-        return Push(state);
+        return logLevel >= Options.DefaultMinimumLevel;
     }
 
-    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
+    public void SetLogLevel(string category, LogLevel minLogLevel)
     {
-        if (state == null)
-            throw new ArgumentNullException(nameof(state));
-
-        return Push(scopeFactory(state));
+        _logLevels[category] = minLogLevel;
     }
 
-    private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();
-
-    private sealed class Wrapper
+    public void SetLogLevel<T>(LogLevel minLogLevel)
     {
-        public ImmutableStack<object> Value { get; set; }
+        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
     }
 
-    private static ImmutableStack<object> CurrentScopeStack
-    {
-        get => _currentScopeStack.Value?.Value ?? ImmutableStack.Create<object>();
-        set => _currentScopeStack.Value = new Wrapper { Value = value };
-    }
-
-    private static IDisposable Push(object state)
-    {
-        CurrentScopeStack = CurrentScopeStack.Push(state);
-        return new DisposableAction(Pop);
-    }
-
-    private static void Pop()
-    {
-        CurrentScopeStack = CurrentScopeStack.Pop();
-    }
+    public void Dispose() { }
 }

@@ -9,9 +9,9 @@ public abstract class TestWithLoggingBase
 
     protected TestWithLoggingBase(ITestOutputHelper output)
     {
-        Log = new TestLoggerFactory(output);
+        Log = output.ToTestLogger();
         _logger = Log.CreateLogger(GetType());
     }
 
-    protected TestLoggerFactory Log { get; }
+    protected TestLogger Log { get; }
 }
