@@ -155,7 +155,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task CanSetMaxItems()
     {
-        Log.MinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
 
         // run in tight loop so that the code is warmed up and we can catch timing issues
         for (int x = 0; x < 5; x++)

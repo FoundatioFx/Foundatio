@@ -271,7 +271,7 @@ public abstract class LockTestBase : TestWithLoggingBase
 
     public virtual async Task WillThrottleCallsAsync()
     {
-        Log.MinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
         Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
 

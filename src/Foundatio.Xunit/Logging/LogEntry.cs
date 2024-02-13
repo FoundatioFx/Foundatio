@@ -6,7 +6,7 @@ namespace Foundatio.Xunit;
 
 public class LogEntry
 {
-    public DateTime Date { get; set; }
+    public DateTimeOffset Date { get; set; }
     public string CategoryName { get; set; }
     public LogLevel LogLevel { get; set; }
     public object[] Scopes { get; set; }

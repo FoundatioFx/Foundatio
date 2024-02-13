@@ -47,7 +47,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
 
     private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null)
     {
-        Log.MinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         const int iterations = 2;
         var countdown = new AsyncCountdownEvent(iterations);
 

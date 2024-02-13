@@ -16,7 +16,7 @@ public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
 
     public DiagnosticsMetricsTests(ITestOutputHelper output) : base(output)
     {
-        Log.MinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         _client = new DiagnosticsMetricsClient(o => o.MeterName("Test"));
     }
 
