@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class DataDictionaryTests : TestLoggerBase
+public class DataDictionaryTests : TestWithLoggingBase
 {
     public DataDictionaryTests(ITestOutputHelper output) : base(output) { }
 

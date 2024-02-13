@@ -16,7 +16,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage;
 
-public abstract class FileStorageTestsBase : TestLoggerBase
+public abstract class FileStorageTestsBase : TestWithLoggingBase
 {
     protected FileStorageTestsBase(ITestOutputHelper output) : base(output) { }
 

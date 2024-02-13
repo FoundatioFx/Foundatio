@@ -19,7 +19,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs;
 
-public class WorkItemJobTests : TestLoggerBase
+public class WorkItemJobTests : TestWithLoggingBase
 {
     public WorkItemJobTests(ITestOutputHelper output) : base(output) { }
 

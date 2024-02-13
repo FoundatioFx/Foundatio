@@ -16,7 +16,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging;
 
-public abstract class MessageBusTestBase : TestLoggerBase
+public abstract class MessageBusTestBase : TestWithLoggingBase
 {
     protected MessageBusTestBase(ITestOutputHelper output) : base(output)
     {

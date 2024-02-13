@@ -31,7 +31,6 @@ public class TestLoggerFixture : IAsyncLifetime
     }
 
     public IServiceProvider Services => _serviceProvider.Value;
-
     public TestLogger TestLogger => _testLogger.Value;
     public ILogger Log => _log.Value;
 

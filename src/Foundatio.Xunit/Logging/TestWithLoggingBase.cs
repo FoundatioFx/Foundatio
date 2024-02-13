@@ -1,10 +1,8 @@
-﻿using System;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
 namespace Foundatio.Xunit;
 
-[Obsolete("Use TestLoggerBase instead.")]
 public abstract class TestWithLoggingBase
 {
     protected readonly ILogger _logger;

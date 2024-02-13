@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -7,16 +8,13 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class TestLoggerTests : IClassFixture<TestLoggerFixture>
+public class TestLoggerTests : TestLoggerBase
 {
     private readonly ITestOutputHelper _output;
-    private readonly TestLoggerFixture _fixture;
 
-    public TestLoggerTests(ITestOutputHelper output, TestLoggerFixture fixture)
+    public TestLoggerTests(ITestOutputHelper output, TestLoggerFixture fixture) : base(output, fixture)
     {
         _output = output;
-        _fixture = fixture;
-        _fixture.Output = output;
         fixture.AddServiceRegistrations(s => s.AddSingleton<SomeClass>());
     }
 
@@ -31,7 +29,7 @@ public class TestLoggerTests : IClassFixture<TestLoggerFixture>
 
         var someClass = provider.GetRequiredService<SomeClass>();
 
-        someClass.DoSomething();
+        someClass.DoSomething(1);
 
         var testLogger = provider.GetTestLogger();
         Assert.Single(testLogger.LogEntries);
@@ -40,27 +38,49 @@ public class TestLoggerTests : IClassFixture<TestLoggerFixture>
         testLogger.Clear();
         testLogger.SetLogLevel<SomeClass>(LogLevel.Error);
 
-        someClass.DoSomething();
+        someClass.DoSomething(2);
         Assert.Empty(testLogger.LogEntries);
     }
 
     [Fact]
     public void CanUseTestLoggerFixture()
     {
-        var someClass = _fixture.Services.GetRequiredService<SomeClass>();
+        var someClass = Services.GetRequiredService<SomeClass>();
 
-        someClass.DoSomething();
+        for (int i = 1; i <= 9999; i++)
+            someClass.DoSomething(i);
 
-        Assert.Single(_fixture.TestLogger.LogEntries);
-        Assert.Contains("Doing something", _fixture.TestLogger.LogEntries[0].Message);
+        Log.LogInformation("Hello 1");
+        Log.LogInformation("Hello 2");
 
-        _fixture.TestLogger.Clear();
-        _fixture.TestLogger.SetLogLevel<SomeClass>(LogLevel.Error);
+        Assert.Equal(100, TestLogger.LogEntries.Count);
+        Assert.Contains("Hello 2", TestLogger.LogEntries.Last().Message);
 
-        someClass.DoSomething();
-        Assert.Empty(_fixture.TestLogger.LogEntries);
+        Fixture.TestLogger.Clear();
+        TestLogger.SetLogLevel<SomeClass>(LogLevel.Error);
+
+        someClass.DoSomething(1002);
+
+        Assert.Empty(TestLogger.LogEntries);
+        TestLogger.SetLogLevel<SomeClass>(LogLevel.Information);
     }
 
+    [Fact]
+    public void CanUseTestLoggerFixture2()
+    {
+        var someClass = Services.GetRequiredService<SomeClass>();
+
+        someClass.DoSomething(1);
+
+        Assert.Single(TestLogger.LogEntries);
+        Assert.Contains("Doing something", TestLogger.LogEntries[0].Message);
+
+        TestLogger.Clear();
+        TestLogger.SetLogLevel<SomeClass>(LogLevel.Error);
+
+        someClass.DoSomething(2);
+        Assert.Empty(TestLogger.LogEntries);
+    }
 }
 
 public class SomeClass
@@ -72,8 +92,8 @@ public class SomeClass
         _logger = logger;
     }
 
-    public void DoSomething()
+    public void DoSomething(int number)
     {
-        _logger.LogInformation("Doing something");
+        _logger.LogInformation("Doing something {Number}", number);
     }
 }

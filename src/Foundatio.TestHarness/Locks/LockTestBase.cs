@@ -14,7 +14,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks;
 
-public abstract class LockTestBase : TestLoggerBase
+public abstract class LockTestBase : TestWithLoggingBase
 {
     protected LockTestBase(ITestOutputHelper output) : base(output) { }
 

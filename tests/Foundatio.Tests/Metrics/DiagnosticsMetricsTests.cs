@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Metrics;
 
-public class DiagnosticsMetricsTests : TestLoggerBase, IDisposable
+public class DiagnosticsMetricsTests : TestWithLoggingBase, IDisposable
 {
     private readonly DiagnosticsMetricsClient _client;
 

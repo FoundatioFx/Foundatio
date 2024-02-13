@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class ScheduledTimerTests : TestLoggerBase
+public class ScheduledTimerTests : TestWithLoggingBase
 {
     public ScheduledTimerTests(ITestOutputHelper output) : base(output)
     {

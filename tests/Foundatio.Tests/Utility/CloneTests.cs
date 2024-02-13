@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
-public class CloneTests : TestLoggerBase
+public class CloneTests : TestWithLoggingBase
 {
     public CloneTests(ITestOutputHelper output) : base(output) { }
 

@@ -11,6 +11,7 @@ public class TestLogger : ILoggerFactory
 {
     private readonly Dictionary<string, LogLevel> _logLevels = new();
     private readonly Queue<LogEntry> _logEntries = new();
+    private int _logEntriesWritten;
 
     public TestLogger(Action<TestLoggerOptions> configure = null)
     {
@@ -65,7 +66,14 @@ public class TestLogger : ILoggerFactory
     public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
 
 
-    public void Clear() => _logEntries.Clear();
+    public void Clear()
+    {
+        lock (_logEntries)
+        {
+            _logEntries.Clear();
+            Interlocked.Exchange(ref _logEntriesWritten, 0);
+        }
+    }
 
     internal void AddLogEntry(LogEntry logEntry)
     {
@@ -90,8 +98,6 @@ public class TestLogger : ILoggerFactory
             // ignored
         }
     }
-
-    private int _logEntriesWritten = 0;
 
     public ILogger CreateLogger(string categoryName)
     {

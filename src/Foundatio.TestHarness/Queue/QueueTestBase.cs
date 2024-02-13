@@ -23,7 +23,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Queue;
 
-public abstract class QueueTestBase : TestLoggerBase, IDisposable
+public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 {
     protected QueueTestBase(ITestOutputHelper output) : base(output)
     {

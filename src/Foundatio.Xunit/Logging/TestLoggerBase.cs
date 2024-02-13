@@ -1,61 +1,38 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Xunit;
 
-public abstract class TestLoggerBase : IAsyncDisposable
+public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncLifetime
 {
-    protected readonly ILogger _logger;
-    protected readonly List<IDisposable> _disposables = [];
-
-    protected TestLoggerBase(ITestOutputHelper output)
+    protected TestLoggerBase(ITestOutputHelper output, TestLoggerFixture fixture)
     {
-        var services = new ServiceCollection();
-        RegisterRequiredServices(services, output);
-        var sp = services.BuildServiceProvider();
-        _disposables.Add(sp);
-        Services = sp;
-        Log = Services.GetTestLogger();
-        _logger = Log.CreateLogger(GetType());
+        Fixture = fixture;
+        fixture.Output = output;
+        fixture.AddServiceRegistrations(RegisterServices);
     }
 
-    protected IServiceProvider Services { get; }
-
-    protected TService GetService<TService>() where TService : notnull
-    {
-        return Services.GetRequiredService<TService>();
-    }
-
-    protected TestLogger Log { get; }
-
-    private void RegisterRequiredServices(IServiceCollection services, ITestOutputHelper output)
-    {
-        services.AddLogging(c => c.AddTestLogger(output));
-        RegisterServices(services);
-    }
+    protected TestLoggerFixture Fixture { get; }
+    protected IServiceProvider Services => Fixture.Services;
+    protected TestLogger TestLogger => Fixture.TestLogger;
+    protected ILogger Log => Fixture.Log;
 
     protected virtual void RegisterServices(IServiceCollection services)
     {
     }
 
-    public virtual ValueTask DisposeAsync()
+    public virtual Task InitializeAsync()
     {
-        foreach (var disposable in _disposables)
-        {
-            try
-            {
-                disposable.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error disposing resource.");
-            }
-        }
+        return Task.CompletedTask;
+    }
 
-        return new ValueTask(Task.CompletedTask);
+    public virtual Task DisposeAsync()
+    {
+        Fixture.TestLogger.Clear();
+        return Task.CompletedTask;
     }
 }

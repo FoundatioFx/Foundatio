@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Serializer;
 
-public abstract class SerializerTestsBase : TestLoggerBase
+public abstract class SerializerTestsBase : TestWithLoggingBase
 {
     protected SerializerTestsBase(ITestOutputHelper output) : base(output) { }
 
