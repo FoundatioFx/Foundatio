@@ -140,7 +140,9 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             {
                 var q = GetSampleWorkItemQueue(retries: 1, retryDelay: TimeSpan.Zero);
                 await q.DeleteQueueAsync();
+#pragma warning disable CS0618 // Type or member is obsolete
                 q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
                 queues.Add(q);
             }
             _logger.LogInformation("Done setting up queues");

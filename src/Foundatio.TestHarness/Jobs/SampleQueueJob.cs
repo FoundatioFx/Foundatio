@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable 612, 618
+
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
@@ -118,3 +120,5 @@ public class SampleJob : JobBase
         return Task.FromResult(JobResult.Success);
     }
 }
+
+#pragma warning restore 612, 618

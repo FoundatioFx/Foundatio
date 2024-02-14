@@ -128,7 +128,9 @@ public static class FileStorageExtensions
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
+#pragma warning disable CS0618 // Type or member is obsolete
         using var stream = await storage.GetFileStreamAsync(path, cancellationToken).AnyContext();
+#pragma warning restore CS0618 // Type or member is obsolete
         if (stream != null)
             return storage.Serializer.Deserialize<T>(stream);
 
@@ -149,7 +151,9 @@ public static class FileStorageExtensions
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
+#pragma warning disable CS0618 // Type or member is obsolete
         using var stream = await storage.GetFileStreamAsync(path).AnyContext();
+#pragma warning restore CS0618 // Type or member is obsolete
         if (stream != null)
             return await new StreamReader(stream).ReadToEndAsync().AnyContext();
 
@@ -161,7 +165,9 @@ public static class FileStorageExtensions
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
+#pragma warning disable CS0618 // Type or member is obsolete
         using var stream = await storage.GetFileStreamAsync(path).AnyContext();
+#pragma warning restore CS0618 // Type or member is obsolete
         if (stream == null)
             return null;
 

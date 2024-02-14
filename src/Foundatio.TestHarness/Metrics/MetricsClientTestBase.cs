@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 #pragma warning disable AsyncFixer04 // A disposable object used in a fire & forget async call
+#pragma warning disable 612, 618
 
 namespace Foundatio.Tests.Metrics;
 
@@ -215,3 +216,5 @@ public abstract class MetricsClientTestBase : TestWithLoggingBase
         Assert.Equal(100, counter.Count);
     }
 }
+
+#pragma warning restore 612, 618

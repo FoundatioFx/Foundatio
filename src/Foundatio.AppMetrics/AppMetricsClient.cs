@@ -6,7 +6,9 @@ using App.Metrics.Timer;
 
 namespace Foundatio.Metrics;
 
+#pragma warning disable CS0618 // Type or member is obsolete
 public class AppMetricsClient : IMetricsClient
+#pragma warning restore CS0618 // Type or member is obsolete
 {
     private readonly IMetrics _metrics;
 

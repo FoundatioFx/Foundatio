@@ -465,7 +465,9 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
                 _logger.LogTrace("Saved contents with position {Position}.", memoryStream.Position);
             }
 
+#pragma warning disable CS0618 // Type or member is obsolete
             await using var stream = await storage.GetFileStreamAsync(path);
+#pragma warning restore CS0618 // Type or member is obsolete
             var actual = XElement.Load(stream);
             Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
         }

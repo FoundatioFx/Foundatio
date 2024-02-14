@@ -69,7 +69,9 @@ public class WorkItemJobTests : TestWithLoggingBase
 
         using var metrics = new InMemoryMetricsClient(o => o.LoggerFactory(Log));
         using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+#pragma warning disable CS0618 // Type or member is obsolete
         queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
         var handlerRegistry = new WorkItemHandlers();
         var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);

@@ -12,7 +12,9 @@ public class InMemoryMetricsTests : MetricsClientTestBase
 {
     public InMemoryMetricsTests(ITestOutputHelper output) : base(output) { }
 
+#pragma warning disable CS0618 // Type or member is obsolete
     public override IMetricsClient GetMetricsClient(bool buffered = false)
+#pragma warning restore CS0618 // Type or member is obsolete
     {
         return new InMemoryMetricsClient(o => o.LoggerFactory(Log).Buffered(buffered));
     }

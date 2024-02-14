@@ -1,7 +1,8 @@
-﻿using System;
+﻿#pragma warning disable 612, 618
+
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
-#pragma warning disable 612, 618
 
 namespace Foundatio.Metrics;
 

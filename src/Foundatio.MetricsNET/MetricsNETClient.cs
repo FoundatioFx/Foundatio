@@ -3,7 +3,9 @@ using Metrics;
 
 namespace Foundatio.Metrics;
 
+#pragma warning disable CS0618 // Type or member is obsolete
 public class MetricsNETClient : IMetricsClient
+#pragma warning restore CS0618 // Type or member is obsolete
 {
     public void Counter(string name, int value = 1)
     {

@@ -29,7 +29,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Debug);
         Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Debug);
+#pragma warning disable CS0618 // Type or member is obsolete
         Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Debug);
+#pragma warning restore CS0618 // Type or member is obsolete
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
@@ -479,7 +481,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
 
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
+#pragma warning disable CS0618 // Type or member is obsolete
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
 
             _ = Task.Run(async () =>
             {
@@ -532,7 +536,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
             using var secondQueue = GetQueue(runQueueMaintenance: false);
+#pragma warning disable CS0618 // Type or member is obsolete
             secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
 
             _logger.LogTrace("Starting dequeue loop");
             for (int index = 0; index < iterations; index++)
@@ -757,7 +763,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
 
+#pragma warning disable CS0618 // Type or member is obsolete
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
             await queue.StartWorkingAsync(w =>
             {
                 _logger.LogDebug("WorkAction");
@@ -1061,7 +1069,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
         using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
 
+#pragma warning disable CS0618 // Type or member is obsolete
         var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
+#pragma warning restore CS0618 // Type or member is obsolete
         var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
         using var queue = new InMemoryQueue<WorkItemData>(options);
 
@@ -1316,7 +1326,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Log.DefaultMinimumLevel = LogLevel.Trace;
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
 
+#pragma warning disable CS0618 // Type or member is obsolete
             queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
+#pragma warning restore CS0618 // Type or member is obsolete
 
             var resetEvent = new AsyncAutoResetEvent();
             await queue.StartWorkingAsync(async w =>
