@@ -20,7 +20,7 @@ public class LogEntry
 
     public override string ToString()
     {
-        return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", CategoryName, " - ", Message);
+        return String.Concat("", Date.ToString("mm:ss.fff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ": ", Message, " - ", CategoryName);
     }
 
     public string ToString(bool useFullCategory)
@@ -33,6 +33,6 @@ public class LogEntry
                 category = category.Substring(lastDot + 1);
         }
 
-        return String.Concat("", Date.ToString("mm:ss.fffff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ":", category, " - ", Message);
+        return String.Concat("", Date.ToString("mm:ss.fff"), " ", LogLevel.ToString().Substring(0, 1).ToUpper(), ": ", Message, " - ", category);
     }
 }
