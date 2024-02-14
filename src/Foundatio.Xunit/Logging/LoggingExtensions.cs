@@ -20,7 +20,23 @@ public static class LoggingExtensions
         var options = new TestLoggerOptions {
             WriteLogEntryFunc = logEntry =>
             {
-                outputHelper.WriteLine(logEntry.ToString(false));
+                outputHelper?.WriteLine(logEntry.ToString(false));
+            }
+        };
+
+        configure?.Invoke(options);
+
+        return builder.AddTestLogger(options);
+    }
+
+    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, Func<ITestOutputHelper> getOutputHelper,
+        Action<TestLoggerOptions> configure = null)
+    {
+
+        var options = new TestLoggerOptions {
+            WriteLogEntryFunc = logEntry =>
+            {
+                getOutputHelper?.Invoke()?.WriteLine(logEntry.ToString(false));
             }
         };
 

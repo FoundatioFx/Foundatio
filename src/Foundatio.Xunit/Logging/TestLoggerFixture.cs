@@ -10,7 +10,7 @@ namespace Foundatio.Xunit;
 
 public class TestLoggerFixture : IAsyncLifetime
 {
-    private readonly List<IDisposable> _disposables = [];
+    private readonly List<object> _disposables = [];
     private readonly List<Action<IServiceCollection>> _serviceRegistrations = [];
     private readonly Lazy<IServiceProvider> _serviceProvider;
     private readonly Lazy<TestLogger> _testLogger;
@@ -25,7 +25,7 @@ public class TestLoggerFixture : IAsyncLifetime
 
     public ITestOutputHelper Output { get; set; }
 
-    public void AddServiceRegistrations(Action<IServiceCollection> registerServices)
+    public void ConfigureServices(Action<IServiceCollection> registerServices)
     {
         _serviceRegistrations.Add(registerServices);
     }
@@ -34,12 +34,9 @@ public class TestLoggerFixture : IAsyncLifetime
     public TestLogger TestLogger => _testLogger.Value;
     public ILogger Log => _log.Value;
 
-    protected virtual void RegisterServices(IServiceCollection services)
+    protected virtual void ConfigureServices(IServiceCollection services)
     {
-        if (Output == null)
-            throw new InvalidOperationException("Output should be set before registering services.");
-
-        services.AddLogging(c => c.AddTestLogger(Output));
+        services.AddLogging(c => c.AddTestLogger(() => Output));
         foreach (var registration in _serviceRegistrations)
             registration(services);
     }
@@ -47,7 +44,7 @@ public class TestLoggerFixture : IAsyncLifetime
     protected virtual IServiceProvider BuildServiceProvider()
     {
         var services = new ServiceCollection();
-        RegisterServices(services);
+        ConfigureServices(services);
         var sp = services.BuildServiceProvider();
         _disposables.Add(sp);
         return sp;
@@ -58,20 +55,27 @@ public class TestLoggerFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    public virtual Task DisposeAsync()
+    public virtual async Task DisposeAsync()
     {
-        foreach (var disposable in _disposables)
+        foreach (object disposable in _disposables)
         {
             try
             {
-                disposable.Dispose();
+                switch (disposable)
+                {
+                    case IAsyncDisposable asyncDisposable:
+                        await asyncDisposable.DisposeAsync();
+                        break;
+                    case IDisposable syncDisposable:
+                        syncDisposable.Dispose();
+                        break;
+                }
             }
+            catch (ObjectDisposedException) {}
             catch (Exception ex)
             {
                 Log?.LogError(ex, "Error disposing resource.");
             }
         }
-
-        return Task.CompletedTask;
     }
 }

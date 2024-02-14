@@ -15,7 +15,7 @@ public class TestLoggerTests : TestLoggerBase
     public TestLoggerTests(ITestOutputHelper output, TestLoggerFixture fixture) : base(output, fixture)
     {
         _output = output;
-        fixture.AddServiceRegistrations(s => s.AddSingleton<SomeClass>());
+        fixture.ConfigureServices(s => s.AddSingleton<SomeClass>());
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class TestLoggerTests : TestLoggerBase
         Assert.Single(testLogger.LogEntries);
         Assert.Contains("Doing something", testLogger.LogEntries[0].Message);
 
-        testLogger.Clear();
+        testLogger.Reset();
         testLogger.SetLogLevel<SomeClass>(LogLevel.Error);
 
         someClass.DoSomething(2);
@@ -56,7 +56,7 @@ public class TestLoggerTests : TestLoggerBase
         Assert.Equal(100, TestLogger.LogEntries.Count);
         Assert.Contains("Hello 2", TestLogger.LogEntries.Last().Message);
 
-        Fixture.TestLogger.Clear();
+        Fixture.TestLogger.Reset();
         TestLogger.SetLogLevel<SomeClass>(LogLevel.Error);
 
         someClass.DoSomething(1002);
@@ -75,7 +75,7 @@ public class TestLoggerTests : TestLoggerBase
         Assert.Single(TestLogger.LogEntries);
         Assert.Contains("Doing something", TestLogger.LogEntries[0].Message);
 
-        TestLogger.Clear();
+        TestLogger.Reset();
         TestLogger.SetLogLevel<SomeClass>(LogLevel.Error);
 
         someClass.DoSomething(2);

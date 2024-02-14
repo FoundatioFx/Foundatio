@@ -66,11 +66,12 @@ public class TestLogger : ILoggerFactory
     public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
 
 
-    public void Clear()
+    public void Reset()
     {
         lock (_logEntries)
         {
             _logEntries.Clear();
+            _logLevels.Clear();
             Interlocked.Exchange(ref _logEntriesWritten, 0);
         }
     }

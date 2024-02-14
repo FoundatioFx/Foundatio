@@ -13,7 +13,7 @@ public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncL
     {
         Fixture = fixture;
         fixture.Output = output;
-        fixture.AddServiceRegistrations(RegisterServices);
+        fixture.ConfigureServices(ConfigureServices);
     }
 
     protected TestLoggerFixture Fixture { get; }
@@ -21,7 +21,7 @@ public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncL
     protected TestLogger TestLogger => Fixture.TestLogger;
     protected ILogger Log => Fixture.Log;
 
-    protected virtual void RegisterServices(IServiceCollection services)
+    protected virtual void ConfigureServices(IServiceCollection services)
     {
     }
 
@@ -32,7 +32,7 @@ public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncL
 
     public virtual Task DisposeAsync()
     {
-        Fixture.TestLogger.Clear();
+        Fixture.TestLogger.Reset();
         return Task.CompletedTask;
     }
 }
