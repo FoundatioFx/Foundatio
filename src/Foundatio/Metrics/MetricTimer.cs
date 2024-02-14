@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable 612, 618
+
+using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -29,3 +31,6 @@ public class MetricTimer : IDisposable
         _client.Timer(_name, (int)_stopWatch.ElapsedMilliseconds);
     }
 }
+
+#pragma warning restore 612, 618
+

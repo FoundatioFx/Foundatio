@@ -1,4 +1,6 @@
-﻿using System.Threading.Tasks;
+﻿#pragma warning disable 612, 618
+
+using System.Threading.Tasks;
 
 namespace Foundatio.Metrics;
 
@@ -10,3 +12,5 @@ public class NullMetricsClient : IMetricsClient
     public void Timer(string name, int milliseconds) { }
     public void Dispose() { }
 }
+
+#pragma warning restore 612, 618

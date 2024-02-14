@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable 612, 618
+
+using System;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -42,3 +44,5 @@ public static class MetricsClientExtensions
             return await func().AnyContext();
     }
 }
+
+#pragma warning restore 612, 618

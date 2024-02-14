@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+#pragma warning disable 612, 618
 
 namespace Foundatio.Metrics;
 
@@ -57,3 +58,5 @@ public class DiagnosticsMetricsClient : IMetricsClient
         public double Value { get; set; }
     }
 }
+
+#pragma warning restore 612, 618
