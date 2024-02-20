@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
-public class InMemoryCacheClient : ICacheClient
+public class InMemoryCacheClient : IMemoryCacheClient
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory;
     private bool _shouldClone;
