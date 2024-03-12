@@ -10,7 +10,8 @@ namespace Foundatio.Caching
                 .ConnectionMultiplexer(options.ConnectionMultiplexer)
                 .Serializer(options.Serializer)
                 .LoggerFactory(options.LoggerFactory)
-                .ShouldThrowOnSerializationError(options.ShouldThrowOnSerializationError)),
+                .ShouldThrowOnSerializationError(options.ShouldThrowOnSerializationError)
+                .ReadMode(options.ReadMode)),
             new RedisMessageBus(o => o
                 .Subscriber(options.ConnectionMultiplexer.GetSubscriber())
                 .Topic(options.RedisChannelName)

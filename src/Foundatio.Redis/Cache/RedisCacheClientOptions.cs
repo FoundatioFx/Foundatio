@@ -31,5 +31,11 @@ namespace Foundatio.Caching
             Target.ShouldThrowOnSerializationError = shouldThrow;
             return this;
         }
+
+        public RedisCacheClientOptionsBuilder ReadMode(CommandFlags commandFlags)
+        {
+            Target.ReadMode = commandFlags;
+            return this;
+        }
     }
 }
