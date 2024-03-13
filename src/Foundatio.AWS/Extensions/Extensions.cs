@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -20,7 +20,7 @@ namespace Foundatio.AWS.Extensions
                 return null;
 
             // Skip directories
-            if (blob.Key is not null&& blob.Size is 0 && blob.Key.EndsWith("/"))
+            if (blob.Key is not null && blob.Size is 0 && blob.Key.EndsWith("/"))
                 return null;
 
             return new FileSpec
