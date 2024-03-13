@@ -258,6 +258,7 @@ namespace Foundatio.Storage
 
                 foreach (var blob in listingResult.Results.OfType<CloudBlockBlob>())
                 {
+                    // TODO: Verify if it's possible to create empty folders in storage. If so, don't return them.
                     if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blob.Name))
                     {
                         _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blob.Name);

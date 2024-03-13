@@ -1,6 +1,6 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
-
 
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
@@ -129,6 +129,39 @@ namespace Foundatio.Azure.Tests.Storage
         public override Task WillRespectStreamOffsetAsync()
         {
             return base.WillRespectStreamOffsetAsync();
+        }
+
+        [Fact(Skip = "Skip until it's determined if it's possible to create empty folders, this was adapted from s3 tests")]
+        public virtual async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+        {
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            await ResetAsync(storage);
+
+            using (storage)
+            {
+                var result = await storage.GetPagedFileListAsync();
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+
+                var container = storage is AzureFileStorage azureFileStorage ? azureFileStorage.Container : null;
+                Assert.NotNull(container);
+
+                var blockBlob = container.GetBlockBlobReference("EmptyFolder/");
+                await blockBlob.UploadFromStreamAsync(new MemoryStream(), null, null, null);
+
+                result = await storage.GetPagedFileListAsync();
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+            }
         }
     }
 }
