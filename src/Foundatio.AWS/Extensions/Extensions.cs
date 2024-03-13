@@ -19,6 +19,10 @@ namespace Foundatio.AWS.Extensions
             if (blob == null)
                 return null;
 
+            // Skip directories
+            if (blob.Key is not null&& blob.Size is 0 && blob.Key.EndsWith("/"))
+                return null;
+
             return new FileSpec
             {
                 Path = blob.Key,
@@ -30,7 +34,14 @@ namespace Foundatio.AWS.Extensions
 
         internal static IEnumerable<S3Object> MatchesPattern(this IEnumerable<S3Object> blobs, Regex patternRegex)
         {
-            return blobs.Where(blob => patternRegex == null || patternRegex.IsMatch(blob.ToFileInfo().Path));
+            return blobs.Where(blob =>
+            {
+                var info = blob.ToFileInfo();
+                if (info?.Path is null)
+                    return false;
+
+                return patternRegex == null || patternRegex.IsMatch(info.Path);
+            });
         }
     }
 }

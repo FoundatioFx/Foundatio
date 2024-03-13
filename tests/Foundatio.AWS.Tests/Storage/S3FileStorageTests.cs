@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon;
-using Amazon.Runtime;
-using Amazon.S3;
+using Amazon.S3.Model;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Xunit;
@@ -12,12 +10,14 @@ namespace Foundatio.AWS.Tests.Storage
 {
     public class S3FileStorageTests : FileStorageTestsBase
     {
+        private const string BUCKET_NAME = "foundatio-ci";
+
         public S3FileStorageTests(ITestOutputHelper output) : base(output) { }
 
         protected override IFileStorage GetStorage()
         {
             return new S3FileStorage(
-                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket=foundatio-ci;AccessKey=xxx;SecretKey=xxx")
+                o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
                     .LoggerFactory(Log));
         }
 
@@ -129,17 +129,51 @@ namespace Foundatio.AWS.Tests.Storage
             return base.WillRespectStreamOffsetAsync();
         }
 
+        [Fact]
+        public virtual async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+        {
+            var storage = GetStorage();
+            if (storage == null)
+                return;
+
+            await ResetAsync(storage);
+
+            using (storage)
+            {
+                var result = await storage.GetPagedFileListAsync();
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+
+                // To create an empty folder (or what appears as a folder) in an Amazon S3 bucket using the AWS SDK for .NET,
+                // you typically create an object with a key that ends with a trailing slash ('/') because S3 doesn't
+                // actually have a concept of folders, but it mimics the behavior of folders using object keys.
+                var client = storage is S3FileStorage s3Storage ? s3Storage.Client : null;
+                Assert.NotNull(client);
+
+                await client.PutObjectAsync(new PutObjectRequest
+                {
+                    BucketName = BUCKET_NAME,
+                    Key = "EmptyFolder/",
+                    ContentBody = String.Empty
+                });
+
+                result = await storage.GetPagedFileListAsync();
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+                Assert.False(await result.NextPageAsync());
+                Assert.False(result.HasMore);
+                Assert.Empty(result.Files);
+            }
+        }
+
         protected override async Task ResetAsync(IFileStorage storage)
         {
-            var client = new AmazonS3Client(
-                new BasicAWSCredentials("xxx", "xxx"),
-                new AmazonS3Config
-                {
-                    RegionEndpoint = RegionEndpoint.USEast1,
-                    ServiceURL = "http://localhost:4566",
-                    ForcePathStyle = true
-                });
-            await client.PutBucketAsync("foundatio-ci");
+            var client = storage is S3FileStorage s3Storage ? s3Storage.Client : null;
+            Assert.NotNull(client);
+            await client.PutBucketAsync(BUCKET_NAME);
 
             await base.ResetAsync(storage);
         }
