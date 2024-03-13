@@ -361,7 +361,7 @@ namespace Foundatio.Storage
             {
                 Success = response.HttpStatusCode.IsSuccessful(),
                 HasMore = response.IsTruncated,
-                Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).ToList(),
+                Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).Where(spec => spec is not null && !spec.IsDirectory()).ToList(),
                 NextPageFunc = response.IsTruncated ? _ => GetFiles(criteria, pageSize, cancellationToken, response.NextContinuationToken) : null
             };
         }

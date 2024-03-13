@@ -19,10 +19,6 @@ namespace Foundatio.AWS.Extensions
             if (blob == null)
                 return null;
 
-            // Skip directories
-            if (blob.Key is not null && blob.Size is 0 && blob.Key.EndsWith("/"))
-                return null;
-
             return new FileSpec
             {
                 Path = blob.Key,
@@ -42,6 +38,11 @@ namespace Foundatio.AWS.Extensions
 
                 return patternRegex == null || patternRegex.IsMatch(info.Path);
             });
+        }
+
+        internal static bool IsDirectory(this FileSpec file)
+        {
+            return file.Path is not null && file.Size is 0 && file.Path.EndsWith("/");
         }
     }
 }

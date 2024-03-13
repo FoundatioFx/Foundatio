@@ -153,10 +153,11 @@ namespace Foundatio.AWS.Tests.Storage
                 var client = storage is S3FileStorage s3Storage ? s3Storage.Client : null;
                 Assert.NotNull(client);
 
+                const string folderName = "EmptyFolder/";
                 await client.PutObjectAsync(new PutObjectRequest
                 {
                     BucketName = BUCKET_NAME,
-                    Key = "EmptyFolder/",
+                    Key = folderName,
                     ContentBody = String.Empty
                 });
 
@@ -166,6 +167,16 @@ namespace Foundatio.AWS.Tests.Storage
                 Assert.False(await result.NextPageAsync());
                 Assert.False(result.HasMore);
                 Assert.Empty(result.Files);
+
+                // Ensure the file can be returned via get file info
+                var info = await storage.GetFileInfoAsync(folderName);
+                Assert.NotNull(info?.Path);
+
+                // Ensure delete files can remove all files including fake folders
+                await storage.DeleteFilesAsync("*");
+
+                info = await storage.GetFileInfoAsync(folderName);
+                Assert.Null(info);
             }
         }
 
