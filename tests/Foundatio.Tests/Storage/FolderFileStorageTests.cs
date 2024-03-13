@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.IO;
+using System.Threading.Tasks;
 using Foundatio.Storage;
 using Xunit;
 using Xunit.Abstractions;
@@ -132,5 +133,36 @@ public class FolderFileStorageTests : FileStorageTestsBase
     public override Task WillWriteStreamContentAsync()
     {
         return base.WillWriteStreamContentAsync();
+    }
+
+    [Fact]
+    public virtual async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+    {
+        var storage = GetStorage();
+        if (storage == null)
+            return;
+
+        await ResetAsync(storage);
+
+        using (storage)
+        {
+            var result = await storage.GetPagedFileListAsync();
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+            Assert.False(await result.NextPageAsync());
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+
+            string folder = storage is FolderFileStorage folderStorage ? folderStorage.Folder : null;
+            Assert.NotNull(folder);
+            Directory.CreateDirectory(Path.Combine(folder, "EmptyFolder"));
+
+            result = await storage.GetPagedFileListAsync();
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+            Assert.False(await result.NextPageAsync());
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+        }
     }
 }
