@@ -166,9 +166,9 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
 
-            // Ensure the file can (folder storage won't return it as it's a directory) be returned via get file info
+            // Ensure the directory will not be returned via get file info
             var info = await storage.GetFileInfoAsync(directory);
-            Assert.Null(info?.Path);
+            Assert.Null(info);
 
             // Ensure delete files can remove all files including fake folders
             await storage.DeleteFilesAsync("*");
