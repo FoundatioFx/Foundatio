@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.IO;
+using System.Threading.Tasks;
 using Foundatio.Storage;
 using Xunit;
 using Xunit.Abstractions;
@@ -132,5 +133,50 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     public override Task WillWriteStreamContentAsync()
     {
         return base.WillWriteStreamContentAsync();
+    }
+
+    [Fact]
+    public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+    {
+        var storage = GetStorage();
+        if (storage == null)
+            return;
+
+        await ResetAsync(storage);
+
+        using (storage)
+        {
+            var result = await storage.GetPagedFileListAsync();
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+            Assert.False(await result.NextPageAsync());
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+
+            const string directory = "EmptyDirectory/";
+            string folder = storage is ScopedFileStorage { UnscopedStorage: FolderFileStorage folderStorage } ? folderStorage.Folder : null;
+            Assert.NotNull(folder);
+            Directory.CreateDirectory(Path.Combine(folder, "scoped", directory));
+
+            result = await storage.GetPagedFileListAsync();
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+            Assert.False(await result.NextPageAsync());
+            Assert.False(result.HasMore);
+            Assert.Empty(result.Files);
+
+            // Ensure the file can (folder storage won't return it as it's a directory) be returned via get file info
+            var info = await storage.GetFileInfoAsync(directory);
+            Assert.Null(info?.Path);
+
+            // Ensure delete files can remove all files including fake folders
+            await storage.DeleteFilesAsync("*");
+
+            // Assert folder was removed by Delete Files
+            Assert.False(Directory.Exists(Path.Combine(folder, "scoped", directory)));
+
+            info = await storage.GetFileInfoAsync(directory);
+            Assert.Null(info);
+        }
     }
 }
