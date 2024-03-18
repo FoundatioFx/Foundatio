@@ -59,10 +59,22 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.CanAcquireMultipleResources();
     }
 
-    [RetryFact]
+    [Fact]
     public override Task CanAcquireLocksInParallel()
     {
         return base.CanAcquireLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireScopedLocksInParallel()
+    {
+        return base.CanAcquireScopedLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleLocksInParallel()
+    {
+        return base.CanAcquireScopedLocksInParallel();
     }
 
     [Fact]
@@ -71,7 +83,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.CanAcquireMultipleScopedResources();
     }
 
-    [RetryFact]
+    [Fact]
     public override Task WillThrottleCallsAsync()
     {
         Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);

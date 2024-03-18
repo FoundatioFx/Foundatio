@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,7 +23,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
     private long _hits;
     private long _misses;
     private readonly ILogger _logger;
-    private readonly object _lock = new();
+    private readonly AsyncLock _lock = new();
 
     public InMemoryCacheClient() : this(o => o) { }
 
@@ -847,16 +848,16 @@ public class InMemoryCacheClient : IMemoryCacheClient
         }
     }
 
-    private Task CompactAsync()
+    private async Task CompactAsync()
     {
         if (!_maxItems.HasValue || _memory.Count <= _maxItems)
-            return Task.CompletedTask;
+            return;
 
         string expiredKey = null;
-        lock (_lock)
+        using (await _lock.LockAsync().AnyContext())
         {
             if (_memory.Count <= _maxItems)
-                return Task.CompletedTask;
+                return;
 
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
             foreach (var kvp in _memory)
@@ -874,8 +875,6 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         if (expiredKey != null)
             OnItemExpired(expiredKey);
-
-        return Task.CompletedTask;
     }
 
     private async Task DoMaintenanceAsync()

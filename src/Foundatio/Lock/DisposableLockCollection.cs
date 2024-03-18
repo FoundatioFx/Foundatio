@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,7 @@ internal class DisposableLockCollection : ILock
     private readonly ILogger _logger;
     private bool _isReleased;
     private int _renewalCount;
-    private readonly object _lock = new();
+    private readonly AsyncLock _lock = new();
     private readonly Stopwatch _duration;
 
     public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, TimeSpan timeWaitedForLock, ILogger logger)
@@ -50,15 +51,15 @@ internal class DisposableLockCollection : ILock
             _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
     }
 
-    public Task ReleaseAsync()
+    public async Task ReleaseAsync()
     {
         if (_isReleased)
-            return Task.CompletedTask;
+            return;
 
-        lock (_lock)
+        using (await _lock.LockAsync().AnyContext())
         {
             if (_isReleased)
-                return Task.CompletedTask;
+                return;
 
             _isReleased = true;
             _duration.Stop();
@@ -66,7 +67,7 @@ internal class DisposableLockCollection : ILock
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
 
-            return Task.WhenAll(_locks.Select(l => l.ReleaseAsync()));
+            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync()));
         }
     }
 

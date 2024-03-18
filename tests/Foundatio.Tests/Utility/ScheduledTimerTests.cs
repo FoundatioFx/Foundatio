@@ -33,7 +33,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         return resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
     }
 
-    [RetryFact]
+    [Fact]
     public Task CanRunAndScheduleConcurrently()
     {
         return CanRunConcurrentlyAsync();

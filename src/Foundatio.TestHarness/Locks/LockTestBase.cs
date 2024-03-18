@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -183,6 +183,42 @@ public abstract class LockTestBase : TestWithLoggingBase
         if (locker == null)
             return;
 
+        Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+
+        const int COUNT = 100;
+        int current = 1;
+        var used = new List<int>();
+        int concurrency = 0;
+
+        await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
+        {
+            await using var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            Assert.NotNull(myLock);
+
+            int currentConcurrency = Interlocked.Increment(ref concurrency);
+            Assert.Equal(1, currentConcurrency);
+
+            int item = current;
+            await Task.Delay(10, ct);
+            used.Add(item);
+            current++;
+
+            Interlocked.Decrement(ref concurrency);
+        });
+
+        var duplicates = used.GroupBy(x => x).Where(g => g.Count() > 1);
+        Assert.Empty(duplicates);
+        Assert.Equal(COUNT, used.Count);
+    }
+
+    public virtual async Task CanAcquireScopedLocksInParallel()
+    {
+        var lockProvider = GetLockProvider();
+        if (lockProvider == null)
+            return;
+
+        var locker = new ScopedLockProvider(lockProvider, "scoped");
+
         Log.SetLogLevel<CacheLockProvider>(LogLevel.Debug);
 
         const int COUNT = 100;
@@ -190,9 +226,43 @@ public abstract class LockTestBase : TestWithLoggingBase
         var used = new List<int>();
         int concurrency = 0;
 
-        await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (index, ct) =>
+        await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
         {
             await using var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            Assert.NotNull(myLock);
+
+            int currentConcurrency = Interlocked.Increment(ref concurrency);
+            Assert.Equal(1, currentConcurrency);
+
+            int item = current;
+            await Task.Delay(10, ct);
+            used.Add(item);
+            current++;
+
+            Interlocked.Decrement(ref concurrency);
+        });
+
+        var duplicates = used.GroupBy(x => x).Where(g => g.Count() > 1);
+        Assert.Empty(duplicates);
+        Assert.Equal(COUNT, used.Count);
+    }
+
+    public virtual async Task CanAcquireMultipleLocksInParallel()
+    {
+        var locker = GetLockProvider();
+        if (locker == null)
+            return;
+
+        Log.SetLogLevel<CacheLockProvider>(LogLevel.Debug);
+
+        const int COUNT = 100;
+        int current = 1;
+        var used = new List<int>();
+        int concurrency = 0;
+
+        await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
+        {
+            await using var myLock = await locker.AcquireAsync(["test"], TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             Assert.NotNull(myLock);
 
             int currentConcurrency = Interlocked.Increment(ref concurrency);
