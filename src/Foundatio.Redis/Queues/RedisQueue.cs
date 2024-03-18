@@ -96,7 +96,7 @@ namespace Foundatio.Queues
                     return;
 
                 _logger.LogTrace("Subscribing to enqueue messages for {Name}.", _options.Name);
-                await _subscriber.SubscribeAsync(GetTopicName(), OnTopicMessage).AnyContext();
+                await _subscriber.SubscribeAsync(RedisChannel.Literal(GetTopicName()), OnTopicMessage).AnyContext();
                 _isSubscribed = true;
                 _logger.LogTrace("Subscribed to enqueue messages for {Name}.", _options.Name);
             }
@@ -244,7 +244,7 @@ namespace Foundatio.Queues
             try
             {
                 _autoResetEvent.Set();
-                await Run.WithRetriesAsync(() => _subscriber.PublishAsync(GetTopicName(), id), logger: _logger).AnyContext();
+                await Run.WithRetriesAsync(() => _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), id), logger: _logger).AnyContext();
             }
             catch (Exception ex)
             {
@@ -551,7 +551,7 @@ namespace Foundatio.Queues
                 await Run.WithRetriesAsync(() => Task.WhenAll(
                     Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
                     // This should pulse the monitor.
-                    _subscriber.PublishAsync(GetTopicName(), entry.Id)
+                    _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), entry.Id)
                 ), logger: _logger).AnyContext();
             }
 
@@ -726,7 +726,7 @@ namespace Foundatio.Queues
                     if (!success)
                         throw new Exception("Unable to move item to queue list.");
 
-                    await Run.WithRetriesAsync(() => _subscriber.PublishAsync(GetTopicName(), waitId), cancellationToken: _queueDisposedCancellationTokenSource.Token, logger: _logger).AnyContext();
+                    await Run.WithRetriesAsync(() => _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: _queueDisposedCancellationTokenSource.Token, logger: _logger).AnyContext();
                 }
             }
             catch (Exception ex)
@@ -800,7 +800,7 @@ namespace Foundatio.Queues
                     if (_isSubscribed)
                     {
                         _logger.LogTrace("Unsubscribing from topic {Topic}", GetTopicName());
-                        _subscriber.Unsubscribe(GetTopicName(), OnTopicMessage, CommandFlags.FireAndForget);
+                        _subscriber.Unsubscribe(RedisChannel.Literal(GetTopicName()), OnTopicMessage, CommandFlags.FireAndForget);
                         _isSubscribed = false;
                         _logger.LogTrace("Unsubscribed from topic {Topic}", GetTopicName());
                     }

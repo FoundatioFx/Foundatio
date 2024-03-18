@@ -35,7 +35,7 @@ namespace Foundatio.Messaging
 
                 bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
-                _channelMessageQueue = await _options.Subscriber.SubscribeAsync(_options.Topic).AnyContext();
+                _channelMessageQueue = await _options.Subscriber.SubscribeAsync(RedisChannel.Literal(_options.Topic)).AnyContext();
                 _channelMessageQueue.OnMessage(OnMessage);
                 _isSubscribed = true;
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
@@ -101,7 +101,7 @@ namespace Foundatio.Messaging
 
             // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
 
-            await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(_options.Topic, data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+            await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(RedisChannel.Literal(_options.Topic), data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
         }
 
         public override void Dispose()
