@@ -154,7 +154,7 @@ namespace Foundatio.Storage
 
             try
             {
-                var stream = await GetFileStreamAsync(normalizedPath, cancellationToken).AnyContext();
+                var stream = await GetFileStreamAsync(normalizedPath, StreamMode.Read, cancellationToken).AnyContext();
                 return await DeleteFileAsync(normalizedPath, cancellationToken).AnyContext() &&
                        await SaveFileAsync(normalizedNewPath, stream, cancellationToken).AnyContext();
             }
@@ -178,7 +178,7 @@ namespace Foundatio.Storage
 
             try
             {
-                using var stream = await GetFileStreamAsync(normalizedPath, cancellationToken).AnyContext();
+                using var stream = await GetFileStreamAsync(normalizedPath, StreamMode.Read, cancellationToken).AnyContext();
                 if (stream == null)
                     return false;
 
