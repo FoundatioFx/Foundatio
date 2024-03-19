@@ -290,7 +290,6 @@ public class InMemoryQueueTests : QueueTestBase
     [Fact]
     public override Task CanHandleAutoAbandonInWorker()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.CanHandleAutoAbandonInWorker();
     }
 
@@ -393,7 +392,7 @@ public class InMemoryQueueTests : QueueTestBase
         // start handling items
         await queue.StartWorkingAsync(async (item) =>
         {
-            // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
+            // we want to wait for maintenance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
             if (item.Value.Data == "Delay")
             {
                 await Task.Delay(TimeSpan.FromSeconds(1));
@@ -426,8 +425,6 @@ public class InMemoryQueueTests : QueueTestBase
         // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
         timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
         Assert.False(timedout);
-
-        return;
     }
 
     #endregion

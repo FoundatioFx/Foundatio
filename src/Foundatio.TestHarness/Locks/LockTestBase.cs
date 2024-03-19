@@ -55,7 +55,6 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         int counter = 0;
 
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         await Run.InParallelAsync(25, async i =>
         {
             bool success = await locker.TryUsingAsync("test", () =>
@@ -341,7 +340,6 @@ public abstract class LockTestBase : TestWithLoggingBase
 
     public virtual async Task WillThrottleCallsAsync()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);
         Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
 
