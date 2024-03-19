@@ -16,9 +16,9 @@ namespace Foundatio.Caching;
 public class InMemoryCacheClient : IMemoryCacheClient
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory;
-    private bool _shouldClone;
-    private bool _shouldThrowOnSerializationErrors;
-    private int? _maxItems;
+    private readonly bool _shouldClone;
+    private readonly bool _shouldThrowOnSerializationErrors;
+    private readonly int? _maxItems;
     private long _writes;
     private long _hits;
     private long _misses;
@@ -69,7 +69,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (ItemExpired == null)
             return;
 
-        Task.Factory.StartNew(state =>
+        Task.Factory.StartNew(_ =>
         {
             var args = new ItemExpiredEventArgs
             {
@@ -120,27 +120,31 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (_logger.IsEnabled(LogLevel.Trace))
+        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
+        if (isTraceLogLevelEnabled)
             _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         bool wasExpectedValue = false;
-        bool success = _memory.TryUpdate(key, (k, e) =>
+        bool success = _memory.TryUpdate(key, (key, existingEntry) =>
         {
-            var currentValue = e.GetValue<T>();
+            var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
-                e.ExpiresAt = DateTime.MinValue;
+                if (isTraceLogLevelEnabled)
+                    _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", key);
+
+                existingEntry.ExpiresAt = DateTime.MinValue;
                 wasExpectedValue = true;
             }
 
-            return e;
+            return existingEntry;
         });
 
         success = success && wasExpectedValue;
 
         await StartMaintenanceAsync().AnyContext();
 
-        if (_logger.IsEnabled(LogLevel.Trace))
+        if (isTraceLogLevelEnabled)
             _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
 
         return success;
@@ -155,13 +159,14 @@ public class InMemoryCacheClient : IMemoryCacheClient
             return Task.FromResult(count);
         }
 
+        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         int removed = 0;
         foreach (string key in keys)
         {
             if (String.IsNullOrEmpty(key))
                 continue;
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
             if (_memory.TryRemove(key, out _))
                 removed++;
         }
@@ -190,10 +195,19 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
     internal void RemoveExpiredKey(string key, bool sendNotification = true)
     {
-        _logger.LogDebug("Removing expired cache entry {Key}", key);
+        // Consideration: We could reduce the amount of calls to this by updating the key and only having maintenance run this.
+        // Consideration: We could also only remove expired items after a last access period determined when any property on the model is updated.
+        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt < SystemClock.UtcNow)
+        {
+            if (_memory.TryRemove(key, out var removedEntry))
+            {
+                if (removedEntry.ExpiresAt >= SystemClock.UtcNow)
+                    throw new Exception("Removed item was not expired");
 
-        if (_memory.TryRemove(key, out _))
-            OnItemExpired(key, sendNotification);
+                _logger.LogDebug("Removing expired cache entry {Key}", key);
+                OnItemExpired(key, sendNotification);
+            }
+        }
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
@@ -201,13 +215,13 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (!_memory.TryGetValue(key, out var cacheEntry))
+        if (!_memory.TryGetValue(key, out var existingEntry))
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(CacheValue<T>.NoValue);
         }
 
-        if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
+        if (existingEntry.ExpiresAt < SystemClock.UtcNow)
         {
             RemoveExpiredKey(key);
             Interlocked.Increment(ref _misses);
@@ -218,13 +232,13 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         try
         {
-            var value = cacheEntry.GetValue<T>();
+            var value = existingEntry.GetValue<T>();
             return Task.FromResult(new CacheValue<T>(value, true));
         }
         catch (Exception ex)
         {
             if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", cacheEntry.Value, typeof(T).FullName);
+                _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", existingEntry.Value, typeof(T).FullName);
 
             if (_shouldThrowOnSerializationErrors)
                 throw;
@@ -276,12 +290,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         double difference = value;
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) =>
+        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<double?>();
+                currentValue = existingEntry.GetValue<double?>();
             }
             catch (Exception ex)
             {
@@ -291,15 +305,17 @@ public class InMemoryCacheClient : IMemoryCacheClient
             if (currentValue.HasValue && currentValue.Value < value)
             {
                 difference = value - currentValue.Value;
-                entry.Value = value;
+                existingEntry.Value = value;
             }
             else
+            {
                 difference = 0;
+            }
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -322,12 +338,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         long difference = value;
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) =>
+        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<long?>();
+                currentValue = existingEntry.GetValue<long?>();
             }
             catch (Exception ex)
             {
@@ -337,15 +353,17 @@ public class InMemoryCacheClient : IMemoryCacheClient
             if (currentValue.HasValue && currentValue.Value < value)
             {
                 difference = value - currentValue.Value;
-                entry.Value = value;
+                existingEntry.Value = value;
             }
             else
+            {
                 difference = 0;
+            }
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -368,12 +386,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         double difference = value;
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) =>
+        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<double?>();
+                currentValue = existingEntry.GetValue<double?>();
             }
             catch (Exception ex)
             {
@@ -383,15 +401,17 @@ public class InMemoryCacheClient : IMemoryCacheClient
             if (currentValue.HasValue && currentValue.Value > value)
             {
                 difference = currentValue.Value - value;
-                entry.Value = value;
+                existingEntry.Value = value;
             }
             else
+            {
                 difference = 0;
+            }
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -412,12 +432,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         long difference = value;
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (k, entry) =>
+        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<long?>();
+                currentValue = existingEntry.GetValue<long?>();
             }
             catch (Exception ex)
             {
@@ -427,15 +447,17 @@ public class InMemoryCacheClient : IMemoryCacheClient
             if (currentValue.HasValue && currentValue.Value > value)
             {
                 difference = currentValue.Value - value;
-                entry.Value = value;
+                existingEntry.Value = value;
             }
             else
+            {
                 difference = 0;
+            }
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -464,18 +486,18 @@ public class InMemoryCacheClient : IMemoryCacheClient
         {
             var items = new HashSet<string>(new[] { stringValue });
             var entry = new CacheEntry(items, expiresAt, _shouldClone);
-            _memory.AddOrUpdate(key, entry, (k, cacheEntry) =>
+            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
             {
-                if (!(cacheEntry.Value is ICollection<string> collection))
+                if (!(existingEntry.Value is ICollection<string> collection))
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
                 collection.Add(stringValue);
-                cacheEntry.Value = collection;
+                existingEntry.Value = collection;
 
                 if (expiresIn.HasValue)
-                    cacheEntry.ExpiresAt = expiresAt;
+                    existingEntry.ExpiresAt = expiresAt;
 
-                return cacheEntry;
+                return existingEntry;
             });
 
             await StartMaintenanceAsync().AnyContext();
@@ -486,18 +508,18 @@ public class InMemoryCacheClient : IMemoryCacheClient
         {
             var items = new HashSet<T>(values);
             var entry = new CacheEntry(items, expiresAt, _shouldClone);
-            _memory.AddOrUpdate(key, entry, (k, cacheEntry) =>
+            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
             {
-                if (!(cacheEntry.Value is ICollection<T> collection))
+                if (!(existingEntry.Value is ICollection<T> collection))
                     throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
                 collection.AddRange(items);
-                cacheEntry.Value = collection;
+                existingEntry.Value = collection;
 
                 if (expiresIn.HasValue)
-                    cacheEntry.ExpiresAt = expiresAt;
+                    existingEntry.ExpiresAt = expiresAt;
 
-                return cacheEntry;
+                return existingEntry;
             });
 
             await StartMaintenanceAsync().AnyContext();
@@ -526,21 +548,21 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (values is string stringValue)
         {
             var items = new HashSet<string>(new[] { stringValue });
-            _memory.TryUpdate(key, (k, cacheEntry) =>
+            _memory.TryUpdate(key, (_, existingEntry) =>
             {
-                if (cacheEntry.Value is ICollection<string> collection && collection.Count > 0)
+                if (existingEntry.Value is ICollection<string> collection && collection.Count > 0)
                 {
-                    foreach (var value in items)
+                    foreach (string value in items)
                         collection.Remove(value);
 
-                    cacheEntry.Value = collection;
+                    existingEntry.Value = collection;
                 }
 
                 if (expiresIn.HasValue)
-                    cacheEntry.ExpiresAt = expiresAt;
+                    existingEntry.ExpiresAt = expiresAt;
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
-                return cacheEntry;
+                return existingEntry;
             });
 
             return Task.FromResult<long>(items.Count);
@@ -548,21 +570,21 @@ public class InMemoryCacheClient : IMemoryCacheClient
         else
         {
             var items = new HashSet<T>(values);
-            _memory.TryUpdate(key, (k, cacheEntry) =>
+            _memory.TryUpdate(key, (_, existingEntry) =>
             {
-                if (cacheEntry.Value is ICollection<T> collection && collection.Count > 0)
+                if (existingEntry.Value is ICollection<T> collection && collection.Count > 0)
                 {
                     foreach (var value in items)
                         collection.Remove(value);
 
-                    cacheEntry.Value = collection;
+                    existingEntry.Value = collection;
                 }
 
                 if (expiresIn.HasValue)
-                    cacheEntry.ExpiresAt = expiresAt;
+                    existingEntry.ExpiresAt = expiresAt;
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
-                return cacheEntry;
+                return existingEntry;
             });
 
             return Task.FromResult<long>(items.Count);
@@ -596,39 +618,38 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         Interlocked.Increment(ref _writes);
 
+        bool wasUpdated = true;
+        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (addOnly)
         {
-            if (!_memory.TryAdd(key, entry))
+            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
             {
+                wasUpdated = false;
 
                 // check to see if existing entry is expired
-                bool updated = false;
-                _memory.TryUpdate(key, (key, existingEntry) =>
+                if (existingEntry.ExpiresAt < SystemClock.UtcNow)
                 {
-                    if (existingEntry.ExpiresAt < SystemClock.UtcNow)
-                    {
-                        updated = true;
-                        return entry;
-                    }
+                    if (isTraceLogLevelEnabled)
+                        _logger.LogTrace("Replacing expired cache key: {Key}", key);
 
-                    return existingEntry;
-                });
+                    wasUpdated = true;
+                    return entry;
+                }
 
-                if (!updated)
-                    return false;
-            }
+                return existingEntry;
+            });
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Added cache key: {Key}", key);
+            if (wasUpdated && isTraceLogLevelEnabled)
+                _logger.LogTrace("Added cache key: {Key}", key);
         }
         else
         {
-            _memory.AddOrUpdate(key, entry, (k, cacheEntry) => entry);
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Set cache key: {Key}", key);
+            _memory.AddOrUpdate(key, entry, (_, _) => entry);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Set cache key: {Key}", key);
         }
 
         await StartMaintenanceAsync(true).AnyContext();
-
-        return true;
+        return wasUpdated;
     }
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
@@ -667,19 +688,19 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         bool wasExpectedValue = false;
-        bool success = _memory.TryUpdate(key, (k, cacheEntry) =>
+        bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
-            var currentValue = cacheEntry.GetValue<T>();
+            var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
-                cacheEntry.Value = value;
+                existingEntry.Value = value;
                 wasExpectedValue = true;
 
                 if (expiresIn.HasValue)
-                    cacheEntry.ExpiresAt = expiresAt;
+                    existingEntry.ExpiresAt = expiresAt;
             }
 
-            return cacheEntry;
+            return existingEntry;
         });
 
         success = success && wasExpectedValue;
@@ -705,12 +726,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
         Interlocked.Increment(ref _writes);
 
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) =>
+        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<double?>();
+                currentValue = existingEntry.GetValue<double?>();
             }
             catch (Exception ex)
             {
@@ -718,14 +739,14 @@ public class InMemoryCacheClient : IMemoryCacheClient
             }
 
             if (currentValue.HasValue)
-                entry.Value = currentValue.Value + amount;
+                existingEntry.Value = currentValue.Value + amount;
             else
-                entry.Value = amount;
+                existingEntry.Value = amount;
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -747,12 +768,12 @@ public class InMemoryCacheClient : IMemoryCacheClient
         Interlocked.Increment(ref _writes);
 
         var expiresAt = expiresIn.HasValue ? SystemClock.UtcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (k, entry) =>
+        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
             try
             {
-                currentValue = entry.GetValue<long?>();
+                currentValue = existingEntry.GetValue<long?>();
             }
             catch (Exception ex)
             {
@@ -760,14 +781,14 @@ public class InMemoryCacheClient : IMemoryCacheClient
             }
 
             if (currentValue.HasValue)
-                entry.Value = currentValue.Value + amount;
+                existingEntry.Value = currentValue.Value + amount;
             else
-                entry.Value = amount;
+                existingEntry.Value = amount;
 
             if (expiresIn.HasValue)
-                entry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
 
-            return entry;
+            return existingEntry;
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -889,7 +910,10 @@ public class InMemoryCacheClient : IMemoryCacheClient
             {
                 var expiresAt = kvp.Value.ExpiresAt;
                 if (expiresAt <= utcNow)
+                {
+                    _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
                     RemoveExpiredKey(kvp.Key);
+                }
             }
         }
         catch (Exception ex)
@@ -906,7 +930,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
         ItemExpired?.Dispose();
     }
 
-    private class CacheEntry
+    private record CacheEntry
     {
         private object _cacheValue;
         private static long _instanceCount;
