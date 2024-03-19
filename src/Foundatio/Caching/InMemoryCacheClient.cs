@@ -883,9 +883,14 @@ public class InMemoryCacheClient : IMemoryCacheClient
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
             foreach (var kvp in _memory)
             {
-                if (kvp.Value.LastAccessTicks < oldest.LastAccessTicks
-                    || (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
+                bool isExpired = kvp.Value.ExpiresAt < SystemClock.UtcNow;
+                if (isExpired ||
+                    kvp.Value.LastAccessTicks < oldest.LastAccessTicks ||
+                    (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
                     oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+
+                if (isExpired)
+                    break;
             }
 
             _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
@@ -904,12 +909,15 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         var utcNow = SystemClock.UtcNow.AddMilliseconds(50);
 
+        // Remove expired items and items that are infrequently accessed as they may be updated by add.
+        long lastAccessMaximumTicks = utcNow.AddMilliseconds(-300).Ticks;
+
         try
         {
             foreach (var kvp in _memory.ToArray())
             {
-                var expiresAt = kvp.Value.ExpiresAt;
-                if (expiresAt <= utcNow)
+                bool lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
+                if (lastAccessTimeIsInfrequent && kvp.Value.ExpiresAt <= utcNow)
                 {
                     _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
                     RemoveExpiredKey(kvp.Key);
