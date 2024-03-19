@@ -820,7 +820,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt == DateTime.MaxValue)
+        if (!_memory.TryGetValue(key, out var existingEntry))
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult<TimeSpan?>(null);
