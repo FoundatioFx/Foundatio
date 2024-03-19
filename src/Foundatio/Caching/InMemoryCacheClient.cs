@@ -195,8 +195,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
     internal void RemoveExpiredKey(string key, bool sendNotification = true)
     {
-        // Consideration: We could reduce the amount of calls to this by updating the key and only having maintenance run this.
-        // Consideration: We could also only remove expired items after a last access period determined when any property on the model is updated.
+        // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
         if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt < SystemClock.UtcNow)
         {
             if (_memory.TryRemove(key, out var removedEntry))
@@ -223,7 +222,6 @@ public class InMemoryCacheClient : IMemoryCacheClient
 
         if (existingEntry.ExpiresAt < SystemClock.UtcNow)
         {
-            RemoveExpiredKey(key);
             Interlocked.Increment(ref _misses);
             return Task.FromResult(CacheValue<T>.NoValue);
         }
@@ -801,16 +799,19 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        if (!_memory.TryGetValue(key, out var cacheEntry))
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            Interlocked.Increment(ref _misses);
+            return Task.FromResult(false);
+        }
+
+        if (existingEntry.ExpiresAt < SystemClock.UtcNow)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(false);
         }
 
         Interlocked.Increment(ref _hits);
-        if (cacheEntry.ExpiresAt < SystemClock.UtcNow)
-            return Task.FromResult(false);
-
         return Task.FromResult(true);
     }
 
@@ -819,19 +820,20 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (!_memory.TryGetValue(key, out var value) || value.ExpiresAt == DateTime.MaxValue)
+        if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.ExpiresAt == DateTime.MaxValue)
+        {
+            Interlocked.Increment(ref _misses);
+            return Task.FromResult<TimeSpan?>(null);
+        }
+
+        if (existingEntry.ExpiresAt < SystemClock.UtcNow || existingEntry.ExpiresAt == DateTime.MaxValue)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult<TimeSpan?>(null);
         }
 
         Interlocked.Increment(ref _hits);
-        if (value.ExpiresAt >= SystemClock.UtcNow)
-            return Task.FromResult<TimeSpan?>(value.ExpiresAt.Subtract(SystemClock.UtcNow));
-
-        RemoveExpiredKey(key);
-
-        return Task.FromResult<TimeSpan?>(null);
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Subtract(SystemClock.UtcNow));
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
@@ -847,9 +849,9 @@ public class InMemoryCacheClient : IMemoryCacheClient
         }
 
         Interlocked.Increment(ref _writes);
-        if (_memory.TryGetValue(key, out var value))
+        if (_memory.TryGetValue(key, out var existingEntry))
         {
-            value.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
             await StartMaintenanceAsync().AnyContext();
         }
     }
