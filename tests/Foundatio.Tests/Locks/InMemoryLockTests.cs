@@ -74,7 +74,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     [Fact]
     public override Task CanAcquireMultipleLocksInParallel()
     {
-        return base.CanAcquireScopedLocksInParallel();
+        return base.CanAcquireMultipleLocksInParallel();
     }
 
     [Fact]
