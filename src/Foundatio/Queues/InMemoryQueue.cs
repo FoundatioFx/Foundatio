@@ -394,7 +394,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         // Add a tiny buffer just in case the schedule next timer fires early.
         // The system clock typically has a resolution of 10-15 milliseconds, so timers cannot be more accurate than this resolution.
-        return minAbandonAt.SafeAdd(TimeSpan.FromMilliseconds(10));
+        return minAbandonAt.SafeAdd(TimeSpan.FromMilliseconds(15));
     }
 
     public override void Dispose()
