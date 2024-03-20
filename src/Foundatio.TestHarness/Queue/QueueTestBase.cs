@@ -1608,8 +1608,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                             break;
 
                         stats = await queue.GetQueueStatsAsync();
-                    } while (sw.Elapsed < TimeSpan.FromSeconds(10));
+                    } while (sw.Elapsed < TimeSpan.FromSeconds(5));
 
+                    _logger.LogDebug("Asserting abandon count is 1, {Actual}", stats.Abandoned);
                     Assert.Equal(1, stats.Abandoned);
                 }
 
@@ -1617,8 +1618,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 {
                     await item.CompleteAsync();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogDebug(ex, "Error completing item: {Message}", ex.Message);
                     errorEvent.Set();
                     throw;
                 }
