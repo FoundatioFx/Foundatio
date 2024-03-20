@@ -17,7 +17,7 @@ public class WithLockingJob : JobWithLockBase
 
     public WithLockingJob(ILoggerFactory loggerFactory) : base(loggerFactory)
     {
-        _locker = new CacheLockProvider(new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = loggerFactory }), new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = loggerFactory }), loggerFactory);
+        _locker = new CacheLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), new InMemoryMessageBus(o => o.LoggerFactory(loggerFactory)), loggerFactory);
     }
 
     public int RunCount { get; set; }

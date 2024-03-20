@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
@@ -248,7 +249,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             });
 
             var sw = Stopwatch.StartNew();
-            await Run.InParallelAsync(numConcurrentMessages, async i =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, numConcurrentMessages), async (i, _) =>
             {
                 await messageBus.PublishAsync(new SimpleMessageA
                 {
@@ -282,16 +283,16 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         try
         {
             var countdown = new AsyncCountdownEvent(iterations * 10);
-            await Run.InParallelAsync(10, i =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
-                return messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
-                });
+                }, cancellationToken: ct);
             });
 
-            await Run.InParallelAsync(iterations, i => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
+            await Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (_, _) => await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
             await countdown.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Equal(0, countdown.CurrentCount);
         }
@@ -312,27 +313,27 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         try
         {
             var countdown = new AsyncCountdownEvent(iterations * 10);
-            await Run.InParallelAsync(10, async i =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
                 var bus = GetMessageBus();
                 await bus.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
-                });
+                }, cancellationToken: ct);
 
                 messageBuses.Add(bus);
             });
-            var subscribe = Run.InParallelAsync(iterations,
-                i =>
-                {
-                    SystemClock.Sleep(RandomData.GetInt(0, 10));
-                    return messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask);
-                });
 
-            var publish = Run.InParallelAsync(iterations + 3, i =>
+            var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
             {
-                return i switch
+                await SystemClock.SleepAsync(RandomData.GetInt(0, 10), ct);
+                await messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+            });
+
+            var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
+            {
+                await (i switch
                 {
                     1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }),
                     2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }),
@@ -348,7 +349,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                     iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }),
                     iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }),
                     _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }),
-                };
+                });
             });
 
             await Task.WhenAll(subscribe, publish);

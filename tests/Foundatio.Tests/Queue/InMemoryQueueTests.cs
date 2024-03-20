@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Utility;
@@ -290,7 +291,6 @@ public class InMemoryQueueTests : QueueTestBase
     [Fact]
     public override Task CanHandleAutoAbandonInWorker()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.CanHandleAutoAbandonInWorker();
     }
 
@@ -386,6 +386,7 @@ public class InMemoryQueueTests : QueueTestBase
     {
         // create queue with short work item timeout so it will be auto abandoned
         var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // completion source to wait for CompleteAsync call before the assert
         var taskCompletionSource = new TaskCompletionSource<bool>();
@@ -393,7 +394,7 @@ public class InMemoryQueueTests : QueueTestBase
         // start handling items
         await queue.StartWorkingAsync(async (item) =>
         {
-            // we want to wait for maintainance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
+            // we want to wait for maintenance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
             if (item.Value.Data == "Delay")
             {
                 await Task.Delay(TimeSpan.FromSeconds(1));
@@ -410,7 +411,7 @@ public class InMemoryQueueTests : QueueTestBase
                 // infrastructure handles user exception incorrectly
                 taskCompletionSource.SetResult(true);
             }
-        });
+        }, cancellationToken: cancellationTokenSource.Token);
 
         // enqueue item which will be processed after it's auto abandoned
         await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
@@ -426,8 +427,6 @@ public class InMemoryQueueTests : QueueTestBase
         // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
         timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2)))) != taskCompletionSource.Task;
         Assert.False(timedout);
-
-        return;
     }
 
     #endregion

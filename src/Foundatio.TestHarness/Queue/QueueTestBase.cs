@@ -265,7 +265,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         {
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
-            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(), Log));
+            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(o => o.LoggerFactory(Log)), Log));
 
             await queue.EnqueueAsync(new SimpleWorkItem
             {
@@ -358,6 +358,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     private async Task VerifyRetryAttemptsImplAsync(IQueue<SimpleWorkItem> queue, int retryCount, TimeSpan waitTime)
     {
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
         try
         {
             await queue.DeleteQueueAsync();
@@ -367,6 +369,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             var countdown = new AsyncCountdownEvent(retryCount + 1);
             int attempts = 0;
+
             await queue.StartWorkingAsync(async w =>
             {
                 Interlocked.Increment(ref attempts);
@@ -380,7 +383,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 countdown.Signal();
 
                 _logger.LogInformation("Finished Attempt {Attempt} to work on queue item, Metadata Attempts: {MetadataAttempts}", attempts, queueEntryMetadata.Attempts);
-            });
+            }, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem
             {
@@ -410,6 +413,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }
@@ -637,7 +641,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WillWaitForItemAsync()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         var queue = GetQueue();
         if (queue == null)
             return;
@@ -717,6 +720,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -728,7 +732,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal("Hello", w.Value.Data);
                 await w.CompleteAsync();
                 resetEvent.Set();
-            });
+            }, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem
             {
@@ -746,6 +750,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }
@@ -756,6 +761,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -771,7 +777,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 _logger.LogDebug("WorkAction");
                 Assert.Equal("Hello", w.Value.Data);
                 throw new Exception();
-            });
+            }, cancellationToken: cancellationTokenSource.Token);
 
             var resetEvent = new AsyncManualResetEvent(false);
             using (queue.Abandoned.AddSyncHandler((o, args) => resetEvent.Set()))
@@ -794,13 +800,13 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }
 
     public virtual async Task WorkItemsWillTimeoutAsync()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         Log.SetLogLevel("Foundatio.Queues.RedisQueue", LogLevel.Trace);
         var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromMilliseconds(50));
         if (queue == null)
@@ -901,6 +907,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -911,7 +918,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             {
                 Assert.Equal("Hello", w.Value.Data);
                 return Task.CompletedTask;
-            }, true);
+            }, true, cancellationTokenSource.Token);
 
             using (queue.Completed.AddSyncHandler((s, e) => { resetEvent.Set(); }))
             {
@@ -931,6 +938,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }
@@ -941,6 +949,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -958,11 +967,11 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue Id: {Id}, I: {Instance}", q.QueueId, i);
-                    await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info));
+                    await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
 
-                await Run.InParallelAsync(workItemCount, async i =>
+                await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
                     string id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
@@ -972,8 +981,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {Id}", i, id);
                 });
 
-                await countdown.WaitAsync();
-                await SystemClock.SleepAsync(50);
+                await countdown.WaitAsync(cancellationTokenSource.Token);
+                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
 
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
@@ -1013,6 +1022,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             }
             finally
             {
+                await cancellationTokenSource.CancelAsync();
                 foreach (var q in workers)
                     await CleanupQueueAsync(q);
             }
@@ -1067,13 +1077,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         int completedCount = 0;
 
-        using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
+        using var metrics = new InMemoryMetricsClient(o => o.Buffered(false).LoggerFactory(Log));
 
 #pragma warning disable CS0618 // Type or member is obsolete
         var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
 #pragma warning restore CS0618 // Type or member is obsolete
-        var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
-        using var queue = new InMemoryQueue<WorkItemData>(options);
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.Behaviors(behavior).LoggerFactory(Log));
 
         Task Handler(object sender, CompletedEventArgs<WorkItemData> e)
         {
@@ -1305,8 +1314,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanDequeueWithLockingAsync()
     {
-        using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
-        using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
         var distributedLock = new CacheLockProvider(cache, messageBus, Log);
         await CanDequeueWithLockingImpAsync(distributedLock);
@@ -1318,12 +1327,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
 
-            Log.DefaultMinimumLevel = LogLevel.Trace;
             using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
 
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -1343,7 +1352,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
                 await w.CompleteAsync();
                 resetEvent.Set();
-            });
+            }, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
             await resetEvent.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1358,14 +1367,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }
 
     public virtual async Task CanHaveMultipleQueueInstancesWithLockingAsync()
     {
-        using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
-        using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
         var distributedLock = new CacheLockProvider(cache, messageBus, Log);
         await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
@@ -1377,6 +1387,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -1398,11 +1409,11 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     {
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {Id}", instanceCount, w.Id);
-                        var l = await distributedLock.AcquireAsync("test");
+                        var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
                         Assert.NotNull(l);
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
-                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);
@@ -1412,11 +1423,11 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         countdown.Signal();
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Signaled countdown: {Id}", instanceCount, w.Id);
-                    });
+                    }, cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
 
-                await Run.InParallelAsync(workItemCount, async i =>
+                await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
                     string id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
@@ -1427,7 +1438,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                await SystemClock.SleepAsync(50);
+                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
                 if (_logger.IsEnabled(LogLevel.Information))
@@ -1456,6 +1467,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             }
             finally
             {
+                await cancellationTokenSource.CancelAsync();
                 foreach (var q in workers)
                     await CleanupQueueAsync(q);
             }
@@ -1574,6 +1586,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         if (queue == null)
             return;
 
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -1583,6 +1596,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             await queue.StartWorkingAsync(async (item) =>
             {
+                _logger.LogDebug("Processing item: {Id} Value={Value}", item.Id, item.Value.Data);
                 if (item.Value.Data == "Delay")
                 {
                     // wait for queue item to get auto abandoned
@@ -1591,10 +1605,16 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     do
                     {
                         if (stats.Abandoned > 0)
+                        {
+                            _logger.LogTrace("Breaking, queue item was abandoned");
                             break;
+                        }
 
                         stats = await queue.GetQueueStatsAsync();
-                    } while (sw.Elapsed < TimeSpan.FromSeconds(10));
+                        _logger.LogTrace("Getting updated stats, Abandoned={Abandoned}", stats.Abandoned);
+
+                        await Task.Delay(50, cancellationTokenSource.Token);
+                    } while (sw.Elapsed < TimeSpan.FromSeconds(5));
 
                     Assert.Equal(1, stats.Abandoned);
                 }
@@ -1603,14 +1623,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 {
                     await item.CompleteAsync();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogDebug(ex, "Error completing item: {Message}", ex.Message);
                     errorEvent.Set();
                     throw;
                 }
 
                 successEvent.Set();
-            });
+            }, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
             await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
@@ -1620,6 +1641,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         finally
         {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }

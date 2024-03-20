@@ -33,7 +33,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         return resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
     }
 
-    [RetryFact]
+    [Fact]
     public Task CanRunAndScheduleConcurrently()
     {
         return CanRunConcurrentlyAsync();
@@ -47,7 +47,6 @@ public class ScheduledTimerTests : TestWithLoggingBase
 
     private async Task CanRunConcurrentlyAsync(TimeSpan? minimumIntervalTime = null)
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         const int iterations = 2;
         var countdown = new AsyncCountdownEvent(iterations);
 

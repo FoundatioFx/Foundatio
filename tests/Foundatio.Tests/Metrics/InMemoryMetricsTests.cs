@@ -31,7 +31,7 @@ public class InMemoryMetricsTests : MetricsClientTestBase
         return base.CanIncrementCounterAsync();
     }
 
-    [RetryFact]
+    [Fact]
     public override Task CanWaitForCounterAsync()
     {
         using (TestSystemClock.Install())

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -155,8 +155,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task CanSetMaxItems()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
-
         // run in tight loop so that the code is warmed up and we can catch timing issues
         for (int x = 0; x < 5; x++)
         {
@@ -196,7 +194,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
         var expiry = TimeSpan.FromMilliseconds(50);
         await client.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
-        await Task.Delay(expiry);
+
+        // Add 1ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
+        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(1)));
 
         Assert.False(await client.ExistsAsync("test"));
     }

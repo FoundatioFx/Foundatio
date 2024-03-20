@@ -25,7 +25,7 @@ public class InMemoryJobQueueTests : JobQueueTestsBase
         return base.CanRunMultipleQueueJobsAsync();
     }
 
-    [RetryFact]
+    [Fact]
     public override Task CanRunQueueJobWithLockFailAsync()
     {
         Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);

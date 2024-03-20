@@ -221,6 +221,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!_queue.TryDequeue(out var entry) || entry == null)
             return null;
 
+        ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
+
         entry.Attempts++;
         entry.DequeuedTimeUtc = SystemClock.UtcNow;
 
@@ -232,31 +234,30 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         await entry.RenewLockAsync();
         await OnDequeuedAsync(entry).AnyContext();
-        ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
 
         return entry;
     }
 
-    public override async Task RenewLockAsync(IQueueEntry<T> entry)
+    public override async Task RenewLockAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name} renew lock item: {Id}", _options.Name, entry.Id);
+        _logger.LogDebug("Queue {Name} renew lock item: {Id}", _options.Name, queueEntry.Id);
 
-        if (!_dequeued.TryGetValue(entry.Id, out var targetEntry))
+        if (!_dequeued.TryGetValue(queueEntry.Id, out var targetEntry))
             return;
 
         targetEntry.RenewedTimeUtc = SystemClock.UtcNow;
 
-        await OnLockRenewedAsync(entry).AnyContext();
-        _logger.LogTrace("Renew lock done: {Id}", entry.Id);
+        await OnLockRenewedAsync(queueEntry).AnyContext();
+        _logger.LogTrace("Renew lock done: {Id}", queueEntry.Id);
     }
 
-    public override async Task CompleteAsync(IQueueEntry<T> entry)
+    public override async Task CompleteAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name} complete item: {Id}", _options.Name, entry.Id);
-        if (entry.IsAbandoned || entry.IsCompleted)
+        _logger.LogDebug("Queue {Name} complete item: {Id}", _options.Name, queueEntry.Id);
+        if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
-        if (!_dequeued.TryRemove(entry.Id, out var info) || info == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var info) || info == null)
             throw new Exception("Unable to remove item from the dequeued list");
 
         if (_options.CompletedEntryRetentionLimit > 0)
@@ -266,42 +267,42 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 _completedQueue.TryDequeue(out _);
         }
 
-        entry.MarkCompleted();
+        queueEntry.MarkCompleted();
         Interlocked.Increment(ref _completedCount);
-        await OnCompletedAsync(entry).AnyContext();
-        _logger.LogTrace("Complete done: {Id}", entry.Id);
+        await OnCompletedAsync(queueEntry).AnyContext();
+        _logger.LogTrace("Complete done: {Id}", queueEntry.Id);
     }
 
-    public override async Task AbandonAsync(IQueueEntry<T> entry)
+    public override async Task AbandonAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {Id}", _options.Name, QueueId, entry.Id);
+        _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {Id}", _options.Name, QueueId, queueEntry.Id);
 
-        if (entry.IsAbandoned || entry.IsCompleted)
+        if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
-        if (!_dequeued.TryRemove(entry.Id, out var targetEntry) || targetEntry == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry == null)
         {
             foreach (var kvp in _queue)
             {
-                if (kvp.Id == entry.Id)
+                if (kvp.Id == queueEntry.Id)
                     throw new Exception("Unable to remove item from the dequeued list (item is in queue)");
             }
             foreach (var kvp in _deadletterQueue)
             {
-                if (kvp.Id == entry.Id)
+                if (kvp.Id == queueEntry.Id)
                     throw new Exception("Unable to remove item from the dequeued list (item is in dead letter)");
             }
 
             throw new Exception("Unable to remove item from the dequeued list");
         }
 
-        entry.MarkAbandoned();
+        queueEntry.MarkAbandoned();
         Interlocked.Increment(ref _abandonedCount);
-        _logger.LogTrace("Abandon complete: {Id}", entry.Id);
+        _logger.LogTrace("Abandon complete: {Id}", queueEntry.Id);
 
         try
         {
-            await OnAbandonedAsync(entry).AnyContext();
+            await OnAbandonedAsync(queueEntry).AnyContext();
         }
         finally
         {
@@ -309,18 +310,18 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             {
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
-                    _logger.LogTrace("Adding item to wait list for future retry: {Id}", entry.Id);
+                    _logger.LogTrace("Adding item to wait list for future retry: {Id}", queueEntry.Id);
                     var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _queueDisposedCancellationTokenSource.Token);
                 }
                 else
                 {
-                    _logger.LogTrace("Adding item back to queue for retry: {Id}", entry.Id);
+                    _logger.LogTrace("Adding item back to queue for retry: {Id}", queueEntry.Id);
                     _ = Task.Run(() => RetryAsync(targetEntry));
                 }
             }
             else
             {
-                _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", entry.Id);
+                _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", queueEntry.Id);
                 _deadletterQueue.Enqueue(targetEntry);
             }
         }
@@ -391,7 +392,9 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 _logger.LogError(ex, "DoMaintenance Error: {Message}", ex.Message);
         }
 
-        return minAbandonAt;
+        // Add a tiny buffer just in case the schedule next timer fires early.
+        // The system clock typically has a resolution of 10-15 milliseconds, so timers cannot be more accurate than this resolution.
+        return minAbandonAt.SafeAdd(TimeSpan.FromMilliseconds(15));
     }
 
     public override void Dispose()

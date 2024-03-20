@@ -18,7 +18,7 @@ public class ThrottledJob : JobWithLockBase
     private readonly ILockProvider _locker;
     public int RunCount { get; set; }
 
-    protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default(CancellationToken))
+    protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default)
     {
         return _locker.AcquireAsync(nameof(ThrottledJob), acquireTimeout: TimeSpan.Zero);
     }
@@ -26,7 +26,7 @@ public class ThrottledJob : JobWithLockBase
     protected override Task<JobResult> RunInternalAsync(JobContext context)
     {
         RunCount++;
-
+        _logger.LogDebug("Incremented Run Count: {RunCount}", RunCount);
         return Task.FromResult(JobResult.Success);
     }
 }

@@ -81,7 +81,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTests
     [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
     public override Task WillWorkWithSets()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.WillWorkWithSets();
     }
 

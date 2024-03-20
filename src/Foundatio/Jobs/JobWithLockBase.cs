@@ -20,7 +20,7 @@ public abstract class JobWithLockBase : IJob, IHaveLogger
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     ILogger IHaveLogger.Logger => _logger;
 
-    public async virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         var lockValue = await GetLockAsync(cancellationToken).AnyContext();
         if (lockValue == null)

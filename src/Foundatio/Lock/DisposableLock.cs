@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,7 @@ internal class DisposableLock : ILock
     private readonly ILogger _logger;
     private bool _isReleased;
     private int _renewalCount;
-    private readonly object _lock = new();
+    private readonly AsyncLock _lock = new();
     private readonly Stopwatch _duration;
     private readonly bool _shouldReleaseOnDispose;
 
@@ -41,7 +42,7 @@ internal class DisposableLock : ILock
 
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Disposing lock {Resource}", Resource);
+            _logger.LogTrace("Disposing lock ({LockId}) {Resource}", LockId, Resource);
 
         try
         {
@@ -50,42 +51,42 @@ internal class DisposableLock : ILock
         catch (Exception ex)
         {
             if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Unable to release lock {Resource}", Resource);
+                _logger.LogError(ex, "Unable to release lock ({LockId}) {Resource}", LockId, Resource);
         }
 
         if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Disposed lock {Resource}", Resource);
+            _logger.LogTrace("Disposed lock ({LockId}) {Resource}", LockId, Resource);
     }
 
     public async Task RenewAsync(TimeSpan? lockExtension = null)
     {
         if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Renewing lock {Resource}", Resource);
+            _logger.LogTrace("Renewing lock ({LockId}) {Resource}", LockId, Resource);
 
         await _lockProvider.RenewAsync(Resource, LockId, lockExtension).AnyContext();
         _renewalCount++;
 
         if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Renewed lock {Resource}", Resource);
+            _logger.LogDebug("Renewed lock ({LockId}) {Resource}", LockId, Resource);
     }
 
-    public Task ReleaseAsync()
+    public async Task ReleaseAsync()
     {
         if (_isReleased)
-            return Task.CompletedTask;
+            return;
 
-        lock (_lock)
+        using (await _lock.LockAsync().AnyContext())
         {
             if (_isReleased)
-                return Task.CompletedTask;
+                return;
 
             _isReleased = true;
             _duration.Stop();
 
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Releasing lock {Resource} after {Duration:g}", Resource, _duration.Elapsed);
+                _logger.LogDebug("Releasing lock ({LockId}) {Resource} after {Duration:g}", LockId, Resource, _duration.Elapsed);
 
-            return _lockProvider.ReleaseAsync(Resource, LockId);
+            await _lockProvider.ReleaseAsync(Resource, LockId);
         }
     }
 }
