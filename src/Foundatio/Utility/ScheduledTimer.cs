@@ -49,7 +49,7 @@ public class ScheduledTimer : IDisposable
         if (_next > utcNow && utcDate > _next)
         {
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousTicks} Next: {NextTicks}", utcDate.Value.Ticks, _next.Ticks);
+                _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
             return;
         }
 
@@ -66,7 +66,7 @@ public class ScheduledTimer : IDisposable
             if (_next > utcNow && utcDate > _next)
             {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousTicks} Next: {NextTicks}", utcDate.Value.Ticks, _next.Ticks);
+                    _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
                 return;
             }
 
