@@ -1409,11 +1409,11 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     {
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {Id}", instanceCount, w.Id);
-                        var l = await distributedLock.AcquireAsync("test");
+                        var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
                         Assert.NotNull(l);
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
-                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50));
+                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);
