@@ -1605,12 +1605,17 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     do
                     {
                         if (stats.Abandoned > 0)
+                        {
+                            _logger.LogTrace("Breaking, queue item was abandoned");
                             break;
+                        }
 
                         stats = await queue.GetQueueStatsAsync();
+                        _logger.LogTrace("Getting updated stats, Abandoned={Abandoned}", stats.Abandoned);
+
+                        await Task.Delay(50, cancellationTokenSource.Token);
                     } while (sw.Elapsed < TimeSpan.FromSeconds(5));
 
-                    _logger.LogDebug("Asserting abandon count is 1, {Actual}", stats.Abandoned);
                     Assert.Equal(1, stats.Abandoned);
                 }
 
