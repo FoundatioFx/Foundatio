@@ -559,7 +559,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             var info = await storage.GetFileInfoAsync("nope");
             Assert.Null(info);
 
-            await Run.InParallelAsync(10, async i =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (i, ct)  =>
             {
                 var ev = new PostInfo
                 {
@@ -573,13 +573,13 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
                     UserAgent = "test"
                 };
 
-                await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev);
-                queueItems.Add(i);
+                await storage.SaveObjectAsync(Path.Combine(queueFolder, i + ".json"), ev, cancellationToken: ct);
+                queueItems.Add(i, ct);
             });
 
             Assert.Equal(10, (await storage.GetFileListAsync()).Count);
 
-            await Run.InParallelAsync(10, async i =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, _)  =>
             {
                 string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                 var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);

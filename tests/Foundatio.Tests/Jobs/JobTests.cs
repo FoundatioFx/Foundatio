@@ -128,7 +128,7 @@ public class JobTests : TestWithLoggingBase
         await job.RunContinuousAsync(iterationLimit: 2);
         Assert.Equal(3, job.RunCount);
 
-        await Run.InParallelAsync(2, i => job.RunAsync());
+        await Parallel.ForEachAsync(Enumerable.Range(1, 2), async (_, ct) => await job.RunAsync(ct));
         Assert.Equal(4, job.RunCount);
     }
 

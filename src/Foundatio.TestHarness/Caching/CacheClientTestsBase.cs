@@ -210,7 +210,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
             long adds = 0;
-            await Run.InParallelAsync(5, async i =>
+
+            await Parallel.ForEachAsync(Enumerable.Range(1, 5), async (i, _) =>
             {
                 if (await cache.AddAsync(cacheKey, i, TimeSpan.FromMinutes(1)))
                     Interlocked.Increment(ref adds);

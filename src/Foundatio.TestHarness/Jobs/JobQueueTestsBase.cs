@@ -74,7 +74,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         using var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
         await queue.DeleteQueueAsync();
 
-        var enqueueTask = Run.InParallelAsync(workItemCount, index => queue.EnqueueAsync(new SampleQueueWorkItem
+        var enqueueTask = Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), async (index, _) => await queue.EnqueueAsync(new SampleQueueWorkItem
         {
             Created = SystemClock.UtcNow,
             Path = "somepath" + index
@@ -99,10 +99,10 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         using var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero);
         await queue.DeleteQueueAsync();
 
-        var enqueueTask = Run.InParallelAsync(workItemCount, index =>
+        var enqueueTask = Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), async (index, _) =>
         {
             _logger.LogInformation($"Enqueue #{index}");
-            return queue.EnqueueAsync(new SampleQueueWorkItem
+            await queue.EnqueueAsync(new SampleQueueWorkItem
             {
                 Created = SystemClock.UtcNow,
                 Path = "somepath" + index
@@ -147,10 +147,10 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             }
             _logger.LogInformation("Done setting up queues");
 
-            var enqueueTask = Run.InParallelAsync(workItemCount, index =>
+            var enqueueTask = Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), async (_, _) =>
             {
                 var queue = queues[RandomData.GetInt(0, jobCount - 1)];
-                return queue.EnqueueAsync(new SampleQueueWorkItem
+                await queue.EnqueueAsync(new SampleQueueWorkItem
                 {
                     Created = SystemClock.UtcNow,
                     Path = RandomData.GetString()
@@ -159,7 +159,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             _logger.LogInformation("Done enqueueing");
 
             var cancellationTokenSource = new CancellationTokenSource();
-            await Run.InParallelAsync(jobCount, async index =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), async (index, _) =>
             {
                 var queue = queues[index - 1];
                 var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, metrics, Log);

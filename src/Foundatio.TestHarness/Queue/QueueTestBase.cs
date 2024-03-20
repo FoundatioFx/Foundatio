@@ -971,7 +971,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     workers.Add(q);
                 }
 
-                await Run.InParallelAsync(workItemCount, async i =>
+                await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
                     string id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
@@ -981,8 +981,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {Id}", i, id);
                 });
 
-                await countdown.WaitAsync();
-                await SystemClock.SleepAsync(50);
+                await countdown.WaitAsync(cancellationTokenSource.Token);
+                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
 
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
@@ -1428,7 +1428,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     workers.Add(q);
                 }
 
-                await Run.InParallelAsync(workItemCount, async i =>
+                await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
                     string id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
@@ -1439,7 +1439,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                await SystemClock.SleepAsync(50);
+                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
                 if (_logger.IsEnabled(LogLevel.Information))

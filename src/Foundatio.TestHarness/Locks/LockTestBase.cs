@@ -55,7 +55,7 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         int counter = 0;
 
-        await Run.InParallelAsync(25, async i =>
+        await Parallel.ForEachAsync(Enumerable.Range(1, 25), async (_, _) =>
         {
             bool success = await locker.TryUsingAsync("test", () =>
             {

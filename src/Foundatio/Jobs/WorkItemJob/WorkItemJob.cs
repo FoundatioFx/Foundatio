@@ -32,7 +32,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
     IQueue<WorkItemData> IQueueJob<WorkItemData>.Queue => _queue;
     ILogger IHaveLogger.Logger => _logger;
 
-    public async virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         IQueueEntry<WorkItemData> queueEntry;
 
