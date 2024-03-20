@@ -221,6 +221,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!_queue.TryDequeue(out var entry) || entry == null)
             return null;
 
+        ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
+
         entry.Attempts++;
         entry.DequeuedTimeUtc = SystemClock.UtcNow;
 
@@ -231,7 +233,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         _logger.LogTrace("Dequeue: Got Item");
 
         await entry.RenewLockAsync();
-        ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
         await OnDequeuedAsync(entry).AnyContext();
 
         return entry;
