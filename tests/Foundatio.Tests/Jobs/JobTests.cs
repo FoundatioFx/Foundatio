@@ -117,7 +117,7 @@ public class JobTests : TestWithLoggingBase
         }
     }
 
-    [RetryFact]
+    [Fact]
     public async Task CanRunJobsWithLocks()
     {
         var job = new WithLockingJob(Log);
