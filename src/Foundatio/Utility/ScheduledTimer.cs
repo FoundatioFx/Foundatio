@@ -38,6 +38,7 @@ public class ScheduledTimer : IDisposable
 
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (isTraceLogLevelEnabled) _logger.LogTrace("ScheduleNext called: value={NextRun:O}", utcDate.Value);
+
         if (utcDate == DateTime.MaxValue)
         {
             if (isTraceLogLevelEnabled) _logger.LogTrace("Ignoring MaxValue");

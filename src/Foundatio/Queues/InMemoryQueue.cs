@@ -230,8 +230,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         Interlocked.Increment(ref _dequeuedCount);
         _logger.LogTrace("Dequeue: Got Item");
 
-        await entry.RenewLockAsync();
         ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
+        await entry.RenewLockAsync();
         await OnDequeuedAsync(entry).AnyContext();
 
         return entry;

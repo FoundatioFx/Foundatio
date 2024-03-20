@@ -1077,13 +1077,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         int completedCount = 0;
 
-        using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
+        using var metrics = new InMemoryMetricsClient(o => o.Buffered(false).LoggerFactory(Log));
 
 #pragma warning disable CS0618 // Type or member is obsolete
         var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
 #pragma warning restore CS0618 // Type or member is obsolete
-        var options = new InMemoryQueueOptions<WorkItemData> { Behaviors = new[] { behavior }, LoggerFactory = Log };
-        using var queue = new InMemoryQueue<WorkItemData>(options);
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.Behaviors(behavior).LoggerFactory(Log));
 
         Task Handler(object sender, CompletedEventArgs<WorkItemData> e)
         {
@@ -1597,6 +1596,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             await queue.StartWorkingAsync(async (item) =>
             {
+                _logger.LogDebug("Processing item: {Id} Value={Value}", item.Id, item.Value.Data);
                 if (item.Value.Data == "Delay")
                 {
                     // wait for queue item to get auto abandoned
