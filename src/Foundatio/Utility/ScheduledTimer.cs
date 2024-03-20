@@ -102,6 +102,9 @@ public class ScheduledTimer : IDisposable
             return;
         }
 
+        // If the callback runs before the next time, then store it here before we reset it and use it for scheduling.
+        DateTime? nextTimeOverride = null;
+
         if (isTraceLogLevelEnabled) _logger.LogTrace("Starting RunCallbackAsync");
         using (await _lock.LockAsync().AnyContext())
         {
@@ -115,6 +118,13 @@ public class ScheduledTimer : IDisposable
             }
 
             _last = SystemClock.UtcNow;
+            if (SystemClock.UtcNow < _next)
+            {
+                _logger.LogWarning("ScheduleNext RunCallbackAsync was called before next run time {NextRun:O}, setting next to current time and rescheduling", _next);
+                nextTimeOverride = _next;
+                _next = SystemClock.UtcNow;
+                _shouldRunAgainImmediately = true;
+            }
         }
 
         try
@@ -147,7 +157,10 @@ public class ScheduledTimer : IDisposable
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Finished sleeping");
             }
 
-            var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
+            var nextRun =  SystemClock.UtcNow.AddMilliseconds(10);
+            if (nextRun < nextTimeOverride)
+                nextRun = nextTimeOverride.Value;
+
             if (_shouldRunAgainImmediately || next.HasValue && next.Value <= nextRun)
                 ScheduleNext(nextRun);
             else if (next.HasValue)
