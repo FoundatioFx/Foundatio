@@ -135,15 +135,14 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunThrottledJobs()
     {
-        using var client = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
+        using var client = new InMemoryCacheClient(o => o.LoggerFactory(Log));
         var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
 
         var sw = Stopwatch.StartNew();
-        using (var timeoutCancellationTokenSource = new CancellationTokenSource(1000))
-        {
-            await Task.WhenAll(jobs.Select(job => job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: timeoutCancellationTokenSource.Token)));
-        }
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
+        await Task.WhenAll(jobs.Select(job => job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: timeoutCancellationTokenSource.Token)));
         sw.Stop();
+
         Assert.InRange(jobs.Sum(j => j.RunCount), 4, 14);
         _logger.LogInformation(jobs.Sum(j => j.RunCount).ToString());
         Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);

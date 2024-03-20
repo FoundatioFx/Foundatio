@@ -1315,8 +1315,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanDequeueWithLockingAsync()
     {
-        using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
-        using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
         var distributedLock = new CacheLockProvider(cache, messageBus, Log);
         await CanDequeueWithLockingImpAsync(distributedLock);
@@ -1375,8 +1375,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanHaveMultipleQueueInstancesWithLockingAsync()
     {
-        using var cache = new InMemoryCacheClient(new InMemoryCacheClientOptions { LoggerFactory = Log });
-        using var messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions { LoggerFactory = Log });
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
         var distributedLock = new CacheLockProvider(cache, messageBus, Log);
         await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
