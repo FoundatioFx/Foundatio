@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -291,6 +291,8 @@ public class InMemoryQueueTests : QueueTestBase
     [Fact]
     public override Task CanHandleAutoAbandonInWorker()
     {
+        Log.DefaultMinimumLevel = LogLevel.Trace;
+        Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
         return base.CanHandleAutoAbandonInWorker();
     }
 
