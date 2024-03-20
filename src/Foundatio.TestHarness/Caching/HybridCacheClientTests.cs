@@ -13,14 +13,18 @@ namespace Foundatio.Tests.Caching;
 
 public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
 {
-    protected readonly ICacheClient _distributedCache = new InMemoryCacheClient(new InMemoryCacheClientOptions());
-    protected readonly IMessageBus _messageBus = new InMemoryMessageBus(new InMemoryMessageBusOptions());
+    protected readonly ICacheClient _distributedCache;
+    protected readonly IMessageBus _messageBus;
 
-    public HybridCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public HybridCacheClientTests(ITestOutputHelper output) : base(output)
+    {
+        _distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+    }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new HybridCacheClient(_distributedCache, _messageBus, new InMemoryCacheClientOptions { CloneValues = true, ShouldThrowOnSerializationError = shouldThrowOnSerializationError }, Log);
+        return new HybridCacheClient(_distributedCache, _messageBus, new InMemoryCacheClientOptions { CloneValues = true, ShouldThrowOnSerializationError = shouldThrowOnSerializationError, LoggerFactory = Log }, Log);
     }
 
     [Fact]

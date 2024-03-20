@@ -24,7 +24,7 @@ public class ScheduledJobService : BackgroundService, IJobStatus
     public ScheduledJobService(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
     {
         _serviceProvider = serviceProvider;
-        var cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient();
+        var cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
         _jobs = new List<ScheduledJobRunner>(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.JobFactory, j.Schedule, cacheClient, loggerFactory)));
 
         var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();

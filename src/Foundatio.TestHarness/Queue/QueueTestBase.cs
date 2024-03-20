@@ -265,7 +265,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         {
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
-            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(), Log));
+            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(o => o.LoggerFactory(Log)), Log));
 
             await queue.EnqueueAsync(new SimpleWorkItem
             {
