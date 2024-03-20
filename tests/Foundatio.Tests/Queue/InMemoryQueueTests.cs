@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Utility;
@@ -385,6 +386,7 @@ public class InMemoryQueueTests : QueueTestBase
     {
         // create queue with short work item timeout so it will be auto abandoned
         var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
+        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // completion source to wait for CompleteAsync call before the assert
         var taskCompletionSource = new TaskCompletionSource<bool>();
@@ -409,7 +411,7 @@ public class InMemoryQueueTests : QueueTestBase
                 // infrastructure handles user exception incorrectly
                 taskCompletionSource.SetResult(true);
             }
-        });
+        }, cancellationToken: cancellationTokenSource.Token);
 
         // enqueue item which will be processed after it's auto abandoned
         await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
