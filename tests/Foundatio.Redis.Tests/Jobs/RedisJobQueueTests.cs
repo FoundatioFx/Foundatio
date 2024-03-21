@@ -6,42 +6,41 @@ using Foundatio.Tests.Jobs;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Redis.Tests.Jobs
+namespace Foundatio.Redis.Tests.Jobs;
+
+public class RedisJobQueueTests : JobQueueTestsBase
 {
-    public class RedisJobQueueTests : JobQueueTestsBase
+    public RedisJobQueueTests(ITestOutputHelper output) : base(output)
     {
-        public RedisJobQueueTests(ITestOutputHelper output) : base(output)
-        {
-            var muxer = SharedConnection.GetMuxer(Log);
-            muxer.FlushAllAsync().GetAwaiter().GetResult();
-        }
+        var muxer = SharedConnection.GetMuxer(Log);
+        muxer.FlushAllAsync().GetAwaiter().GetResult();
+    }
 
-        protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay)
-        {
-            return new RedisQueue<SampleQueueWorkItem>(o => o
-                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
-                .Retries(retries)
-                .RetryDelay(retryDelay)
-                .LoggerFactory(Log)
-            );
-        }
+    protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay)
+    {
+        return new RedisQueue<SampleQueueWorkItem>(o => o
+            .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
+            .Retries(retries)
+            .RetryDelay(retryDelay)
+            .LoggerFactory(Log)
+        );
+    }
 
-        [Fact]
-        public override Task CanRunMultipleQueueJobsAsync()
-        {
-            return base.CanRunMultipleQueueJobsAsync();
-        }
+    [Fact]
+    public override Task CanRunMultipleQueueJobsAsync()
+    {
+        return base.CanRunMultipleQueueJobsAsync();
+    }
 
-        [Fact]
-        public override Task CanRunQueueJobWithLockFailAsync()
-        {
-            return base.CanRunQueueJobWithLockFailAsync();
-        }
+    [Fact]
+    public override Task CanRunQueueJobWithLockFailAsync()
+    {
+        return base.CanRunQueueJobWithLockFailAsync();
+    }
 
-        [Fact]
-        public override Task CanRunQueueJobAsync()
-        {
-            return base.CanRunQueueJobAsync();
-        }
+    [Fact]
+    public override Task CanRunQueueJobAsync()
+    {
+        return base.CanRunQueueJobAsync();
     }
 }

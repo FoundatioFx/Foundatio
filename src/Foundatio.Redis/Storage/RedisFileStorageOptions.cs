@@ -1,26 +1,25 @@
 ﻿using System;
 using StackExchange.Redis;
 
-namespace Foundatio.Storage
+namespace Foundatio.Storage;
+
+public class RedisFileStorageOptions : SharedOptions
 {
-    public class RedisFileStorageOptions : SharedOptions
+    public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
+    public string ContainerName { get; set; } = "storage";
+}
+
+public class RedisFileStorageOptionsBuilder : SharedOptionsBuilder<RedisFileStorageOptions, RedisFileStorageOptionsBuilder>
+{
+    public RedisFileStorageOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
     {
-        public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
-        public string ContainerName { get; set; } = "storage";
+        Target.ConnectionMultiplexer = connectionMultiplexer;
+        return this;
     }
 
-    public class RedisFileStorageOptionsBuilder : SharedOptionsBuilder<RedisFileStorageOptions, RedisFileStorageOptionsBuilder>
+    public RedisFileStorageOptionsBuilder ContainerName(string containerName)
     {
-        public RedisFileStorageOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
-        {
-            Target.ConnectionMultiplexer = connectionMultiplexer;
-            return this;
-        }
-
-        public RedisFileStorageOptionsBuilder ContainerName(string containerName)
-        {
-            Target.ContainerName = containerName ?? throw new ArgumentNullException(nameof(containerName));
-            return this;
-        }
+        Target.ContainerName = containerName ?? throw new ArgumentNullException(nameof(containerName));
+        return this;
     }
 }

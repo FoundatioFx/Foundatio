@@ -1,12 +1,11 @@
 ﻿using System;
 
-namespace Foundatio.Extensions
+namespace Foundatio.Extensions;
+
+internal static class TimespanExtensions
 {
-    internal static class TimespanExtensions
+    public static TimeSpan Min(this TimeSpan source, TimeSpan other)
     {
-        public static TimeSpan Min(this TimeSpan source, TimeSpan other)
-        {
-            return source.Ticks > other.Ticks ? other : source;
-        }
+        return source.Ticks > other.Ticks ? other : source;
     }
 }

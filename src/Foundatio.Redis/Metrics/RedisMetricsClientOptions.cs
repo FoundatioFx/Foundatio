@@ -1,19 +1,17 @@
-﻿using System;
-using StackExchange.Redis;
+﻿using StackExchange.Redis;
 
-namespace Foundatio.Metrics
+namespace Foundatio.Metrics;
+
+public class RedisMetricsClientOptions : SharedMetricsClientOptions
 {
-    public class RedisMetricsClientOptions : SharedMetricsClientOptions
-    {
-        public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
-    }
+    public IConnectionMultiplexer ConnectionMultiplexer { get; set; }
+}
 
-    public class RedisMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<RedisMetricsClientOptions, RedisMetricsClientOptionsBuilder>
+public class RedisMetricsClientOptionsBuilder : SharedMetricsClientOptionsBuilder<RedisMetricsClientOptions, RedisMetricsClientOptionsBuilder>
+{
+    public RedisMetricsClientOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
     {
-        public RedisMetricsClientOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
-        {
-            Target.ConnectionMultiplexer = connectionMultiplexer;
-            return this;
-        }
+        Target.ConnectionMultiplexer = connectionMultiplexer;
+        return this;
     }
 }

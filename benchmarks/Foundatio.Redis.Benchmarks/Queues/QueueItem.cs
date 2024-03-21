@@ -1,9 +1,6 @@
-using System;
+namespace Foundatio.Benchmarks.Queues;
 
-namespace Foundatio.Benchmarks.Queues
+public class QueueItem
 {
-    public class QueueItem
-    {
-        public int Id { get; set; }
-    }
+    public int Id { get; set; }
 }

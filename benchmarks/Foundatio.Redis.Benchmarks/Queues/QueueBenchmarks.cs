@@ -3,74 +3,73 @@ using BenchmarkDotNet.Attributes;
 using Foundatio.Queues;
 using StackExchange.Redis;
 
-namespace Foundatio.Benchmarks.Queues
+namespace Foundatio.Benchmarks.Queues;
+
+public class QueueBenchmarks
 {
-    public class QueueBenchmarks
+    private const int ITEM_COUNT = 1000;
+    private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>();
+    private readonly IQueue<QueueItem> _redisQueue = new RedisQueue<QueueItem>(o => o.ConnectionMultiplexer(ConnectionMultiplexer.Connect("localhost")));
+
+    [IterationSetup]
+    public void Setup()
     {
-        private const int ITEM_COUNT = 1000;
-        private readonly IQueue<QueueItem> _inMemoryQueue = new InMemoryQueue<QueueItem>();
-        private readonly IQueue<QueueItem> _redisQueue = new RedisQueue<QueueItem>(o => o.ConnectionMultiplexer(ConnectionMultiplexer.Connect("localhost")));
+        _inMemoryQueue.DeleteQueueAsync().GetAwaiter().GetResult();
+        _redisQueue.DeleteQueueAsync().GetAwaiter().GetResult();
+    }
 
-        [IterationSetup]
-        public void Setup()
+    [IterationSetup(Target = nameof(DequeueInMemoryQueue))]
+    [Benchmark]
+    public void EnqueueInMemoryQueue()
+    {
+        EnqueueQueue(_inMemoryQueue);
+    }
+
+    [Benchmark]
+    public void DequeueInMemoryQueue()
+    {
+        DequeueQueue(_inMemoryQueue);
+    }
+
+    [IterationSetup(Target = nameof(DequeueRedisQueue))]
+    [Benchmark]
+    public void EnqueueRedisQueue()
+    {
+        EnqueueQueue(_redisQueue);
+    }
+
+    [Benchmark]
+    public void DequeueRedisQueue()
+    {
+        DequeueQueue(_redisQueue);
+    }
+
+    private void EnqueueQueue(IQueue<QueueItem> queue)
+    {
+        try
         {
-            _inMemoryQueue.DeleteQueueAsync().GetAwaiter().GetResult();
-            _redisQueue.DeleteQueueAsync().GetAwaiter().GetResult();
+            for (int i = 0; i < ITEM_COUNT; i++)
+                queue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
         }
-
-        [IterationSetup(Target = nameof(DequeueInMemoryQueue))]
-        [Benchmark]
-        public void EnqueueInMemoryQueue()
+        catch (Exception ex)
         {
-            EnqueueQueue(_inMemoryQueue);
+            Console.WriteLine(ex);
         }
+    }
 
-        [Benchmark]
-        public void DequeueInMemoryQueue()
+    private void DequeueQueue(IQueue<QueueItem> queue)
+    {
+        try
         {
-            DequeueQueue(_inMemoryQueue);
-        }
-
-        [IterationSetup(Target = nameof(DequeueRedisQueue))]
-        [Benchmark]
-        public void EnqueueRedisQueue()
-        {
-            EnqueueQueue(_redisQueue);
-        }
-
-        [Benchmark]
-        public void DequeueRedisQueue()
-        {
-            DequeueQueue(_redisQueue);
-        }
-
-        private void EnqueueQueue(IQueue<QueueItem> queue)
-        {
-            try
+            for (int i = 0; i < ITEM_COUNT; i++)
             {
-                for (int i = 0; i < ITEM_COUNT; i++)
-                    queue.EnqueueAsync(new QueueItem { Id = i }).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
+                var entry = queue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
+                entry.CompleteAsync().GetAwaiter().GetResult();
             }
         }
-
-        private void DequeueQueue(IQueue<QueueItem> queue)
+        catch (Exception ex)
         {
-            try
-            {
-                for (int i = 0; i < ITEM_COUNT; i++)
-                {
-                    var entry = queue.DequeueAsync(TimeSpan.Zero).GetAwaiter().GetResult();
-                    entry.CompleteAsync().GetAwaiter().GetResult();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-            }
+            Console.WriteLine(ex);
         }
     }
 }

@@ -1,19 +1,17 @@
-﻿using System;
-using StackExchange.Redis;
+﻿using StackExchange.Redis;
 
-namespace Foundatio.Messaging
+namespace Foundatio.Messaging;
+
+public class RedisMessageBusOptions : SharedMessageBusOptions
 {
-    public class RedisMessageBusOptions : SharedMessageBusOptions
-    {
-        public ISubscriber Subscriber { get; set; }
-    }
+    public ISubscriber Subscriber { get; set; }
+}
 
-    public class RedisMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RedisMessageBusOptions, RedisMessageBusOptionsBuilder>
+public class RedisMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RedisMessageBusOptions, RedisMessageBusOptionsBuilder>
+{
+    public RedisMessageBusOptionsBuilder Subscriber(ISubscriber subscriber)
     {
-        public RedisMessageBusOptionsBuilder Subscriber(ISubscriber subscriber)
-        {
-            Target.Subscriber = subscriber;
-            return this;
-        }
+        Target.Subscriber = subscriber;
+        return this;
     }
 }
