@@ -125,13 +125,13 @@ public class InMemoryCacheClient : IMemoryCacheClient
             _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         bool wasExpectedValue = false;
-        bool success = _memory.TryUpdate(key, (key, existingEntry) =>
+        bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", key);
+                    _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
 
                 existingEntry.ExpiresAt = DateTime.MinValue;
                 wasExpectedValue = true;
@@ -484,10 +484,10 @@ public class InMemoryCacheClient : IMemoryCacheClient
         {
             var items = new HashSet<string>(new[] { stringValue });
             var entry = new CacheEntry(items, expiresAt, _shouldClone);
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
+            _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (!(existingEntry.Value is ICollection<string> collection))
-                    throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
+                if (existingEntry.Value is not ICollection<string> collection)
+                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
                 collection.Add(stringValue);
                 existingEntry.Value = collection;
@@ -506,10 +506,10 @@ public class InMemoryCacheClient : IMemoryCacheClient
         {
             var items = new HashSet<T>(values);
             var entry = new CacheEntry(items, expiresAt, _shouldClone);
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
+            _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (!(existingEntry.Value is ICollection<T> collection))
-                    throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
+                if (existingEntry.Value is not ICollection<T> collection)
+                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
                 collection.AddRange(items);
                 existingEntry.Value = collection;
@@ -546,9 +546,9 @@ public class InMemoryCacheClient : IMemoryCacheClient
         if (values is string stringValue)
         {
             var items = new HashSet<string>(new[] { stringValue });
-            _memory.TryUpdate(key, (_, existingEntry) =>
+            _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is ICollection<string> collection && collection.Count > 0)
+                if (existingEntry.Value is ICollection<string> { Count: > 0 } collection)
                 {
                     foreach (string value in items)
                         collection.Remove(value);
@@ -559,7 +559,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
                 if (expiresIn.HasValue)
                     existingEntry.ExpiresAt = expiresAt;
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
@@ -568,9 +568,9 @@ public class InMemoryCacheClient : IMemoryCacheClient
         else
         {
             var items = new HashSet<T>(values);
-            _memory.TryUpdate(key, (_, existingEntry) =>
+            _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is ICollection<T> collection && collection.Count > 0)
+                if (existingEntry.Value is ICollection<T> { Count: > 0 } collection)
                 {
                     foreach (var value in items)
                         collection.Remove(value);
@@ -581,7 +581,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
                 if (expiresIn.HasValue)
                     existingEntry.ExpiresAt = expiresAt;
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", key);
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
@@ -620,7 +620,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (addOnly)
         {
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
+            _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
                 wasUpdated = false;
 
@@ -628,7 +628,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
                 if (existingEntry.ExpiresAt < SystemClock.UtcNow)
                 {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Replacing expired cache key: {Key}", key);
+                        _logger.LogTrace("Replacing expired cache key: {Key}", existingKey);
 
                     wasUpdated = true;
                     return entry;
