@@ -3,8 +3,6 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -34,10 +32,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     [Fact]
     public override Task CanAcquireAndReleaseLockAsync()
     {
-        using (TestSystemClock.Install())
-        {
-            return base.CanAcquireAndReleaseLockAsync();
-        }
+        return base.CanAcquireAndReleaseLockAsync();
     }
 
     [Fact]
@@ -85,9 +80,6 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     [Fact]
     public override Task WillThrottleCallsAsync()
     {
-        Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
-        Log.SetLogLevel<InMemoryMessageBus>(LogLevel.Trace);
-
         return base.WillThrottleCallsAsync();
     }
 
