@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -58,12 +58,12 @@ internal class DisposableLock : ILock
             _logger.LogTrace("Disposed lock {Resource} ({LockId})", Resource, LockId);
     }
 
-    public async Task RenewAsync(TimeSpan? lockExtension = null)
+    public async Task RenewAsync(TimeSpan? timeUntilExpires = null)
     {
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
 
-        await _lockProvider.RenewAsync(Resource, LockId, lockExtension).AnyContext();
+        await _lockProvider.RenewAsync(Resource, LockId, timeUntilExpires).AnyContext();
         _renewalCount++;
 
         if (_logger.IsEnabled(LogLevel.Debug))
