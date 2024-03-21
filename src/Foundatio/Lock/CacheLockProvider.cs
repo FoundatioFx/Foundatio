@@ -87,7 +87,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
 
         if (isDebugLogLevelEnabled)
-            _logger.LogDebug("Attempting to acquire lock ({LockId}): {Resource}", lockId, resource);
+            _logger.LogDebug("Attempting to acquire lock {Resource} ({LockId})", resource, lockId);
 
         using var activity = StartLockActivity(resource);
 
@@ -107,19 +107,19 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
                 catch (Exception ex)
                 {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace(ex, "Error acquiring lock ({LockId}): {Resource}", lockId, resource);
+                        _logger.LogTrace(ex, "Error acquiring lock {Resource} ({LockId})", resource, lockId);
                 }
 
                 if (gotLock)
                     break;
 
                 if (isDebugLogLevelEnabled)
-                    _logger.LogDebug("Failed to acquire lock ({LockId}): {Resource}", lockId, resource);
+                    _logger.LogDebug("Failed to acquire lock {Resource} ({LockId})", resource, lockId);
 
                 if (cancellationToken.IsCancellationRequested)
                 {
                     if (isTraceLogLevelEnabled && shouldWait)
-                        _logger.LogTrace("Cancellation requested while acquiring lock ({LockId}): {Resource}", lockId, resource);
+                        _logger.LogTrace("Cancellation requested while acquiring lock {Resource} ({LockId})", resource, lockId);
 
                     break;
                 }
@@ -138,7 +138,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
                     delayAmount = TimeSpan.FromSeconds(3);
 
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock ({LockId}): {Resource}", delayAmount, lockId, resource);
+                    _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})", delayAmount, resource, lockId);
 
                 // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                 using (var maxWaitCancellationTokenSource = new CancellationTokenSource(delayAmount))
@@ -177,17 +177,17 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
             _lockTimeoutCounter.Add(1);
 
             if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
-                _logger.LogTrace("Cancellation requested for lock ({LockId}) {Resource} after {Duration:g}", lockId, resource, sw.Elapsed);
+                _logger.LogTrace("Cancellation requested for lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
             else if (_logger.IsEnabled(LogLevel.Warning))
-                _logger.LogWarning("Failed to acquire lock ({LockId}) {Resource} after {Duration:g}", lockId, resource, sw.Elapsed);
+                _logger.LogWarning("Failed to acquire lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
 
             return null;
         }
 
         if (sw.Elapsed > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Warning))
-            _logger.LogWarning("Acquired lock ({LockId}) {Resource} after {Duration:g}", lockId, resource, sw.Elapsed);
+            _logger.LogWarning("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
         else if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Acquired lock ({LockId}) {Resource} after {Duration:g}", lockId, resource, sw.Elapsed);
+            _logger.LogDebug("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
 
         return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
     }
