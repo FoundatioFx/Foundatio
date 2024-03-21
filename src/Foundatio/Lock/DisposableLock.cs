@@ -86,7 +86,7 @@ internal class DisposableLock : ILock
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Releasing lock ({LockId}) {Resource} after {Duration:g}", LockId, Resource, _duration.Elapsed);
 
-            await _lockProvider.ReleaseAsync(Resource, LockId);
+            await _lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
         }
     }
 }

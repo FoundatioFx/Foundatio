@@ -67,7 +67,7 @@ internal class DisposableLockCollection : ILock
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
 
-            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync()));
+            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
         }
     }
 

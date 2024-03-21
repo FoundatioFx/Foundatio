@@ -53,7 +53,7 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
         {
             await runner.RunAsync(stoppingToken).AnyContext();
 #if NET8_0_OR_GREATER
-            await _stoppingCts.CancelAsync();
+            await _stoppingCts.CancelAsync().AnyContext();
 #else
             _stoppingCts.Cancel();
 #endif
@@ -79,7 +79,7 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
         try
         {
 #if NET8_0_OR_GREATER
-            await _stoppingCts.CancelAsync();
+            await _stoppingCts.CancelAsync().AnyContext();
 #else
             _stoppingCts.Cancel();
 #endif
