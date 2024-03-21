@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -895,7 +895,10 @@ public class InMemoryCacheClient : IMemoryCacheClient
                     break;
             }
 
-            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit.", oldest);
+            if (oldest.Key is null)
+                return;
+
+            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
             if (cacheEntry != null && cacheEntry.ExpiresAt < SystemClock.UtcNow)
                 expiredKey = oldest.Key;
