@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -943,7 +943,7 @@ public class InMemoryCacheClient : IMemoryCacheClient
         ItemExpired?.Dispose();
     }
 
-    private record CacheEntry
+    private sealed record CacheEntry
     {
         private object _cacheValue;
         private static long _instanceCount;
