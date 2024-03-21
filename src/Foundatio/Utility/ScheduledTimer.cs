@@ -157,7 +157,7 @@ public class ScheduledTimer : IDisposable
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Finished sleeping");
             }
 
-            var nextRun =  SystemClock.UtcNow.AddMilliseconds(10);
+            var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
             if (nextRun < nextTimeOverride)
                 nextRun = nextTimeOverride.Value;
 

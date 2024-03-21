@@ -559,7 +559,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             var info = await storage.GetFileInfoAsync("nope");
             Assert.Null(info);
 
-            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (i, ct)  =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (i, ct) =>
             {
                 var ev = new PostInfo
                 {
@@ -579,7 +579,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
             Assert.Equal(10, (await storage.GetFileListAsync()).Count);
 
-            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, _)  =>
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, _) =>
             {
                 string path = Path.Combine(queueFolder, queueItems.Random() + ".json");
                 var eventPost = await storage.GetEventPostAndSetActiveAsync(Path.Combine(queueFolder, RandomData.GetInt(0, 25) + ".json"), _logger);

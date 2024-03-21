@@ -1,5 +1,4 @@
-﻿using System;
-using Foundatio.Force.DeepCloner.Helpers;
+﻿using Foundatio.Force.DeepCloner.Helpers;
 
 namespace Foundatio.Utility;
 

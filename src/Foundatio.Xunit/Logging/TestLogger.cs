@@ -21,7 +21,8 @@ public class TestLogger : ILoggerFactory
 
     public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions> configure = null)
     {
-        Options = new TestLoggerOptions {
+        Options = new TestLoggerOptions
+        {
             WriteLogEntryFunc = logEntry =>
             {
                 output.WriteLine(logEntry.ToString(false));

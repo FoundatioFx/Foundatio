@@ -17,7 +17,8 @@ public static class LoggingExtensions
         Action<TestLoggerOptions> configure = null)
     {
 
-        var options = new TestLoggerOptions {
+        var options = new TestLoggerOptions
+        {
             WriteLogEntryFunc = logEntry =>
             {
                 outputHelper?.WriteLine(logEntry.ToString(false));
@@ -33,7 +34,8 @@ public static class LoggingExtensions
         Action<TestLoggerOptions> configure = null)
     {
 
-        var options = new TestLoggerOptions {
+        var options = new TestLoggerOptions
+        {
             WriteLogEntryFunc = logEntry =>
             {
                 getOutputHelper?.Invoke()?.WriteLine(logEntry.ToString(false));

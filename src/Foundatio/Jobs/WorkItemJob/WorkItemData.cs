@@ -1,5 +1,4 @@
-﻿using System;
-using Foundatio.Metrics;
+﻿using Foundatio.Metrics;
 using Foundatio.Queues;
 
 namespace Foundatio.Jobs;

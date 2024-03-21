@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Foundatio.Metrics;
+﻿namespace Foundatio.Metrics;
 
 public class SharedMetricsClientOptions : SharedOptions
 {

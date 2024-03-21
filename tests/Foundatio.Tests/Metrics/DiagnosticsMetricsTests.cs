@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Xunit;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
