@@ -7,7 +7,6 @@ using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 using Foundatio.Utility;
-using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -38,12 +37,6 @@ public class RedisLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override Task CanAcquireLocksInParallel()
-    {
-        return base.CanAcquireLocksInParallel();
-    }
-
-    [Fact]
     public override Task CanAcquireAndReleaseLockAsync()
     {
         return base.CanAcquireAndReleaseLockAsync();
@@ -53,6 +46,54 @@ public class RedisLockTests : LockTestBase, IDisposable
     public override Task LockWillTimeoutAsync()
     {
         return base.LockWillTimeoutAsync();
+    }
+
+    [Fact]
+    public override Task LockOneAtATimeAsync()
+    {
+        return base.LockOneAtATimeAsync();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleResources()
+    {
+        return base.CanAcquireMultipleResources();
+    }
+
+    [Fact]
+    public override Task CanAcquireLocksInParallel()
+    {
+        return base.CanAcquireLocksInParallel();
+    }
+
+    // [Fact]
+    // public override Task CanAcquireScopedLocksInParallel()
+    // {
+    //     return base.CanAcquireScopedLocksInParallel();
+    // }
+    //
+    // [Fact]
+    // public override Task CanAcquireMultipleLocksInParallel()
+    // {
+    //     return base.CanAcquireMultipleLocksInParallel();
+    // }
+
+    [Fact]
+    public override Task CanAcquireMultipleScopedResources()
+    {
+        return base.CanAcquireMultipleScopedResources();
+    }
+
+    [Fact]
+    public override Task WillThrottleCallsAsync()
+    {
+        return base.WillThrottleCallsAsync();
+    }
+
+    [Fact]
+    public override Task CanReleaseLockMultipleTimes()
+    {
+        return base.CanReleaseLockMultipleTimes();
     }
 
     [Fact]
@@ -89,18 +130,6 @@ public class RedisLockTests : LockTestBase, IDisposable
         _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #4");
         Assert.NotNull(testLock);
         Assert.True(sw.ElapsedMilliseconds > 400);
-    }
-
-    [RetryFact]
-    public override Task WillThrottleCallsAsync()
-    {
-        return base.WillThrottleCallsAsync();
-    }
-
-    [Fact]
-    public override Task LockOneAtATimeAsync()
-    {
-        return base.LockOneAtATimeAsync();
     }
 
     public void Dispose()
