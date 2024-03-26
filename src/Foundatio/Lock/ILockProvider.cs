@@ -185,7 +185,6 @@ public static class LockProviderExtensions
             var unacquiredResources = new List<string>(resourceList.Length);
             string[] acquiredResources = locks.Select(l => l.Resource).ToArray();
 
-            // TODO: Look into this as it seems like a bug we allow to release by a suffix.
             foreach (string resource in resourceList)
             {
                 // account for scoped lock providers with prefixes
