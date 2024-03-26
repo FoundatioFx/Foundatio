@@ -198,7 +198,7 @@ public abstract class LockTestBase : TestWithLoggingBase
             Assert.Equal(1, currentConcurrency);
 
             int item = current;
-            await Task.Delay(10, ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), ct);
             used.Add(item);
             current++;
 
@@ -234,7 +234,7 @@ public abstract class LockTestBase : TestWithLoggingBase
             Assert.Equal(1, currentConcurrency);
 
             int item = current;
-            await Task.Delay(10, ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), ct);
             used.Add(item);
             current++;
 
@@ -261,14 +261,14 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
         {
-            await using var myLock = await locker.AcquireAsync(["test"], TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            await using var myLock = await locker.AcquireAsync(["test", "test2"], TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             Assert.NotNull(myLock);
 
             int currentConcurrency = Interlocked.Increment(ref concurrency);
             Assert.Equal(1, currentConcurrency);
 
             int item = current;
-            await Task.Delay(10, ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), ct);
             used.Add(item);
             current++;
 

@@ -139,26 +139,53 @@ public static class LockProviderExtensions
         if (resources == null)
             throw new ArgumentNullException(nameof(resources));
 
-        var resourceList = resources.Distinct().ToArray();
+        string[] resourceList = resources.Distinct().OrderBy(r => r).ToArray();
         if (resourceList.Length == 0)
             return new EmptyLock();
 
         var logger = provider.GetLogger();
-
-        if (logger.IsEnabled(LogLevel.Trace))
+        bool isTraceLogLevelEnabled = logger.IsEnabled(LogLevel.Trace);
+        if (isTraceLogLevelEnabled)
             logger.LogTrace("Acquiring {LockCount} locks {Resource}", resourceList.Length, resourceList);
 
+        // If renew time is greater than 0, then cut the time in half with max time of 1 minute.
+        var renewTime = timeUntilExpires.GetValueOrDefault(TimeSpan.FromMinutes(1));
+        if (renewTime > TimeSpan.Zero)
+            renewTime = TimeSpan.FromTicks(renewTime.Ticks / 2) > TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : TimeSpan.FromTicks(renewTime.Ticks / 2);
+
         var sw = Stopwatch.StartNew();
-        var locks = await Task.WhenAll(resourceList.Select(r => provider.AcquireAsync(r, timeUntilExpires, releaseOnDispose, cancellationToken)));
+
+        var acquiredLocks = new List<(ILock Lock, DateTime LastRenewed)>(resourceList.Length);
+        foreach (string resource in resourceList)
+        {
+            var l = await provider.AcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
+            if (l is null)
+            {
+                break;
+            }
+
+            // Renew any acquired locks so they stay alive until we have all locks
+            if (acquiredLocks.Count > 0)
+            {
+                var utcNow = SystemClock.UtcNow;
+                var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToList();
+                await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                locksToRenew.ForEach(al => al.LastRenewed = utcNow);
+            }
+
+            acquiredLocks.Add((l, SystemClock.UtcNow));
+        }
+
         sw.Stop();
 
+        var locks = acquiredLocks.Select(l => l.Lock).ToArray();
         // if any lock is null, release any acquired and return null (all or nothing)
-        var acquiredLocks = locks.Where(l => l != null).ToArray();
-        if (resourceList.Length > acquiredLocks.Length)
+        if (resourceList.Length > locks.Length)
         {
-            var unacquiredResources = new List<string>();
-            string[] acquiredResources = acquiredLocks.Select(l => l.Resource).ToArray();
+            var unacquiredResources = new List<string>(resourceList.Length);
+            string[] acquiredResources = locks.Select(l => l.Resource).ToArray();
 
+            // TODO: Look into this as it seems like a bug we allow to release by a suffix.
             foreach (string resource in resourceList)
             {
                 // account for scoped lock providers with prefixes
@@ -168,15 +195,19 @@ public static class LockProviderExtensions
 
             if (unacquiredResources.Count > 0)
             {
-                if (logger.IsEnabled(LogLevel.Trace))
-                    logger.LogTrace("Unable to acquire all {LockCount} locks {Resource} releasing acquired locks", unacquiredResources.Count, unacquiredResources);
+                if (isTraceLogLevelEnabled)
+                    logger.LogTrace("Unable to acquire all {LockCount} locks {UnacquiredResources} releasing acquired locks: {Resource}", unacquiredResources.Count, unacquiredResources, acquiredResources);
 
-                await Task.WhenAll(acquiredLocks.Select(l => l.ReleaseAsync())).AnyContext();
+                await Task.WhenAll(locks.Select(l => l.ReleaseAsync())).AnyContext();
+
+                if (isTraceLogLevelEnabled)
+                    logger.LogTrace("Released {LockCount} locks {Resource}", acquiredResources.Length, acquiredResources);
+
                 return null;
             }
         }
 
-        if (logger.IsEnabled(LogLevel.Trace))
+        if (isTraceLogLevelEnabled)
             logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
 
         return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), sw.Elapsed, logger);
