@@ -622,13 +622,14 @@ public class InMemoryCacheClient : IMemoryCacheClient
         {
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
+                // NOTE: This update factory method will run multiple times if the key is already in the cache, especially during lock contention.
                 wasUpdated = false;
 
                 // check to see if existing entry is expired
                 if (existingEntry.ExpiresAt < SystemClock.UtcNow)
                 {
                     if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Replacing expired cache key: {Key}", existingKey);
+                        _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
 
                     wasUpdated = true;
                     return entry;

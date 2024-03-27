@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -144,14 +144,15 @@ public static class LockProviderExtensions
             return new EmptyLock();
 
         var logger = provider.GetLogger();
-        bool isTraceLogLevelEnabled = logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled)
-            logger.LogTrace("Acquiring {LockCount} locks {Resource}", resourceList.Length, resourceList);
 
         // If renew time is greater than 0, then cut the time in half with max time of 1 minute.
         var renewTime = timeUntilExpires.GetValueOrDefault(TimeSpan.FromMinutes(1));
         if (renewTime > TimeSpan.Zero)
             renewTime = TimeSpan.FromTicks(renewTime.Ticks / 2) > TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : TimeSpan.FromTicks(renewTime.Ticks / 2);
+
+        bool isTraceLogLevelEnabled = logger.IsEnabled(LogLevel.Trace);
+        if (isTraceLogLevelEnabled)
+            logger.LogTrace("Acquiring {LockCount} locks {Resource} RenewTime={RenewTime:g}", resourceList.Length, resourceList, renewTime);
 
         var sw = Stopwatch.StartNew();
 
@@ -165,12 +166,18 @@ public static class LockProviderExtensions
             }
 
             // Renew any acquired locks so they stay alive until we have all locks
-            if (acquiredLocks.Count > 0)
+            if (acquiredLocks.Count > 0 && renewTime > TimeSpan.Zero)
             {
                 var utcNow = SystemClock.UtcNow;
-                var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToList();
-                await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
-                locksToRenew.ForEach(al => al.LastRenewed = utcNow);
+                var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToArray();
+                if (locksToRenew.Length > 0)
+                {
+                    await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                    locksToRenew.ForEach(al => al.LastRenewed = utcNow);
+
+                    if (isTraceLogLevelEnabled)
+                        logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);
+                }
             }
 
             acquiredLocks.Add((l, SystemClock.UtcNow));
