@@ -6,6 +6,7 @@
 [![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/6HxgFCx)
 
 Pluggable foundation blocks for building loosely coupled distributed apps.
+
 - [Caching](#caching)
 - [Queues](#queues)
 - [Locks](#locks)
@@ -50,6 +51,7 @@ To summarize, if you want pain free development and testing while allowing your 
 2. Open the `Foundatio.sln` Visual Studio solution file.
 
 ## Using Foundatio
+
 The sections below contain a small subset of what's possible with Foundatio. We recommend taking a peek at the source code for more information. Please let us know if you have any questions or need assistance!
 
 ### [Caching](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Caching)
@@ -321,6 +323,7 @@ metrics.Timer("t1", 50788);
 ```
 
 ## Sample Application
+
 We have both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/FoundatioFx/Foundatio.Samples) that shows off how to use Foundatio.
 
 ## Thanks to all the people who have contributed
