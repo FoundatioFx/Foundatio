@@ -24,7 +24,7 @@ When building several big cloud applications we found a lack of great solutions 
 - Wanted to build against abstract interfaces so that we could easily change implementations.
 - Wanted the blocks to be dependency injection friendly.
 - Caching: We were initially using an open source Redis cache client but then it turned into a commercial product with high licensing costs. Not only that, but there weren't any in memory implementations so every developer was required to set up and configure Redis.
-- Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) but found Azure support lacking and local set up a pain. We wanted a simple message bus that just worked locally or in the cloud.
+- Message Bus: We initially looked at [NServiceBus](http://particular.net/nservicebus) (great product) but it had high licensing costs (they have to eat too) but was not OSS friendly. We also looked into [MassTransit](http://masstransit-project.com/) (another great product) but found Azure support lacking at the time and local set up a pain (for in memory). We wanted a simple message bus that just worked locally or in the cloud.
 - Storage: We couldn't find any existing project that was decoupled and supported in memory, file storage or Azure Blob Storage.
 
 To summarize, if you want pain free development and testing while allowing your app to scale, use Foundatio!
@@ -51,6 +51,7 @@ To summarize, if you want pain free development and testing while allowing your 
 2. Open the `Foundatio.sln` Visual Studio solution file.
 
 ## Using Foundatio
+
 The sections below contain a small subset of what's possible with Foundatio. We recommend taking a peek at the source code for more information. Please let us know if you have any questions or need assistance!
 
 ### [Caching](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Caching)
@@ -152,7 +153,7 @@ Allows you to run a long running process (in process or out of process) without 
 
 1. **Jobs**: All jobs must derive from the [`IJob` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/IJob.cs). We also have a [`JobBase` base class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobBase.cs) you can derive from which provides a JobContext and logging. You can then run jobs by calling `RunAsync()` on the job or by creating a instance of the [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs) and calling one of the Run methods. The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
-#### Sample
+  #### Sample
 
   ```csharp
   using Foundatio.Jobs;
@@ -176,7 +177,7 @@ Allows you to run a long running process (in process or out of process) without 
 
 2. **Queue Processor Jobs**: A queue processor job works great for working with jobs that will be driven from queued data. Queue Processor jobs must derive from [`QueueJobBase<T>` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/QueueJobBase.cs). You can then run jobs by calling `RunAsync()` on the job or passing it to the [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
-#### Sample
+  #### Sample
 
   ```csharp
   using Foundatio.Jobs;
@@ -218,7 +219,7 @@ Allows you to run a long running process (in process or out of process) without 
 
 3. **Work Item Jobs**: A work item job will run in a job pool among other work item jobs. This type of job works great for things that don't happen often but should be in a job (Example: Deleting an entity that has many children.). It will be triggered when you publish a message on the `message bus`. The job must derive from the [`WorkItemHandlerBase` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/WorkItemJob/WorkItemHandlerBase.cs). You can then run all shared jobs via [`JobRunner` class](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Jobs/JobRunner.cs). The JobRunner can be used to easily run your jobs as Azure Web Jobs.
 
-#### Sample
+  #### Sample
 
   ```csharp
   using System.Threading.Tasks;
@@ -307,8 +308,8 @@ We provide five implementations that derive from the [`IMetricsClient` interface
 2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
 3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
 4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
-4. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
-5. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
+5. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
+6. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
 
 We recommend using all of the `IMetricsClient` implementations as singletons.
 
@@ -322,6 +323,7 @@ metrics.Timer("t1", 50788);
 ```
 
 ## Sample Application
+
 We have both [slides](https://docs.google.com/presentation/d/1ax4YmfCdao75aEakjdMvapHs4QxvTZOimd3cHTZ9JG0/edit?usp=sharing) and a [sample application](https://github.com/FoundatioFx/Foundatio.Samples) that shows off how to use Foundatio.
 
 ## Thanks to all the people who have contributed
