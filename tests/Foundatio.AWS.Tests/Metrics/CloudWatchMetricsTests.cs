@@ -12,14 +12,14 @@ namespace Foundatio.AWS.Tests.Metrics
     {
         public CloudWatchMetricsTests(ITestOutputHelper output) : base(output)
         {
-            Log.MinimumLevel = LogLevel.Trace;
+            Log.DefaultMinimumLevel = LogLevel.Trace;
         }
 
 #pragma warning disable CS0618 // Type or member is obsolete
         public override IMetricsClient GetMetricsClient(bool buffered = false)
         {
-            // Don't run this as part of the tests because it doesn't work reliably since CloudWatch can take a long time for the stats to show up.	
-            // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.	
+            // Don't run this as part of the tests because it doesn't work reliably since CloudWatch can take a long time for the stats to show up.
+            // Also, you can't delete metrics so we have to use random ids and it creates a bunch of junk data.
             return null;
 
 #pragma warning disable CS0162 // Unreachable code detected
