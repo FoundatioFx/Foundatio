@@ -1,7 +1,6 @@
-namespace Foundatio.RabbitMQ
+namespace Foundatio.RabbitMQ;
+
+public class MyMessage
 {
-    public class MyMessage
-    {
-        public string Hey { get; set; }
-    }
+    public string Hey { get; set; }
 }
