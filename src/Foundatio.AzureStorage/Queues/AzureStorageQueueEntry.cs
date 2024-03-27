@@ -1,17 +1,15 @@
-﻿using System;
-using Microsoft.Azure.Storage.Queue;
+﻿using Microsoft.Azure.Storage.Queue;
 
-namespace Foundatio.Queues
+namespace Foundatio.Queues;
+
+public class AzureStorageQueueEntry<T> : QueueEntry<T> where T : class
 {
-    public class AzureStorageQueueEntry<T> : QueueEntry<T> where T : class
+    public CloudQueueMessage UnderlyingMessage { get; }
+
+    public AzureStorageQueueEntry(CloudQueueMessage message, T value, IQueue<T> queue)
+        : base(message.Id, null, value, queue, message.InsertionTime.GetValueOrDefault().UtcDateTime, message.DequeueCount)
     {
-        public CloudQueueMessage UnderlyingMessage { get; }
 
-        public AzureStorageQueueEntry(CloudQueueMessage message, T value, IQueue<T> queue)
-            : base(message.Id, null, value, queue, message.InsertionTime.GetValueOrDefault().UtcDateTime, message.DequeueCount)
-        {
-
-            UnderlyingMessage = message;
-        }
+        UnderlyingMessage = message;
     }
 }

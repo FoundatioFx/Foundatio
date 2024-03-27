@@ -1,25 +1,24 @@
 ﻿using System;
 
-namespace Foundatio.Storage
+namespace Foundatio.Storage;
+
+public class AzureFileStorageOptions : SharedOptions
 {
-    public class AzureFileStorageOptions : SharedOptions
+    public string ConnectionString { get; set; }
+    public string ContainerName { get; set; } = "storage";
+}
+
+public class AzureFileStorageOptionsBuilder : SharedOptionsBuilder<AzureFileStorageOptions, AzureFileStorageOptionsBuilder>
+{
+    public AzureFileStorageOptionsBuilder ConnectionString(string connectionString)
     {
-        public string ConnectionString { get; set; }
-        public string ContainerName { get; set; } = "storage";
+        Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        return this;
     }
 
-    public class AzureFileStorageOptionsBuilder : SharedOptionsBuilder<AzureFileStorageOptions, AzureFileStorageOptionsBuilder>
+    public AzureFileStorageOptionsBuilder ContainerName(string containerName)
     {
-        public AzureFileStorageOptionsBuilder ConnectionString(string connectionString)
-        {
-            Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-            return this;
-        }
-
-        public AzureFileStorageOptionsBuilder ContainerName(string containerName)
-        {
-            Target.ContainerName = containerName ?? throw new ArgumentNullException(nameof(containerName));
-            return this;
-        }
+        Target.ContainerName = containerName ?? throw new ArgumentNullException(nameof(containerName));
+        return this;
     }
 }
