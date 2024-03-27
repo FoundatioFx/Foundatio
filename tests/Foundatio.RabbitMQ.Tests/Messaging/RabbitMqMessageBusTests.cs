@@ -135,7 +135,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging
         [Fact]
         public async Task CanPersistAndNotLoseMessages()
         {
-            Log.MinimumLevel = LogLevel.Trace;
+            Log.DefaultMinimumLevel = LogLevel.Trace;
 
             var messageBus1 = new RabbitMQMessageBus(o => o
                 .ConnectionString("amqp://localhost:5673")
