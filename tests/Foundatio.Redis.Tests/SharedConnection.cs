@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;

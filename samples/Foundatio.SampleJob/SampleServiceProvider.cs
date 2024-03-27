@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
