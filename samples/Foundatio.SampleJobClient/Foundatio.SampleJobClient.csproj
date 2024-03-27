@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Foundatio.Xunit" Version="10.7.0" />
+    <PackageReference Include="Foundatio.Xunit" Version="10.7.1" />
   </ItemGroup>
 
   <ItemGroup>

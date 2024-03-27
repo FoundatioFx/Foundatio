@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -66,17 +66,17 @@ public class RedisLockTests : LockTestBase, IDisposable
         return base.CanAcquireLocksInParallel();
     }
 
-    // [Fact]
-    // public override Task CanAcquireScopedLocksInParallel()
-    // {
-    //     return base.CanAcquireScopedLocksInParallel();
-    // }
-    //
-    // [Fact]
-    // public override Task CanAcquireMultipleLocksInParallel()
-    // {
-    //     return base.CanAcquireMultipleLocksInParallel();
-    // }
+    [Fact]
+    public override Task CanAcquireScopedLocksInParallel()
+    {
+        return base.CanAcquireScopedLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleLocksInParallel()
+    {
+        return base.CanAcquireMultipleLocksInParallel();
+    }
 
     [Fact]
     public override Task CanAcquireMultipleScopedResources()

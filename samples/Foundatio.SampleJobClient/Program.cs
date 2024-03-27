@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,14 +15,14 @@ public class Program
 {
     private static IQueue<PingRequest> _queue;
     private static IMessageBus _messageBus;
-    private static TestLoggerFactory _loggerFactory;
+    private static TestLogger _loggerFactory;
     private static ILogger _logger;
     private static bool _isRunning = true;
     private static CancellationTokenSource _continuousEnqueueTokenSource = new();
 
     public static void Main(string[] args)
     {
-        _loggerFactory = new TestLoggerFactory();
+        _loggerFactory = new TestLogger();
         _loggerFactory.SetLogLevel<RedisMessageBus>(LogLevel.Trace);
         _loggerFactory.MaxLogEntriesToStore = Console.WindowHeight - (OPTIONS_MENU_LINE_COUNT + SEPERATOR_LINE_COUNT) - 1;
         _logger = _loggerFactory.CreateLogger<Program>();

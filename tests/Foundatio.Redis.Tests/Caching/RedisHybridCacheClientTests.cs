@@ -87,7 +87,7 @@ public class RedisHybridCacheClientTests : HybridCacheClientTests
     [Fact(Skip = "Skipping for now until we figure out a timing issue")]
     public override Task WillExpireRemoteItems()
     {
-        Log.MinimumLevel = LogLevel.Trace;
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.WillExpireRemoteItems();
     }
 
