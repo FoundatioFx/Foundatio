@@ -384,11 +384,11 @@ public class InMemoryQueueTests : QueueTestBase
     // https://github.com/FoundatioFx/Foundatio/issues/239
     public virtual async Task CompleteOnAutoAbandonedHandledProperly_Issue239()
     {
-        // create queue with short work item timeout so it will be auto abandoned
+        // create queue with short work item timeout, so it will be auto abandoned
         var queue = new InMemoryQueue_Issue239<SimpleWorkItem>(Log);
         using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        // completion source to wait for CompleteAsync call before the assert
+        // completion source to wait for CompleteAsync call before to assert
         var taskCompletionSource = new TaskCompletionSource<bool>();
 
         // start handling items

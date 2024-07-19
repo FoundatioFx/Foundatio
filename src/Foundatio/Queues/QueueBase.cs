@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -354,7 +354,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
     {
         if (_isDisposed)
         {
-            _logger.LogTrace("Queue {Name} ({Id})  dispose was already called.", _options.Name, QueueId);
+            _logger.LogTrace("Queue {Name} ({Id})  dispose was already called", _options.Name, QueueId);
             return;
         }
 

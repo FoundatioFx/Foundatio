@@ -165,7 +165,7 @@ public static class LockProviderExtensions
                 break;
             }
 
-            // Renew any acquired locks so they stay alive until we have all locks
+            // Renew any acquired locks, so they stay alive until we have all locks
             if (acquiredLocks.Count > 0 && renewTime > TimeSpan.Zero)
             {
                 var utcNow = SystemClock.UtcNow;

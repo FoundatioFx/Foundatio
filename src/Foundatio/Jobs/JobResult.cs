@@ -71,7 +71,7 @@ public static class JobResultExtensions
         if (result == null)
         {
             if (logger.IsEnabled(LogLevel.Error))
-                logger.LogError("Null job run result for {JobName}.", jobName);
+                logger.LogError("Null job run result for {JobName}", jobName);
 
             return;
         }
@@ -83,6 +83,6 @@ public static class JobResultExtensions
         else if (!String.IsNullOrEmpty(result.Message))
             logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
         else if (logger.IsEnabled(LogLevel.Debug))
-            logger.LogDebug("Job run {JobName} succeeded.", jobName);
+            logger.LogDebug("Job run {JobName} succeeded", jobName);
     }
 }
