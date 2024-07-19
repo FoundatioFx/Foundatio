@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -109,8 +109,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
         await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
 
         LastDequeueActivity = SystemClock.UtcNow;
-        using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        return await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        return await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
     public virtual async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
@@ -347,7 +347,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken)
     {
-        return CancellationTokenSource.CreateLinkedTokenSource(_queueDisposedCancellationTokenSource.Token, cancellationToken);
+        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _queueDisposedCancellationTokenSource.Token);
     }
 
     public override void Dispose()
