@@ -23,14 +23,14 @@ public static class QueueJobExtensions
     /// Will run wait for the acquire timeout to expire waiting if there are no queued items. It will then run until the queue is empty.
     /// NOTE: The acquire timeout will not be reset until after the first job is processed,
     /// </summary>
-    public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan acquireTimeout,
+    public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
         CancellationToken cancellationToken = default) where T : class
     {
-        if (acquireTimeout <= TimeSpan.Zero)
-            throw new ArgumentException("Acquire timeout must be greater than zero", nameof(acquireTimeout));
+        if (waitTimeout <= TimeSpan.Zero)
+            throw new ArgumentException("Acquire timeout must be greater than zero", nameof(waitTimeout));
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        linkedCancellationTokenSource.CancelAfter(acquireTimeout);
+        linkedCancellationTokenSource.CancelAfter(waitTimeout);
         bool hasAcquireTimeout = true;
 
         var logger = job.GetLogger();
