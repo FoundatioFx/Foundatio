@@ -1,4 +1,5 @@
-﻿using System.Threading;
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Utility;
@@ -18,6 +19,19 @@ public interface IQueueJob<T> : IJob where T : class
 
 public static class QueueJobExtensions
 {
+    public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan acquireTimeout,
+        CancellationToken cancellationToken = default) where T : class
+    {
+        if (acquireTimeout <= TimeSpan.Zero)
+            throw new ArgumentException("Acquire timeout must be greater than zero", nameof(acquireTimeout));
+
+        using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        linkedCancellationTokenSource.CancelAfter(acquireTimeout);
+
+        // NOTE: This has to be awaited otherwise the linkedCancellationTokenSource cancel timer will not fire.
+        await job.RunUntilEmptyAsync(linkedCancellationTokenSource.Token);
+    }
+
     public static Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
     {
         var logger = job.GetLogger();

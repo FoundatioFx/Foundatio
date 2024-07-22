@@ -141,15 +141,14 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
                     _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})", delayAmount, resource, lockId);
 
                 // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
-                using (var maxWaitCancellationTokenSource = new CancellationTokenSource(delayAmount))
-                using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, maxWaitCancellationTokenSource.Token))
+                using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                linkedCancellationTokenSource.CancelAfter(delayAmount);
+
+                try
                 {
-                    try
-                    {
-                        await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
-                    }
-                    catch (OperationCanceledException) { }
+                    await autoResetEvent.Target.WaitAsync(linkedCancellationTokenSource.Token).AnyContext();
                 }
+                catch (OperationCanceledException) { }
 
                 Thread.Yield();
             } while (!cancellationToken.IsCancellationRequested);

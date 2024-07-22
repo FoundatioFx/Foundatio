@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -249,6 +250,28 @@ public class WorkItemJobTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task CanRunWorkItemJobUntilEmptyWithNoEnqueuedItems()
+    {
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var handlerRegistry = new WorkItemHandlers();
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+
+        handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
+
+        var sw = Stopwatch.StartNew();
+        await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(100));
+        sw.Stop();
+
+        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(500));
+
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Enqueued);
+        Assert.Equal(0, stats.Dequeued);
+        Assert.Equal(0, stats.Completed);
+    }
+
+    [Fact]
     public async Task CanRunBadWorkItem()
     {
         using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.FromMilliseconds(500)).LoggerFactory(Log));
@@ -299,7 +322,7 @@ public class MyWorkItemHandler : WorkItemHandlerBase
 
         for (int i = 1; i < 10; i++)
         {
-            await SystemClock.SleepAsync(100);
+            await SystemClock.SleepAsync(10);
             await context.ReportProgressAsync(10 * i);
         }
     }

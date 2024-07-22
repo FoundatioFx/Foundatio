@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -202,10 +202,11 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             _logger.LogTrace("Waiting to dequeue item...");
             var sw = Stopwatch.StartNew();
 
+            using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken);
+            dequeueCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(10));
+
             try
             {
-                using var timeoutCancellationTokenSource = new CancellationTokenSource(10000);
-                using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token);
                 await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
             }
             catch (OperationCanceledException) { }

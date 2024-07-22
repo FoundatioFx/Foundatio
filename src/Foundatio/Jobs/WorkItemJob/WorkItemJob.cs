@@ -36,17 +36,16 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
     {
         IQueueEntry<WorkItemData> queueEntry;
 
-        using (var timeoutCancellationTokenSource = new CancellationTokenSource(30000))
-        using (var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCancellationTokenSource.Token))
+        using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        linkedCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
         {
-            try
-            {
-                queueEntry = await _queue.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
-            }
-            catch (Exception ex)
-            {
-                return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
-            }
+            queueEntry = await _queue.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
         }
 
         return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
