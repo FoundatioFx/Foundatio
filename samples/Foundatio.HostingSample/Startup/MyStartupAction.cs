@@ -8,10 +8,10 @@ namespace Foundatio.HostingSample;
 
 public class MyStartupAction : IStartupAction
 {
-    private readonly ScheduledJobManager _scheduledJobManager;
+    private readonly IScheduledJobManager _scheduledJobManager;
     private readonly ILogger _logger;
 
-    public MyStartupAction(ScheduledJobManager scheduledJobManager, ILogger<MyStartupAction> logger)
+    public MyStartupAction(IScheduledJobManager scheduledJobManager, ILogger<MyStartupAction> logger)
     {
         _scheduledJobManager = scheduledJobManager;
         _logger = logger;

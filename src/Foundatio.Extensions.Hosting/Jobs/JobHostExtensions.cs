@@ -24,7 +24,7 @@ public static class JobHostExtensions
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
             services.AddTransient<IHostedService, ScheduledJobService>();
 
-        if (!services.Any(s => s.ServiceType == typeof(ScheduledJobManager)))
+        if (!services.Any(s => s.ServiceType == typeof(IScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
             services.AddSingleton<ScheduledJobManager>();
 
         return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.CronSchedule, jobOptions.Name ?? Guid.NewGuid().ToString(), jobOptions.JobFactory));
@@ -45,7 +45,7 @@ public static class JobHostExtensions
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
             services.AddTransient<IHostedService, ScheduledJobService>();
 
-        if (!services.Any(s => s.ServiceType == typeof(ScheduledJobManager)))
+        if (!services.Any(s => s.ServiceType == typeof(IScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
             services.AddSingleton<ScheduledJobManager>();
 
         return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.CronSchedule, jobOptions.Name ?? Guid.NewGuid().ToString(), _ => jobFactory(s)));
@@ -68,7 +68,7 @@ public static class JobHostExtensions
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
             services.AddTransient<IHostedService, ScheduledJobService>();
 
-        if (!services.Any(s => s.ServiceType == typeof(ScheduledJobManager)))
+        if (!services.Any(s => s.ServiceType == typeof(IScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
             services.AddSingleton<ScheduledJobManager>();
 
         return services.AddTransient(s => new ScheduledJobRegistration(jobOptions.CronSchedule, typeof(T).FullName, jobOptions.JobFactory ?? (_ => s.GetRequiredService<T>())));

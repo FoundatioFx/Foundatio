@@ -10,7 +10,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
-public class ScheduledJobManager
+public interface IScheduledJobManager
+{
+    void AddOrUpdate<TJob>(string cronSchedule) where TJob : class, IJob;
+    void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action);
+    void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action);
+    void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action);
+    void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action);
+    void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action);
+    void AddOrUpdate(string jobName, string cronSchedule, Action action);
+    void Remove<TJob>() where TJob : class, IJob;
+    void Remove(string jobName);
+}
+
+public class ScheduledJobManager : IScheduledJobManager
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
