@@ -36,7 +36,7 @@ public class HostedJobOptionsBuilder
         return this;
     }
 
-    public HostedJobOptionsBuilder JobFactory(Func<IJob> value)
+    public HostedJobOptionsBuilder JobFactory(Func<IServiceProvider, IJob> value)
     {
         Target.JobFactory = value;
         return this;

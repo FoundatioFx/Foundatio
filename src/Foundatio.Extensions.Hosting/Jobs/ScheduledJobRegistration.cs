@@ -5,12 +5,14 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class ScheduledJobRegistration
 {
-    public ScheduledJobRegistration(Func<IJob> jobFactory, string schedule)
+    public ScheduledJobRegistration(string schedule, string jobName, Func<IServiceProvider, IJob> jobFactory)
     {
-        JobFactory = jobFactory;
         Schedule = schedule;
+        Name = jobName;
+        JobFactory = jobFactory;
     }
 
-    public Func<IJob> JobFactory { get; }
     public string Schedule { get; }
+    public string Name { get; }
+    public Func<IServiceProvider, IJob> JobFactory { get; }
 }

@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Startup;
+using Foundatio.Jobs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -90,7 +92,14 @@ public class Program
                     s.AddCronJob<EveryMinuteJob>("* * * * *");
 
                 if (evenMinutes)
-                    s.AddCronJob<EvenMinutesJob>("*/2 * * * *");
+                    s.AddCronJob("*/2 * * * *", async sp =>
+                    {
+                        var logger = sp.GetRequiredService<ILogger<Program>>();
+                        if (logger.IsEnabled(LogLevel.Information))
+                            logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+
+                        await Task.Delay(TimeSpan.FromSeconds(5));
+                    });
 
                 if (sample1)
                     s.AddJob(sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(4)));

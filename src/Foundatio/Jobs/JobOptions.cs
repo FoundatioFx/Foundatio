@@ -8,7 +8,7 @@ public class JobOptions
 {
     public string Name { get; set; }
     public string Description { get; set; }
-    public Func<IJob> JobFactory { get; set; }
+    public Func<IServiceProvider, IJob> JobFactory { get; set; }
     public bool RunContinuous { get; set; } = true;
     public TimeSpan? Interval { get; set; }
     public TimeSpan? InitialDelay { get; set; }
@@ -65,25 +65,25 @@ public class JobOptions
     public static JobOptions GetDefaults(IJob instance)
     {
         var jobOptions = GetDefaults(instance.GetType());
-        jobOptions.JobFactory = () => instance;
+        jobOptions.JobFactory = _ => instance;
         return jobOptions;
     }
 
     public static JobOptions GetDefaults<T>(IJob instance) where T : IJob
     {
         var jobOptions = GetDefaults<T>();
-        jobOptions.JobFactory = () => instance;
+        jobOptions.JobFactory = _ => instance;
         return jobOptions;
     }
 
-    public static JobOptions GetDefaults(Type jobType, Func<IJob> jobFactory)
+    public static JobOptions GetDefaults(Type jobType, Func<IServiceProvider, IJob> jobFactory)
     {
         var jobOptions = GetDefaults(jobType);
         jobOptions.JobFactory = jobFactory;
         return jobOptions;
     }
 
-    public static JobOptions GetDefaults<T>(Func<IJob> jobFactory) where T : IJob
+    public static JobOptions GetDefaults<T>(Func<IServiceProvider, IJob> jobFactory) where T : IJob
     {
         var jobOptions = GetDefaults<T>();
         jobOptions.JobFactory = jobFactory;

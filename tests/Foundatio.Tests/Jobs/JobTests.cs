@@ -9,6 +9,7 @@ using Foundatio.Jobs;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Foundatio.Xunit;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -23,8 +24,9 @@ public class JobTests : TestWithLoggingBase
     public async Task CanCancelJob()
     {
         var job = new HelloWorldJob(Log);
+        var sp = new ServiceCollection().BuildServiceProvider();
         var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
-        var resultTask = new JobRunner(job, Log).RunAsync(timeoutCancellationTokenSource.Token);
+        var resultTask = new JobRunner(job, sp, Log).RunAsync(timeoutCancellationTokenSource.Token);
         await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
         Assert.True(await resultTask);
     }
@@ -33,7 +35,8 @@ public class JobTests : TestWithLoggingBase
     public async Task CanStopLongRunningJob()
     {
         var job = new LongRunningJob(Log);
-        var runner = new JobRunner(job, Log);
+        var sp = new ServiceCollection().BuildServiceProvider();
+        var runner = new JobRunner(job, sp, Log);
         var cts = new CancellationTokenSource(1000);
         bool result = await runner.RunAsync(cts.Token);
 
@@ -44,7 +47,8 @@ public class JobTests : TestWithLoggingBase
     public async Task CanStopLongRunningCronJob()
     {
         var job = new LongRunningJob(Log);
-        var runner = new JobRunner(job, Log);
+        var sp = new ServiceCollection().BuildServiceProvider();
+        var runner = new JobRunner(job, sp, Log);
         var cts = new CancellationTokenSource(1000);
         bool result = await runner.RunAsync(cts.Token);
 
@@ -81,11 +85,12 @@ public class JobTests : TestWithLoggingBase
     public async Task CanRunMultipleInstances()
     {
         var job = new HelloWorldJob(Log);
+        var sp = new ServiceCollection().BuildServiceProvider();
 
         HelloWorldJob.GlobalRunCount = 0;
         using (var timeoutCancellationTokenSource = new CancellationTokenSource(1000))
         {
-            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 1).RunAsync(timeoutCancellationTokenSource.Token);
+            await new JobRunner(job, sp, Log, instanceCount: 5, iterationLimit: 1).RunAsync(timeoutCancellationTokenSource.Token);
         }
 
         Assert.Equal(5, HelloWorldJob.GlobalRunCount);
@@ -93,7 +98,7 @@ public class JobTests : TestWithLoggingBase
         HelloWorldJob.GlobalRunCount = 0;
         using (var timeoutCancellationTokenSource = new CancellationTokenSource(50000))
         {
-            await new JobRunner(job, Log, instanceCount: 5, iterationLimit: 100).RunAsync(timeoutCancellationTokenSource.Token);
+            await new JobRunner(job, sp, Log, instanceCount: 5, iterationLimit: 100).RunAsync(timeoutCancellationTokenSource.Token);
         }
 
         Assert.Equal(500, HelloWorldJob.GlobalRunCount);
@@ -105,13 +110,14 @@ public class JobTests : TestWithLoggingBase
         using (TestSystemClock.Install())
         {
             var job = new HelloWorldJob(Log);
+            var sp = new ServiceCollection().BuildServiceProvider();
             var timeoutCancellationTokenSource = new CancellationTokenSource(100);
             await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
 
             Assert.Equal(1, job.RunCount);
 
             timeoutCancellationTokenSource = new CancellationTokenSource(500);
-            var runnerTask = new JobRunner(job, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
+            var runnerTask = new JobRunner(job, sp, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
             await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
             await runnerTask;
         }

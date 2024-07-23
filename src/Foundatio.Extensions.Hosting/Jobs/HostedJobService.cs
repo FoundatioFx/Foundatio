@@ -47,7 +47,7 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
             }
         }
 
-        var runner = new JobRunner(_jobOptions, _loggerFactory);
+        var runner = new JobRunner(_jobOptions, _serviceProvider, _loggerFactory);
 
         try
         {
