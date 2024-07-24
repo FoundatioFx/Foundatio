@@ -1,18 +1,11 @@
-﻿using System;
-using Foundatio.Jobs;
-
-namespace Foundatio.Extensions.Hosting.Jobs;
+﻿namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class ScheduledJobRegistration
 {
-    public ScheduledJobRegistration(string schedule, string jobName, Func<IServiceProvider, IJob> jobFactory)
+    public ScheduledJobRegistration(ScheduledJobOptions options)
     {
-        Schedule = schedule;
-        Name = jobName;
-        JobFactory = jobFactory;
+        Options = options;
     }
 
-    public string Schedule { get; }
-    public string Name { get; }
-    public Func<IServiceProvider, IJob> JobFactory { get; }
+    public ScheduledJobOptions Options { get; private set; }
 }

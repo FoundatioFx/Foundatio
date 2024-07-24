@@ -27,7 +27,6 @@ public class ScheduledJobService : BackgroundService, IJobStatus
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // TODO: Add more logging throughout
         var startupContext = _serviceProvider.GetService<StartupActionsContext>();
         if (startupContext != null)
         {

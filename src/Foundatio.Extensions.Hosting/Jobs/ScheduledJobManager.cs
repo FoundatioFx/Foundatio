@@ -10,15 +10,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
+
+// TODO: Persist last run time to cache so it's not lost on restart
+// TODO: Add telemetry spans around job runs
+
 public interface IScheduledJobManager
 {
-    void AddOrUpdate<TJob>(string cronSchedule) where TJob : class, IJob;
-    void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action);
-    void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action);
-    void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action);
-    void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action);
-    void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action);
-    void AddOrUpdate(string jobName, string cronSchedule, Action action);
+    void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob;
+    void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate(string jobName, string cronSchedule, Action action, Action<ScheduledJobOptionsBuilder> configure = null);
     void Remove<TJob>() where TJob : class, IJob;
     void Remove(string jobName);
 }
@@ -28,97 +32,144 @@ public class ScheduledJobManager : IScheduledJobManager
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ICacheClient _cacheClient;
+    private readonly List<ScheduledJobRunner> _jobs = new();
+    private ScheduledJobRunner[] _jobsArray;
+    private readonly object _lock = new();
 
     public ScheduledJobManager(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
     {
         _serviceProvider = serviceProvider;
         _loggerFactory = loggerFactory;
         _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
-        Jobs.AddRange(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.Schedule, j.Name, j.JobFactory, serviceProvider, _cacheClient, loggerFactory)));
+        _jobs.AddRange(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.Options, serviceProvider, _cacheClient, loggerFactory)));
+        _jobsArray = _jobs.ToArray();
     }
 
-    public void AddOrUpdate<TJob>(string cronSchedule) where TJob : class, IJob
+    public void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob
     {
         string jobName = typeof(TJob).Name;
-        var job = Jobs.FirstOrDefault(j => j.JobName == jobName);
-        if (job == null)
+        lock (_lock)
         {
-            Jobs.Add(new ScheduledJobRunner(cronSchedule, jobName, sp => sp.GetRequiredService<TJob>(), _serviceProvider, _cacheClient, _loggerFactory));
-        }
-        else
-        {
-            job.Schedule = cronSchedule;
+            var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
+            if (job == null)
+            {
+                var options = new ScheduledJobOptions
+                {
+                    CronSchedule = cronSchedule,
+                    Name = jobName,
+                    JobFactory = sp => sp.GetRequiredService<TJob>()
+                };
+                var builder = new ScheduledJobOptionsBuilder(options);
+                configure?.Invoke(builder);
+                _jobs.Add(new ScheduledJobRunner(options, _serviceProvider, _cacheClient, _loggerFactory));
+                _jobsArray = _jobs.ToArray();
+            }
+            else
+            {
+                var builder = new ScheduledJobOptionsBuilder(job.Options);
+                builder.CronSchedule(cronSchedule);
+                configure?.Invoke(builder);
+                job.Schedule = job.Options.CronSchedule;
+            }
         }
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null)
     {
-        var job = Jobs.FirstOrDefault(j => j.JobName == jobName);
-        if (job == null)
+        lock (_lock)
         {
-            Jobs.Add(new ScheduledJobRunner(cronSchedule, jobName, sp => new DynamicJob(sp, action), _serviceProvider, _cacheClient, _loggerFactory));
+            var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
+            if (job == null)
+            {
+                var options = new ScheduledJobOptions
+                {
+                    CronSchedule = cronSchedule,
+                    Name = jobName
+                };
+                var builder = new ScheduledJobOptionsBuilder(options);
+                configure?.Invoke(builder);
+                options.JobFactory = options.JobFactory;
+                _jobs.Add(new ScheduledJobRunner(options, _serviceProvider, _cacheClient, _loggerFactory));
+                _jobsArray = _jobs.ToArray();
+            }
+            else
+            {
+                var builder = new ScheduledJobOptionsBuilder(job.Options);
+                builder.CronSchedule(cronSchedule);
+                configure?.Invoke(builder);
+                job.Schedule = job.Options.CronSchedule;
+            }
         }
-        else
-        {
-            job.Schedule = cronSchedule;
-        }
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
     {
-        AddOrUpdate(jobName, cronSchedule, (_, ct) => action(ct));
+        AddOrUpdate(jobName, cronSchedule, b => b.JobFactory(sp => new DynamicJob(sp, action)));
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
     {
-        AddOrUpdate(jobName, cronSchedule, (_, _) => action());
+        AddOrUpdate(jobName, cronSchedule, (_, ct) => action(ct), configure);
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
+    {
+        AddOrUpdate(jobName, cronSchedule, (_, _) => action(), configure);
+    }
+
+    public void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null)
     {
         AddOrUpdate(jobName, cronSchedule, (sp, ct) =>
         {
             action(sp, ct);
             return Task.CompletedTask;
-        });
+        }, configure);
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null)
     {
         AddOrUpdate(jobName, cronSchedule, (_, ct) =>
         {
             action(ct);
             return Task.CompletedTask;
-        });
+        }, configure);
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Action action)
+    public void AddOrUpdate(string jobName, string cronSchedule, Action action, Action<ScheduledJobOptionsBuilder> configure = null)
     {
         AddOrUpdate(jobName, cronSchedule, (_, _) =>
         {
             action();
             return Task.CompletedTask;
-        });
+        }, configure);
     }
 
     public void Remove<TJob>() where TJob : class, IJob
     {
         string jobName = typeof(TJob).Name;
-        var job = Jobs.FirstOrDefault(j => j.JobName == jobName);
-        if (job != null)
+        lock (_lock)
         {
-            Jobs.Remove(job);
+            var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
+            if (job == null)
+                return;
+
+            _jobs.Remove(job);
+            _jobsArray = _jobs.ToArray();
         }
     }
 
     public void Remove(string jobName)
     {
-        var job = Jobs.FirstOrDefault(j => j.JobName == jobName);
-        if (job != null)
+        lock (_lock)
         {
-            Jobs.Remove(job);
+            var job = _jobs.FirstOrDefault(j => j.Options.Name == jobName);
+            if (job == null)
+                return;
+
+            _jobs.Remove(job);
+            _jobsArray = _jobs.ToArray();
         }
     }
 
-    internal List<ScheduledJobRunner> Jobs { get; } = new();
+    internal ScheduledJobRunner[] Jobs => _jobsArray;
 }

@@ -5,7 +5,7 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// <summary>
     /// The maximum number of items to store in the cache
     /// </summary>
-    public int? MaxItems { get; set; } = 1000;
+    public int? MaxItems { get; set; } = 10000;
 
     /// <summary>
     /// Whether or not values should be cloned during get and set to make sure that any cache entry changes are isolated

@@ -48,12 +48,6 @@ public class HostedJobOptionsBuilder
         return this;
     }
 
-    public HostedJobOptionsBuilder CronSchedule(string value)
-    {
-        Target.CronSchedule = value;
-        return this;
-    }
-
     public HostedJobOptionsBuilder Interval(TimeSpan? value)
     {
         Target.Interval = value;

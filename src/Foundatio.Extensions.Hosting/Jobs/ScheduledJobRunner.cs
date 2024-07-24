@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Cronos;
@@ -13,25 +14,25 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 internal class ScheduledJobRunner
 {
-    private readonly Func<IServiceProvider, IJob> _jobFactory;
+    private readonly ScheduledJobOptions _jobOptions;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ICacheClient _cacheClient;
     private CronExpression _cronSchedule;
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
     private readonly DateTime _baseDate = new(2010, 1, 1);
-    private string _cacheKeyPrefix;
 
-    public ScheduledJobRunner(string schedule, string jobName, Func<IServiceProvider, IJob> jobFactory, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
+    public ScheduledJobRunner(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
     {
-        _jobFactory = jobFactory;
+        _jobOptions = jobOptions;
+        _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
         _serviceProvider = serviceProvider;
-        Schedule = schedule;
-        JobName = jobName;
+        _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
         _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
 
-        _cronSchedule = CronExpression.Parse(schedule);
+        _cronSchedule = CronExpression.Parse(_jobOptions.CronSchedule);
         if (_cronSchedule == null)
-            throw new ArgumentException("Could not parse schedule.", nameof(schedule));
+            throw new ArgumentException("Could not parse schedule.", nameof(ScheduledJobOptions.CronSchedule));
 
         var interval = TimeSpan.FromDays(1);
 
@@ -43,10 +44,12 @@ internal class ScheduledJobRunner
                 interval = nextNextOccurrence.Value.Subtract(nextOccurrence.Value);
         }
 
-        _lockProvider = new ThrottlingLockProvider(cacheClient, 1, interval.Add(interval));
+        _lockProvider = new ThrottlingLockProvider(_cacheClient, 1, interval.Add(interval));
 
         NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
     }
+
+    public ScheduledJobOptions Options => _jobOptions;
 
     private string _schedule;
     public string Schedule
@@ -60,7 +63,6 @@ internal class ScheduledJobRunner
         }
     }
 
-    public string JobName { get; private set; }
     public DateTime? LastRun { get; private set; }
     public DateTime? NextRun { get; private set; }
     public Task RunTask { get; private set; }
@@ -81,33 +83,59 @@ internal class ScheduledJobRunner
         return true;
     }
 
-    public Task<bool> StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
-        // TODO: provide ability to run cron jobs on a per host isolated schedule
-        return _lockProvider.TryUsingAsync(GetLockKey(NextRun.Value), t =>
+        ILock l = new EmptyLock();
+        if (Options.IsDistributed)
+        {
+            // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
+            l = await _lockProvider.AcquireAsync(GetLockKey(NextRun.Value), TimeSpan.FromMinutes(60), TimeSpan.Zero).AnyContext();
+            if (l == null)
+            {
+                // if we didn't get the lock, update the last run time
+                var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
+                if (lastRun.HasValue)
+                    LastRun = lastRun.Value;
+
+                return;
+            }
+        }
+
+        await using (l)
         {
             // start running the job in a thread
             RunTask = Task.Factory.StartNew(async () =>
             {
-                var result = await _jobFactory(_serviceProvider).TryRunAsync(cancellationToken).AnyContext();
-                // TODO: Should we only set last run on success? Seems like that could be bad.
-                _logger.LogJobResult(result, JobName);
+                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + Options.Name, ActivityKind.Server);
+
+                try
+                {
+                    var result = await Options.JobFactory(_serviceProvider).TryRunAsync(cancellationToken).AnyContext();
+                    _logger.LogJobResult(result, Options.Name);
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
+
+                    throw;
+                }
             }, cancellationToken).Unwrap();
 
             LastRun = NextRun;
-            NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
-
-            return Task.CompletedTask;
-        }, TimeSpan.Zero, TimeSpan.Zero);
+            if (Options.IsDistributed)
+                await _cacheClient.SetAsync("lastrun:" + Options.Name, LastRun.Value).AnyContext();
+            NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+        }
     }
 
     private string GetLockKey(DateTime date)
     {
-        _cacheKeyPrefix ??= TypeHelper.GetTypeDisplayName(_jobFactory(_serviceProvider).GetType());
-
         long minute = (long)date.Subtract(_baseDate).TotalMinutes;
 
-        return _cacheKeyPrefix + minute;
+        return Options.Name + ":" + minute;
     }
 }
