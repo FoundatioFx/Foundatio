@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -30,12 +31,19 @@ public static class JobExtensions
         }
     }
 
+    /// <summary>
+    /// Runs the job continuously until the cancellation token is set or the iteration limit is reached.
+    /// </summary>
+    /// <returns>Returns the iteration count for normal jobs. For queue based jobs this will be the amount of items processed successfully.</returns>
     public static async Task<int> RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
     {
         int iterations = 0;
         string jobName = job.GetType().Name;
         var logger = job.GetLogger();
         bool isInformationLogLevelEnabled = logger.IsEnabled(LogLevel.Information);
+
+        int queueItemsProcessed = 0;
+        bool isQueueJob = job.GetType().GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IQueueJob<>));
 
         using var _ = logger.BeginScope(new Dictionary<string, object> { { "job", jobName } });
         if (isInformationLogLevelEnabled)
@@ -45,7 +53,10 @@ public static class JobExtensions
         {
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, jobName);
+
             iterations++;
+            if (isQueueJob && result.IsSuccess)
+                queueItemsProcessed++;
 
             if (cancellationToken.IsCancellationRequested || (iterationLimit > -1 && iterationLimit <= iterations))
                 break;
@@ -98,6 +109,6 @@ public static class JobExtensions
             }
         }
 
-        return iterations;
+        return isQueueJob ? queueItemsProcessed : iterations;
     }
 }

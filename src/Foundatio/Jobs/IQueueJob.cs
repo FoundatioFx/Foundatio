@@ -20,9 +20,9 @@ public interface IQueueJob<T> : IJob where T : class
 public static class QueueJobExtensions
 {
     /// <summary>
-    /// Will run until the wait timeout expires. If there is still data the job will be cancelled. and then will cancel the job.
+    /// Will run until the wait timeout expires, if expired the job will be cancelled.
     /// </summary>
-    /// <returns>The amount of queue items processed. This count will not be accurate if the job is cancelled.</returns>
+    /// <returns>The amount of queue items processed.</returns>
     public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
         CancellationToken cancellationToken = default) where T : class
     {
@@ -39,17 +39,13 @@ public static class QueueJobExtensions
     /// <summary>
     /// Will wait up to thirty seconds if queue is empty, otherwise will run until the queue is empty or cancelled.
     /// </summary>
-    /// <returns>The amount of queue items processed. This count will not be accurate if the job is cancelled.</returns>
-    public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
+    /// <returns>The amount of queue items processed.</returns>
+    public static Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
     {
         var logger = job.GetLogger();
 
-        // NOTE: processed count is not accurate if the continuation callback is skipped due to cancellation.
-        int processed = 0;
-        await job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
+        return job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
         {
-            processed++;
-
             // Allow abandoned items to be added in a background task.
             Thread.Yield();
 
@@ -58,8 +54,6 @@ public static class QueueJobExtensions
                 logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
 
             return stats.Queued + stats.Working > 0;
-        }).AnyContext();
-
-        return processed;
+        });
     }
 }
