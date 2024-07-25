@@ -20,10 +20,10 @@ public interface IQueueJob<T> : IJob where T : class
 public static class QueueJobExtensions
 {
     /// <summary>
-    /// Will run wait for the wait timeout to expire waiting if there are no queued items. It will then run until the queue is empty.
-    /// NOTE: The wait timeout will not be reset until after the first job is processed.
+    /// Will run until the wait timeout expires. If there is still data the job will be cancelled. and then will cancel the job.
     /// </summary>
-    public static async Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
+    /// <returns>The amount of queue items processed.</returns>
+    public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
         CancellationToken cancellationToken = default) where T : class
     {
         if (waitTimeout <= TimeSpan.Zero)
@@ -31,36 +31,25 @@ public static class QueueJobExtensions
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCancellationTokenSource.CancelAfter(waitTimeout);
-        bool hasAcquireTimeout = true;
-
-        var logger = job.GetLogger();
 
         // NOTE: This has to be awaited otherwise the linkedCancellationTokenSource cancel timer will not fire.
-        await job.RunContinuousAsync(cancellationToken: linkedCancellationTokenSource.Token, continuationCallback: async () =>
-        {
-            // Stop the Cancel After
-            if (hasAcquireTimeout)
-            {
-                linkedCancellationTokenSource.CancelAfter(Timeout.InfiniteTimeSpan);
-                hasAcquireTimeout = false;
-            }
-
-            // Allow abandoned items to be added in a background task.
-            Thread.Yield();
-
-            var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
-            if (logger.IsEnabled(LogLevel.Trace))
-                logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
-
-            return stats.Queued + stats.Working > 0;
-        });
+        return await job.RunUntilEmptyAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
-    public static Task RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
+    /// <summary>
+    /// Will wait up to thirty seconds if queue is empty, otherwise will run until the queue is empty or cancelled.
+    /// </summary>
+    /// <returns>The amount of queue items processed. This count will not be accurate if the job is cancelled.</returns>
+    public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, CancellationToken cancellationToken = default) where T : class
     {
         var logger = job.GetLogger();
-        return job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
+
+        // NOTE: processed count is not accurate if the continuation callback is skipped due to cancellation.
+        int processed = 0;
+        await job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
         {
+            processed++;
+
             // Allow abandoned items to be added in a background task.
             Thread.Yield();
 
@@ -69,6 +58,8 @@ public static class QueueJobExtensions
                 logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);
 
             return stats.Queued + stats.Working > 0;
-        });
+        }).AnyContext();
+
+        return processed;
     }
 }
