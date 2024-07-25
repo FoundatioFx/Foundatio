@@ -296,9 +296,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
     protected virtual Activity StartHandleMessageActivity(IMessage message)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Server, message.CorrelationId);
-
-        if (activity == null)
-            return activity;
+        if (activity is null)
+            return null;
 
         if (message.Properties != null && message.Properties.TryGetValue("TraceState", out var traceState))
             activity.TraceStateString = traceState.ToString();

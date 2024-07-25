@@ -80,7 +80,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : clas
         }
 
         var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
-        if (lockValue == null)
+        if (lockValue is null)
         {
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.CancelledWithMessage($"Unable to acquire queue entry lock. Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");

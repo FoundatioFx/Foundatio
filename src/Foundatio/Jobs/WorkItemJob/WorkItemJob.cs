@@ -105,13 +105,13 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
             await ReportProgressAsync(handler, queueEntry).AnyContext();
 
         var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
-        if (lockValue == null)
+        if (lockValue is null)
         {
             if (handler.Log.IsEnabled(LogLevel.Information))
                 handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock", queueEntry.Value.Type, queueEntry.Id);
 
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.CancelledWithMessage("Unable to acquire work item lock.");
+            return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
         var progressCallback = new Func<int, string, Task>(async (progress, message) =>
@@ -186,9 +186,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
     protected virtual Activity StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
-
-        if (activity == null)
-            return activity;
+        if (activity is null)
+            return null;
 
         if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
             activity.TraceStateString = traceState.ToString();

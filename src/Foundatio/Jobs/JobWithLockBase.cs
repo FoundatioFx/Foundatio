@@ -23,10 +23,9 @@ public abstract class JobWithLockBase : IJob, IHaveLogger
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         var lockValue = await GetLockAsync(cancellationToken).AnyContext();
-        if (lockValue == null)
+        if (lockValue is null)
         {
-            _logger.LogTrace("Unable to acquire job lock");
-            return JobResult.Success;
+            return JobResult.CancelledWithMessage("Unable to acquire job lock");
         }
 
         try
