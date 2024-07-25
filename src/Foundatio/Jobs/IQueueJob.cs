@@ -22,7 +22,7 @@ public static class QueueJobExtensions
     /// <summary>
     /// Will run until the wait timeout expires. If there is still data the job will be cancelled. and then will cancel the job.
     /// </summary>
-    /// <returns>The amount of queue items processed.</returns>
+    /// <returns>The amount of queue items processed. This count will not be accurate if the job is cancelled.</returns>
     public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
         CancellationToken cancellationToken = default) where T : class
     {
