@@ -68,9 +68,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
     protected virtual Activity StartLockActivity(string resource)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("AcquireLock");
-
-        if (activity == null)
-            return activity;
+        if (activity is null)
+            return null;
 
         activity.AddTag("resource", resource);
         activity.DisplayName = $"Lock: {resource}";
