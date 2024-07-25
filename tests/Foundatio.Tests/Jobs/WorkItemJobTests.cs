@@ -263,7 +263,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(0, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(100)));
         sw.Stop();
 
-        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(500));
+        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(250));
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(0, stats.Enqueued);
@@ -291,8 +291,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             SomeData = "Test"
         }, true);
 
-        // NOTE: This count is wrong due to the continuation callback not firing due to the cancellation.
-        Assert.Equal(0, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(50)));
+        Assert.Equal(1, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(50)));
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(2, stats.Enqueued);
@@ -328,7 +327,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             countdown.Signal();
         });
 
-        Assert.Equal(1, await job.RunUntilEmptyAsync());
+        Assert.Equal(0, await job.RunUntilEmptyAsync());
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
     }

@@ -41,6 +41,10 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : clas
         {
             queueEntry = await _queue.Value.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
         }
+        catch (OperationCanceledException)
+        {
+            return JobResult.Cancelled;
+        }
         catch (Exception ex)
         {
             return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
@@ -51,8 +55,11 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : clas
 
     public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested && queueEntry == null)
+            return JobResult.Cancelled;
+
         if (queueEntry == null)
-            return JobResult.Success;
+            return JobResult.CancelledWithMessage("No queue entry to process.");
 
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s
@@ -76,8 +83,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : clas
         if (lockValue == null)
         {
             await queueEntry.AbandonAsync().AnyContext();
-            _logger.LogTrace("Unable to acquire queue entry lock");
-            return JobResult.Success;
+            return JobResult.CancelledWithMessage($"Unable to acquire queue entry lock. Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
         }
 
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
@@ -130,9 +136,8 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : clas
     protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
-
-        if (activity == null)
-            return activity;
+        if (activity is null)
+            return null;
 
         if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
             activity.TraceStateString = traceState.ToString();

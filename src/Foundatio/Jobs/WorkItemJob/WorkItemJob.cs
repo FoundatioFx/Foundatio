@@ -43,6 +43,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
         {
             queueEntry = await _queue.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
         }
+        catch (OperationCanceledException)
+        {
+            return JobResult.Cancelled;
+        }
         catch (Exception ex)
         {
             return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
@@ -53,8 +57,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
 
     public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested && queueEntry == null)
+            return JobResult.Cancelled;
+
         if (queueEntry == null)
-            return JobResult.Success;
+            return JobResult.CancelledWithMessage("No queue entry to process.");
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -101,10 +108,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
         if (lockValue == null)
         {
             if (handler.Log.IsEnabled(LogLevel.Information))
-                handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock.", queueEntry.Value.Type, queueEntry.Id);
+                handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock", queueEntry.Value.Type, queueEntry.Id);
 
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.Success;
+            return JobResult.CancelledWithMessage("Unable to acquire work item lock.");
         }
 
         var progressCallback = new Func<int, string, Task>(async (progress, message) =>
