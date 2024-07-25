@@ -30,14 +30,15 @@ public static class JobExtensions
         }
     }
 
-    public static async Task RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
+    public static async Task<int> RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
     {
         int iterations = 0;
         string jobName = job.GetType().Name;
         var logger = job.GetLogger();
+        bool isInformationLogLevelEnabled = logger.IsEnabled(LogLevel.Information);
 
         using var _ = logger.BeginScope(new Dictionary<string, object> { { "job", jobName } });
-        if (logger.IsEnabled(LogLevel.Information))
+        if (isInformationLogLevelEnabled)
             logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
 
         while (!cancellationToken.IsCancellationRequested)
@@ -72,18 +73,31 @@ public static class JobExtensions
                 if (!await continuationCallback().AnyContext())
                     break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (logger.IsEnabled(LogLevel.Error))
             {
-                if (logger.IsEnabled(LogLevel.Error))
-                    logger.LogError(ex, "Error in continuation callback: {Message}", ex.Message);
+                logger.LogError(ex, "Error in continuation callback: {Message}", ex.Message);
             }
         }
 
-        logger.LogInformation("Finished continuous job type {JobName}: {IterationLimit} {Iterations}", jobName, Environment.MachineName, iterationLimit, iterations);
         if (cancellationToken.IsCancellationRequested && logger.IsEnabled(LogLevel.Trace))
             logger.LogTrace("Job cancellation requested");
 
-        if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Stopping continuous job type {JobName} on machine {MachineName}...", jobName, Environment.MachineName);
+        if (isInformationLogLevelEnabled)
+        {
+            if (iterationLimit > 0)
+            {
+                logger.LogInformation(
+                    "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times (Limit={IterationLimit})",
+                    jobName, Environment.MachineName, iterationLimit, iterations);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times",
+                    jobName, Environment.MachineName, iterations);
+            }
+        }
+
+        return iterations;
     }
 }
