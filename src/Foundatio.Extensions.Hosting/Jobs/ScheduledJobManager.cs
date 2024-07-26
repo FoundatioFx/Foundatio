@@ -40,9 +40,12 @@ public class ScheduledJobManager : IScheduledJobManager
     {
         _serviceProvider = serviceProvider;
         _loggerFactory = loggerFactory;
-        _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
+        var cacheClient = serviceProvider.GetService<ICacheClient>();
         _jobs.AddRange(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.Options, serviceProvider, _cacheClient, loggerFactory)));
         _jobsArray = _jobs.ToArray();
+        if (_jobs.Any(j => j.Options.IsDistributed && cacheClient == null))
+            throw new ArgumentException("A distributed cache client is required to run distributed jobs.");
+        _cacheClient = cacheClient ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
     }
 
     public void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob

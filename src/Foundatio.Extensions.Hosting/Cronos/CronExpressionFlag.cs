@@ -22,7 +22,7 @@
 
 using System;
 
-namespace Cronos;
+namespace Foundatio.Extensions.Hosting.Cronos;
 
 [Flags]
 internal enum CronExpressionFlag : byte

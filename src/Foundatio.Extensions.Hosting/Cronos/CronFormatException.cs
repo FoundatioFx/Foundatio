@@ -22,7 +22,7 @@
 
 using System;
 
-namespace Cronos;
+namespace Foundatio.Extensions.Hosting.Cronos;
 
 /// <summary>
 /// Represents an exception that's thrown, when invalid Cron expression is given.
