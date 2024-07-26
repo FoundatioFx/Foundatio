@@ -20,7 +20,7 @@ public interface IQueueJob<T> : IJob where T : class
 public static class QueueJobExtensions
 {
     /// <summary>
-    /// Will run until the wait timeout expires, if expired the job will be cancelled.
+    /// Will run until the queue is empty or the wait time is exceeded.
     /// </summary>
     /// <returns>The amount of queue items processed.</returns>
     public static async Task<int> RunUntilEmptyAsync<T>(this IQueueJob<T> job, TimeSpan waitTimeout,
