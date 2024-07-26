@@ -78,11 +78,11 @@ public static class JobHostExtensions
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
 
-    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string name, string cronSchedule, Action<ScheduledJobOptionsBuilder> configureJobOptions = null) where T : class, IJob
+    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder> configureJobOptions = null) where T : class, IJob
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
-        jobOptionsBuilder.Name(name).CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
+        jobOptionsBuilder.Name(typeof(T).FullName).CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
