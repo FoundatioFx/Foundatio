@@ -13,11 +13,13 @@ public class ScheduledJobService : BackgroundService, IJobStatus
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ScheduledJobManager _jobManager;
+    private readonly ISystemClock _systemClock;
 
     public ScheduledJobService(IServiceProvider serviceProvider, ScheduledJobManager jobManager)
     {
         _serviceProvider = serviceProvider;
         _jobManager = jobManager;
+        _systemClock = serviceProvider.GetService<ISystemClock>() ?? SystemClock.Instance;
 
         var lifetime = serviceProvider.GetService<ShutdownHostIfNoJobsRunningService>();
         lifetime?.RegisterHostedJobInstance(this);
@@ -46,9 +48,9 @@ public class ScheduledJobService : BackgroundService, IJobStatus
                 await jobToRun.StartAsync(stoppingToken).AnyContext();
 
             // run jobs every minute since that is the lowest resolution of the cron schedule
-            var now = SystemClock.Now;
+            var now = _systemClock.Now();
             var nextMinute = now.AddTicks(TimeSpan.FromMinutes(1).Ticks - (now.Ticks % TimeSpan.FromMinutes(1).Ticks));
-            var timeUntilNextMinute = nextMinute.Subtract(SystemClock.Now).Add(TimeSpan.FromMilliseconds(1));
+            var timeUntilNextMinute = nextMinute.Subtract(now).Add(TimeSpan.FromMilliseconds(1));
             await Task.Delay(timeUntilNextMinute, stoppingToken).AnyContext();
         }
     }

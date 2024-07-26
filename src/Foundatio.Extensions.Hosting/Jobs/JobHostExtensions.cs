@@ -185,11 +185,11 @@ public static class JobHostExtensions
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))
             services.AddTransient<IHostedService, ScheduledJobService>();
 
-        if (!services.Any(s => s.ServiceType == typeof(IScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
-            services.AddSingleton<IScheduledJobManager, ScheduledJobManager>();
-
         if (!services.Any(s => s.ServiceType == typeof(ScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
             services.AddSingleton<ScheduledJobManager>();
+
+        if (!services.Any(s => s.ServiceType == typeof(IScheduledJobManager) && s.ImplementationType == typeof(ScheduledJobManager)))
+            services.AddSingleton<IScheduledJobManager>(sp => sp.GetRequiredService<ScheduledJobManager>());
 
         return services;
     }

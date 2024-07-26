@@ -111,21 +111,8 @@ internal class ScheduledJobRunner
             {
                 using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + Options.Name, ActivityKind.Server);
 
-                try
-                {
-                    var result = await Options.JobFactory(_serviceProvider).TryRunAsync(cancellationToken).AnyContext();
-                    _logger.LogJobResult(result, Options.Name);
-                }
-                catch (TaskCanceledException)
-                {
-                }
-                catch (Exception ex)
-                {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Error running scheduled job ({JobName}): {Message}", Options.Name, ex.Message);
-
-                    throw;
-                }
+                var result = await Options.JobFactory(_serviceProvider).TryRunAsync(cancellationToken).AnyContext();
+                _logger.LogJobResult(result, Options.Name);
             }, cancellationToken).Unwrap();
 
             LastRun = NextRun;
