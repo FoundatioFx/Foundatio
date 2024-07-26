@@ -10,13 +10,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
-
-// TODO: Persist last run time to cache so it's not lost on restart
-// TODO: Add telemetry spans around job runs
-
 public interface IScheduledJobManager
 {
     void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob;
+    void AddOrUpdate(string jobName, string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null);
     void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
     void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
     void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action, Action<ScheduledJobOptionsBuilder> configure = null);

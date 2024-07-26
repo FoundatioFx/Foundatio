@@ -23,6 +23,7 @@ internal class ScheduledJobRunner
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
     private readonly DateTime _baseDate = new(2010, 1, 1);
+    private bool _lastRunChecked = false;
 
     public ScheduledJobRunner(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
     {
@@ -70,8 +71,18 @@ internal class ScheduledJobRunner
     public DateTime? NextRun { get; private set; }
     public Task RunTask { get; private set; }
 
-    public bool ShouldRun()
+    public async ValueTask<bool> ShouldRunAsync()
     {
+        if (!_lastRunChecked && !LastRun.HasValue) {
+            var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
+            if (lastRun.HasValue)
+            {
+                LastRun = lastRun.Value;
+                NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+            }
+            _lastRunChecked = true;
+        }
+
         if (!NextRun.HasValue)
             return false;
 
