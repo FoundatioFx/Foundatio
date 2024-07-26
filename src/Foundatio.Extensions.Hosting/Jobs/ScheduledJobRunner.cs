@@ -7,6 +7,7 @@ using Foundatio.Extensions.Hosting.Cronos;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,6 +18,7 @@ internal class ScheduledJobRunner
     private readonly ScheduledJobOptions _jobOptions;
     private readonly IServiceProvider _serviceProvider;
     private readonly ICacheClient _cacheClient;
+    private readonly ISystemClock _systemClock;
     private CronExpression _cronSchedule;
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
@@ -27,6 +29,7 @@ internal class ScheduledJobRunner
         _jobOptions = jobOptions;
         _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
         _serviceProvider = serviceProvider;
+        _systemClock = serviceProvider.GetService<ISystemClock>() ?? SystemClock.Instance;
         _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
         _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
 
@@ -36,7 +39,7 @@ internal class ScheduledJobRunner
 
         var interval = TimeSpan.FromDays(1);
 
-        var nextOccurrence = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+        var nextOccurrence = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
         if (nextOccurrence.HasValue)
         {
             var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
@@ -46,7 +49,7 @@ internal class ScheduledJobRunner
 
         _lockProvider = new ThrottlingLockProvider(_cacheClient, 1, interval.Add(interval));
 
-        NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+        NextRun = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
     }
 
     public ScheduledJobOptions Options => _jobOptions;
@@ -58,7 +61,7 @@ internal class ScheduledJobRunner
         set
         {
             _cronSchedule = CronExpression.Parse(value);
-            NextRun = _cronSchedule.GetNextOccurrence(SystemClock.UtcNow);
+            NextRun = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
             _schedule = value;
         }
     }
@@ -73,7 +76,7 @@ internal class ScheduledJobRunner
             return false;
 
         // not time yet
-        if (NextRun > SystemClock.UtcNow)
+        if (NextRun > _systemClock.UtcNow())
             return false;
 
         // check if already run
