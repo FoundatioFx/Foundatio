@@ -119,7 +119,7 @@ internal class ScheduledJobRunner
                 catch (Exception ex)
                 {
                     if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
+                        _logger.LogError(ex, "Error running scheduled job ({JobName}): {Message}", Options.Name, ex.Message);
 
                     throw;
                 }
