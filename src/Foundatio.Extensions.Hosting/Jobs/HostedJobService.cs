@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
@@ -47,10 +48,12 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
             }
         }
 
-        var runner = new JobRunner(_jobOptions, _loggerFactory);
+        var runner = new JobRunner(_jobOptions, _serviceProvider, _loggerFactory);
 
         try
         {
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + _jobOptions.Name, ActivityKind.Server);
+
             await runner.RunAsync(stoppingToken).AnyContext();
 #if NET8_0_OR_GREATER
             await _stoppingCts.CancelAsync().AnyContext();

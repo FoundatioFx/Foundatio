@@ -5,7 +5,7 @@
 using System;
 using System.Runtime.CompilerServices;
 
-namespace Cronos;
+namespace Foundatio.Extensions.Hosting.Cronos;
 
 internal static class CalendarHelper
 {

@@ -36,7 +36,7 @@ public class HostedJobOptionsBuilder
         return this;
     }
 
-    public HostedJobOptionsBuilder JobFactory(Func<IJob> value)
+    public HostedJobOptionsBuilder JobFactory(Func<IServiceProvider, IJob> value)
     {
         Target.JobFactory = value;
         return this;
@@ -45,12 +45,6 @@ public class HostedJobOptionsBuilder
     public HostedJobOptionsBuilder RunContinuous(bool value)
     {
         Target.RunContinuous = value;
-        return this;
-    }
-
-    public HostedJobOptionsBuilder CronSchedule(string value)
-    {
-        Target.CronSchedule = value;
         return this;
     }
 

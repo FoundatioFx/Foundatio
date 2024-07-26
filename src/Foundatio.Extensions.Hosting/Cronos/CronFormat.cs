@@ -22,7 +22,7 @@
 
 using System;
 
-namespace Cronos;
+namespace Foundatio.Extensions.Hosting.Cronos;
 
 /// <summary>
 /// Defines the cron format options that customize string parsing for <see cref="CronExpression.Parse(string, CronFormat)"/>.
