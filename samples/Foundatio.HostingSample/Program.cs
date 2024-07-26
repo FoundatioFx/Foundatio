@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Caching;
 using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Startup;
 using Foundatio.Jobs;
@@ -77,6 +78,7 @@ public class Program
             {
                 // will shutdown the host if no jobs are running
                 s.AddJobLifetimeService();
+                s.AddSingleton<ICacheClient>(_ => new InMemoryCacheClient());
 
                 // inserts a startup action that does not complete until the critical health checks are healthy
                 // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
