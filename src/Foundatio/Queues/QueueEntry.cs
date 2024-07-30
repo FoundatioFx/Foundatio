@@ -10,7 +10,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     private readonly IQueue<T> _queue;
     private readonly T _original;
 
-    public QueueEntry(string id, string correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
+    public QueueEntry(string id, string correlationId, T value, IQueue<T> queue, DateTimeOffset enqueuedTimeUtc, int attempts)
     {
         Id = id;
         CorrelationId = correlationId;
@@ -19,7 +19,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
-        DequeuedTimeUtc = RenewedTimeUtc = SystemClock.UtcNow;
+        DequeuedTimeUtc = RenewedTimeUtc = _queue.GetTimeProvider().GetUtcNow();
     }
 
     public string Id { get; }
@@ -30,9 +30,9 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public Type EntryType => Value.GetType();
     public object GetValue() => Value;
     public T Value { get; set; }
-    public DateTime EnqueuedTimeUtc { get; set; }
-    public DateTime RenewedTimeUtc { get; set; }
-    public DateTime DequeuedTimeUtc { get; set; }
+    public DateTimeOffset EnqueuedTimeUtc { get; set; }
+    public DateTimeOffset RenewedTimeUtc { get; set; }
+    public DateTimeOffset DequeuedTimeUtc { get; set; }
     public int Attempts { get; set; }
     public TimeSpan ProcessingTime { get; set; }
     public TimeSpan TotalTime { get; set; }
@@ -49,7 +49,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 
     public Task RenewLockAsync()
     {
-        RenewedTimeUtc = SystemClock.UtcNow;
+        RenewedTimeUtc = _queue.GetTimeProvider().GetUtcNow();
         return _queue.RenewLockAsync(this);
     }
 
@@ -82,9 +82,9 @@ public interface IQueueEntryMetadata
     string Id { get; }
     string CorrelationId { get; }
     IDictionary<string, string> Properties { get; }
-    DateTime EnqueuedTimeUtc { get; }
-    DateTime RenewedTimeUtc { get; }
-    DateTime DequeuedTimeUtc { get; }
+    DateTimeOffset EnqueuedTimeUtc { get; }
+    DateTimeOffset RenewedTimeUtc { get; }
+    DateTimeOffset DequeuedTimeUtc { get; }
     int Attempts { get; }
     TimeSpan ProcessingTime { get; }
     TimeSpan TotalTime { get; }

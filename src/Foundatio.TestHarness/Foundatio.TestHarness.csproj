@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.7.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0" />
     <PackageReference Include="xunit" Version="2.7.0" />

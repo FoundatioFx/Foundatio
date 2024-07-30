@@ -10,36 +10,38 @@ namespace Foundatio.Utility;
 
 public class ScheduledTimer : IDisposable
 {
-    private DateTime _next = DateTime.MaxValue;
-    private DateTime _last = DateTime.MinValue;
+    private DateTimeOffset _next = DateTimeOffset.MaxValue;
+    private DateTimeOffset _last = DateTimeOffset.MinValue;
     private readonly Timer _timer;
     private readonly ILogger _logger;
-    private readonly Func<Task<DateTime?>> _timerCallback;
+    private readonly Func<Task<DateTimeOffset?>> _timerCallback;
+    private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _minimumInterval;
     private readonly AsyncLock _lock = new();
     private bool _isRunning = false;
     private bool _shouldRunAgainImmediately = false;
 
-    public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, ILoggerFactory loggerFactory = null)
+    public ScheduledTimer(Func<Task<DateTimeOffset?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
         _logger = loggerFactory?.CreateLogger<ScheduledTimer>() ?? NullLogger<ScheduledTimer>.Instance;
         _timerCallback = timerCallback ?? throw new ArgumentNullException(nameof(timerCallback));
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
         int dueTimeMs = dueTime.HasValue ? (int)dueTime.Value.TotalMilliseconds : Timeout.Infinite;
         _timer = new Timer(s => Task.Run(RunCallbackAsync), null, dueTimeMs, Timeout.Infinite);
     }
 
-    public void ScheduleNext(DateTime? utcDate = null)
+    public void ScheduleNext(DateTimeOffset? utcDate = null)
     {
-        var utcNow = SystemClock.UtcNow;
+        var utcNow = _timeProvider.GetUtcNow();
         if (!utcDate.HasValue || utcDate.Value < utcNow)
             utcDate = utcNow;
 
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (isTraceLogLevelEnabled) _logger.LogTrace("ScheduleNext called: value={NextRun:O}", utcDate.Value);
 
-        if (utcDate == DateTime.MaxValue)
+        if (utcDate == DateTimeOffset.MaxValue)
         {
             if (isTraceLogLevelEnabled) _logger.LogTrace("Ignoring MaxValue");
             return;
@@ -103,7 +105,7 @@ public class ScheduledTimer : IDisposable
         }
 
         // If the callback runs before the next time, then store it here before we reset it and use it for scheduling.
-        DateTime? nextTimeOverride = null;
+        DateTimeOffset? nextTimeOverride = null;
 
         if (isTraceLogLevelEnabled) _logger.LogTrace("Starting RunCallbackAsync");
         using (await _lock.LockAsync().AnyContext())
@@ -117,12 +119,12 @@ public class ScheduledTimer : IDisposable
                 return;
             }
 
-            _last = SystemClock.UtcNow;
-            if (SystemClock.UtcNow < _next)
+            _last = _timeProvider.GetUtcNow();
+            if (_last < _next)
             {
                 _logger.LogWarning("ScheduleNext RunCallbackAsync was called before next run time {NextRun:O}, setting next to current time and rescheduling", _next);
                 nextTimeOverride = _next;
-                _next = SystemClock.UtcNow;
+                _next = _timeProvider.GetUtcNow();
                 _shouldRunAgainImmediately = true;
             }
         }
@@ -130,7 +132,7 @@ public class ScheduledTimer : IDisposable
         try
         {
             _isRunning = true;
-            DateTime? next = null;
+            DateTimeOffset? next = null;
 
             var sw = Stopwatch.StartNew();
             try
@@ -153,11 +155,11 @@ public class ScheduledTimer : IDisposable
             if (_minimumInterval > TimeSpan.Zero)
             {
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
-                await SystemClock.SleepAsync(_minimumInterval).AnyContext();
+                await _timeProvider.Delay(_minimumInterval).AnyContext();
                 if (isTraceLogLevelEnabled) _logger.LogTrace("Finished sleeping");
             }
 
-            var nextRun = SystemClock.UtcNow.AddMilliseconds(10);
+            var nextRun = _timeProvider.GetUtcNow().AddMilliseconds(10);
             if (nextRun < nextTimeOverride)
                 nextRun = nextTimeOverride.Value;
 

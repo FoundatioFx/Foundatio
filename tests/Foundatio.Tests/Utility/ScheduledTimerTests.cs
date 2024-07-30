@@ -22,7 +22,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
     public Task CanRun()
     {
         var resetEvent = new AsyncAutoResetEvent();
-        Task<DateTime?> Callback()
+        Task<DateTimeOffset?> Callback()
         {
             resetEvent.Set();
             return null;
@@ -50,10 +50,10 @@ public class ScheduledTimerTests : TestWithLoggingBase
         const int iterations = 2;
         var countdown = new AsyncCountdownEvent(iterations);
 
-        async Task<DateTime?> Callback()
+        async Task<DateTimeOffset?> Callback()
         {
             _logger.LogInformation("Starting work");
-            await SystemClock.SleepAsync(250);
+            await Task.Delay(250);
             countdown.Signal();
             _logger.LogInformation("Finished work");
             return null;
@@ -65,7 +65,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         {
             for (int i = 0; i < iterations; i++)
             {
-                await SystemClock.SleepAsync(10);
+                await Task.Delay(10);
                 timer.ScheduleNext();
             }
         });
@@ -87,7 +87,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         int hits = 0;
         var resetEvent = new AsyncAutoResetEvent(false);
 
-        Task<DateTime?> Callback()
+        Task<DateTimeOffset?> Callback()
         {
             Interlocked.Increment(ref hits);
             if (_logger.IsEnabled(LogLevel.Information))
@@ -96,7 +96,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
                 throw new Exception("Error in callback");
 
             resetEvent.Set();
-            return Task.FromResult<DateTime?>(null);
+            return Task.FromResult<DateTimeOffset?>(null);
         }
 
         using var timer = new ScheduledTimer(Callback, loggerFactory: Log);

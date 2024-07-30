@@ -22,7 +22,7 @@ internal class DisposableLock : ILock
         Resource = resource;
         LockId = lockId;
         TimeWaitedForLock = timeWaitedForLock;
-        AcquiredTimeUtc = SystemClock.UtcNow;
+        AcquiredTimeUtc = lockProvider.GetTimeProvider().GetUtcNow();
         _duration = Stopwatch.StartNew();
         _logger = logger;
         _lockProvider = lockProvider;
@@ -31,7 +31,7 @@ internal class DisposableLock : ILock
 
     public string LockId { get; }
     public string Resource { get; }
-    public DateTime AcquiredTimeUtc { get; }
+    public DateTimeOffset AcquiredTimeUtc { get; }
     public TimeSpan TimeWaitedForLock { get; }
     public int RenewalCount => _renewalCount;
 

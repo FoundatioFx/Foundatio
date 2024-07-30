@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching;
 
@@ -11,7 +12,7 @@ public class ScopedHybridCacheClient : ScopedCacheClient, IHybridCacheClient
     public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null) : base(client, scope) { }
 }
 
-public class ScopedCacheClient : ICacheClient
+public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveTimeProvider
 {
     private string _keyPrefix;
     private bool _isLocked;
@@ -29,6 +30,9 @@ public class ScopedCacheClient : ICacheClient
     public ICacheClient UnscopedCache { get; private set; }
 
     public string Scope { get; private set; }
+
+    ILogger IHaveLogger.Logger => UnscopedCache.GetLogger();
+    TimeProvider IHaveTimeProvider.TimeProvider => UnscopedCache.GetTimeProvider();
 
     public void SetScope(string scope)
     {

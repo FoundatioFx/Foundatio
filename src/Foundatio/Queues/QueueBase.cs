@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;
 
-public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueueActivity where T : class where TOptions : SharedQueueOptions<T>
+public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHaveTimeProvider, IQueueActivity where T : class where TOptions : SharedQueueOptions<T>
 {
     protected readonly TOptions _options;
     private readonly string _metricsPrefix;
@@ -37,7 +37,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
     protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
     private bool _isDisposed;
 
-    protected QueueBase(TOptions options) : base(options?.LoggerFactory)
+    protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
@@ -77,9 +77,10 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
     }
 
     public string QueueId { get; protected set; }
-    public DateTime? LastEnqueueActivity { get; protected set; }
-    public DateTime? LastDequeueActivity { get; protected set; }
+    public DateTimeOffset? LastEnqueueActivity { get; protected set; }
+    public DateTimeOffset? LastDequeueActivity { get; protected set; }
     ISerializer IHaveSerializer.Serializer => _serializer;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     public void AttachBehavior(IQueueBehavior<T> behavior)
     {
@@ -97,7 +98,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
     {
         await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
 
-        LastEnqueueActivity = SystemClock.UtcNow;
+        LastEnqueueActivity = _timeProvider.GetUtcNow();
         options ??= new QueueEntryOptions();
 
         return await EnqueueImplAsync(data, options).AnyContext();
@@ -108,7 +109,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
     {
         await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
 
-        LastDequeueActivity = SystemClock.UtcNow;
+        LastDequeueActivity = _timeProvider.GetUtcNow();
         using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         return await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
@@ -180,7 +181,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected virtual Task OnEnqueuedAsync(IQueueEntry<T> entry)
     {
-        LastEnqueueActivity = SystemClock.UtcNow;
+        LastEnqueueActivity = _timeProvider.GetUtcNow();
 
         var tags = GetQueueEntryTags(entry);
         _enqueuedCounter.Add(1, tags);
@@ -198,7 +199,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected virtual Task OnDequeuedAsync(IQueueEntry<T> entry)
     {
-        LastDequeueActivity = SystemClock.UtcNow;
+        LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var tags = GetQueueEntryTags(entry);
         _dequeuedCounter.Add(1, tags);
@@ -209,7 +210,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
         {
             var start = metadata.EnqueuedTimeUtc;
             var end = metadata.DequeuedTimeUtc;
-            int time = (int)(end - start).TotalMilliseconds;
+            double time = (end - start).TotalMilliseconds;
 
             _queueTimeHistogram.Record(time, tags);
             RecordSubHistogram(entry.Value, "queuetime", time, tags);
@@ -232,7 +233,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected virtual Task OnLockRenewedAsync(IQueueEntry<T> entry)
     {
-        LastDequeueActivity = SystemClock.UtcNow;
+        LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var lockRenewed = LockRenewed;
         if (lockRenewed == null)
@@ -246,7 +247,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry)
     {
-        var now = SystemClock.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         LastDequeueActivity = now;
 
         var tags = GetQueueEntryTags(entry);
@@ -281,7 +282,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
     protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry)
     {
-        LastDequeueActivity = SystemClock.UtcNow;
+        LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var tags = GetQueueEntryTags(entry);
         _abandonedCounter.Add(1, tags);
@@ -289,7 +290,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
 
         if (entry is QueueEntry<T> metadata && metadata.DequeuedTimeUtc > DateTime.MinValue)
         {
-            metadata.ProcessingTime = SystemClock.UtcNow.Subtract(metadata.DequeuedTimeUtc);
+            metadata.ProcessingTime = _timeProvider.GetUtcNow().Subtract(metadata.DequeuedTimeUtc);
             _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds, tags);
             RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds, tags);
         }
@@ -321,8 +322,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
         _counters.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateCounter<int>(fullName)).Add(1, tags);
     }
 
-    protected readonly ConcurrentDictionary<string, Histogram<int>> _histograms = new();
-    private void RecordSubHistogram(T data, string name, int value, in TagList tags)
+    protected readonly ConcurrentDictionary<string, Histogram<double>> _histograms = new();
+    private void RecordSubHistogram(T data, string name, double value, in TagList tags)
     {
         if (data is not IHaveSubMetricName)
             return;
@@ -332,7 +333,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IQueu
             return;
 
         var fullName = GetFullMetricName(subMetricName, name);
-        _histograms.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateHistogram<int>(fullName)).Record(value, tags);
+        _histograms.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateHistogram<double>(fullName)).Record(value, tags);
     }
 
     protected string GetFullMetricName(string name)

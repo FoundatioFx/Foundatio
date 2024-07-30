@@ -17,7 +17,7 @@ public class WithLockingJob : JobWithLockBase
 
     public WithLockingJob(ILoggerFactory loggerFactory) : base(loggerFactory)
     {
-        _locker = new CacheLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), new InMemoryMessageBus(o => o.LoggerFactory(loggerFactory)), loggerFactory);
+        _locker = new CacheLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), new InMemoryMessageBus(o => o.LoggerFactory(loggerFactory)), null, loggerFactory);
     }
 
     public int RunCount { get; set; }
@@ -31,7 +31,7 @@ public class WithLockingJob : JobWithLockBase
     {
         RunCount++;
 
-        await SystemClock.SleepAsync(150, context.CancellationToken);
+        await Task.Delay(150, context.CancellationToken);
         Assert.True(await _locker.IsLockedAsync("WithLockingJob"));
 
         return JobResult.Success;

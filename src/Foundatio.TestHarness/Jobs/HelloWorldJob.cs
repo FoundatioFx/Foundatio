@@ -10,7 +10,7 @@ public class HelloWorldJob : JobBase
 {
     private readonly string _id;
 
-    public HelloWorldJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+    public HelloWorldJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, loggerFactory)
     {
         _id = Guid.NewGuid().ToString("N").Substring(0, 10);
     }
@@ -36,7 +36,7 @@ public class FailingJob : JobBase
 
     public int RunCount { get; set; }
 
-    public FailingJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+    public FailingJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, loggerFactory)
     {
         _id = Guid.NewGuid().ToString("N").Substring(0, 10);
     }
@@ -57,7 +57,7 @@ public class LongRunningJob : JobBase
     private readonly string _id;
     private int _iterationCount;
 
-    public LongRunningJob(ILoggerFactory loggerFactory) : base(loggerFactory)
+    public LongRunningJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, loggerFactory)
     {
         _id = Guid.NewGuid().ToString("N").Substring(0, 10);
     }

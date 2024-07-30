@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,6 +13,7 @@ namespace Foundatio.Jobs;
 
 public class JobRunner
 {
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private string _jobName;
     private readonly JobOptions _options;
@@ -19,6 +21,7 @@ public class JobRunner
 
     public JobRunner(JobOptions options, IServiceProvider serviceProvider, ILoggerFactory loggerFactory = null)
     {
+        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance;
         _options = options;
         _serviceProvider = serviceProvider;
@@ -165,7 +168,7 @@ public class JobRunner
             try
             {
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                    await SystemClock.SleepAsync(_options.InitialDelay.Value, cancellationToken).AnyContext();
+                    await _timeProvider.Delay(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
                 if (_options.RunContinuous && _options.InstanceCount > 1)
                 {

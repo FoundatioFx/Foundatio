@@ -43,7 +43,7 @@ public abstract class LockTestBase : TestWithLoggingBase
             Assert.NotNull(lock1);
             Assert.True(await locker.IsLockedAsync("test"));
             var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
-            await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
             Assert.Null(await lock2Task);
         }
         finally
@@ -335,7 +335,7 @@ public abstract class LockTestBase : TestWithLoggingBase
 
     private Task<bool> DoLockedWorkAsync(ILockProvider locker)
     {
-        return locker.TryUsingAsync("DoLockedWork", async () => await SystemClock.SleepAsync(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
+        return locker.TryUsingAsync("DoLockedWork", async () => await Task.Delay(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
     }
 
     public virtual async Task WillThrottleCallsAsync()
@@ -353,7 +353,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         string lockName = Guid.NewGuid().ToString("N").Substring(0, 10);
 
         // sleep until start of throttling period
-        while (SystemClock.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
+        while (DateTime.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
             Thread.Sleep(10);
 
         var sw = Stopwatch.StartNew();

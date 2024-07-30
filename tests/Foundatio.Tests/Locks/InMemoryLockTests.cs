@@ -21,12 +21,12 @@ public class InMemoryLockTests : LockTestBase, IDisposable
 
     protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)
     {
-        return new ThrottlingLockProvider(_cache, maxHits, period, Log);
+        return new ThrottlingLockProvider(_cache, maxHits, period, null, Log);
     }
 
     protected override ILockProvider GetLockProvider()
     {
-        return new CacheLockProvider(_cache, _messageBus, Log);
+        return new CacheLockProvider(_cache, _messageBus, null, Log);
     }
 
     [Fact]

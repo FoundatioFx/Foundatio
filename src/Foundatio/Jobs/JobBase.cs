@@ -7,17 +7,20 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class JobBase : IJob, IHaveLogger
+public abstract class JobBase : IJob, IHaveLogger, IHaveTimeProvider
 {
+    private readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
 
-    public JobBase(ILoggerFactory loggerFactory = null)
+    public JobBase(TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
 
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     ILogger IHaveLogger.Logger => _logger;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     public virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {

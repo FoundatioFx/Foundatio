@@ -9,7 +9,17 @@ internal static class DateTimeExtensions
         return date.AddTicks(-(date.Ticks % interval.Ticks));
     }
 
+    public static DateTimeOffset Floor(this DateTimeOffset date, TimeSpan interval)
+    {
+        return date.AddTicks(-(date.Ticks % interval.Ticks));
+    }
+
     public static DateTime Ceiling(this DateTime date, TimeSpan interval)
+    {
+        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
+    }
+
+    public static DateTimeOffset Ceiling(this DateTimeOffset date, TimeSpan interval)
     {
         return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
@@ -29,18 +39,18 @@ internal static class DateTimeExtensions
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeSeconds();
     }
 
-    public static DateTime FromUnixTimeSeconds(this long timestamp)
+    public static DateTimeOffset FromUnixTimeSeconds(this long timestamp)
     {
-        return DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
+        return DateTimeOffset.FromUnixTimeSeconds(timestamp);
     }
 
-    public static DateTime SafeAdd(this DateTime date, TimeSpan value)
+    public static DateTimeOffset SafeAdd(this DateTimeOffset date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
-            return DateTime.MinValue;
+        if (date.Ticks + value.Ticks < DateTimeOffset.MinValue.Ticks)
+            return DateTimeOffset.MinValue;
 
-        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
-            return DateTime.MaxValue;
+        if (date.Ticks + value.Ticks > DateTimeOffset.MaxValue.Ticks)
+            return DateTimeOffset.MaxValue;
 
         return date.Add(value);
     }

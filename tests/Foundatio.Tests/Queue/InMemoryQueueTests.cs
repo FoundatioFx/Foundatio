@@ -55,22 +55,22 @@ public class InMemoryQueueTests : QueueTestBase
         {
             disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
             {
-                await SystemClock.SleepAsync(250);
+                await Task.Delay(250);
                 _logger.LogInformation("First Enqueuing");
             }));
             disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
             {
-                await SystemClock.SleepAsync(250);
+                await Task.Delay(250);
                 _logger.LogInformation("Second Enqueuing");
             }));
             disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
             {
-                await SystemClock.SleepAsync(250);
+                await Task.Delay(250);
                 _logger.LogInformation("First");
             }));
             disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
             {
-                await SystemClock.SleepAsync(250);
+                await Task.Delay(250);
                 _logger.LogInformation("Second");
             }));
 
@@ -204,10 +204,7 @@ public class InMemoryQueueTests : QueueTestBase
     [Fact]
     public override Task WorkItemsWillTimeoutAsync()
     {
-        using (TestSystemClock.Install())
-        {
-            return base.WorkItemsWillTimeoutAsync();
-        }
+        return base.WorkItemsWillTimeoutAsync();
     }
 
     [Fact]

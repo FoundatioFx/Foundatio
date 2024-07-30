@@ -15,7 +15,7 @@ public class EmptyLock : ILock
 
     public string Resource => String.Empty;
 
-    public DateTime AcquiredTimeUtc => DateTime.MinValue;
+    public DateTimeOffset AcquiredTimeUtc => DateTime.MinValue;
 
     public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

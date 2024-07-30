@@ -8,15 +8,17 @@ namespace Foundatio.Utility;
 
 public static class Run
 {
-    public static Task DelayedAsync(TimeSpan delay, Func<Task> action, CancellationToken cancellationToken = default)
+    public static Task DelayedAsync(TimeSpan delay, Func<Task> action, TimeProvider timeProvider = null, CancellationToken cancellationToken = default)
     {
+        timeProvider ??= TimeProvider.System;
+
         if (cancellationToken.IsCancellationRequested)
             return Task.CompletedTask;
 
         return Task.Run(async () =>
         {
             if (delay.Ticks > 0)
-                await SystemClock.SleepAsync(delay, cancellationToken).AnyContext();
+                await timeProvider.Delay(delay, cancellationToken).AnyContext();
 
             if (cancellationToken.IsCancellationRequested)
                 return;
@@ -31,22 +33,23 @@ public static class Run
         return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
     }
 
-    public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null)
+    public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
         return WithRetriesAsync<object>(async () =>
         {
             await action().AnyContext();
             return null;
-        }, maxAttempts, retryInterval, cancellationToken, logger);
+        }, maxAttempts, retryInterval, timeProvider, cancellationToken, logger);
     }
 
-    public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, CancellationToken cancellationToken = default, ILogger logger = null)
+    public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
+        timeProvider ??= TimeProvider.System;
         int attempts = 1;
-        var startTime = SystemClock.UtcNow;
+        var startTime = timeProvider.GetUtcNow();
         int currentBackoffTime = _defaultBackoffIntervals[0];
         if (retryInterval != null)
             currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
@@ -54,7 +57,7 @@ public static class Run
         do
         {
             if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
-                logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), SystemClock.UtcNow.Subtract(startTime));
+                logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), timeProvider.GetUtcNow().Subtract(startTime));
 
             try
             {
@@ -68,7 +71,7 @@ public static class Run
                 if (logger != null && logger.IsEnabled(LogLevel.Error))
                     logger.LogError(ex, "Retry error: {Message}", ex.Message);
 
-                await SystemClock.SleepSafeAsync(currentBackoffTime, cancellationToken).AnyContext();
+                await timeProvider.SafeDelay(TimeSpan.FromMilliseconds(currentBackoffTime), cancellationToken).AnyContext();
             }
 
             if (retryInterval == null)
@@ -79,5 +82,5 @@ public static class Run
         throw new TaskCanceledException("Should not get here");
     }
 
-    private static readonly int[] _defaultBackoffIntervals = new int[] { 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 };
+    private static readonly int[] _defaultBackoffIntervals = [ 100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000 ];
 }

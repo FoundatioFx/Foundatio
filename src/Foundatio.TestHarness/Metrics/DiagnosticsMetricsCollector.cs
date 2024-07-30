@@ -314,7 +314,7 @@ public class DiagnosticsMetricsCollector : IDisposable
             cancellationToken = cancellationTokenSource.Token;
         }
 
-        var start = SystemClock.UtcNow;
+        var start = DateTime.UtcNow;
 
         var currentCount = (int)GetSum<T>(name);
         var targetCount = currentCount + count;
@@ -336,7 +336,7 @@ public class DiagnosticsMetricsCollector : IDisposable
             _logger.LogTrace("Got new measurement: count={CurrentCount} expected={Count}", currentCount, targetCount);
         }
 
-        _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, targetCount, currentCount >= targetCount, SystemClock.UtcNow.Subtract(start));
+        _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, targetCount, currentCount >= targetCount, DateTime.UtcNow.Subtract(start));
 
         return currentCount >= targetCount;
     }
