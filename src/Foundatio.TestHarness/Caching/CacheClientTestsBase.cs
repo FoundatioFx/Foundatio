@@ -9,6 +9,8 @@ using Foundatio.Caching;
 using Foundatio.Metrics;
 using Foundatio.Utility;
 using Foundatio.Xunit;
+using Iced.Intel;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
@@ -632,7 +634,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             var actual = await cache.GetUnixTimeSecondsAsync("test");
             Assert.Equal(value.Ticks, actual.Ticks);
-            //Assert.Equal(value.Kind, actual.Kind);
+            Assert.Equal(TimeSpan.Zero, actual.Offset);
 
             value = DateTime.Now.Floor(TimeSpan.FromMilliseconds(1));
             unixTimeValue = value.ToUnixTimeMilliseconds();
@@ -640,7 +642,6 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             actual = (await cache.GetUnixTimeMillisecondsAsync("test")).ToLocalTime();
             Assert.Equal(value.Ticks, actual.Ticks);
-            //Assert.Equal(value.Kind, actual.Kind);
 
             value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
             unixTimeValue = value.ToUnixTimeMilliseconds();
@@ -648,7 +649,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             actual = await cache.GetUnixTimeMillisecondsAsync("test");
             Assert.Equal(value.Ticks, actual.Ticks);
-            //Assert.Equal(value.Kind, actual.Kind);
+            Assert.Equal(TimeSpan.Zero, actual.Offset);
 
             var lowerValue = value - TimeSpan.FromHours(1);
             var lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
@@ -833,6 +834,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.True((await cache.GetAsync<bool>("flag")).Value);
             }
             sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 
@@ -861,6 +863,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.Equal(12, model.Value.Data2);
             }
             sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 
@@ -913,6 +916,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.Equal(12, model.Value.Data2);
             }
             sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 }

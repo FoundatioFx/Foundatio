@@ -12,7 +12,11 @@ public abstract class JobBase : IJob, IHaveLogger, IHaveTimeProvider
     private readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
 
-    public JobBase(TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public JobBase(ILoggerFactory loggerFactory = null) : this(null, loggerFactory)
+    {
+    }
+
+    public JobBase(TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;

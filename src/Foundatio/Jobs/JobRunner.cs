@@ -168,7 +168,7 @@ public class JobRunner
             try
             {
                 if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                    await _timeProvider.Delay(_options.InitialDelay.Value, cancellationToken).AnyContext();
+                    await _timeProvider.SafeDelay(_options.InitialDelay.Value, cancellationToken).AnyContext();
 
                 if (_options.RunContinuous && _options.InstanceCount > 1)
                 {

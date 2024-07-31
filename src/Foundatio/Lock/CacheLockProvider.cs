@@ -130,8 +130,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
                 if (!_isSubscribed)
                     await EnsureTopicSubscriptionAsync().AnyContext();
 
-                var keyExpiration = _timeProvider.GetUtcNow().SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
-                var delayAmount = keyExpiration.Subtract(_timeProvider.GetUtcNow());
+                var keyExpiration = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
+                var delayAmount = keyExpiration.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
 
                 // delay a minimum of 50ms and a maximum of 3 seconds
                 if (delayAmount < TimeSpan.FromMilliseconds(50))

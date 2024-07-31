@@ -52,9 +52,6 @@ internal static class TaskExtensions
         {
             await timeProvider.Delay(delay, cancellationToken);
         }
-        catch (TaskCanceledException)
-        {
-        }
         catch (OperationCanceledException)
         {
         }

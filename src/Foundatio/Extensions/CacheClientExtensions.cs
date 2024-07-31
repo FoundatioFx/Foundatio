@@ -24,19 +24,9 @@ public static class CacheClientExtensions
         return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
-    public static Task<long> IncrementAsync(this ICacheClient client, string key, long amount, DateTimeOffset? expiresAtUtc)
-    {
-        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow()));
-    }
-
     public static Task<double> IncrementAsync(this ICacheClient client, string key, double amount, DateTime? expiresAtUtc)
     {
         return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
-    }
-
-    public static Task<double> IncrementAsync(this ICacheClient client, string key, double amount, DateTimeOffset? expiresAtUtc)
-    {
-        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow()));
     }
 
     public static Task<long> IncrementAsync(this ICacheClient client, string key, TimeSpan? expiresIn = null)
@@ -57,11 +47,6 @@ public static class CacheClientExtensions
     public static Task<long> DecrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc)
     {
         return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
-    }
-
-    public static Task<double> DecrementAsync(this ICacheClient client, string key, double amount, DateTimeOffset? expiresAtUtc)
-    {
-        return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow()));
     }
 
     public static Task<bool> AddAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc)

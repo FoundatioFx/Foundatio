@@ -46,19 +46,19 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
         var sw = Stopwatch.StartNew();
         do
         {
-            string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow());
+            string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime);
 
             try
             {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                    _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().UtcDateTime.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                 var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
-                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, _timeProvider.GetUtcNow().Ceiling(_throttlingPeriod)).AnyContext();
+                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod)).AnyContext();
 
                     // make sure someone didn't beat us to it.
                     if (hitCount <= _maxHitsPerPeriod)
@@ -77,7 +77,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
-                var sleepUntil = _timeProvider.GetUtcNow().Ceiling(_throttlingPeriod).AddMilliseconds(1);
+                var sleepUntil = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                 if (sleepUntil > _timeProvider.GetUtcNow())
                 {
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
@@ -119,7 +119,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow());
+        string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime);
         long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
         return hitCount >= _maxHitsPerPeriod;
     }
@@ -134,7 +134,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
         return Task.CompletedTask;
     }
 
-    private string GetCacheKey(string resource, DateTimeOffset now)
+    private string GetCacheKey(string resource, DateTime now)
     {
         return String.Concat(resource, ":", now.Floor(_throttlingPeriod).Ticks);
     }

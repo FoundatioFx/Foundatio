@@ -24,14 +24,14 @@ public class MaintenanceBase : IDisposable
         _maintenanceTimer = new ScheduledTimer(DoMaintenanceAsync, dueTime, intervalTime, _timeProvider, _loggerFactory);
     }
 
-    protected void ScheduleNextMaintenance(DateTimeOffset utcDate)
+    protected void ScheduleNextMaintenance(DateTime utcDate)
     {
         _maintenanceTimer.ScheduleNext(utcDate);
     }
 
-    protected virtual Task<DateTimeOffset?> DoMaintenanceAsync()
+    protected virtual Task<DateTime?> DoMaintenanceAsync()
     {
-        return Task.FromResult<DateTimeOffset?>(DateTimeOffset.MaxValue);
+        return Task.FromResult<DateTime?>(DateTime.MaxValue);
     }
 
     public virtual void Dispose()

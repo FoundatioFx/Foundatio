@@ -349,7 +349,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
         if (delay <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(delay));
 
-        var sendTime = _timeProvider.GetUtcNow().SafeAdd(delay);
+        var sendTime = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(delay);
         Task.Factory.StartNew(async () =>
         {
             await _timeProvider.SafeDelay(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();

@@ -225,7 +225,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(CacheValue<T>.NoValue);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow())
+        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(CacheValue<T>.NoValue);
@@ -265,7 +265,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), true);
     }
 
@@ -274,7 +274,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone));
     }
 
@@ -292,7 +292,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -340,7 +340,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         long difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -388,7 +388,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -434,7 +434,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         long difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -476,8 +476,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
-        if (expiresAt < _timeProvider.GetUtcNow())
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
             RemoveExpiredKey(key);
             return default;
@@ -539,8 +539,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
-        if (expiresAt < _timeProvider.GetUtcNow())
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
             RemoveExpiredKey(key);
             return default;
@@ -613,7 +613,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty");
 
-        if (entry.ExpiresAt < _timeProvider.GetUtcNow())
+        if (entry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
             RemoveExpiredKey(key);
             return false;
@@ -631,7 +631,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 wasUpdated = false;
 
                 // check to see if existing entry is expired
-                if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow())
+                if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
                 {
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
@@ -690,7 +690,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         bool wasExpectedValue = false;
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
@@ -729,7 +729,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -771,7 +771,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().SafeAdd(expiresIn.Value) : DateTimeOffset.MaxValue;
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -811,7 +811,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(false);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow())
+        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(false);
@@ -832,14 +832,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult<TimeSpan?>(null);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow() || existingEntry.ExpiresAt == DateTimeOffset.MaxValue)
+        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime || existingEntry.ExpiresAt == DateTime.MaxValue)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult<TimeSpan?>(null);
         }
 
         Interlocked.Increment(ref _hits);
-        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Subtract(_timeProvider.GetUtcNow()));
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
@@ -847,7 +847,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        var expiresAt = _timeProvider.GetUtcNow().SafeAdd(expiresIn);
+        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn);
         if (expiresAt < _timeProvider.GetUtcNow())
         {
             RemoveExpiredKey(key);
@@ -862,11 +862,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    private DateTimeOffset _lastMaintenance;
+    private DateTime _lastMaintenance;
 
     private async Task StartMaintenanceAsync(bool compactImmediately = false)
     {
-        var now = _timeProvider.GetUtcNow();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         if (compactImmediately)
             await CompactAsync().AnyContext();
 
@@ -891,7 +891,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
             foreach (var kvp in _memory)
             {
-                bool isExpired = kvp.Value.ExpiresAt < _timeProvider.GetUtcNow();
+                bool isExpired = kvp.Value.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
                 if (isExpired ||
                     kvp.Value.LastAccessTicks < oldest.LastAccessTicks ||
                     (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
@@ -906,7 +906,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < _timeProvider.GetUtcNow())
+            if (cacheEntry != null && cacheEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
                 expiredKey = oldest.Key;
         }
 
@@ -959,7 +959,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private long _usageCount;
 #endif
 
-        public CacheEntry(object value, DateTimeOffset expiresAt, TimeProvider timeProvider, bool shouldClone = true)
+        public CacheEntry(object value, DateTime expiresAt, TimeProvider timeProvider, bool shouldClone = true)
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
@@ -970,7 +970,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         internal long InstanceNumber { get; private set; }
-        internal DateTimeOffset ExpiresAt { get; set; }
+        internal DateTime ExpiresAt { get; set; }
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
 #if DEBUG

@@ -28,8 +28,8 @@ public class StartupActionsContext
     public async Task<RunStartupActionsResult> WaitForStartupAsync(CancellationToken cancellationToken, TimeSpan? maxTimeToWait = null)
     {
         bool isFirstWaiter = Interlocked.Increment(ref _waitCount) == 1;
-        var startTime = DateTime.Now;
-        var lastStatus = DateTime.Now;
+        var startTime = DateTime.UtcNow;
+        var lastStatus = DateTime.UtcNow;
         maxTimeToWait ??= TimeSpan.FromMinutes(5);
 
         while (!cancellationToken.IsCancellationRequested && DateTime.Now.Subtract(startTime) < maxTimeToWait)

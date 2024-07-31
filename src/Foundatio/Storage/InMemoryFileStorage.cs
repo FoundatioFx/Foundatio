@@ -138,14 +138,14 @@ public class InMemoryFileStorage : IFileStorage
 
         _storage.AddOrUpdate(normalizedPath, (new FileSpec
         {
-            Created = _timeProvider.GetUtcNow(),
-            Modified = _timeProvider.GetUtcNow(),
+            Created = _timeProvider.GetUtcNow().UtcDateTime,
+            Modified = _timeProvider.GetUtcNow().UtcDateTime,
             Path = normalizedPath,
             Size = contents.Length
         }, contents), (_, file) => (new FileSpec
         {
             Created = file.Spec.Created,
-            Modified = _timeProvider.GetUtcNow(),
+            Modified = _timeProvider.GetUtcNow().UtcDateTime,
             Path = file.Spec.Path,
             Size = contents.Length
         }, contents));

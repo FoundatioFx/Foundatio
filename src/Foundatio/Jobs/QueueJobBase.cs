@@ -14,7 +14,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
 {
     protected readonly ILogger _logger;
     protected readonly Lazy<IQueue<T>> _queue;
-    private readonly TimeProvider _timeProvider;
+    protected readonly TimeProvider _timeProvider;
     protected readonly string _queueEntryName = typeof(T).Name;
 
     public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)

@@ -23,7 +23,7 @@ public interface ILock : IAsyncDisposable
     Task ReleaseAsync();
     string LockId { get; }
     string Resource { get; }
-    DateTimeOffset AcquiredTimeUtc { get; }
+    DateTime AcquiredTimeUtc { get; }
     TimeSpan TimeWaitedForLock { get; }
     int RenewalCount { get; }
 }
@@ -216,7 +216,7 @@ public static class LockProviderExtensions
         if (isTraceLogLevelEnabled)
             logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
 
-        return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow(), sw.Elapsed, logger);
+        return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
     }
 
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)
