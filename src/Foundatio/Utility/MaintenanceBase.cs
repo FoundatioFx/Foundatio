@@ -14,7 +14,7 @@ public class MaintenanceBase : IDisposable
 
     public MaintenanceBase(TimeProvider timeProvider, ILoggerFactory loggerFactory)
     {
-        _timeProvider = timeProvider;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
     }

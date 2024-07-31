@@ -172,29 +172,36 @@ public class JobRunner
 
                 if (_options.RunContinuous && _options.InstanceCount > 1)
                 {
-                    var tasks = new List<Task>(_options.InstanceCount);
-                    for (int i = 0; i < _options.InstanceCount; i++)
+                    try
                     {
-                        tasks.Add(Task.Run(async () =>
+                        var tasks = new List<Task>(_options.InstanceCount);
+                        for (int i = 0; i < _options.InstanceCount; i++)
                         {
-                            try
+                            tasks.Add(Task.Run(async () =>
                             {
-                                var jobInstance = _options.JobFactory(_serviceProvider);
-                                await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
-                            }
-                            catch (TaskCanceledException)
-                            {
-                            }
-                            catch (Exception ex)
-                            {
-                                if (_logger.IsEnabled(LogLevel.Error))
-                                    _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
-                                throw;
-                            }
-                        }, cancellationToken));
-                    }
+                                try
+                                {
+                                    var jobInstance = _options.JobFactory(_serviceProvider);
+                                    await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit,
+                                        cancellationToken).AnyContext();
+                                }
+                                catch (TaskCanceledException)
+                                {
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (_logger.IsEnabled(LogLevel.Error))
+                                        _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
+                                    throw;
+                                }
+                            }, cancellationToken));
+                        }
 
-                    await Task.WhenAll(tasks).AnyContext();
+                        await Task.WhenAll(tasks).AnyContext();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
                 }
                 else if (_options.RunContinuous && _options.InstanceCount == 1)
                 {

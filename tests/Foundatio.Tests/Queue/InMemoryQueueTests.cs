@@ -17,7 +17,7 @@ public class InMemoryQueueTests : QueueTestBase
 
     public InMemoryQueueTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
         if (_queue == null)
             _queue = new InMemoryQueue<SimpleWorkItem>(o => o
@@ -25,6 +25,7 @@ public class InMemoryQueueTests : QueueTestBase
                 .Retries(retries)
                 .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                .TimeProvider(timeProvider)
                 .LoggerFactory(Log));
         if (_logger.IsEnabled(LogLevel.Debug))
             _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
