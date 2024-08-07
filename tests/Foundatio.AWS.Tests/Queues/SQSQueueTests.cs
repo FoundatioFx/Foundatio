@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -19,7 +18,7 @@ public class SQSQueueTests : QueueTestBase
         _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
         var queue = new SQSQueue<SimpleWorkItem>(
             o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
@@ -29,6 +28,7 @@ public class SQSQueueTests : QueueTestBase
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(TimeSpan.FromSeconds(1))
                 .ReadQueueTimeout(TimeSpan.FromSeconds(1))
+                .TimeProvider(timeProvider)
                 .LoggerFactory(Log));
 
         _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
@@ -211,7 +211,7 @@ public class SQSQueueTests : QueueTestBase
                 Assert.Equal(0, stats.Working);
             }
 
-            await SystemClock.SleepAsync(TimeSpan.FromSeconds(3));
+            await Task.Delay(TimeSpan.FromSeconds(3));
 
             if (_assertStats)
             {

@@ -10,7 +10,6 @@ using Amazon.SQS.Model;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using ThirdParty.Json.LitJson;
 
@@ -128,7 +127,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         _logger.LogTrace("Enqueued SQS message {MessageId}", response.MessageId);
 
         Interlocked.Increment(ref _enqueuedCount);
-        var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, data, this, SystemClock.UtcNow, 0);
+        var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, data, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
         return response.MessageId;
@@ -156,7 +155,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
                 _logger.LogTrace("Checking for SQS message... Cancel Requested: {IsCancellationRequested}", linkedCancellationToken.IsCancellationRequested);
 
             // The aws sdk will not abort an http long pull operation when the cancellation token is cancelled.
-            // The aws sdk will throw the OperationCanceledException after the long poll http call is returned and 
+            // The aws sdk will throw the OperationCanceledException after the long poll http call is returned and
             // the message will be marked as in-flight but not returned from this call: https://github.com/aws/aws-sdk-net/issues/1680
             return _client.Value.ReceiveMessageAsync(request, CancellationToken.None);
         }
@@ -170,7 +169,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
             {
                 try
                 {
-                    await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                    await _timeProvider.Delay(_options.DequeueInterval, linkedCancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException)
                 {
