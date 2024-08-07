@@ -590,7 +590,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public bool? CheckCrcs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.AllowAutoCreateTopics"/>
+    /// <inheritdoc cref="ClientConfig.AllowAutoCreateTopics"/>
     /// </summary>
     public bool? AllowAutoCreateTopics { get; set; }
 }
