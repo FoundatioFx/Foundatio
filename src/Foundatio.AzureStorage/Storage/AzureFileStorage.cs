@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Foundatio.Azure.Extensions;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.Extensions.Logging;
@@ -21,12 +20,14 @@ public class AzureFileStorage : IFileStorage
     private readonly CloudBlobContainer _container;
     private readonly ISerializer _serializer;
     protected readonly ILogger _logger;
+    protected readonly TimeProvider _timeProvider;
 
     public AzureFileStorage(AzureFileStorageOptions options)
     {
         if (options == null)
             throw new ArgumentNullException(nameof(options));
 
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
 
@@ -170,7 +171,7 @@ public class AzureFileStorage : IFileStorage
 
         await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
         while (newBlob.CopyState.Status == CopyStatus.Pending)
-            await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
 
         return newBlob.CopyState.Status == CopyStatus.Success;
     }

@@ -16,7 +16,7 @@ public class AzureStorageQueueTests : QueueTestBase
 
     public AzureStorageQueueTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
         string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
         if (String.IsNullOrEmpty(connectionString))
@@ -31,6 +31,7 @@ public class AzureStorageQueueTests : QueueTestBase
             .RetryPolicy(retries <= 0 ? new NoRetry() : (IRetryPolicy)new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries))
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
             .DequeueInterval(TimeSpan.FromMilliseconds(100))
+            .TimeProvider(timeProvider)
             .LoggerFactory(Log));
     }
 

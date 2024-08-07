@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Queue;
 using Microsoft.Extensions.Logging;
@@ -74,7 +73,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         var message = new CloudQueueMessage(_serializer.SerializeToBytes(data));
         await _queueReference.AddMessageAsync(message, null, options.DeliveryDelay, null, null).AnyContext();
 
-        var entry = new QueueEntry<T>(message.Id, null, data, this, SystemClock.UtcNow, 0);
+        var entry = new QueueEntry<T>(message.Id, null, data, this, _timeProvider.GetLocalNow().UtcDateTime, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
         return message.Id;
@@ -99,7 +98,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
                 try
                 {
                     if (!linkedCancellationToken.IsCancellationRequested)
-                        await SystemClock.SleepAsync(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                        await _timeProvider.Delay(_options.DequeueInterval, linkedCancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException) { }
 
