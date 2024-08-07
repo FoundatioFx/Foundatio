@@ -5,7 +5,6 @@ using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -14,7 +13,7 @@ namespace Foundatio.RabbitMQ.Tests.Messaging;
 
 public class RabbitMqMessageBusTests : MessageBusTestBase
 {
-    private readonly string _topic = $"test_topic_{SystemClock.UtcNow.Ticks}";
+    private readonly string _topic = $"test_topic_{DateTime.UtcNow.Ticks}";
 
     public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
