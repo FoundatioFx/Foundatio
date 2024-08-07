@@ -15,6 +15,7 @@ namespace Foundatio.Tests.Metrics;
 
 public class DiagnosticsMetricsCollector : IDisposable
 {
+    private readonly Timer _timer;
     private readonly MeterListener _meterListener = new();
     private readonly ConcurrentQueue<RecordedMeasurement<byte>> _byteMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<short>> _shortMeasurements = new();
@@ -97,6 +98,8 @@ public class DiagnosticsMetricsCollector : IDisposable
         });
 
         _meterListener.Start();
+
+        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero,  TimeSpan.FromMilliseconds(50));
     }
 
     public void RecordObservableInstruments()
@@ -344,6 +347,7 @@ public class DiagnosticsMetricsCollector : IDisposable
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+        _timer.Dispose();
         _meterListener?.Dispose();
     }
 }

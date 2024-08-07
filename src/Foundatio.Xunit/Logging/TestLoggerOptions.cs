@@ -1,5 +1,4 @@
 ﻿using System;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 

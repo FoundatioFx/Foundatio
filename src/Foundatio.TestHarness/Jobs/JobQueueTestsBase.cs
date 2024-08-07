@@ -8,10 +8,8 @@ using Exceptionless;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Metrics;
-using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -178,8 +176,6 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             }
             _logger.LogInformation("Done getting queue stats");
 
-            //var queueSummary = await metrics.GetQueueStatsAsync("test.samplequeueworkitem");
-            //Assert.Equal(queueStats.Sum(s => s.Completed), queueSummary.Completed.Count);
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
         }
         finally

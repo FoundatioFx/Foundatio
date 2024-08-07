@@ -1074,32 +1074,35 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.AbandonAsync();
 
             _logger.LogTrace("Before asserts");
             Assert.Equal(2, completedCount);
 
             metricsCollector.RecordObservableInstruments();
-            //Assert.InRange(metricsCollector.GetMax<int>("foundatio.workitemdata.count"), 1, 3);
-            //Assert.InRange(metricsCollector.GetMax<int>("foundatio.workitemdata.working"), 0, 1);
+            Assert.InRange(metricsCollector.GetMax<long>("foundatio.workitemdata.count"), 1, 3);
+            Assert.InRange(metricsCollector.GetMax<long>("foundatio.workitemdata.working"), 0, 1);
 
-            Assert.Equal(3, metricsCollector.GetCount<int>("foundatio.workitemdata.simple.enqueued"));
-            Assert.Equal(3, metricsCollector.GetCount<int>("foundatio.workitemdata.enqueued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.enqueued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.enqueued"));
 
-            Assert.Equal(3, metricsCollector.GetCount<int>("foundatio.workitemdata.simple.dequeued"));
-            Assert.Equal(3, metricsCollector.GetCount<int>("foundatio.workitemdata.dequeued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.dequeued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.dequeued"));
 
-            Assert.Equal(2, metricsCollector.GetCount<int>("foundatio.workitemdata.simple.completed"));
-            Assert.Equal(2, metricsCollector.GetCount<int>("foundatio.workitemdata.completed"));
+            Assert.Equal(2, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.completed"));
+            Assert.Equal(2, metricsCollector.GetCount<long>("foundatio.workitemdata.completed"));
 
-            Assert.Equal(1, metricsCollector.GetCount<int>("foundatio.workitemdata.simple.abandoned"));
-            Assert.Equal(1, metricsCollector.GetCount<int>("foundatio.workitemdata.abandoned"));
+            Assert.Equal(1, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.abandoned"));
+            Assert.Equal(1, metricsCollector.GetCount<long>("foundatio.workitemdata.abandoned"));
 
             var measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.simple.queuetime");
             Assert.Equal(3, measurements.Count);
@@ -1110,23 +1113,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Assert.Equal(3, measurements.Count);
             measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.processtime");
             Assert.Equal(3, measurements.Count);
-
-            if (_assertStats)
-            {
-                /*var queueStats = await metrics.GetQueueStatsAsync("metric.workitemdata");
-                Assert.Equal(3, queueStats.Enqueued.Count);
-                Assert.Equal(3, queueStats.Dequeued.Count);
-                Assert.Equal(2, queueStats.Completed.Count);
-                Assert.Equal(1, queueStats.Abandoned.Count);
-                Assert.InRange(queueStats.Count.Max, 1, 3);
-                Assert.InRange(queueStats.Working.Max, 0, 1);
-
-                var subQueueStats = await metrics.GetQueueStatsAsync("metric.workitemdata", "simple");
-                Assert.Equal(3, subQueueStats.Enqueued.Count);
-                Assert.Equal(3, subQueueStats.Dequeued.Count);
-                Assert.Equal(2, subQueueStats.Completed.Count);
-                Assert.Equal(1, subQueueStats.Abandoned.Count);*/
-            }
         }
     }
 

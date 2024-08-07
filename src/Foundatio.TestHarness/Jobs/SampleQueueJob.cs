@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Metrics;
 using Foundatio.Queues;
 using Microsoft.Extensions.Logging;
 

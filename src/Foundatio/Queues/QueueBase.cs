@@ -19,13 +19,13 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly string _metricsPrefix;
     protected readonly ISerializer _serializer;
 
-    private readonly Counter<int> _enqueuedCounter;
-    private readonly Counter<int> _dequeuedCounter;
+    private readonly Counter<long> _enqueuedCounter;
+    private readonly Counter<long> _dequeuedCounter;
     private readonly Histogram<double> _queueTimeHistogram;
-    private readonly Counter<int> _completedCounter;
+    private readonly Counter<long> _completedCounter;
     private readonly Histogram<double> _processTimeHistogram;
     private readonly Histogram<double> _totalTimeHistogram;
-    private readonly Counter<int> _abandonedCounter;
+    private readonly Counter<long> _abandonedCounter;
 #pragma warning disable IDE0052 // Remove unread private members
     private readonly ObservableGauge<long> _countGauge;
     private readonly ObservableGauge<long> _workingGauge;
@@ -50,13 +50,13 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
         // setup meters
-        _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
-        _dequeuedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("dequeued"), description: "Number of dequeued items");
+        _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
+        _dequeuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("dequeued"), description: "Number of dequeued items");
         _queueTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("queuetime"), description: "Time in queue", unit: "ms");
-        _completedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("completed"), description: "Number of completed items");
+        _completedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("completed"), description: "Number of completed items");
         _processTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("processtime"), description: "Time to process items", unit: "ms");
         _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
-        _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<int>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
+        _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
 
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
@@ -308,7 +308,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         return haveStatName?.SubMetricName;
     }
 
-    protected readonly ConcurrentDictionary<string, Counter<int>> _counters = new();
+    protected readonly ConcurrentDictionary<string, Counter<long>> _counters = new();
     private void IncrementSubCounter(T data, string name, in TagList tags)
     {
         if (data is not IHaveSubMetricName)
@@ -319,7 +319,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             return;
 
         var fullName = GetFullMetricName(subMetricName, name);
-        _counters.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateCounter<int>(fullName)).Add(1, tags);
+        _counters.GetOrAdd(fullName, FoundatioDiagnostics.Meter.CreateCounter<long>(fullName)).Add(1, tags);
     }
 
     protected readonly ConcurrentDictionary<string, Histogram<double>> _histograms = new();

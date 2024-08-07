@@ -25,7 +25,9 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
     private readonly Histogram<double> _lockWaitTimeHistogram;
     private readonly Counter<int> _lockTimeoutCounter;
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, loggerFactory) { }
+
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
         _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
