@@ -195,7 +195,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         await client.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
 
         // Add 1ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
-        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(1)));
+        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(10)));
 
         Assert.False(await client.ExistsAsync("test"));
     }
