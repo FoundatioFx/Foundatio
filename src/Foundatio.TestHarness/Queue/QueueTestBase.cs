@@ -334,7 +334,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     public virtual Task VerifyRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, new[] { 1 });
+        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, [1]);
         if (queue == null)
             return Task.CompletedTask;
 
@@ -344,7 +344,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     public virtual Task VerifyDelayedRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), new[] { 1 });
+        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), [1]);
         if (queue == null)
             return Task.CompletedTask;
 
@@ -400,7 +400,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
                 metricsCollector.RecordObservableInstruments();
                 Assert.Equal(retryCount + 1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
                 Assert.Equal(retryCount + 1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.abandoned"));
 
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));

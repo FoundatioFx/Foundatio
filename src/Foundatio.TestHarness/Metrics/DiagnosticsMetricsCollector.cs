@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -24,13 +24,13 @@ public class DiagnosticsMetricsCollector : IDisposable
     private readonly ConcurrentQueue<RecordedMeasurement<float>> _floatMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<double>> _doubleMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<decimal>> _decimalMeasurements = new();
-    private readonly int _maxMeasurementCountPerType = 1000;
+    private readonly int _maxMeasurementCountPerType;
     private readonly AsyncAutoResetEvent _measurementEvent = new(false);
     private readonly ILogger _logger;
 
-    public DiagnosticsMetricsCollector(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 1000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
+    public DiagnosticsMetricsCollector(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 10000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
 
-    public DiagnosticsMetricsCollector(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 1000)
+    public DiagnosticsMetricsCollector(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 10000)
     {
         _logger = logger;
         _maxMeasurementCountPerType = maxMeasurementCount;
