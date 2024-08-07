@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Azure.ServiceBus;
 using Microsoft.Azure.ServiceBus.Management;
 using Microsoft.Extensions.Logging;
@@ -133,7 +132,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            brokeredMessage.ScheduledEnqueueTimeUtc = SystemClock.UtcNow.Add(options.DeliveryDelay.Value);
+            brokeredMessage.ScheduledEnqueueTimeUtc = _timeProvider.GetUtcNow().UtcDateTime.Add(options.DeliveryDelay.Value);
         }
         else
         {

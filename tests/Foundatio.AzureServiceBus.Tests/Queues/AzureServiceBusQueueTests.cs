@@ -19,7 +19,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
         Log.SetLogLevel<AzureServiceBusQueue<SimpleWorkItem>>(LogLevel.Trace);
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
         string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         if (String.IsNullOrEmpty(connectionString))
@@ -44,6 +44,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
             RequiresSession = false,
             Retries = retries,
             RetryPolicy = retryPolicy,
+            TimeProvider = timeProvider,
             WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
             LoggerFactory = Log
         });
