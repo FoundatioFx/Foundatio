@@ -32,23 +32,23 @@ public class StartupActionsContext
         var lastStatus = DateTime.UtcNow;
         maxTimeToWait ??= TimeSpan.FromMinutes(5);
 
-        while (!cancellationToken.IsCancellationRequested && DateTime.Now.Subtract(startTime) < maxTimeToWait)
+        while (!cancellationToken.IsCancellationRequested && DateTime.UtcNow.Subtract(startTime) < maxTimeToWait)
         {
             if (IsStartupComplete)
                 return Result;
 
-            if (isFirstWaiter && DateTime.Now.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information))
+            if (isFirstWaiter && DateTime.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information))
             {
-                lastStatus = DateTime.Now;
-                _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", DateTime.Now.Subtract(startTime));
+                lastStatus = DateTime.UtcNow;
+                _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", DateTime.UtcNow.Subtract(startTime));
             }
 
             await Task.Delay(1000, cancellationToken).AnyContext();
         }
 
         if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))
-            _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", DateTime.Now.Subtract(startTime));
+            _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", DateTime.UtcNow.Subtract(startTime));
 
-        return new RunStartupActionsResult { Success = false, ErrorMessage = $"Timed out waiting for startup actions to be completed after {DateTime.Now.Subtract(startTime):mm\\:ss}" };
+        return new RunStartupActionsResult { Success = false, ErrorMessage = $"Timed out waiting for startup actions to be completed after {DateTime.UtcNow.Subtract(startTime):mm\\:ss}" };
     }
 }
