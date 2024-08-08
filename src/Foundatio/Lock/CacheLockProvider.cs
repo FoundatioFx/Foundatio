@@ -13,10 +13,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock;
 
-public class CacheLockProvider : ILockProvider, IHaveLogger
+public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
 {
     private readonly ICacheClient _cacheClient;
     private readonly IMessageBus _messageBus;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new();
     private readonly AsyncLock _lock = new();
     private bool _isSubscribed;
@@ -24,8 +25,11 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
     private readonly Histogram<double> _lockWaitTimeHistogram;
     private readonly Counter<int> _lockTimeoutCounter;
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null)
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, loggerFactory) { }
+
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
     {
+        _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
         _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
         _cacheClient = new ScopedCacheClient(cacheClient, "lock");
         _messageBus = messageBus;
@@ -35,6 +39,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
     }
 
     ILogger IHaveLogger.Logger => _logger;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     private async Task EnsureTopicSubscriptionAsync()
     {
@@ -127,8 +132,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger
                 if (!_isSubscribed)
                     await EnsureTopicSubscriptionAsync().AnyContext();
 
-                var keyExpiration = SystemClock.UtcNow.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
-                var delayAmount = keyExpiration.Subtract(SystemClock.UtcNow);
+                var keyExpiration = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(await _cacheClient.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero);
+                var delayAmount = keyExpiration.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
 
                 // delay a minimum of 50ms and a maximum of 3 seconds
                 if (delayAmount < TimeSpan.FromMilliseconds(50))

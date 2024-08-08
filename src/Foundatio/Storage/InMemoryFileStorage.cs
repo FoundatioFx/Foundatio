@@ -19,6 +19,7 @@ public class InMemoryFileStorage : IFileStorage
     private readonly ConcurrentDictionary<string, (FileSpec Spec, byte[] Data)> _storage = new(StringComparer.OrdinalIgnoreCase);
     private readonly ISerializer _serializer;
     protected readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
 
     public InMemoryFileStorage() : this(o => o) { }
 
@@ -30,6 +31,7 @@ public class InMemoryFileStorage : IFileStorage
         MaxFileSize = options.MaxFileSize;
         MaxFiles = options.MaxFiles;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
+        _timeProvider = options.TimeProvider;
         _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
 
@@ -136,14 +138,14 @@ public class InMemoryFileStorage : IFileStorage
 
         _storage.AddOrUpdate(normalizedPath, (new FileSpec
         {
-            Created = SystemClock.UtcNow,
-            Modified = SystemClock.UtcNow,
+            Created = _timeProvider.GetUtcNow().UtcDateTime,
+            Modified = _timeProvider.GetUtcNow().UtcDateTime,
             Path = normalizedPath,
             Size = contents.Length
         }, contents), (_, file) => (new FileSpec
         {
             Created = file.Spec.Created,
-            Modified = SystemClock.UtcNow,
+            Modified = _timeProvider.GetUtcNow().UtcDateTime,
             Path = file.Spec.Path,
             Size = contents.Length
         }, contents));

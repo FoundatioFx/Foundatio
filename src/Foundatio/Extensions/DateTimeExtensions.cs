@@ -29,9 +29,9 @@ internal static class DateTimeExtensions
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeSeconds();
     }
 
-    public static DateTime FromUnixTimeSeconds(this long timestamp)
+    public static DateTimeOffset FromUnixTimeSeconds(this long timestamp)
     {
-        return DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
+        return DateTimeOffset.FromUnixTimeSeconds(timestamp);
     }
 
     public static DateTime SafeAdd(this DateTime date, TimeSpan value)

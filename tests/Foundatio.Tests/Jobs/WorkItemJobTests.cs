@@ -9,10 +9,8 @@ using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
-using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
-using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -39,7 +37,7 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             for (int i = 0; i < 10; i++)
             {
-                await SystemClock.SleepAsync(100);
+                await Task.Delay(100);
                 await ctx.ReportProgressAsync(10 * i);
             }
         });
@@ -68,11 +66,7 @@ public class WorkItemJobTests : TestWithLoggingBase
     {
         const int workItemCount = 1000;
 
-        using var metrics = new InMemoryMetricsClient(o => o.LoggerFactory(Log));
         using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
-#pragma warning disable CS0618 // Type or member is obsolete
-        queue.AttachBehavior(new MetricsQueueBehavior<WorkItemData>(metrics, loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
         var handlerRegistry = new WorkItemHandlers();
         var j1 = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
@@ -148,7 +142,7 @@ public class WorkItemJobTests : TestWithLoggingBase
                 _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
         }
 
-        await SystemClock.SleepAsync(100);
+        await Task.Delay(100);
         if (_logger.IsEnabled(LogLevel.Information))
             _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
         Assert.Equal(workItemCount, completedItems.Count + errors);
@@ -199,7 +193,7 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             for (int i = 1; i < 10; i++)
             {
-                await SystemClock.SleepAsync(100);
+                await Task.Delay(100);
                 await ctx.ReportProgressAsync(10 * i);
             }
         }, Log.CreateLogger("MyWorkItem"));
@@ -350,7 +344,7 @@ public class MyWorkItemHandler : WorkItemHandlerBase
 
         for (int i = 1; i < 10; i++)
         {
-            await SystemClock.SleepAsync(10);
+            await Task.Delay(10);
             await context.ReportProgressAsync(10 * i);
         }
     }

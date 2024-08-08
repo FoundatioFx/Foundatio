@@ -156,7 +156,7 @@ public static class LockProviderExtensions
 
         var sw = Stopwatch.StartNew();
 
-        var acquiredLocks = new List<(ILock Lock, DateTime LastRenewed)>(resourceList.Length);
+        var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewed)>(resourceList.Length);
         foreach (string resource in resourceList)
         {
             var l = await provider.AcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
@@ -168,7 +168,7 @@ public static class LockProviderExtensions
             // Renew any acquired locks, so they stay alive until we have all locks
             if (acquiredLocks.Count > 0 && renewTime > TimeSpan.Zero)
             {
-                var utcNow = SystemClock.UtcNow;
+                var utcNow = provider.GetTimeProvider().GetUtcNow();
                 var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToArray();
                 if (locksToRenew.Length > 0)
                 {
@@ -180,7 +180,7 @@ public static class LockProviderExtensions
                 }
             }
 
-            acquiredLocks.Add((l, SystemClock.UtcNow));
+            acquiredLocks.Add((l, provider.GetTimeProvider().GetUtcNow()));
         }
 
         sw.Stop();
@@ -216,7 +216,7 @@ public static class LockProviderExtensions
         if (isTraceLogLevelEnabled)
             logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
 
-        return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), sw.Elapsed, logger);
+        return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
     }
 
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)

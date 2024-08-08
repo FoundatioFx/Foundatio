@@ -12,7 +12,7 @@ public class ThrottledJob : JobWithLockBase
 {
     public ThrottledJob(ICacheClient client, ILoggerFactory loggerFactory = null) : base(loggerFactory)
     {
-        _locker = new ThrottlingLockProvider(client, 1, TimeSpan.FromMilliseconds(100), loggerFactory);
+        _locker = new ThrottlingLockProvider(client, 1, TimeSpan.FromMilliseconds(100), null, loggerFactory);
     }
 
     private readonly ILockProvider _locker;

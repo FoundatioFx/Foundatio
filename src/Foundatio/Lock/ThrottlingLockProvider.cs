@@ -9,15 +9,17 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock;
 
-public class ThrottlingLockProvider : ILockProvider, IHaveLogger
+public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
 {
     private readonly ICacheClient _cacheClient;
     private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
     private readonly int _maxHitsPerPeriod;
     private readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
+        _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
         _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger<ThrottlingLockProvider>.Instance;
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
         _maxHitsPerPeriod = maxHitsPerPeriod;
@@ -30,6 +32,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger
     }
 
     ILogger IHaveLogger.Logger => _logger;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
@@ -43,19 +46,19 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger
         var sw = Stopwatch.StartNew();
         do
         {
-            string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
+            string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime);
 
             try
             {
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", SystemClock.UtcNow.ToString("mm:ss.fff"), SystemClock.UtcNow.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                    _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().UtcDateTime.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                 var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                 if (isTraceLogLevelEnabled)
                     _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
-                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, SystemClock.UtcNow.Ceiling(_throttlingPeriod)).AnyContext();
+                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod)).AnyContext();
 
                     // make sure someone didn't beat us to it.
                     if (hitCount <= _maxHitsPerPeriod)
@@ -74,16 +77,16 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
-                var sleepUntil = SystemClock.UtcNow.Ceiling(_throttlingPeriod).AddMilliseconds(1);
-                if (sleepUntil > SystemClock.UtcNow)
+                var sleepUntil = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMilliseconds(1);
+                if (sleepUntil > _timeProvider.GetUtcNow())
                 {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - SystemClock.UtcNow);
-                    await SystemClock.SleepAsync(sleepUntil - SystemClock.UtcNow, cancellationToken).AnyContext();
+                    if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
+                    await _timeProvider.SafeDelay(sleepUntil - _timeProvider.GetUtcNow(), cancellationToken).AnyContext();
                 }
                 else
                 {
                     if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep");
-                    await SystemClock.SleepAsync(50, cancellationToken).AnyContext();
+                    await _timeProvider.SafeDelay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
                 }
             }
             catch (OperationCanceledException)
@@ -97,7 +100,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger
                 if (errors >= 3)
                     break;
 
-                await SystemClock.SleepSafeAsync(50, cancellationToken).AnyContext();
+                await _timeProvider.SafeDelay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
             }
         } while (!cancellationToken.IsCancellationRequested);
 
@@ -116,7 +119,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        string cacheKey = GetCacheKey(resource, SystemClock.UtcNow);
+        string cacheKey = GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime);
         long hitCount = await _cacheClient.GetAsync<long>(cacheKey, 0).AnyContext();
         return hitCount >= _maxHitsPerPeriod;
     }

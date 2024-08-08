@@ -74,7 +74,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             });
 
-            await SystemClock.SleepAsync(1000);
+            await Task.Delay(1000);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello",
@@ -114,7 +114,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello",
@@ -146,7 +146,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 throw new Exception();
             });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
             await messageBus.PublishAsync<object>(null);
             _logger.LogTrace("Published one...");
 
@@ -176,7 +176,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
             await messageBus.PublishAsync(new DerivedSimpleMessageA
             {
                 Data = "Hello"
@@ -212,7 +212,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello"
@@ -327,7 +327,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
             var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
             {
-                await SystemClock.SleepAsync(RandomData.GetInt(0, 10), ct);
+                await Task.Delay(RandomData.GetInt(0, 10), ct);
                 await messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
             });
 
@@ -605,7 +605,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 Data = "Hello"
             });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
                 Assert.Equal("Hello", msg.Data);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -15,6 +15,7 @@ namespace Foundatio.Tests.Metrics;
 
 public class DiagnosticsMetricsCollector : IDisposable
 {
+    private readonly Timer _timer;
     private readonly MeterListener _meterListener = new();
     private readonly ConcurrentQueue<RecordedMeasurement<byte>> _byteMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<short>> _shortMeasurements = new();
@@ -23,13 +24,13 @@ public class DiagnosticsMetricsCollector : IDisposable
     private readonly ConcurrentQueue<RecordedMeasurement<float>> _floatMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<double>> _doubleMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<decimal>> _decimalMeasurements = new();
-    private readonly int _maxMeasurementCountPerType = 1000;
+    private readonly int _maxMeasurementCountPerType;
     private readonly AsyncAutoResetEvent _measurementEvent = new(false);
     private readonly ILogger _logger;
 
-    public DiagnosticsMetricsCollector(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 1000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
+    public DiagnosticsMetricsCollector(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
 
-    public DiagnosticsMetricsCollector(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 1000)
+    public DiagnosticsMetricsCollector(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 100000)
     {
         _logger = logger;
         _maxMeasurementCountPerType = maxMeasurementCount;
@@ -97,6 +98,8 @@ public class DiagnosticsMetricsCollector : IDisposable
         });
 
         _meterListener.Start();
+
+        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero,  TimeSpan.FromMilliseconds(50));
     }
 
     public void RecordObservableInstruments()
@@ -314,7 +317,7 @@ public class DiagnosticsMetricsCollector : IDisposable
             cancellationToken = cancellationTokenSource.Token;
         }
 
-        var start = SystemClock.UtcNow;
+        var start = DateTime.UtcNow;
 
         var currentCount = (int)GetSum<T>(name);
         var targetCount = currentCount + count;
@@ -336,7 +339,7 @@ public class DiagnosticsMetricsCollector : IDisposable
             _logger.LogTrace("Got new measurement: count={CurrentCount} expected={Count}", currentCount, targetCount);
         }
 
-        _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, targetCount, currentCount >= targetCount, SystemClock.UtcNow.Subtract(start));
+        _logger.LogTrace("Done waiting: count={CurrentCount} expected={Count} success={Success} time={Time}", currentCount, targetCount, currentCount >= targetCount, DateTime.UtcNow.Subtract(start));
 
         return currentCount >= targetCount;
     }
@@ -344,6 +347,7 @@ public class DiagnosticsMetricsCollector : IDisposable
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+        _timer.Dispose();
         _meterListener?.Dispose();
     }
 }

@@ -12,7 +12,7 @@ namespace Foundatio.Caching;
 
 public interface IHybridCacheClient : ICacheClient { }
 
-public class HybridCacheClient : IHybridCacheClient
+public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger
 {
     protected readonly ICacheClient _distributedCache;
     protected readonly IMessageBus _messageBus;
@@ -37,6 +37,9 @@ public class HybridCacheClient : IHybridCacheClient
     public InMemoryCacheClient LocalCache => _localCache;
     public long LocalCacheHits => _localCacheHits;
     public long InvalidateCacheCalls => _invalidateCacheCalls;
+
+    ILogger IHaveLogger.Logger => _logger;
+    TimeProvider IHaveTimeProvider.TimeProvider => _distributedCache.GetTimeProvider();
 
     private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args)
     {

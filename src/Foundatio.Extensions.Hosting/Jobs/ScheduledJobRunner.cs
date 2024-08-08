@@ -18,7 +18,7 @@ internal class ScheduledJobRunner
     private readonly ScheduledJobOptions _jobOptions;
     private readonly IServiceProvider _serviceProvider;
     private readonly ICacheClient _cacheClient;
-    private readonly ISystemClock _systemClock;
+    private readonly TimeProvider _timeProvider;
     private CronExpression _cronSchedule;
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
@@ -30,7 +30,7 @@ internal class ScheduledJobRunner
         _jobOptions = jobOptions;
         _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
         _serviceProvider = serviceProvider;
-        _systemClock = serviceProvider.GetService<ISystemClock>() ?? SystemClock.Instance;
+        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
         _logger = loggerFactory?.CreateLogger<ScheduledJobRunner>() ?? NullLogger<ScheduledJobRunner>.Instance;
 
@@ -40,7 +40,7 @@ internal class ScheduledJobRunner
 
         var interval = TimeSpan.FromDays(1);
 
-        var nextOccurrence = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
+        var nextOccurrence = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
         if (nextOccurrence.HasValue)
         {
             var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
@@ -50,7 +50,7 @@ internal class ScheduledJobRunner
 
         _lockProvider = new ThrottlingLockProvider(_cacheClient, 1, interval.Add(interval));
 
-        NextRun = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
+        NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
     }
 
     public ScheduledJobOptions Options => _jobOptions;
@@ -62,7 +62,7 @@ internal class ScheduledJobRunner
         set
         {
             _cronSchedule = CronExpression.Parse(value);
-            NextRun = _cronSchedule.GetNextOccurrence(_systemClock.UtcNow());
+            NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
             _schedule = value;
         }
     }
@@ -87,7 +87,7 @@ internal class ScheduledJobRunner
             return false;
 
         // not time yet
-        if (NextRun > _systemClock.UtcNow())
+        if (NextRun > _timeProvider.GetUtcNow().UtcDateTime)
             return false;
 
         // check if already run

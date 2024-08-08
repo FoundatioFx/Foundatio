@@ -9,17 +9,19 @@ public class MaintenanceBase : IDisposable
 {
     private ScheduledTimer _maintenanceTimer;
     private readonly ILoggerFactory _loggerFactory;
+    protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
 
-    public MaintenanceBase(ILoggerFactory loggerFactory)
+    public MaintenanceBase(TimeProvider timeProvider, ILoggerFactory loggerFactory)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
     }
 
     protected void InitializeMaintenance(TimeSpan? dueTime = null, TimeSpan? intervalTime = null)
     {
-        _maintenanceTimer = new ScheduledTimer(DoMaintenanceAsync, dueTime, intervalTime, _loggerFactory);
+        _maintenanceTimer = new ScheduledTimer(DoMaintenanceAsync, dueTime, intervalTime, _timeProvider, _loggerFactory);
     }
 
     protected void ScheduleNextMaintenance(DateTime utcDate)

@@ -6,11 +6,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
-using Foundatio.Metrics;
-using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,18 +22,18 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanCancelJob()
     {
-        var job = new HelloWorldJob(Log);
+        var job = new HelloWorldJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         var resultTask = new JobRunner(job, sp, Log).RunAsync(timeoutCancellationTokenSource.Token);
-        await SystemClock.SleepAsync(TimeSpan.FromSeconds(2));
+        await TimeProvider.System.Delay(TimeSpan.FromSeconds(2));
         Assert.True(await resultTask);
     }
 
     [Fact]
     public async Task CanStopLongRunningJob()
     {
-        var job = new LongRunningJob(Log);
+        var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
         var cts = new CancellationTokenSource(1000);
@@ -46,7 +45,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanStopLongRunningCronJob()
     {
-        var job = new LongRunningJob(Log);
+        var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
         var cts = new CancellationTokenSource(1000);
@@ -58,7 +57,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunJobs()
     {
-        var job = new HelloWorldJob(Log);
+        var job = new HelloWorldJob(null, Log);
         Assert.Equal(0, job.RunCount);
         await job.RunAsync();
         Assert.Equal(1, job.RunCount);
@@ -74,7 +73,7 @@ public class JobTests : TestWithLoggingBase
         sw.Stop();
         Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(95), TimeSpan.FromMilliseconds(800));
 
-        var jobInstance = new HelloWorldJob(Log);
+        var jobInstance = new HelloWorldJob(null, Log);
         Assert.NotNull(jobInstance);
         Assert.Equal(0, jobInstance.RunCount);
         Assert.Equal(JobResult.Success, await jobInstance.RunAsync());
@@ -84,7 +83,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunMultipleInstances()
     {
-        var job = new HelloWorldJob(Log);
+        var job = new HelloWorldJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
 
         HelloWorldJob.GlobalRunCount = 0;
@@ -107,20 +106,18 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanCancelContinuousJobs()
     {
-        using (TestSystemClock.Install())
-        {
-            var job = new HelloWorldJob(Log);
-            var sp = new ServiceCollection().BuildServiceProvider();
-            var timeoutCancellationTokenSource = new CancellationTokenSource(100);
-            await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
+        var timeProvider = new FakeTimeProvider { AutoAdvanceAmount = TimeSpan.FromSeconds(1)};
+        var job = new HelloWorldJob(timeProvider, Log);
+        var sp = new ServiceCollection().AddSingleton<TimeProvider>(_ => timeProvider).BuildServiceProvider();
+        var timeoutCancellationTokenSource = new CancellationTokenSource(100);
+        await job.RunContinuousAsync(TimeSpan.FromSeconds(1), 5, timeoutCancellationTokenSource.Token);
 
-            Assert.Equal(1, job.RunCount);
+        Assert.Equal(1, job.RunCount);
 
-            timeoutCancellationTokenSource = new CancellationTokenSource(500);
-            var runnerTask = new JobRunner(job, sp, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
-            await SystemClock.SleepAsync(TimeSpan.FromSeconds(1));
-            await runnerTask;
-        }
+        timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMilliseconds(50), timeProvider);
+        var runnerTask = new JobRunner(job, sp, Log, instanceCount: 5, iterationLimit: 10000, interval: TimeSpan.FromMilliseconds(1)).RunAsync(timeoutCancellationTokenSource.Token);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await runnerTask;
     }
 
     [Fact]
@@ -157,41 +154,39 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunJobsWithInterval()
     {
-        using (TestSystemClock.Install())
-        {
-            var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var time = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(time);
+        var interval = TimeSpan.FromHours(.75);
 
-            TestSystemClock.SetFrozenTime(time);
-            TestSystemClock.UseFakeSleep();
+        var job = new HelloWorldJob(timeProvider, Log);
 
-            var job = new HelloWorldJob(Log);
-            var interval = TimeSpan.FromHours(.75);
+        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval));
+        while (job.RunCount < 1)
+            await Task.Delay(10);
+        timeProvider.Advance(interval);
+        await jobTask;
 
-            await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
-
-            Assert.Equal(2, job.RunCount);
-            Assert.Equal(interval, (SystemClock.UtcNow - time));
-        }
+        Assert.Equal(2, job.RunCount);
+        Assert.Equal(interval, (timeProvider.GetUtcNow() - time));
     }
 
     [Fact]
     public async Task CanRunJobsWithIntervalBetweenFailingJob()
     {
-        using (TestSystemClock.Install())
-        {
-            var time = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var time = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var interval = TimeSpan.FromHours(.75);
+        var timeProvider = new FakeTimeProvider(time) { AutoAdvanceAmount = interval };
 
-            TestSystemClock.SetFrozenTime(time);
-            TestSystemClock.UseFakeSleep();
+        var job = new FailingJob(timeProvider, Log);
 
-            var job = new FailingJob(Log);
-            var interval = TimeSpan.FromHours(.75);
+        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval));
+        while (job.RunCount < 1)
+            await Task.Delay(10);
+        timeProvider.Advance(interval);
+        await jobTask;
 
-            await job.RunContinuousAsync(iterationLimit: 2, interval: interval);
-
-            Assert.Equal(2, job.RunCount);
-            Assert.Equal(interval, (SystemClock.UtcNow - time));
-        }
+        Assert.Equal(2, job.RunCount);
+        Assert.Equal(interval, (timeProvider.GetUtcNow() - time));
     }
 
     [Fact(Skip = "Meant to be run manually.")]
@@ -199,15 +194,9 @@ public class JobTests : TestWithLoggingBase
     {
         const int iterations = 10000;
 
-        var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log });
-        var job = new SampleJob(metrics, Log);
+        var job = new SampleJob(null, Log);
         var sw = Stopwatch.StartNew();
         await job.RunContinuousAsync(null, iterations);
         sw.Stop();
-        await metrics.FlushAsync();
-        _logger.LogTrace((await metrics.GetCounterStatsAsync("runs")).ToString());
-        _logger.LogTrace((await metrics.GetCounterStatsAsync("errors")).ToString());
-        _logger.LogTrace((await metrics.GetCounterStatsAsync("failed")).ToString());
-        _logger.LogTrace((await metrics.GetCounterStatsAsync("completed")).ToString());
     }
 }

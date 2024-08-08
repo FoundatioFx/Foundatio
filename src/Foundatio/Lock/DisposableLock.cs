@@ -22,7 +22,7 @@ internal class DisposableLock : ILock
         Resource = resource;
         LockId = lockId;
         TimeWaitedForLock = timeWaitedForLock;
-        AcquiredTimeUtc = SystemClock.UtcNow;
+        AcquiredTimeUtc = lockProvider.GetTimeProvider().GetUtcNow().UtcDateTime;
         _duration = Stopwatch.StartNew();
         _logger = logger;
         _lockProvider = lockProvider;

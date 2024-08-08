@@ -91,7 +91,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!await OnEnqueuingAsync(data, options).AnyContext())
             return null;
 
-        var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, SystemClock.UtcNow, 0);
+        var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, _timeProvider.GetUtcNow().UtcDateTime, 0);
         entry.Properties.AddRange(options?.Properties);
 
         Interlocked.Increment(ref _enqueuedCount);
@@ -107,7 +107,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
                 await OnEnqueuedAsync(entry).AnyContext();
                 _logger.LogTrace("Enqueue done");
-            }, _queueDisposedCancellationTokenSource.Token);
+            }, _timeProvider, _queueDisposedCancellationTokenSource.Token);
             return id;
         }
 
@@ -165,7 +165,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     {
                         try
                         {
-                            await Run.WithRetriesAsync(() => queueEntry.AbandonAsync(), 3, TimeSpan.Zero, cancellationToken).AnyContext();
+                            await Run.WithRetriesAsync(() => queueEntry.AbandonAsync(), 3, TimeSpan.Zero, _timeProvider, cancellationToken).AnyContext();
                         }
                         catch (Exception abandonEx)
                         {
@@ -222,10 +222,10 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!_queue.TryDequeue(out var entry) || entry == null)
             return null;
 
-        ScheduleNextMaintenance(SystemClock.UtcNow.Add(_options.WorkItemTimeout));
+        ScheduleNextMaintenance(_timeProvider.GetUtcNow().UtcDateTime.Add(_options.WorkItemTimeout));
 
         entry.Attempts++;
-        entry.DequeuedTimeUtc = SystemClock.UtcNow;
+        entry.DequeuedTimeUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (!_dequeued.TryAdd(entry.Id, entry))
             throw new Exception("Unable to add item to the dequeued list");
@@ -246,7 +246,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!_dequeued.TryGetValue(queueEntry.Id, out var targetEntry))
             return;
 
-        targetEntry.RenewedTimeUtc = SystemClock.UtcNow;
+        targetEntry.RenewedTimeUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         await OnLockRenewedAsync(queueEntry).AnyContext();
         _logger.LogTrace("Renew lock done: {Id}", queueEntry.Id);
@@ -312,7 +312,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
                     _logger.LogTrace("Adding item to wait list for future retry: {Id}", queueEntry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _queueDisposedCancellationTokenSource.Token);
+                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, _queueDisposedCancellationTokenSource.Token);
                 }
                 else
                 {
@@ -368,8 +368,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     protected override async Task<DateTime?> DoMaintenanceAsync()
     {
-        var utcNow = SystemClock.UtcNow;
-        var minAbandonAt = DateTime.MaxValue;
+        var utcNow = _timeProvider.GetUtcNow();
+        var minAbandonAt = DateTimeOffset.MaxValue;
 
         try
         {
@@ -395,7 +395,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         // Add a tiny buffer just in case the schedule next timer fires early.
         // The system clock typically has a resolution of 10-15 milliseconds, so timers cannot be more accurate than this resolution.
-        return minAbandonAt.SafeAdd(TimeSpan.FromMilliseconds(15));
+        return minAbandonAt.UtcDateTime.SafeAdd(TimeSpan.FromMilliseconds(15));
     }
 
     public override void Dispose()

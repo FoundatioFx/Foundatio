@@ -8,9 +8,8 @@ using Exceptionless;
 using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
-using Foundatio.Metrics;
 using Foundatio.Queues;
-using Foundatio.Utility;
+using Foundatio.Tests.Metrics;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -53,7 +52,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
 
         var enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem
         {
-            Created = SystemClock.UtcNow,
+            Created = DateTime.UtcNow,
             Path = "somepath"
         });
 
@@ -76,12 +75,12 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
 
         var enqueueTask = Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), async (index, _) => await queue.EnqueueAsync(new SampleQueueWorkItem
         {
-            Created = SystemClock.UtcNow,
+            Created = DateTime.UtcNow,
             Path = "somepath" + index
         }));
 
         var job = new SampleQueueJob(queue, null, Log);
-        await SystemClock.SleepAsync(10);
+        await Task.Delay(10);
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
         var stats = await queue.GetQueueStatsAsync();
@@ -104,14 +103,14 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             _logger.LogInformation($"Enqueue #{index}");
             await queue.EnqueueAsync(new SampleQueueWorkItem
             {
-                Created = SystemClock.UtcNow,
+                Created = DateTime.UtcNow,
                 Path = "somepath" + index
             });
         });
 
-        var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), Log);
-        var job = new SampleQueueJobWithLocking(queue, null, lockProvider, Log);
-        await SystemClock.SleepAsync(10);
+        var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), null, Log);
+        var job = new SampleQueueJobWithLocking(queue, lockProvider, null, Log);
+        await Task.Delay(10);
         _logger.LogInformation("Starting RunUntilEmptyAsync");
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
         _logger.LogInformation("Done RunUntilEmptyAsync");
@@ -130,19 +129,16 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         const int workItemCount = 100;
 
         Log.SetLogLevel<SampleQueueWithRandomErrorsAndAbandonsJob>(LogLevel.Information);
-        Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.None);
 
-        using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { LoggerFactory = Log, Buffered = true });
         var queues = new List<IQueue<SampleQueueWorkItem>>();
         try
         {
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+
             for (int i = 0; i < jobCount; i++)
             {
                 var q = GetSampleWorkItemQueue(retries: 1, retryDelay: TimeSpan.Zero);
                 await q.DeleteQueueAsync();
-#pragma warning disable CS0618 // Type or member is obsolete
-                q.AttachBehavior(new MetricsQueueBehavior<SampleQueueWorkItem>(metrics, "test", loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
                 queues.Add(q);
             }
             _logger.LogInformation("Done setting up queues");
@@ -152,7 +148,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
                 var queue = queues[RandomData.GetInt(0, jobCount - 1)];
                 await queue.EnqueueAsync(new SampleQueueWorkItem
                 {
-                    Created = SystemClock.UtcNow,
+                    Created = DateTime.UtcNow,
                     Path = RandomData.GetString()
                 });
             });
@@ -162,7 +158,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), async (index, _) =>
             {
                 var queue = queues[index - 1];
-                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, metrics, Log);
+                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null, Log);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             });
@@ -180,11 +176,6 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             }
             _logger.LogInformation("Done getting queue stats");
 
-            await metrics.FlushAsync();
-            _logger.LogInformation("Done flushing metrics");
-
-            var queueSummary = await metrics.GetQueueStatsAsync("test.samplequeueworkitem");
-            Assert.Equal(queueStats.Sum(s => s.Completed), queueSummary.Completed.Count);
             Assert.InRange(queueStats.Sum(s => s.Completed), 0, workItemCount);
         }
         finally

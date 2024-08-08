@@ -53,7 +53,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         async Task<DateTime?> Callback()
         {
             _logger.LogInformation("Starting work");
-            await SystemClock.SleepAsync(250);
+            await Task.Delay(250);
             countdown.Signal();
             _logger.LogInformation("Finished work");
             return null;
@@ -65,7 +65,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         {
             for (int i = 0; i < iterations; i++)
             {
-                await SystemClock.SleepAsync(10);
+                await Task.Delay(10);
                 timer.ScheduleNext();
             }
         });

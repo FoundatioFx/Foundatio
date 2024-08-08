@@ -19,7 +19,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
-        DequeuedTimeUtc = RenewedTimeUtc = SystemClock.UtcNow;
+        DequeuedTimeUtc = RenewedTimeUtc = _queue.GetTimeProvider().GetUtcNow().UtcDateTime;
     }
 
     public string Id { get; }
@@ -49,7 +49,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 
     public Task RenewLockAsync()
     {
-        RenewedTimeUtc = SystemClock.UtcNow;
+        RenewedTimeUtc = _queue.GetTimeProvider().GetUtcNow().UtcDateTime;
         return _queue.RenewLockAsync(this);
     }
 

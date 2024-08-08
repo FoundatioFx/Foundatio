@@ -6,7 +6,7 @@ namespace Foundatio.Tests.Jobs;
 
 public class WithDependencyJob : JobBase
 {
-    public WithDependencyJob(MyDependency dependency, ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    public WithDependencyJob(MyDependency dependency, ILoggerFactory loggerFactory = null) : base(null, loggerFactory)
     {
         Dependency = dependency;
     }

@@ -63,11 +63,11 @@ public static class JobExtensions
 
             if (result.Error != null)
             {
-                await SystemClock.SleepSafeAsync(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100), cancellationToken).AnyContext();
+                await job.GetTimeProvider().SafeDelay(TimeSpan.FromMilliseconds(Math.Max((int)(interval?.TotalMilliseconds ?? 0), 100)), cancellationToken).AnyContext();
             }
             else if (interval.HasValue && interval.Value > TimeSpan.Zero)
             {
-                await SystemClock.SleepSafeAsync(interval.Value, cancellationToken).AnyContext();
+                await job.GetTimeProvider().SafeDelay(interval.Value, cancellationToken).AnyContext();
             }
 
             // needed to yield back a task for jobs that aren't async

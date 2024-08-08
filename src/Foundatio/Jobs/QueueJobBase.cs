@@ -10,25 +10,28 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger where T : class
+public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProvider where T : class
 {
     protected readonly ILogger _logger;
     protected readonly Lazy<IQueue<T>> _queue;
+    protected readonly TimeProvider _timeProvider;
     protected readonly string _queueEntryName = typeof(T).Name;
 
-    public QueueJobBase(Lazy<IQueue<T>> queue, ILoggerFactory loggerFactory = null)
+    public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
         _queue = queue;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
         AutoComplete = true;
     }
 
-    public QueueJobBase(IQueue<T> queue, ILoggerFactory loggerFactory = null) : this(new Lazy<IQueue<T>>(() => queue), loggerFactory) { }
+    public QueueJobBase(IQueue<T> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null) : this(new Lazy<IQueue<T>>(() => queue), timeProvider, loggerFactory) { }
 
     protected bool AutoComplete { get; set; }
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     IQueue<T> IQueueJob<T>.Queue => _queue.Value;
     ILogger IHaveLogger.Logger => _logger;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {

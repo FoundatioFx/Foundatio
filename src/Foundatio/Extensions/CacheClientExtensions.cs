@@ -21,12 +21,12 @@ public static class CacheClientExtensions
 
     public static Task<long> IncrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc)
     {
-        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<double> IncrementAsync(this ICacheClient client, string key, double amount, DateTime? expiresAtUtc)
     {
-        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.IncrementAsync(key, amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<long> IncrementAsync(this ICacheClient client, string key, TimeSpan? expiresIn = null)
@@ -46,42 +46,42 @@ public static class CacheClientExtensions
 
     public static Task<long> DecrementAsync(this ICacheClient client, string key, long amount, DateTime? expiresAtUtc)
     {
-        return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<double> DecrementAsync(this ICacheClient client, string key, double amount, DateTime? expiresAtUtc)
     {
-        return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.IncrementAsync(key, -amount, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<bool> AddAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc)
     {
-        return client.AddAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.AddAsync(key, value, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<bool> SetAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc)
     {
-        return client.SetAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.SetAsync(key, value, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<bool> ReplaceAsync<T>(this ICacheClient client, string key, T value, DateTime? expiresAtUtc)
     {
-        return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.ReplaceAsync(key, value, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<bool> ReplaceIfEqualAsync<T>(this ICacheClient client, string key, T value, T expected, DateTime? expiresAtUtc)
     {
-        return client.ReplaceIfEqualAsync(key, value, expected, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.ReplaceIfEqualAsync(key, value, expected, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task<int> SetAllAsync(this ICacheClient client, IDictionary<string, object> values, DateTime? expiresAtUtc)
     {
-        return client.SetAllAsync(values, expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.SetAllAsync(values, expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static Task SetExpirationAsync(this ICacheClient client, string key, DateTime expiresAtUtc)
     {
-        return client.SetExpirationAsync(key, expiresAtUtc.Subtract(SystemClock.UtcNow));
+        return client.SetExpirationAsync(key, expiresAtUtc.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
     public static async Task<bool> ListAddAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null)
@@ -152,10 +152,10 @@ public static class CacheClientExtensions
 
     public static Task<bool> SetUnixTimeMillisecondsAsync(this ICacheClient client, string key, DateTime value, DateTime? expiresAtUtc)
     {
-        return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.SetAsync(key, value.ToUnixTimeMilliseconds(), expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 
-    public static async Task<DateTime> GetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime? defaultValue = null)
+    public static async Task<DateTimeOffset> GetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime? defaultValue = null)
     {
         var unixTime = await client.GetAsync<long>(key).AnyContext();
         if (!unixTime.HasValue)
@@ -171,6 +171,6 @@ public static class CacheClientExtensions
 
     public static Task<bool> SetUnixTimeSecondsAsync(this ICacheClient client, string key, DateTime value, DateTime? expiresAtUtc)
     {
-        return client.SetAsync(key, value.ToUnixTimeSeconds(), expiresAtUtc?.Subtract(SystemClock.UtcNow));
+        return client.SetAsync(key, value.ToUnixTimeSeconds(), expiresAtUtc?.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime));
     }
 }

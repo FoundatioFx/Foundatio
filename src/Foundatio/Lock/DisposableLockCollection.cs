@@ -18,7 +18,7 @@ internal class DisposableLockCollection : ILock
     private readonly AsyncLock _lock = new();
     private readonly Stopwatch _duration;
 
-    public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, TimeSpan timeWaitedForLock, ILogger logger)
+    public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, DateTime acquiredTimeUtc, TimeSpan timeWaitedForLock, ILogger logger)
     {
         if (locks == null)
             throw new ArgumentNullException(nameof(locks));
@@ -27,7 +27,7 @@ internal class DisposableLockCollection : ILock
         Resource = String.Join("+", _locks.Select(l => l.Resource));
         LockId = lockId;
         TimeWaitedForLock = timeWaitedForLock;
-        AcquiredTimeUtc = SystemClock.UtcNow;
+        AcquiredTimeUtc = acquiredTimeUtc;
         _duration = Stopwatch.StartNew();
         _logger = logger;
     }

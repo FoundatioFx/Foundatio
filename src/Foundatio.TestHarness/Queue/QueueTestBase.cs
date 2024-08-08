@@ -10,7 +10,6 @@ using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Foundatio.Metrics;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Metrics;
@@ -28,14 +27,10 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     protected QueueTestBase(ITestOutputHelper output) : base(output)
     {
         Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Debug);
-        Log.SetLogLevel<InMemoryMetricsClient>(LogLevel.Debug);
-#pragma warning disable CS0618 // Type or member is obsolete
-        Log.SetLogLevel<MetricsQueueBehavior<SimpleWorkItem>>(LogLevel.Debug);
-#pragma warning restore CS0618 // Type or member is obsolete
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true)
+    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
         return null;
     }
@@ -99,17 +94,17 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
 
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
 
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.count"));
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.working"));
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.deadletter"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.working"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.deadletter"));
 
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.myitem.enqueued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.myitem.dequeued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.myitem.completed"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.myitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.myitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.myitem.completed"));
             }
         }
         finally
@@ -157,9 +152,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(0, stats.Queued);
 
                 metricsCollector.RecordObservableInstruments();
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
 
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.working"));
@@ -218,7 +213,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
             }
 
             await workItem.AbandonAsync();
@@ -234,9 +229,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(1, stats.Queued);
 
                 metricsCollector.RecordObservableInstruments();
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.abandoned"));
-                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.abandoned"));
+                Assert.Equal(1, metricsCollector.GetMax<long>("foundatio.simpleworkitem.count"));
             }
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
@@ -275,7 +270,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
             }
 
             await queue.EnqueueAsync(new SimpleWorkItem
@@ -286,7 +281,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
             }
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
@@ -295,7 +290,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
             }
 
             await queue.EnqueueAsync(new SimpleWorkItem
@@ -306,7 +301,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(2, (await queue.GetQueueStatsAsync()).Enqueued);
-                Assert.Equal(2, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(2, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
             }
 
             await workItem.CompleteAsync();
@@ -319,10 +314,10 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(1, stats.Queued);
 
                 metricsCollector.RecordObservableInstruments();
-                Assert.Equal(2, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.abandoned"));
+                Assert.Equal(2, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.abandoned"));
 
                 Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.working"));
@@ -339,7 +334,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     public virtual Task VerifyRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, new[] { 1 });
+        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, [1]);
         if (queue == null)
             return Task.CompletedTask;
 
@@ -349,7 +344,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     public virtual Task VerifyDelayedRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), new[] { 1 });
+        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), [1]);
         if (queue == null)
             return Task.CompletedTask;
 
@@ -404,9 +399,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(retryCount + 1, stats.Abandoned);
 
                 metricsCollector.RecordObservableInstruments();
-                Assert.Equal(retryCount + 1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.dequeued"));
-                Assert.Equal(0, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
-                Assert.Equal(retryCount + 1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.abandoned"));
+                Assert.Equal(retryCount + 1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
+                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(retryCount + 1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.abandoned"));
 
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
             }
@@ -442,7 +437,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             if (_assertStats)
             {
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.enqueued"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.enqueued"));
             }
 
             var workItem = await queue.DequeueAsync(new CancellationToken(true));
@@ -458,7 +453,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 var stats = await queue.GetQueueStatsAsync();
                 Assert.Equal(1, stats.Completed);
                 Assert.Equal(0, stats.Queued);
-                Assert.Equal(1, metricsCollector.GetSum<int>("foundatio.simpleworkitem.completed"));
+                Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
             }
         }
         finally
@@ -484,17 +479,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
 
-            using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
-#pragma warning disable CS0618 // Type or member is obsolete
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
-
             _ = Task.Run(async () =>
             {
                 _logger.LogTrace("Starting enqueue loop");
                 for (int index = 0; index < iterations; index++)
                 {
-                    await SystemClock.SleepAsync(RandomData.GetInt(10, 30));
+                    await Task.Delay(RandomData.GetInt(10, 30));
                     await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                 }
                 _logger.LogTrace("Finished enqueuing");
@@ -509,10 +499,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             }
             _logger.LogTrace("Finished dequeuing");
 
-            await metrics.FlushAsync();
-            var timing = await metrics.GetTimerStatsAsync("foundatio.simpleworkitem.queuetime");
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("AverageDuration: {AverageDuration}", timing.AverageDuration);
-            Assert.InRange(timing.AverageDuration, 0, 75);
             Assert.InRange(metricsCollector.GetAvg<double>("foundatio.simpleworkitem.queuetime"), 0, 75);
         }
         finally
@@ -531,18 +517,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
         try
         {
+            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
-
-            using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
 
             for (int index = 0; index < iterations; index++)
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
             using var secondQueue = GetQueue(runQueueMaintenance: false);
-#pragma warning disable CS0618 // Type or member is obsolete
-            secondQueue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
 
             _logger.LogTrace("Starting dequeue loop");
             for (int index = 0; index < iterations; index++)
@@ -553,10 +536,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 await item.CompleteAsync();
             }
 
-            await metrics.FlushAsync(); // This won't flush metrics queue behaviors
-            var timing = await metrics.GetTimerStatsAsync("simpleworkitem.queuetime");
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("TotalDuration: {TotalDuration} AverageDuration: {AverageDuration}", timing.TotalDuration, timing.AverageDuration);
-            Assert.InRange(timing.AverageDuration, 0, 75);
+            metricsCollector.RecordObservableInstruments();
+            Assert.InRange(metricsCollector.GetAvg<double>("foundatio.simpleworkitem.queuetime"), 0, 75);
         }
         finally
         {
@@ -659,7 +640,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             _ = Task.Run(async () =>
             {
-                await SystemClock.SleepAsync(500);
+                await Task.Delay(500);
                 await queue.EnqueueAsync(new SimpleWorkItem
                 {
                     Data = "Hello"
@@ -694,7 +675,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             _ = Task.Run(async () =>
             {
-                await SystemClock.SleepAsync(250);
+                await Task.Delay(250);
                 await queue.EnqueueAsync(new SimpleWorkItem
                 {
                     Data = "Hello"
@@ -767,11 +748,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
 
-            using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
-
-#pragma warning disable CS0618 // Type or member is obsolete
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, reportCountsInterval: TimeSpan.FromMilliseconds(100), loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
             await queue.StartWorkingAsync(w =>
             {
                 _logger.LogDebug("WorkAction");
@@ -785,7 +761,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
 
-                await SystemClock.SleepAsync(100); // give time for the stats to reflect the changes.
+                await Task.Delay(100); // give time for the stats to reflect the changes.
 
                 if (_assertStats)
                 {
@@ -982,7 +958,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 });
 
                 await countdown.WaitAsync(cancellationTokenSource.Token);
-                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
+                await Task.Delay(50, cancellationTokenSource.Token);
 
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
@@ -1053,12 +1029,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Assert.NotNull(workItem);
             Assert.Equal("Hello", workItem.Value.Data);
 
-            var startTime = SystemClock.UtcNow;
+            var startTime = DateTime.UtcNow;
             await workItem.AbandonAsync();
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-            var elapsed = SystemClock.UtcNow.Subtract(startTime);
+            var elapsed = DateTime.UtcNow.Subtract(startTime);
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", elapsed);
             Assert.NotNull(workItem);
             Assert.True(elapsed > TimeSpan.FromSeconds(.95));
@@ -1077,18 +1053,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         int completedCount = 0;
 
-        using var metrics = new InMemoryMetricsClient(o => o.Buffered(false).LoggerFactory(Log));
-
-#pragma warning disable CS0618 // Type or member is obsolete
-        var behavior = new MetricsQueueBehavior<WorkItemData>(metrics, "metric", TimeSpan.FromMilliseconds(100), loggerFactory: Log);
-#pragma warning restore CS0618 // Type or member is obsolete
-        using var queue = new InMemoryQueue<WorkItemData>(o => o.Behaviors(behavior).LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
 
         Task Handler(object sender, CompletedEventArgs<WorkItemData> e)
         {
             completedCount++;
             return Task.CompletedTask;
         }
+
+        using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
 
         using (queue.Completed.AddHandler(Handler))
         {
@@ -1097,64 +1070,49 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await SystemClock.SleepAsync(100);
+            await Task.Delay(100);
 
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            await Task.Delay(100);
             await item.AbandonAsync();
 
             _logger.LogTrace("Before asserts");
             Assert.Equal(2, completedCount);
 
-            await SystemClock.SleepAsync(100); // flush metrics queue behaviors
-            await metrics.FlushAsync();
-            Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.count")).Max, 1, 3);
-            Assert.InRange((await metrics.GetGaugeStatsAsync("metric.workitemdata.working")).Max, 0, 1);
+            metricsCollector.RecordObservableInstruments();
+            Assert.InRange(metricsCollector.GetMax<long>("foundatio.workitemdata.count"), 1, 3);
+            Assert.InRange(metricsCollector.GetMax<long>("foundatio.workitemdata.working"), 0, 1);
 
-            Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.enqueued"));
-            Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.enqueued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.enqueued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.enqueued"));
 
-            Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.simple.dequeued"));
-            Assert.Equal(3, await metrics.GetCounterCountAsync("metric.workitemdata.dequeued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.dequeued"));
+            Assert.Equal(3, metricsCollector.GetCount<long>("foundatio.workitemdata.dequeued"));
 
-            Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.simple.completed"));
-            Assert.Equal(2, await metrics.GetCounterCountAsync("metric.workitemdata.completed"));
+            Assert.Equal(2, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.completed"));
+            Assert.Equal(2, metricsCollector.GetCount<long>("foundatio.workitemdata.completed"));
 
-            Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.simple.abandoned"));
-            Assert.Equal(1, await metrics.GetCounterCountAsync("metric.workitemdata.abandoned"));
+            Assert.Equal(1, metricsCollector.GetCount<long>("foundatio.workitemdata.simple.abandoned"));
+            Assert.Equal(1, metricsCollector.GetCount<long>("foundatio.workitemdata.abandoned"));
 
-            var queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.queuetime");
-            Assert.Equal(3, queueTiming.Count);
-            queueTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.queuetime");
-            Assert.Equal(3, queueTiming.Count);
+            var measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.simple.queuetime");
+            Assert.Equal(3, measurements.Count);
+            measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.queuetime");
+            Assert.Equal(3, measurements.Count);
 
-            var processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.simple.processtime");
-            Assert.Equal(3, processTiming.Count);
-            processTiming = await metrics.GetTimerStatsAsync("metric.workitemdata.processtime");
-            Assert.Equal(3, processTiming.Count);
-
-            if (_assertStats)
-            {
-                var queueStats = await metrics.GetQueueStatsAsync("metric.workitemdata");
-                Assert.Equal(3, queueStats.Enqueued.Count);
-                Assert.Equal(3, queueStats.Dequeued.Count);
-                Assert.Equal(2, queueStats.Completed.Count);
-                Assert.Equal(1, queueStats.Abandoned.Count);
-                Assert.InRange(queueStats.Count.Max, 1, 3);
-                Assert.InRange(queueStats.Working.Max, 0, 1);
-
-                var subQueueStats = await metrics.GetQueueStatsAsync("metric.workitemdata", "simple");
-                Assert.Equal(3, subQueueStats.Enqueued.Count);
-                Assert.Equal(3, subQueueStats.Dequeued.Count);
-                Assert.Equal(2, subQueueStats.Completed.Count);
-                Assert.Equal(1, subQueueStats.Abandoned.Count);
-            }
+            measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.simple.processtime");
+            Assert.Equal(3, measurements.Count);
+            measurements = metricsCollector.GetMeasurements<double>("foundatio.workitemdata.processtime");
+            Assert.Equal(3, measurements.Count);
         }
     }
 
@@ -1185,11 +1143,11 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Assert.Equal("Hello", entry.Value.Data);
 
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} before renewing lock", renewWait);
-            await SystemClock.SleepAsync(renewWait);
+            await Task.Delay(renewWait);
             _logger.LogTrace("Renewing lock");
             await entry.RenewLockAsync();
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} to see if lock was renewed", renewWait);
-            await SystemClock.SleepAsync(renewWait);
+            await Task.Delay(renewWait);
 
             // We shouldn't get another item here if RenewLock works.
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Attempting to dequeue item that shouldn't exist");
@@ -1317,7 +1275,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
-        var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+        var distributedLock = new CacheLockProvider(cache, messageBus, null, Log);
         await CanDequeueWithLockingImpAsync(distributedLock);
     }
 
@@ -1333,12 +1291,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
 
-            using var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions { Buffered = false, LoggerFactory = Log });
-
-#pragma warning disable CS0618 // Type or member is obsolete
-            queue.AttachBehavior(new MetricsQueueBehavior<SimpleWorkItem>(metrics, loggerFactory: Log));
-#pragma warning restore CS0618 // Type or member is obsolete
-
             var resetEvent = new AsyncAutoResetEvent();
             await queue.StartWorkingAsync(async w =>
             {
@@ -1346,7 +1298,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 var l = await distributedLock.AcquireAsync("test");
                 Assert.NotNull(l);
                 _logger.LogInformation("Acquired distributed lock");
-                await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(250));
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
                 await l.ReleaseAsync();
                 _logger.LogInformation("Released distributed lock");
 
@@ -1359,7 +1311,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             if (_assertStats)
             {
-                await SystemClock.SleepAsync(1);
+                await Task.Delay(1);
                 var stats = await queue.GetQueueStatsAsync();
                 _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                 Assert.Equal(1, stats.Completed);
@@ -1377,7 +1329,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
-        var distributedLock = new CacheLockProvider(cache, messageBus, Log);
+        var distributedLock = new CacheLockProvider(cache, messageBus, null, Log);
         await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
     }
 
@@ -1413,7 +1365,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         Assert.NotNull(l);
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
-                        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
+                        await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();
                         if (_logger.IsEnabled(LogLevel.Information))
                             _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);
@@ -1438,7 +1390,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-                await SystemClock.SleepAsync(50, cancellationTokenSource.Token);
+                await Task.Delay(50, cancellationTokenSource.Token);
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
                 if (_logger.IsEnabled(LogLevel.Information))
@@ -1552,7 +1504,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             var dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
             Assert.NotNull(dequeuedQueueItem.Value);
             // The first dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
-            await SystemClock.SleepAsync(60);
+            await Task.Delay(60);
             await dequeuedQueueItem.CompleteAsync();
             Assert.True(dequeuedQueueItem.IsCompleted);
             Assert.False(dequeuedQueueItem.IsAbandoned);
@@ -1560,7 +1512,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
             Assert.NotNull(dequeuedQueueItem.Value);
             // The second dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
-            await SystemClock.SleepAsync(60);
+            await Task.Delay(60);
             await dequeuedQueueItem.CompleteAsync();
             Assert.True(dequeuedQueueItem.IsCompleted);
             Assert.False(dequeuedQueueItem.IsAbandoned);

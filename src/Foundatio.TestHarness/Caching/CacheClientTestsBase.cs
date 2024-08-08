@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Metrics;
 using Foundatio.Utility;
 using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -442,7 +444,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            var expiresAt = SystemClock.UtcNow.AddMilliseconds(300);
+            var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
             bool success = await cache.SetAsync("test", 1, expiresAt);
             Assert.True(success);
             success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
@@ -450,7 +452,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
             Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
 
-            await SystemClock.SleepAsync(500);
+            await Task.Delay(500);
             Assert.False((await cache.GetAsync<int>("test")).HasValue);
             Assert.Null(await cache.GetExpirationAsync("test"));
             Assert.False((await cache.GetAsync<int>("test2")).HasValue);
@@ -468,26 +470,24 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            using (TestSystemClock.Install())
-            {
-                var now = DateTime.UtcNow;
-                TestSystemClock.SetFrozenTime(now);
+            var timeProvider = new FakeTimeProvider();
+            var now = DateTime.UtcNow;
+            timeProvider.SetUtcNow(now);
 
-                var expires = DateTime.MaxValue - now.AddDays(1);
-                Assert.True(await cache.SetAsync("test1", 1, expires));
-                Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
-                Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
-                Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
+            var expires = DateTime.MaxValue - now.AddDays(1);
+            Assert.True(await cache.SetAsync("test1", 1, expires));
+            Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
+            Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
+            Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
 
-                Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
-                Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
+            Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
+            Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
 
-                Assert.False(await cache.ExistsAsync("test2"));
-                Assert.Equal(1, (await cache.GetAsync<int>("test3")).Value);
-                Assert.False((await cache.GetExpirationAsync("test3")).HasValue);
-                Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
-                Assert.False((await cache.GetExpirationAsync("test4")).HasValue);
-            }
+            Assert.False(await cache.ExistsAsync("test2"));
+            Assert.Equal(1, (await cache.GetAsync<int>("test3")).Value);
+            Assert.False((await cache.GetExpirationAsync("test3")).HasValue);
+            Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
+            Assert.False((await cache.GetExpirationAsync("test4")).HasValue);
         }
     }
 
@@ -533,7 +533,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             Assert.Equal(1, newVal);
 
-            await SystemClock.SleepAsync(1500);
+            await Task.Delay(1500);
             Assert.False((await cache.GetAsync<int>("test")).HasValue);
         }
     }
@@ -626,29 +626,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            DateTime value = SystemClock.UtcNow.Floor(TimeSpan.FromSeconds(1));
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1));
             long unixTimeValue = value.ToUnixTimeSeconds();
             Assert.True(await cache.SetUnixTimeSecondsAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             var actual = await cache.GetUnixTimeSecondsAsync("test");
             Assert.Equal(value.Ticks, actual.Ticks);
-            Assert.Equal(value.Kind, actual.Kind);
+            Assert.Equal(TimeSpan.Zero, actual.Offset);
 
-            value = SystemClock.Now.Floor(TimeSpan.FromMilliseconds(1));
+            value = DateTime.Now.Floor(TimeSpan.FromMilliseconds(1));
             unixTimeValue = value.ToUnixTimeMilliseconds();
             Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             actual = (await cache.GetUnixTimeMillisecondsAsync("test")).ToLocalTime();
             Assert.Equal(value.Ticks, actual.Ticks);
-            Assert.Equal(value.Kind, actual.Kind);
 
-            value = SystemClock.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
             unixTimeValue = value.ToUnixTimeMilliseconds();
             Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             actual = await cache.GetUnixTimeMillisecondsAsync("test");
             Assert.Equal(value.Ticks, actual.Ticks);
-            Assert.Equal(value.Kind, actual.Kind);
+            Assert.Equal(TimeSpan.Zero, actual.Offset);
 
             var lowerValue = value - TimeSpan.FromHours(1);
             var lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
@@ -822,9 +821,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            var start = SystemClock.UtcNow;
+            var sw = Stopwatch.StartNew();
             const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
             for (int i = 0; i < itemCount; i++)
             {
                 await cache.SetAsync("test", 13422);
@@ -832,10 +830,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.Equal(13422, (await cache.GetAsync<int>("test")).Value);
                 Assert.Null(await cache.GetAsync<int>("test2"));
                 Assert.True((await cache.GetAsync<bool>("flag")).Value);
-                metrics.Counter("work");
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+            sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 
@@ -849,9 +846,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            var start = SystemClock.UtcNow;
+            var sw = Stopwatch.StartNew();
             const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
             for (int i = 0; i < itemCount; i++)
             {
                 await cache.SetAsync("test", new SimpleModel
@@ -863,10 +859,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.True(model.HasValue);
                 Assert.Equal("Hello", model.Value.Data1);
                 Assert.Equal(12, model.Value.Data2);
-                metrics.Counter("work");
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+            sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 
@@ -880,9 +875,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            var start = SystemClock.UtcNow;
+            var sw = Stopwatch.StartNew();
             const int itemCount = 10000;
-            var metrics = new InMemoryMetricsClient(new InMemoryMetricsClientOptions());
             for (int i = 0; i < itemCount; i++)
             {
                 await cache.SetAsync("test", new ComplexModel
@@ -918,10 +912,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.True(model.HasValue);
                 Assert.Equal("Hello", model.Value.Data1);
                 Assert.Equal(12, model.Value.Data2);
-                metrics.Counter("work");
             }
-
-            var workCounter = metrics.GetCounterStatsAsync("work", start, SystemClock.UtcNow);
+            sw.Stop();
+            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
         }
     }
 }

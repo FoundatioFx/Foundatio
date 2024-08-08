@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -174,7 +173,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 Assert.Equal(10, cache.Count);
                 Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                 Assert.Equal(1, cache.Misses);
-                await SystemClock.SleepAsync(50); // keep the last access ticks from being the same for all items
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50)); // keep the last access ticks from being the same for all items
                 Assert.NotNull(await cache.GetAsync<int?>("test1"));
                 Assert.Equal(1, cache.Hits);
                 await cache.SetAsync("next2", 2);
@@ -196,7 +195,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         await client.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
 
         // Add 1ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
-        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(1)));
+        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(10)));
 
         Assert.False(await client.ExistsAsync("test"));
     }
