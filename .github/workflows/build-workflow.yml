@@ -39,11 +39,26 @@ jobs:
           6.0.x
           8.0.x
     - name: Build Reason
-      run: "echo ref: ${{github.ref}} event: ${{github.event_name}}"
+      run: |
+        branch=${GITHUB_REF##*/}.
+        if [ "$branch" = "main" ]; then
+          branch=""
+        fi
+        if [ "$branch" = "master" ]; then
+          branch=""
+        fi
+        if [ "${GITHUB_REF%%/*}" = "refs/tags" ]; then
+          branch=""
+        fi
+        if [ "${GITHUB_REF%%/*}" = "refs/pull" ]; then
+          branch=""
+        fi
+        echo "GIT_BRANCH_SUFFIX=$branch" >> $GITHUB_ENV
+        echo branch: $GIT_BRANCH_SUFFIX ref: $GITHUB_REF event: $GITHUB_EVENT_NAME
     - name: Build Version
       run: |
         dotnet tool install --global minver-cli --version 5.0.0
-        version=$(minver --tag-prefix v)
+        version=$(minver --tag-prefix v --default-pre-release-identifiers ${GIT_BRANCH_SUFFIX}alpha.0)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
     - name: Build
