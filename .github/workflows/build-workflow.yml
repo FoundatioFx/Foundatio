@@ -41,16 +41,13 @@ jobs:
     - name: Build Reason
       run: |
         branch=${GITHUB_REF##*/}.
-        if [ "$branch" = "main." ]; then
+        if [[ "$branch" = "main." ]]; then
           branch=""
-        fi
-        if [ "$branch" = "master." ]; then
+        elif [[ "$branch" = "master." ]]; then
           branch=""
-        fi
-        if [ "${GITHUB_REF%%/*}" = "refs/tags" ]; then
+        elif [[ "${GITHUB_REF}" = refs/tags* ]]; then
           branch=""
-        fi
-        if [ "${GITHUB_REF%%/*}" = "refs/pull" ]; then
+        elif [[ "${GITHUB_REF}" = refs/pull* ]]; then
           branch=""
         fi
         echo "GIT_BRANCH_SUFFIX=$branch" >> $GITHUB_ENV
@@ -58,7 +55,7 @@ jobs:
     - name: Build Version
       run: |
         dotnet tool install --global minver-cli --version 5.0.0
-        version=$(minver --tag-prefix v --default-pre-release-identifiers alpha.${GIT_BRANCH_SUFFIX}.0)
+        version=$(minver --tag-prefix v --default-pre-release-identifiers alpha.${GIT_BRANCH_SUFFIX}0)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
     - name: Build
