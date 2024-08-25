@@ -15,6 +15,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
 
+Dummy change
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
 ## Why Foundatio?
