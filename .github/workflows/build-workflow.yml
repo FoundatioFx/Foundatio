@@ -41,10 +41,10 @@ jobs:
     - name: Build Reason
       run: |
         branch=${GITHUB_REF##*/}.
-        if [ "$branch" = "main" ]; then
+        if [ "$branch" = "main." ]; then
           branch=""
         fi
-        if [ "$branch" = "master" ]; then
+        if [ "$branch" = "master." ]; then
           branch=""
         fi
         if [ "${GITHUB_REF%%/*}" = "refs/tags" ]; then
@@ -54,7 +54,7 @@ jobs:
           branch=""
         fi
         echo "GIT_BRANCH_SUFFIX=$branch" >> $GITHUB_ENV
-        echo branch: $GIT_BRANCH_SUFFIX ref: $GITHUB_REF event: $GITHUB_EVENT_NAME
+        echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME
     - name: Build Version
       run: |
         dotnet tool install --global minver-cli --version 5.0.0
