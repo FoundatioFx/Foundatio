@@ -116,52 +116,56 @@ public class DiagnosticsMetricsCollector : IDisposable
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_byteMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(short))
+
+        if (typeof(T) == typeof(short))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_shortMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_shortMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(int))
+
+        if (typeof(T) == typeof(int))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_intMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_intMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(long))
+
+        if (typeof(T) == typeof(long))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_longMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_longMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(float))
+
+        if (typeof(T) == typeof(float))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_floatMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_floatMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(double))
+
+        if (typeof(T) == typeof(double))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_doubleMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_doubleMeasurements).Where(m => m.Name == name));
         }
-        else if (typeof(T) == typeof(decimal))
+
+        if (typeof(T) == typeof(decimal))
         {
             if (name == null)
                 return ImmutableList.CreateRange((IEnumerable<RecordedMeasurement<T>>)_decimalMeasurements);
             else
                 return ImmutableList.CreateRange(((IEnumerable<RecordedMeasurement<T>>)_decimalMeasurements).Where(m => m.Name == name));
         }
-        else
-        {
-            return ImmutableList.Create<RecordedMeasurement<T>>();
-        }
+
+        return ImmutableList.Create<RecordedMeasurement<T>>();
 
         // byte, short, int, long, float, double, decimal
     }
@@ -171,6 +175,16 @@ public class DiagnosticsMetricsCollector : IDisposable
         return GetMeasurements<T>().Count(m => m.Name == name);
     }
 
+    public double GetLast<T>(string name) where T : struct
+    {
+        var measurement = GetMeasurements<T>(name)
+            .Where(m => m.Name == name)
+            .OrderByDescending(m => m.Timestamp)
+            .FirstOrDefault();
+
+        return Convert.ToDouble(measurement.Value);
+    }
+
     public double GetSum<T>(string name) where T : struct
     {
         if (typeof(T) == typeof(byte))
@@ -178,40 +192,44 @@ public class DiagnosticsMetricsCollector : IDisposable
             var measurements = GetMeasurements<byte>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(short))
+
+        if (typeof(T) == typeof(short))
         {
             var measurements = GetMeasurements<short>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(int))
+
+        if (typeof(T) == typeof(int))
         {
             var measurements = GetMeasurements<int>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(long))
+
+        if (typeof(T) == typeof(long))
         {
             var measurements = GetMeasurements<long>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(float))
+
+        if (typeof(T) == typeof(float))
         {
             var measurements = GetMeasurements<float>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(double))
+
+        if (typeof(T) == typeof(double))
         {
             var measurements = GetMeasurements<double>(name);
             return measurements.Sum(m => m.Value);
         }
-        else if (typeof(T) == typeof(decimal))
+
+        if (typeof(T) == typeof(decimal))
         {
             var measurements = GetMeasurements<decimal>(name);
             return measurements.Sum(m => (double)m.Value);
         }
-        else
-        {
-            return 0;
-        }
+
+        return 0;
     }
 
     public double GetAvg<T>(string name) where T : struct
@@ -221,40 +239,44 @@ public class DiagnosticsMetricsCollector : IDisposable
             var measurements = GetMeasurements<byte>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(short))
+
+        if (typeof(T) == typeof(short))
         {
             var measurements = GetMeasurements<short>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(int))
+
+        if (typeof(T) == typeof(int))
         {
             var measurements = GetMeasurements<int>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(long))
+
+        if (typeof(T) == typeof(long))
         {
             var measurements = GetMeasurements<long>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(float))
+
+        if (typeof(T) == typeof(float))
         {
             var measurements = GetMeasurements<float>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(double))
+
+        if (typeof(T) == typeof(double))
         {
             var measurements = GetMeasurements<double>(name);
             return measurements.Average(m => m.Value);
         }
-        else if (typeof(T) == typeof(decimal))
+
+        if (typeof(T) == typeof(decimal))
         {
             var measurements = GetMeasurements<decimal>(name);
             return measurements.Average(m => (double)m.Value);
         }
-        else
-        {
-            return 0;
-        }
+
+        return 0;
     }
 
     public double GetMax<T>(string name) where T : struct
@@ -264,40 +286,44 @@ public class DiagnosticsMetricsCollector : IDisposable
             var measurements = GetMeasurements<byte>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(short))
+
+        if (typeof(T) == typeof(short))
         {
             var measurements = GetMeasurements<short>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(int))
+
+        if (typeof(T) == typeof(int))
         {
             var measurements = GetMeasurements<int>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(long))
+
+        if (typeof(T) == typeof(long))
         {
             var measurements = GetMeasurements<long>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(float))
+
+        if (typeof(T) == typeof(float))
         {
             var measurements = GetMeasurements<float>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(double))
+
+        if (typeof(T) == typeof(double))
         {
             var measurements = GetMeasurements<double>(name);
             return measurements.Max(m => m.Value);
         }
-        else if (typeof(T) == typeof(decimal))
+
+        if (typeof(T) == typeof(decimal))
         {
             var measurements = GetMeasurements<decimal>(name);
             return measurements.Max(m => (double)m.Value);
         }
-        else
-        {
-            return 0;
-        }
+
+        return 0;
     }
 
     public async Task<bool> WaitForCounterAsync<T>(string statName, long count = 1, TimeSpan? timeout = null) where T : struct
@@ -355,16 +381,17 @@ public class DiagnosticsMetricsCollector : IDisposable
 [DebuggerDisplay("{Name}={Value}")]
 public struct RecordedMeasurement<T> where T : struct
 {
-    public RecordedMeasurement(Instrument instrument, T value, ref ReadOnlySpan<KeyValuePair<string, object>> tags, object state)
+    public RecordedMeasurement(Instrument instrument, T value, ref ReadOnlySpan<KeyValuePair<string, object>> tags,
+        object state)
     {
         Instrument = instrument;
         Name = Instrument.Name;
         Value = value;
-        if (tags.Length > 0)
-            Tags = ImmutableDictionary.CreateRange(tags.ToArray());
-        else
-            Tags = ImmutableDictionary<string, object>.Empty;
+        Tags = tags.Length > 0
+            ? ImmutableDictionary.CreateRange(tags.ToArray())
+            : ImmutableDictionary<string, object>.Empty;
         State = state;
+        Timestamp = DateTime.UtcNow;
     }
 
     public Instrument Instrument { get; }
@@ -372,4 +399,5 @@ public struct RecordedMeasurement<T> where T : struct
     public T Value { get; }
     public IReadOnlyDictionary<string, object> Tags { get; }
     public object State { get; }
+    public DateTime Timestamp { get; }
 }

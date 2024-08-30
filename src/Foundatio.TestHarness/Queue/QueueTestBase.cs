@@ -98,9 +98,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.dequeued"));
                 Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
 
-                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
-                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.working"));
-                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.deadletter"));
+                Assert.Equal(0, metricsCollector.GetLast<long>("foundatio.simpleworkitem.count"));
+                Assert.Equal(0, metricsCollector.GetLast<long>("foundatio.simpleworkitem.working"));
+                Assert.Equal(0, metricsCollector.GetLast<long>("foundatio.simpleworkitem.deadletter"));
 
                 Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.myitem.enqueued"));
                 Assert.Equal(1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.myitem.dequeued"));
@@ -403,7 +403,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.completed"));
                 Assert.Equal(retryCount + 1, metricsCollector.GetSum<long>("foundatio.simpleworkitem.abandoned"));
 
-                Assert.Equal(0, metricsCollector.GetSum<long>("foundatio.simpleworkitem.count"));
+                Assert.Equal(0, metricsCollector.GetLast<long>("foundatio.simpleworkitem.count"));
             }
         }
         finally
