@@ -73,14 +73,14 @@ public class Program
                     {
                         e.MapGet("/jobstatus", httpContext =>
                         {
-                            var jobManager = httpContext.RequestServices.GetRequiredService<ScheduledJobManager>();
+                            var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
                             var status = jobManager.GetJobStatus();
                             return httpContext.Response.WriteAsJsonAsync(status);
                         });
 
                         e.MapGet("/runjob", async httpContext =>
                         {
-                            var jobManager = httpContext.RequestServices.GetRequiredService<ScheduledJobManager>();
+                            var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
                             await jobManager.RunJobAsync("EvenMinutes");
                             await jobManager.RunJobAsync<EveryMinuteJob>();
                         });

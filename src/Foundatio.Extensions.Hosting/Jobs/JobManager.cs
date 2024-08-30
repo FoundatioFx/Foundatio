@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
-public interface IScheduledJobManager
+public interface IJobManager
 {
     void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob;
     void AddOrUpdate(string jobName, string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null);
@@ -23,9 +23,12 @@ public interface IScheduledJobManager
     void AddOrUpdate(string jobName, string cronSchedule, Action action, Action<ScheduledJobOptionsBuilder> configure = null);
     void Remove<TJob>() where TJob : class, IJob;
     void Remove(string jobName);
+    JobStatus[] GetJobStatus();
+    Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob;
+    Task RunJobAsync(string jobName, CancellationToken cancellationToken = default);
 }
 
-public class ScheduledJobManager : IScheduledJobManager
+public class JobManager : IJobManager
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
@@ -34,7 +37,7 @@ public class ScheduledJobManager : IScheduledJobManager
     private ScheduledJobRunner[] _jobsArray;
     private readonly object _lock = new();
 
-    public ScheduledJobManager(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+    public JobManager(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
     {
         _serviceProvider = serviceProvider;
         _loggerFactory = loggerFactory;

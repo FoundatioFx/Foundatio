@@ -8,12 +8,12 @@ namespace Foundatio.HostingSample;
 
 public class MyStartupAction : IStartupAction
 {
-    private readonly IScheduledJobManager _scheduledJobManager;
+    private readonly IJobManager _jobManager;
     private readonly ILogger _logger;
 
-    public MyStartupAction(IScheduledJobManager scheduledJobManager, ILogger<MyStartupAction> logger)
+    public MyStartupAction(IJobManager jobManager, ILogger<MyStartupAction> logger)
     {
-        _scheduledJobManager = scheduledJobManager;
+        _jobManager = jobManager;
         _logger = logger;
     }
 
@@ -25,7 +25,7 @@ public class MyStartupAction : IStartupAction
             await Task.Delay(500);
         }
 
-        _scheduledJobManager.AddOrUpdate("MyJob", "* * * * *", async () =>
+        _jobManager.AddOrUpdate("MyJob", "* * * * *", async () =>
         {
             _logger.LogInformation("Running MyJob");
             await Task.Delay(1000);
