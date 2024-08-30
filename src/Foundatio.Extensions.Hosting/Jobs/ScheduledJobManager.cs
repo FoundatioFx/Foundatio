@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Jobs;
+using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -48,7 +49,7 @@ public class ScheduledJobManager : IScheduledJobManager
 
     public void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob
     {
-        string jobName = typeof(TJob).Name;
+        string jobName = typeof(TJob).FullName;
         lock (_lock)
         {
             var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
@@ -147,7 +148,7 @@ public class ScheduledJobManager : IScheduledJobManager
 
     public void Remove<TJob>() where TJob : class, IJob
     {
-        string jobName = typeof(TJob).Name;
+        string jobName = typeof(TJob).FullName;
         lock (_lock)
         {
             var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
@@ -172,5 +173,44 @@ public class ScheduledJobManager : IScheduledJobManager
         }
     }
 
+    public JobStatus[] GetJobStatus()
+    {
+        return Jobs.Select(j => new JobStatus
+        {
+            Name = j.Options.Name,
+            Schedule = j.Options.CronSchedule,
+            LastRun = j.LastRun,
+            LastSuccess = j.LastSuccess,
+            NextRun = j.NextRun,
+            IsRunning = j.RunTask is { IsCompleted: false }
+        }).ToArray();
+    }
+
+    public async Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob
+    {
+        string jobName = typeof(TJob).FullName;
+        await RunJobAsync(jobName, cancellationToken).AnyContext();
+    }
+
+    public async Task RunJobAsync(string jobName, CancellationToken cancellationToken = default)
+    {
+        var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
+        if (job == null)
+            throw new ArgumentException("Job not found.", nameof(jobName));
+
+        await job.StartAsync(cancellationToken).AnyContext();
+    }
+
     internal ScheduledJobRunner[] Jobs => _jobsArray;
+}
+
+public class JobStatus
+{
+    public string Name { get; set; }
+    public string Schedule { get; set; }
+    public DateTime? LastRun { get; set; }
+    public DateTime? LastSuccess { get; set; }
+    public string LastErrorMessage { get; set; }
+    public DateTime? NextRun { get; set; }
+    public bool IsRunning { get; set; }
 }

@@ -6,7 +6,9 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Startup;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -65,6 +67,24 @@ public class Program
 
                     app.UseHealthChecks("/health");
                     app.UseReadyHealthChecks("Critical");
+                    app.UseRouting();
+
+                    app.UseEndpoints(e =>
+                    {
+                        e.MapGet("/jobstatus", httpContext =>
+                        {
+                            var jobManager = httpContext.RequestServices.GetRequiredService<ScheduledJobManager>();
+                            var status = jobManager.GetJobStatus();
+                            return httpContext.Response.WriteAsJsonAsync(status);
+                        });
+
+                        e.MapGet("/runjob", async httpContext =>
+                        {
+                            var jobManager = httpContext.RequestServices.GetRequiredService<ScheduledJobManager>();
+                            await jobManager.RunJobAsync("EvenMinutes");
+                            await jobManager.RunJobAsync<EveryMinuteJob>();
+                        });
+                    });
 
                     // this middleware will return Service Unavailable until the startup actions have completed
                     app.UseWaitForStartupActionsBeforeServingRequests();
