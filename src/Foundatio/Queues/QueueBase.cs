@@ -69,7 +69,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             {
                 return (0, 0, 0);
             }
-        });
+        }, _logger);
 
         _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), () => new Measurement<long>(queueMetricValues.GetValue1()), description: "Number of items in the queue");
         _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), () => new Measurement<long>(queueMetricValues.GetValue2()), description: "Number of items currently being processed");
