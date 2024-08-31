@@ -15,10 +15,10 @@ public class Program
         _logger = loggerFactory.CreateLogger("MessageBus");
 
         var serviceProvider = SampleServiceProvider.Create(loggerFactory);
-        var jobOptions = JobOptions.GetDefaults<PingQueueJob>(() => serviceProvider.GetRequiredService<PingQueueJob>());
+        var jobOptions = JobOptions.GetDefaults<PingQueueJob>(_ => serviceProvider.GetRequiredService<PingQueueJob>());
         var messageBus = serviceProvider.GetRequiredService<IMessageBus>();
         messageBus.SubscribeAsync<EchoMessage>(m => HandleEchoMessage(m)).GetAwaiter().GetResult();
-        return new JobRunner(jobOptions).RunInConsoleAsync().GetAwaiter().GetResult();
+        return new JobRunner(jobOptions, serviceProvider).RunInConsoleAsync().GetAwaiter().GetResult();
     }
 
     private static void HandleEchoMessage(EchoMessage m)

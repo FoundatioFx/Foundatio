@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Queues;
-using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -97,7 +96,7 @@ public class Program
             {
                 while (!Console.KeyAvailable)
                 {
-                    SystemClock.Sleep(250);
+                    Thread.Sleep(250);
                 }
                 var key = Console.ReadKey(true).Key;
 
@@ -119,7 +118,7 @@ public class Program
 
             Console.SetCursorPosition(0, OPTIONS_MENU_LINE_COUNT + 1);
 
-            SystemClock.Sleep(250);
+            Thread.Sleep(250);
         }
     }
 

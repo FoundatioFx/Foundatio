@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -225,7 +225,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             return null;
         }
 
-        var now = SystemClock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var envelope = new RedisPayloadEnvelope<T>
         {
             Properties = options.Properties,
@@ -386,7 +386,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     public override async Task RenewLockAsync(IQueueEntry<T> entry)
     {
         if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, entry.Id);
-        await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), SystemClock.UtcNow.Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+        await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), _timeProvider.GetUtcNow().Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
         if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", entry.Id);
     }
@@ -423,7 +423,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             return await Run.WithRetriesAsync(async () =>
             {
                 var timeout = GetWorkItemTimeoutTimeTtl();
-                long now = SystemClock.UtcNow.Ticks;
+                long now = _timeProvider.GetUtcNow().Ticks;
 
                 await LoadScriptsAsync().AnyContext();
                 var result = await Database.ScriptEvaluateAsync(_dequeueId, new
@@ -435,7 +435,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     timeout = timeout.TotalMilliseconds
                 }).AnyContext();
                 return result.ToString();
-            }, 3, TimeSpan.FromMilliseconds(100), linkedCancellationToken, _logger).AnyContext();
+            }, 3, TimeSpan.FromMilliseconds(100), _timeProvider, linkedCancellationToken, _logger).AnyContext();
         }
         catch (Exception ex)
         {
@@ -518,7 +518,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             _logger.LogInformation("Adding item to wait list for future retry: {EntryId}", entry.Id);
 
             await Run.WithRetriesAsync(() => Task.WhenAll(
-                _cache.SetAsync(GetWaitTimeKey(entry.Id), SystemClock.UtcNow.Add(retryDelay).Ticks, GetWaitTimeTtl()),
+                _cache.SetAsync(GetWaitTimeKey(entry.Id), _timeProvider.GetUtcNow().Add(retryDelay).Ticks, GetWaitTimeTtl()),
                 _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl())
             ), logger: _logger).AnyContext();
 
@@ -657,7 +657,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             return;
 
         _logger.LogTrace("Starting DoMaintenance: Name: {Name} Id: {Id}", _options.Name, QueueId);
-        var utcNow = SystemClock.UtcNow;
+        var utcNow = _timeProvider.GetUtcNow();
 
         try
         {
@@ -674,7 +674,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     continue;
                 }
 
-                var renewedTime = new DateTime(renewedTimeTicks.Value);
+                var renewedTime = new DateTimeOffset(new DateTime(renewedTimeTicks.Value), TimeSpan.Zero);
                 _logger.LogTrace("{WorkId}: Renewed time {RenewedTime:o}", workId, renewedTime);
 
                 if (utcNow.Subtract(renewedTime) <= _options.WorkItemTimeout)
@@ -746,7 +746,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             _logger.LogError(ex, "Error trimming deadletter items: {0}", ex.Message);
         }
 
-        _logger.LogTrace("Finished DoMaintenance: Name: {Name} Id: {Id} Duration: {Duration:g}", _options.Name, QueueId, SystemClock.UtcNow.Subtract(utcNow));
+        _logger.LogTrace("Finished DoMaintenance: Name: {Name} Id: {Id} Duration: {Duration:g}", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
     }
 
     private async Task DoMaintenanceWorkLoopAsync()
@@ -755,11 +755,11 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         {
             _logger.LogTrace("Requesting Maintenance Lock. Name: {Name} Id: {Id}", _options.Name, QueueId);
 
-            var utcNow = SystemClock.UtcNow;
+            var utcNow = _timeProvider.GetUtcNow();
             using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
             bool gotLock = await _maintenanceLockProvider.TryUsingAsync($"{_options.Name}-maintenance", DoMaintenanceWorkAsync, cancellationToken: linkedCancellationToken.Token).AnyContext();
 
-            _logger.LogTrace("{Status} Maintenance Lock. Name: {Name} Id: {Id} Time To Acquire: {AcquireDuration:g}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId, SystemClock.UtcNow.Subtract(utcNow));
+            _logger.LogTrace("{Status} Maintenance Lock. Name: {Name} Id: {Id} Time To Acquire: {AcquireDuration:g}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
         }
     }
 

@@ -8,7 +8,6 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.SampleJob;
@@ -18,10 +17,10 @@ public class PingQueueJob : QueueJobBase<PingRequest>
     private readonly ILockProvider _locker;
     private int _runCount;
 
-    public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory, ICacheClient cacheClient, IMessageBus messageBus) : base(queue, loggerFactory)
+    public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory, ICacheClient cacheClient, IMessageBus messageBus) : base(queue, null, loggerFactory)
     {
         AutoComplete = true;
-        _locker = new CacheLockProvider(cacheClient, messageBus, loggerFactory);
+        _locker = new CacheLockProvider(cacheClient, messageBus, null, loggerFactory);
     }
 
     public int RunCount => _runCount;
@@ -39,7 +38,7 @@ public class PingQueueJob : QueueJobBase<PingRequest>
 
         if (_logger.IsEnabled(LogLevel.Information))
             _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
-        await SystemClock.SleepAsync(TimeSpan.FromMilliseconds(1)).AnyContext();
+        await Task.Delay(TimeSpan.FromMilliseconds(1)).AnyContext();
 
         if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))
             throw new ApplicationException("Boom!");

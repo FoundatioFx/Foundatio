@@ -67,9 +67,9 @@ public class JobQueueBenchmarks
 
 public class BenchmarkJobQueue : QueueJobBase<QueueItem>
 {
-    public BenchmarkJobQueue(Lazy<IQueue<QueueItem>> queue, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) { }
+    public BenchmarkJobQueue(Lazy<IQueue<QueueItem>> queue, ILoggerFactory loggerFactory = null) : base(queue, null, loggerFactory) { }
 
-    public BenchmarkJobQueue(IQueue<QueueItem> queue, ILoggerFactory loggerFactory = null) : base(queue, loggerFactory) { }
+    public BenchmarkJobQueue(IQueue<QueueItem> queue, ILoggerFactory loggerFactory = null) : base(queue, null, loggerFactory) { }
 
     protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<QueueItem> context)
     {
