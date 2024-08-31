@@ -2,4 +2,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\docker-compose.yml">
+      <Link>docker-compose.yml</Link>
+    </Content>
+  </ItemGroup>
 </Project>
