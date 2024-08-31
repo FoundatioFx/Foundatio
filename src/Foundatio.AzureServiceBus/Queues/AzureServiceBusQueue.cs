@@ -8,7 +8,6 @@ using Foundatio.AsyncEx;
 using Foundatio.AzureServiceBus.Queues;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Azure.ServiceBus;
 using Microsoft.Azure.ServiceBus.Core;
 using Microsoft.Azure.ServiceBus.Management;
@@ -147,7 +146,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
         await _queueSender.SendAsync(brokeredMessage).AnyContext();
 
-        var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, data, this, SystemClock.UtcNow, 0);
+        var entry = new QueueEntry<T>(brokeredMessage.MessageId, brokeredMessage.CorrelationId, data, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
         entry.SetLockToken(brokeredMessage);
         foreach (var property in brokeredMessage.UserProperties)
             entry.Properties.Add(property.Key, property.Value.ToString());
