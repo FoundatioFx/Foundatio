@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility;
@@ -11,8 +10,6 @@ public class InstrumentsValues<T1, T2, T3>
 {
     private readonly object _lock = new();
     private int _readCount;
-    private bool _valuesUpdating;
-    private readonly AutoResetEvent _valuesUpdatingEvent = new(false);
     private T1? _value1;
     private T2? _value2;
     private T3? _value3;
