@@ -152,18 +152,32 @@ internal class ScheduledJobRunner
             // start running the job in a thread
             RunTask = Task.Factory.StartNew(async () =>
             {
-                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + Options.Name, ActivityKind.Server);
+                try
+                {
+                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + Options.Name, ActivityKind.Server);
+                    var scope = _serviceProvider.CreateScope();
 
-                var result = await Options.JobFactory(_serviceProvider).TryRunAsync(cancellationToken).AnyContext();
-                _logger.LogJobResult(result, Options.Name);
-                if (result.IsSuccess)
-                {
-                    LastSuccess = _timeProvider.GetUtcNow().UtcDateTime;
-                    await _cacheClient.SetAsync("lastsuccess:" + Options.Name, LastSuccess.Value).AnyContext();
+                    var job = Options.JobFactory(scope.ServiceProvider);
+                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
+
+                    _logger.LogJobResult(result, Options.Name);
+                    if (result.IsSuccess)
+                    {
+                        LastSuccess = _timeProvider.GetUtcNow().UtcDateTime;
+                        await _cacheClient.SetAsync("lastsuccess:" + Options.Name, LastSuccess.Value).AnyContext();
+                    }
+                    else
+                    {
+                        LastErrorMessage = result.Message;
+                        await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
+                    }
                 }
-                else
+                catch (TaskCanceledException)
                 {
-                    LastErrorMessage = result.Message;
+                }
+                catch (Exception ex)
+                {
+                    LastErrorMessage = ex.Message;
                     await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
                 }
             }, cancellationToken).Unwrap();
