@@ -36,13 +36,13 @@ public class ScheduledJobOptionsBuilder
         return this;
     }
 
-    public ScheduledJobOptionsBuilder WaitForStartupActions(bool value)
+    public ScheduledJobOptionsBuilder WaitForStartupActions(bool value = true)
     {
         Target.WaitForStartupActions = value;
         return this;
     }
 
-    public ScheduledJobOptionsBuilder Distributed(bool value)
+    public ScheduledJobOptionsBuilder Distributed(bool value = true)
     {
         Target.IsDistributed = value;
         return this;

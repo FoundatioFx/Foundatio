@@ -42,7 +42,7 @@ public class HostedJobOptionsBuilder
         return this;
     }
 
-    public HostedJobOptionsBuilder RunContinuous(bool value)
+    public HostedJobOptionsBuilder RunContinuous(bool value = true)
     {
         Target.RunContinuous = value;
         return this;
@@ -72,7 +72,7 @@ public class HostedJobOptionsBuilder
         return this;
     }
 
-    public HostedJobOptionsBuilder WaitForStartupActions(bool value)
+    public HostedJobOptionsBuilder WaitForStartupActions(bool value = true)
     {
         Target.WaitForStartupActions = value;
         return this;

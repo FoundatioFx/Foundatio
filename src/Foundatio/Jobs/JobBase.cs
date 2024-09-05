@@ -9,7 +9,7 @@ namespace Foundatio.Jobs;
 
 public abstract class JobBase : IJob, IHaveLogger, IHaveTimeProvider
 {
-    private readonly TimeProvider _timeProvider;
+    protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
 
     public JobBase(ILoggerFactory loggerFactory = null) : this(null, loggerFactory)
