@@ -114,7 +114,7 @@ public static class Cron
     /// <param name="minute">The minute in which the schedule will be activated (0-59).</param>
     public static string Weekly(DayOfWeek dayOfWeek, int hour, int minute)
     {
-        return $"{minute} {hour} * * {(int) dayOfWeek}";
+        return $"{minute} {hour} * * {(int)dayOfWeek}";
     }
 
     /// <summary>
@@ -213,12 +213,12 @@ public static class Cron
         return $"{minute} {hour} {day} {month} *";
     }
 
-	/// <summary>
-	/// Returns cron expression that never fires. Specifically 31st of February
-	/// </summary>
-	/// <returns></returns>
-	public static string Never()
-	{
-		return Yearly(2, 31);
-	}
+    /// <summary>
+    /// Returns cron expression that never fires. Specifically 31st of February
+    /// </summary>
+    /// <returns></returns>
+    public static string Never()
+    {
+        return Yearly(2, 31);
+    }
 }

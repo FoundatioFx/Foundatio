@@ -99,7 +99,7 @@ public class DiagnosticsMetricsCollector : IDisposable
 
         _meterListener.Start();
 
-        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero,  TimeSpan.FromMilliseconds(50));
+        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
     }
 
     public void RecordObservableInstruments()

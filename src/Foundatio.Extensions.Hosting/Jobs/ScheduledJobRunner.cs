@@ -59,7 +59,7 @@ internal class ScheduledJobRunner
     private string _schedule;
     public string Schedule
     {
-        get { return _schedule;}
+        get { return _schedule; }
         set
         {
             _cronSchedule = CronExpression.Parse(value);
@@ -77,7 +77,8 @@ internal class ScheduledJobRunner
     public async ValueTask<bool> ShouldRunAsync()
     {
         // get initial last run value
-        if (!_lastRunChecked && !LastRun.HasValue) {
+        if (!_lastRunChecked && !LastRun.HasValue)
+        {
             var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
             if (lastRun.HasValue)
             {

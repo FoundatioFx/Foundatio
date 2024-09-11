@@ -44,14 +44,14 @@ public class JobRunner
         ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1,
         bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
         : this(new JobOptions
-    {
-        JobFactory = jobFactory,
-        InitialDelay = initialDelay,
-        InstanceCount = instanceCount,
-        IterationLimit = iterationLimit,
-        RunContinuous = runContinuous,
-        Interval = interval
-    }, serviceProvider, loggerFactory)
+        {
+            JobFactory = jobFactory,
+            InitialDelay = initialDelay,
+            InstanceCount = instanceCount,
+            IterationLimit = iterationLimit,
+            RunContinuous = runContinuous,
+            Interval = interval
+        }, serviceProvider, loggerFactory)
     {
     }
 

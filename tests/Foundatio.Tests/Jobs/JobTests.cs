@@ -106,7 +106,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanCancelContinuousJobs()
     {
-        var timeProvider = new FakeTimeProvider { AutoAdvanceAmount = TimeSpan.FromSeconds(1)};
+        var timeProvider = new FakeTimeProvider { AutoAdvanceAmount = TimeSpan.FromSeconds(1) };
         var job = new HelloWorldJob(timeProvider, Log);
         var sp = new ServiceCollection().AddSingleton<TimeProvider>(_ => timeProvider).BuildServiceProvider();
         var timeoutCancellationTokenSource = new CancellationTokenSource(100);
