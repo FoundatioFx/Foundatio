@@ -1,5 +1,7 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Storage;
 using Xunit;
 using Xunit.Abstractions;
@@ -13,6 +15,46 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     protected override IFileStorage GetStorage()
     {
         return new ScopedFileStorage(new FolderFileStorage(o => o.Folder("|DataDirectory|\\temp")), "scoped");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrowArgumentNullException_WhenFileStorageIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => new ScopedFileStorage(null, "scope"));
+    }
+
+    [InlineData("*")]
+    [Theory]
+    public void Constructor_ShouldThrowArgumentException_WhenScopeContainsInvalidCharacters(string scope)
+    {
+        var storage = GetStorage();
+        if (storage == null)
+            return;
+
+        Assert.Throws<ArgumentException>(() => new ScopedFileStorage(storage, scope));
+    }
+
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("test")]
+    [InlineData(" test ")]
+    [InlineData("|DataDirectory|\\temp")]
+    [InlineData("|DataDirectory|/temp")]
+    [Theory]
+    public void Constructor_ShouldInitializeProperties_WhenArgumentsAreValid(string scope)
+    {
+        var storage = GetStorage();
+        if (storage == null)
+            return;
+
+        var scopedStorage = new ScopedFileStorage(storage, scope);
+        Assert.Equal(storage, scopedStorage.UnscopedStorage);
+
+        if (String.IsNullOrWhiteSpace(scope))
+            Assert.Null(scopedStorage.Scope);
+        else
+            Assert.Equal(scope.Trim().NormalizePath(), scopedStorage.Scope);
     }
 
     [Fact]
