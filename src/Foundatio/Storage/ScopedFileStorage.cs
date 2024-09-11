@@ -2,6 +2,7 @@
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 
@@ -13,9 +14,13 @@ public class ScopedFileStorage : IFileStorage
 
     public ScopedFileStorage(IFileStorage storage, string scope)
     {
-        UnscopedStorage = storage;
-        Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
+        UnscopedStorage = storage ?? throw new ArgumentNullException(nameof(storage));
+        Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim().NormalizePath() : null;
         _pathPrefix = Scope != null ? String.Concat(Scope, "/") : String.Empty;
+
+        // NOTE: we can't really check reliably using Path.GetInvalidPathChars() because each storage implementation and platform could be different.
+        if (Scope is not null && Scope.Contains("*"))
+            throw new ArgumentException("Scope cannot contain a wildcard character", nameof(scope));
     }
 
     public IFileStorage UnscopedStorage { get; private set; }
