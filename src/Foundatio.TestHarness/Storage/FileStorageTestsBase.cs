@@ -604,9 +604,28 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         Assert.NotEqual(DATA_DIRECTORY_QUEUE_FOLDER, storage.Folder);
         Assert.True(storage.Folder.EndsWith("Queue" + Path.DirectorySeparatorChar), storage.Folder);
     }
+
+    public virtual async Task CanSaveOverExistingStoredContent()
+    {
+        using var storage = GetStorage();
+        if (storage == null)
+            return;
+
+        await ResetAsync(storage);
+
+        var shortIdInfo = new PostInfo { ProjectId = "123" };
+        var longIdInfo = new PostInfo { ProjectId = "1234567890" };
+
+        string path = "test.json";
+        await storage.SaveObjectAsync(path, longIdInfo);
+        await storage.SaveObjectAsync(path, shortIdInfo);
+
+        var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
+        Assert.Equal(shortIdInfo, actualInfo);
+    }
 }
 
-public class PostInfo
+public record PostInfo
 {
     public int ApiVersion { get; set; }
     public string CharSet { get; set; }

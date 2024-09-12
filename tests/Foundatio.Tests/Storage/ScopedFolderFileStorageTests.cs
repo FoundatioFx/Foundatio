@@ -178,6 +178,12 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     }
 
     [Fact]
+    public override Task CanSaveOverExistingStoredContent()
+    {
+        return base.CanSaveOverExistingStoredContent();
+    }
+
+    [Fact]
     public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
         var storage = GetStorage();
