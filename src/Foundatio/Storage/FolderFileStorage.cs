@@ -60,7 +60,7 @@ public class FolderFileStorage : IFileStorage
         string fullPath = Path.Combine(Folder, normalizedPath);
         EnsureDirectory(fullPath);
 
-        var stream = streamMode == StreamMode.Read ? File.OpenRead(fullPath) : File.OpenWrite(fullPath);
+        var stream = streamMode == StreamMode.Read ? File.OpenRead(fullPath) : new FileStream(fullPath, FileMode.Create, FileAccess.Write);
         return Task.FromResult<Stream>(stream);
     }
 

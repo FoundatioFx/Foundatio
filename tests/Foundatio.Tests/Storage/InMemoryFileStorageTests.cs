@@ -133,4 +133,10 @@ public class InMemoryFileStorageTests : FileStorageTestsBase
     {
         return base.WillWriteStreamContentAsync();
     }
+
+    [Fact]
+    public override Task CanSaveOverExistingStoredContent()
+    {
+        return base.CanSaveOverExistingStoredContent();
+    }
 }
