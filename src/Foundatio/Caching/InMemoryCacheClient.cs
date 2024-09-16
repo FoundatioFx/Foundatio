@@ -928,7 +928,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             foreach (var kvp in _memory.ToArray())
             {
                 bool lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
-                if (lastAccessTimeIsInfrequent && kvp.Value.ExpiresAt <= utcNow)
+                if (lastAccessTimeIsInfrequent && kvp.Value.ExpiresAt < DateTime.MaxValue && kvp.Value.ExpiresAt <= utcNow)
                 {
                     _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
                     RemoveExpiredKey(kvp.Key);
