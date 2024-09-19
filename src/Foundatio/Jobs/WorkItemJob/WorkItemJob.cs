@@ -61,7 +61,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
             return JobResult.Cancelled;
 
         if (queueEntry == null)
-            return JobResult.CancelledWithMessage("No queue entry to process.");
+            return JobResult.SuccessWithMessage("No queue entry to process.");
 
         if (cancellationToken.IsCancellationRequested)
         {

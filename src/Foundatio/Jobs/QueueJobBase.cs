@@ -62,7 +62,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
             return JobResult.Cancelled;
 
         if (queueEntry == null)
-            return JobResult.CancelledWithMessage("No queue entry to process.");
+            return JobResult.SuccessWithMessage("No queue entry to process.");
 
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s
