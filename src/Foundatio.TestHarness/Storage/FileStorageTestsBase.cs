@@ -35,7 +35,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         using (storage)
         {
-            Assert.Empty(await storage.GetFileListAsync(Guid.NewGuid() + "\\*"));
+            Assert.Empty(await storage.GetFileListAsync($"{Guid.NewGuid()}\\*"));
         }
     }
 
@@ -283,11 +283,12 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         using (storage)
         {
+            await storage.SaveFileAsync(@"x\README", "hello");
             await storage.SaveFileAsync(@"x\hello.txt", "hello");
             await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
-            Assert.Equal(2, (await storage.GetFileListAsync()).Count);
+            Assert.Equal(3, (await storage.GetFileListAsync()).Count);
 
-            await storage.DeleteFilesAsync(@"x\*");
+            Assert.Equal(3, await storage.DeleteFilesAsync(@"x\*"));
             Assert.Empty(await storage.GetFileListAsync());
         }
     }
@@ -304,13 +305,14 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         {
             await storage.SaveFileAsync(@"x\hello.txt", "hello");
             await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
-            Assert.Equal(2, (await storage.GetFileListAsync()).Count);
+            await storage.SaveFileAsync(@"x\nested\docs\README", "manual");
             Assert.Single(await storage.GetFileListAsync(limit: 1));
-            Assert.Equal(2, (await storage.GetFileListAsync(@"x\*")).Count);
-            Assert.Single(await storage.GetFileListAsync(@"x\nested\*"));
+            Assert.Equal(3, (await storage.GetFileListAsync()).Count);
+            Assert.Equal(3, (await storage.GetFileListAsync(@"x\*")).Count);
+            Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count);
+            Assert.Single(await storage.GetFileListAsync(@"x\nested\docs\*"));
 
-            await storage.DeleteFilesAsync(@"x\*");
-
+            Assert.Equal(3, await storage.DeleteFilesAsync(@"x\*"));
             Assert.Empty(await storage.GetFileListAsync());
         }
     }
@@ -388,20 +390,30 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         using (storage)
         {
             await storage.SaveFileAsync(@"x\hello.txt", "hello");
-            await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
             await storage.SaveFileAsync(@"x\nested\hello.txt", "nested hello");
-            Assert.Equal(3, (await storage.GetFileListAsync()).Count);
+            await storage.SaveFileAsync(@"x\nested\world.csv", "nested world");
+            await storage.SaveFileAsync(@"x\nested\docs\README", "README");
+            await storage.SaveFileAsync(@"x\nested\media\README", "README");
+            Assert.Equal(5, (await storage.GetFileListAsync()).Count);
             Assert.Single(await storage.GetFileListAsync(limit: 1));
-            Assert.Equal(3, (await storage.GetFileListAsync(@"x\*")).Count);
-            Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count);
+            Assert.Equal(5, (await storage.GetFileListAsync(@"x\*")).Count);
+            Assert.Equal(4, (await storage.GetFileListAsync(@"x\nested\*")).Count);
             Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count);
 
-            await storage.DeleteFilesAsync(@"x\nested\*");
+            Assert.Equal(1, await storage.DeleteFilesAsync(@"x\nested\docs\"));
+            Assert.Equal(1, await storage.DeleteFilesAsync(@"x\nested\media"));
+            Assert.Equal(2, await storage.DeleteFilesAsync(@"x\nested\*"));
 
             Assert.Single(await storage.GetFileListAsync());
             Assert.True(await storage.ExistsAsync(@"x\hello.txt"));
             Assert.False(await storage.ExistsAsync(@"x\nested\hello.txt"));
             Assert.False(await storage.ExistsAsync(@"x\nested\world.csv"));
+            Assert.False(await storage.ExistsAsync(@"x\nested\docs\README"));
+            Assert.False(await storage.ExistsAsync(@"x\nested\media\README"));
+
+            Assert.Equal(1, await storage.DeleteFilesAsync(@"x\hello*"));
+            Assert.Empty(await storage.GetFileListAsync());
+            Assert.False(await storage.ExistsAsync(@"x\hello.txt"));
         }
     }
 
@@ -426,7 +438,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             Assert.Equal(3, (await storage.GetFileListAsync(@"x\nested\*")).Count);
             Assert.Equal(3, (await storage.GetFileListAsync(@"x\*.txt")).Count);
 
-            await storage.DeleteFilesAsync(@"x\nested\*.txt");
+            Assert.Equal(2, await storage.DeleteFilesAsync(@"x\nested\*.txt"));
 
             Assert.Equal(3, (await storage.GetFileListAsync()).Count);
             Assert.True(await storage.ExistsAsync(@"x\hello.txt"));

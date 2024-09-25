@@ -228,11 +228,10 @@ public class InMemoryFileStorage : IFileStorage
 
         if (searchPattern[searchPattern.Length - 1] == Path.DirectorySeparatorChar)
             searchPattern = $"{searchPattern}*";
-        else if (!searchPattern.EndsWith(Path.DirectorySeparatorChar + "*") && !Path.HasExtension(searchPattern))
+        else if (!searchPattern.EndsWith("*") && !Path.HasExtension(searchPattern))
             searchPattern = Path.Combine(searchPattern, "*");
 
         var regex = new Regex($"^{Regex.Escape(searchPattern).Replace("\\*", ".*?")}$");
-
         var keys = _storage.Keys.Where(k => regex.IsMatch(k)).Select(k => _storage[k].Spec).ToList();
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern} (Regex={SearchPatternRegex})", keys.Count, searchPattern, regex);
