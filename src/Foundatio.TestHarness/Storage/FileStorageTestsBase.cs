@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
@@ -396,7 +396,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             Assert.Equal(2, (await storage.GetFileListAsync(@"x\nested\*")).Count);
             Assert.Equal(2, (await storage.GetFileListAsync(@"x\*.txt")).Count);
 
-            await storage.DeleteFilesAsync(@"x\nested\*");
+            Assert.Equal(2, await storage.DeleteFilesAsync(@"x\nested\*"));
 
             Assert.Single(await storage.GetFileListAsync());
             Assert.True(await storage.ExistsAsync(@"x\hello.txt"));

@@ -239,7 +239,7 @@ public class FolderFileStorage : IFileStorage
             if (Directory.Exists(Folder))
             {
                 _logger.LogInformation("Deleting {Directory} directory", Folder);
-                count += Directory.EnumerateFiles(Folder, "*,*", SearchOption.AllDirectories).Count();
+                count += Directory.EnumerateFiles(Folder, "*.*", SearchOption.AllDirectories).Count();
                 Directory.Delete(Folder, true);
                 _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", Folder, count);
             }
@@ -249,13 +249,13 @@ public class FolderFileStorage : IFileStorage
 
         searchPattern = searchPattern.NormalizePath();
         string path = Path.Combine(Folder, searchPattern);
-        if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith(Path.DirectorySeparatorChar + "*"))
+        if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith($"{Path.DirectorySeparatorChar}*"))
         {
             string directory = Path.GetDirectoryName(path);
             if (Directory.Exists(directory))
             {
                 _logger.LogInformation("Deleting {Directory} directory", directory);
-                count += Directory.EnumerateFiles(directory, "*,*", SearchOption.AllDirectories).Count();
+                count += Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories).Count();
                 Directory.Delete(directory, true);
                 _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
                 return Task.FromResult(count);
@@ -267,7 +267,7 @@ public class FolderFileStorage : IFileStorage
         if (Directory.Exists(path))
         {
             _logger.LogInformation("Deleting {Directory} directory", path);
-            count += Directory.EnumerateFiles(path, "*,*", SearchOption.AllDirectories).Count();
+            count += Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories).Count();
             Directory.Delete(path, true);
             _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", path, count);
             return Task.FromResult(count);
