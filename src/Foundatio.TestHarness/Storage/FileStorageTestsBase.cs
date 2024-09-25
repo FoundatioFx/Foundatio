@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
@@ -402,6 +402,10 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             Assert.True(await storage.ExistsAsync(@"x\hello.txt"));
             Assert.False(await storage.ExistsAsync(@"x\nested\hello.txt"));
             Assert.False(await storage.ExistsAsync(@"x\nested\world.csv"));
+
+            Assert.Equal(1, await storage.DeleteFilesAsync(@"x\hello*"));
+            Assert.Empty(await storage.GetFileListAsync());
+            Assert.False(await storage.ExistsAsync(@"x\hello.txt"));
         }
     }
 
