@@ -35,19 +35,6 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
-    public async Task CanCheckMessageCounts()
-    {
-        var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        });
-        Assert.Equal(1, messageBus.MessagesSent);
-        Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
-        Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
-    }
-
-    [Fact]
     public override Task CanSendMessageAsync()
     {
         return base.CanSendMessageAsync();
@@ -147,6 +134,19 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     public override void CanDisposeWithNoSubscribersOrPublishers()
     {
         base.CanDisposeWithNoSubscribersOrPublishers();
+    }
+
+    [Fact]
+    public async Task CanCheckMessageCounts()
+    {
+        var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        await messageBus.PublishAsync(new SimpleMessageA
+        {
+            Data = "Hello"
+        });
+        Assert.Equal(1, messageBus.MessagesSent);
+        Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
+        Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
     }
 
     public void Dispose()

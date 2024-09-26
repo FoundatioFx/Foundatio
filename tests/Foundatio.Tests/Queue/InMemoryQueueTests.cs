@@ -47,83 +47,6 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
-    public async Task TestAsyncEvents()
-    {
-        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
-        var disposables = new List<IDisposable>(5);
-        try
-        {
-            disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
-            {
-                await Task.Delay(250);
-                _logger.LogInformation("First Enqueuing");
-            }));
-            disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
-            {
-                await Task.Delay(250);
-                _logger.LogInformation("Second Enqueuing");
-            }));
-            disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
-            {
-                await Task.Delay(250);
-                _logger.LogInformation("First");
-            }));
-            disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
-            {
-                await Task.Delay(250);
-                _logger.LogInformation("Second");
-            }));
-
-            var sw = Stopwatch.StartNew();
-            await q.EnqueueAsync(new SimpleWorkItem());
-            sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
-
-            sw.Restart();
-            await q.EnqueueAsync(new SimpleWorkItem());
-            sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
-        }
-        finally
-        {
-            foreach (var disposable in disposables)
-                disposable.Dispose();
-        }
-    }
-
-    [Fact]
-    public async Task CanGetCompletedEntries()
-    {
-        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log).CompletedEntryRetentionLimit(10));
-
-        await q.EnqueueAsync(new SimpleWorkItem());
-        Assert.Single(q.GetEntries());
-        Assert.Empty(q.GetDequeuedEntries());
-        Assert.Empty(q.GetCompletedEntries());
-
-        var item = await q.DequeueAsync();
-        Assert.Empty(q.GetEntries());
-        Assert.Single(q.GetDequeuedEntries());
-        Assert.Empty(q.GetCompletedEntries());
-
-        await item.CompleteAsync();
-        Assert.Empty(q.GetEntries());
-        Assert.Empty(q.GetDequeuedEntries());
-        Assert.Single(q.GetCompletedEntries());
-
-        for (int i = 0; i < 100; i++)
-        {
-            await q.EnqueueAsync(new SimpleWorkItem());
-            item = await q.DequeueAsync();
-            await item.CompleteAsync();
-        }
-
-        Assert.Empty(q.GetEntries());
-        Assert.Empty(q.GetDequeuedEntries());
-        Assert.Equal(10, q.GetCompletedEntries().Count);
-    }
-
-    [Fact]
     public override Task CanQueueAndDequeueWorkItemAsync()
     {
         return base.CanQueueAndDequeueWorkItemAsync();
@@ -289,6 +212,83 @@ public class InMemoryQueueTests : QueueTestBase
     public override Task CanHandleAutoAbandonInWorker()
     {
         return base.CanHandleAutoAbandonInWorker();
+    }
+
+    [Fact]
+    public async Task TestAsyncEvents()
+    {
+        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+        var disposables = new List<IDisposable>(5);
+        try
+        {
+            disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
+            {
+                await Task.Delay(250);
+                _logger.LogInformation("First Enqueuing");
+            }));
+            disposables.Add(q.Enqueuing.AddHandler(async (sender, args) =>
+            {
+                await Task.Delay(250);
+                _logger.LogInformation("Second Enqueuing");
+            }));
+            disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
+            {
+                await Task.Delay(250);
+                _logger.LogInformation("First");
+            }));
+            disposables.Add(q.Enqueued.AddHandler(async (sender, args) =>
+            {
+                await Task.Delay(250);
+                _logger.LogInformation("Second");
+            }));
+
+            var sw = Stopwatch.StartNew();
+            await q.EnqueueAsync(new SimpleWorkItem());
+            sw.Stop();
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+
+            sw.Restart();
+            await q.EnqueueAsync(new SimpleWorkItem());
+            sw.Stop();
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+        }
+        finally
+        {
+            foreach (var disposable in disposables)
+                disposable.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task CanGetCompletedEntries()
+    {
+        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log).CompletedEntryRetentionLimit(10));
+
+        await q.EnqueueAsync(new SimpleWorkItem());
+        Assert.Single(q.GetEntries());
+        Assert.Empty(q.GetDequeuedEntries());
+        Assert.Empty(q.GetCompletedEntries());
+
+        var item = await q.DequeueAsync();
+        Assert.Empty(q.GetEntries());
+        Assert.Single(q.GetDequeuedEntries());
+        Assert.Empty(q.GetCompletedEntries());
+
+        await item.CompleteAsync();
+        Assert.Empty(q.GetEntries());
+        Assert.Empty(q.GetDequeuedEntries());
+        Assert.Single(q.GetCompletedEntries());
+
+        for (int i = 0; i < 100; i++)
+        {
+            await q.EnqueueAsync(new SimpleWorkItem());
+            item = await q.DequeueAsync();
+            await item.CompleteAsync();
+        }
+
+        Assert.Empty(q.GetEntries());
+        Assert.Empty(q.GetDequeuedEntries());
+        Assert.Equal(10, q.GetCompletedEntries().Count);
     }
 
     #region Issue239

@@ -514,7 +514,6 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
     public virtual async Task WillWriteStreamContentAsync()
     {
-
         const string testContent = "test";
         const string path = "created.txt";
 

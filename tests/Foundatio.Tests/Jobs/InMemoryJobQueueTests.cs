@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Foundatio.Caching;
 using Foundatio.Queues;
-using Microsoft.Extensions.Logging;
 
 using Xunit;
 using Xunit.Abstractions;
@@ -27,8 +25,6 @@ public class InMemoryJobQueueTests : JobQueueTestsBase
     [Fact]
     public override Task CanRunQueueJobWithLockFailAsync()
     {
-        Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
-
         return base.CanRunQueueJobWithLockFailAsync();
     }
 
