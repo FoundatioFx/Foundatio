@@ -106,6 +106,12 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     }
 
     [Fact]
+    public override Task CanSendMappedMessageAsync()
+    {
+        return base.CanSendMappedMessageAsync();
+    }
+
+    [Fact]
     public async Task CanPersistAndNotLoseMessages()
     {
         var messageBus1 = GetMessageBus();

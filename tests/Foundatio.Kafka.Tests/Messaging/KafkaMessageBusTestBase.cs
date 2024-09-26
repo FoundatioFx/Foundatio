@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
