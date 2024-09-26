@@ -1501,7 +1501,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Id = 2
             });
 
-            var dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
+            var dequeuedQueueItem = Assert.IsAssignableFrom<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
             Assert.NotNull(dequeuedQueueItem.Value);
             // The first dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
             await Task.Delay(60);
@@ -1509,7 +1509,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Assert.True(dequeuedQueueItem.IsCompleted);
             Assert.False(dequeuedQueueItem.IsAbandoned);
 
-            dequeuedQueueItem = Assert.IsType<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
+            dequeuedQueueItem = Assert.IsAssignableFrom<QueueEntry<SimpleWorkItem>>(await queue.DequeueAsync());
             Assert.NotNull(dequeuedQueueItem.Value);
             // The second dequeued item works for 60 milliseconds less than work timeout(100 milliseconds).
             await Task.Delay(60);
