@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Utility;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -65,9 +64,14 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
+    public override Task CanSendMappedMessageAsync()
+    {
+        return base.CanSendMappedMessageAsync();
+    }
+
+    [Fact]
     public override Task CanSendDelayedMessageAsync()
     {
-        Log.SetLogLevel<AzureServiceBusMessageBus>(LogLevel.Information);
         return base.CanSendDelayedMessageAsync();
     }
 
@@ -111,6 +115,12 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     public override Task CanSubscribeToAllMessageTypesAsync()
     {
         return base.CanSubscribeToAllMessageTypesAsync();
+    }
+
+    [Fact]
+    public override Task CanSubscribeToRawMessagesAsync()
+    {
+        return base.CanSubscribeToRawMessagesAsync();
     }
 
     [Fact]
