@@ -41,11 +41,28 @@ public class AzureStorageQueueTests : QueueTestBase
         queue?.Dispose();
         return Task.CompletedTask;
     }
-
     [Fact]
     public override Task CanQueueAndDequeueWorkItemAsync()
     {
         return base.CanQueueAndDequeueWorkItemAsync();
+    }
+
+    [Fact]
+    public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
+    {
+        return base.CanQueueAndDequeueWorkItemWithDelayAsync();
+    }
+
+    [Fact]
+    public override Task CanUseQueueOptionsAsync()
+    {
+        return base.CanUseQueueOptionsAsync();
+    }
+
+    [Fact]
+    public override Task CanDiscardDuplicateQueueEntriesAsync()
+    {
+        return base.CanDiscardDuplicateQueueEntriesAsync();
     }
 
     [Fact]
@@ -55,9 +72,27 @@ public class AzureStorageQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanDequeueEfficientlyAsync()
+    {
+        return base.CanDequeueEfficientlyAsync();
+    }
+
+    [Fact]
+    public override Task CanResumeDequeueEfficientlyAsync()
+    {
+        return base.CanResumeDequeueEfficientlyAsync();
+    }
+
+    [Fact]
     public override Task CanQueueAndDequeueMultipleWorkItemsAsync()
     {
         return base.CanQueueAndDequeueMultipleWorkItemsAsync();
+    }
+
+    [Fact]
+    public override Task WillNotWaitForItemAsync()
+    {
+        return base.WillNotWaitForItemAsync();
     }
 
     [Fact]
@@ -84,40 +119,10 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.CanHandleErrorInWorkerAsync();
     }
 
-    [Fact(Skip = "Complete after timeout does not throw")]
+    [Fact]
     public override Task WorkItemsWillTimeoutAsync()
     {
         return base.WorkItemsWillTimeoutAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task WillNotWaitForItemAsync()
-    {
-        return base.WillNotWaitForItemAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task CanResumeDequeueEfficientlyAsync()
-    {
-        return base.CanResumeDequeueEfficientlyAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task CanDequeueEfficientlyAsync()
-    {
-        return base.CanDequeueEfficientlyAsync();
-    }
-
-    [Fact]
-    public override Task CanDequeueWithLockingAsync()
-    {
-        return base.CanDequeueWithLockingAsync();
-    }
-
-    [Fact]
-    public override Task CanHaveMultipleQueueInstancesWithLockingAsync()
-    {
-        return base.CanHaveMultipleQueueInstancesWithLockingAsync();
     }
 
     [Fact]
@@ -136,6 +141,12 @@ public class AzureStorageQueueTests : QueueTestBase
     public override Task CanHaveMultipleQueueInstancesAsync()
     {
         return base.CanHaveMultipleQueueInstancesAsync();
+    }
+
+    [Fact]
+    public override Task CanDelayRetryAsync()
+    {
+        return base.CanDelayRetryAsync();
     }
 
     [Fact]
@@ -163,6 +174,24 @@ public class AzureStorageQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanDequeueWithLockingAsync()
+    {
+        return base.CanDequeueWithLockingAsync();
+    }
+
+    [Fact]
+    public override Task CanHaveMultipleQueueInstancesWithLockingAsync()
+    {
+        return base.CanHaveMultipleQueueInstancesWithLockingAsync();
+    }
+
+    [Fact]
+    public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
+    {
+        return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+    }
+
+    [Fact]
     public override Task VerifyRetryAttemptsAsync()
     {
         return base.VerifyRetryAttemptsAsync();
@@ -172,5 +201,11 @@ public class AzureStorageQueueTests : QueueTestBase
     public override Task VerifyDelayedRetryAttemptsAsync()
     {
         return base.VerifyDelayedRetryAttemptsAsync();
+    }
+
+    [Fact]
+    public override Task CanHandleAutoAbandonInWorker()
+    {
+        return base.CanHandleAutoAbandonInWorker();
     }
 }
