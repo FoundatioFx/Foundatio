@@ -34,6 +34,12 @@ public class ScopedS3StorageTests : FileStorageTestsBase
     }
 
     [Fact]
+    public override Task CanGetFileListForSingleFileAsync()
+    {
+        return base.CanGetFileListForSingleFileAsync();
+    }
+
+    [Fact]
     public override Task CanGetPagedFileListForSingleFolderAsync()
     {
         return base.CanGetPagedFileListForSingleFolderAsync();
@@ -76,6 +82,12 @@ public class ScopedS3StorageTests : FileStorageTestsBase
     }
 
     [Fact]
+    public override void CanUseDataDirectory()
+    {
+        base.CanUseDataDirectory();
+    }
+
+    [Fact]
     public override Task CanDeleteEntireFolderAsync()
     {
         return base.CanDeleteEntireFolderAsync();
@@ -109,6 +121,30 @@ public class ScopedS3StorageTests : FileStorageTestsBase
     public override Task CanDeleteSpecificFilesInNestedFolderAsync()
     {
         return base.CanDeleteSpecificFilesInNestedFolderAsync();
+    }
+
+    [Fact]
+    public override Task CanRoundTripSeekableStreamAsync()
+    {
+        return base.CanRoundTripSeekableStreamAsync();
+    }
+
+    [Fact]
+    public override Task WillRespectStreamOffsetAsync()
+    {
+        return base.WillRespectStreamOffsetAsync();
+    }
+
+    [Fact(Skip = "Write Stream is not yet supported")]
+    public override Task WillWriteStreamContentAsync()
+    {
+        return base.WillWriteStreamContentAsync();
+    }
+
+    [Fact]
+    public override Task CanSaveOverExistingStoredContent()
+    {
+        return base.CanSaveOverExistingStoredContent();
     }
 
     [Fact]

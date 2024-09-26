@@ -52,35 +52,15 @@ public class SQSQueueTests : QueueTestBase
     }
 
     [Fact]
-    public void RetryBackoff()
-    {
-        var options = new SQSQueueOptions<SimpleWorkItem>();
-        var backoff1 = options.RetryDelay(1);
-        Assert.InRange(backoff1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
-        var backoff2 = options.RetryDelay(2);
-        Assert.InRange(backoff2, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(5));
-        var backoff3 = options.RetryDelay(3);
-        Assert.InRange(backoff3, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(9));
-        var backoff4 = options.RetryDelay(4);
-        Assert.InRange(backoff4, TimeSpan.FromSeconds(16), TimeSpan.FromSeconds(17));
-        var backoff5 = options.RetryDelay(5);
-        Assert.InRange(backoff5, TimeSpan.FromSeconds(32), TimeSpan.FromSeconds(33));
-        var backoff6 = options.RetryDelay(6);
-        Assert.InRange(backoff6, TimeSpan.FromSeconds(64), TimeSpan.FromSeconds(65));
-        var backoff7 = options.RetryDelay(7);
-        Assert.InRange(backoff7, TimeSpan.FromSeconds(128), TimeSpan.FromSeconds(129));
-        var backoff8 = options.RetryDelay(8);
-        Assert.InRange(backoff8, TimeSpan.FromSeconds(256), TimeSpan.FromSeconds(257));
-        var backoff9 = options.RetryDelay(9);
-        Assert.InRange(backoff9, TimeSpan.FromSeconds(512), TimeSpan.FromSeconds(513));
-        var backoff10 = options.RetryDelay(10);
-        Assert.InRange(backoff10, TimeSpan.FromSeconds(1024), TimeSpan.FromSeconds(1025));
-    }
-
-    [Fact]
     public override Task CanQueueAndDequeueWorkItemAsync()
     {
         return base.CanQueueAndDequeueWorkItemAsync();
+    }
+
+    [Fact]
+    public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
+    {
+        return base.CanQueueAndDequeueWorkItemWithDelayAsync();
     }
 
     [Fact]
@@ -90,9 +70,27 @@ public class SQSQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanDiscardDuplicateQueueEntriesAsync()
+    {
+        return base.CanDiscardDuplicateQueueEntriesAsync();
+    }
+
+    [Fact]
     public override Task CanDequeueWithCancelledTokenAsync()
     {
         return base.CanDequeueWithCancelledTokenAsync();
+    }
+
+    [Fact]
+    public override Task CanDequeueEfficientlyAsync()
+    {
+        return base.CanDequeueEfficientlyAsync();
+    }
+
+    [Fact]
+    public override Task CanResumeDequeueEfficientlyAsync()
+    {
+        return base.CanResumeDequeueEfficientlyAsync();
     }
 
     [Fact]
@@ -101,11 +99,16 @@ public class SQSQueueTests : QueueTestBase
         return base.CanQueueAndDequeueMultipleWorkItemsAsync();
     }
 
-    [Fact(Skip = "Some issue where this test fails if it's run with others")]
-    public override async Task WillWaitForItemAsync()
+    [Fact]
+    public override Task WillNotWaitForItemAsync()
     {
-        await Task.Delay(5000);
-        await base.WillWaitForItemAsync();
+        return base.WillNotWaitForItemAsync();
+    }
+
+    [Fact]
+    public override Task WillWaitForItemAsync()
+    {
+        return base.WillWaitForItemAsync();
     }
 
     [Fact]
@@ -144,10 +147,16 @@ public class SQSQueueTests : QueueTestBase
         return base.CanAutoCompleteWorkerAsync();
     }
 
-    [Fact(Skip = "Doesn't work well on SQS")]
+    [Fact]
     public override Task CanHaveMultipleQueueInstancesAsync()
     {
         return base.CanHaveMultipleQueueInstancesAsync();
+    }
+
+    [Fact]
+    public override Task CanDelayRetryAsync()
+    {
+        return base.CanDelayRetryAsync();
     }
 
     [Fact]
@@ -175,6 +184,24 @@ public class SQSQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanDequeueWithLockingAsync()
+    {
+        return base.CanDequeueWithLockingAsync();
+    }
+
+    [Fact]
+    public override Task CanHaveMultipleQueueInstancesWithLockingAsync()
+    {
+        return base.CanHaveMultipleQueueInstancesWithLockingAsync();
+    }
+
+    [Fact]
+    public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
+    {
+        return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+    }
+
+    [Fact]
     public override Task VerifyRetryAttemptsAsync()
     {
         return base.VerifyRetryAttemptsAsync();
@@ -184,6 +211,38 @@ public class SQSQueueTests : QueueTestBase
     public override Task VerifyDelayedRetryAttemptsAsync()
     {
         return base.VerifyDelayedRetryAttemptsAsync();
+    }
+
+    [Fact]
+    public override Task CanHandleAutoAbandonInWorker()
+    {
+        return base.CanHandleAutoAbandonInWorker();
+    }
+
+    [Fact]
+    public void RetryBackoff()
+    {
+        var options = new SQSQueueOptions<SimpleWorkItem>();
+        var backoff1 = options.RetryDelay(1);
+        Assert.InRange(backoff1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
+        var backoff2 = options.RetryDelay(2);
+        Assert.InRange(backoff2, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(5));
+        var backoff3 = options.RetryDelay(3);
+        Assert.InRange(backoff3, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(9));
+        var backoff4 = options.RetryDelay(4);
+        Assert.InRange(backoff4, TimeSpan.FromSeconds(16), TimeSpan.FromSeconds(17));
+        var backoff5 = options.RetryDelay(5);
+        Assert.InRange(backoff5, TimeSpan.FromSeconds(32), TimeSpan.FromSeconds(33));
+        var backoff6 = options.RetryDelay(6);
+        Assert.InRange(backoff6, TimeSpan.FromSeconds(64), TimeSpan.FromSeconds(65));
+        var backoff7 = options.RetryDelay(7);
+        Assert.InRange(backoff7, TimeSpan.FromSeconds(128), TimeSpan.FromSeconds(129));
+        var backoff8 = options.RetryDelay(8);
+        Assert.InRange(backoff8, TimeSpan.FromSeconds(256), TimeSpan.FromSeconds(257));
+        var backoff9 = options.RetryDelay(9);
+        Assert.InRange(backoff9, TimeSpan.FromSeconds(512), TimeSpan.FromSeconds(513));
+        var backoff10 = options.RetryDelay(10);
+        Assert.InRange(backoff10, TimeSpan.FromSeconds(1024), TimeSpan.FromSeconds(1025));
     }
 
     [Fact]
