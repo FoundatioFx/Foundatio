@@ -48,7 +48,7 @@ public class RedisQueueTests : QueueTestBase
             .LoggerFactory(Log)
         );
 
-        _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+        _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
     }
 
@@ -56,6 +56,24 @@ public class RedisQueueTests : QueueTestBase
     public override Task CanQueueAndDequeueWorkItemAsync()
     {
         return base.CanQueueAndDequeueWorkItemAsync();
+    }
+
+    [Fact]
+    public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
+    {
+        return base.CanQueueAndDequeueWorkItemWithDelayAsync();
+    }
+
+    [Fact]
+    public override Task CanUseQueueOptionsAsync()
+    {
+        return base.CanUseQueueOptionsAsync();
+    }
+
+    [Fact]
+    public override Task CanDiscardDuplicateQueueEntriesAsync()
+    {
+        return base.CanDiscardDuplicateQueueEntriesAsync();
     }
 
     [Fact]
@@ -107,12 +125,6 @@ public class RedisQueueTests : QueueTestBase
     }
 
     [Fact]
-    public override Task CanRenewLockAsync()
-    {
-        return base.CanRenewLockAsync();
-    }
-
-    [Fact]
     public override Task CanHandleErrorInWorkerAsync()
     {
         return base.CanHandleErrorInWorkerAsync();
@@ -136,7 +148,7 @@ public class RedisQueueTests : QueueTestBase
         return base.CanAutoCompleteWorkerAsync();
     }
 
-    [RetryFact]
+    [Fact]
     public override Task CanHaveMultipleQueueInstancesAsync()
     {
         return base.CanHaveMultipleQueueInstancesAsync();
@@ -155,6 +167,12 @@ public class RedisQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanRenewLockAsync()
+    {
+        return base.CanRenewLockAsync();
+    }
+
+    [Fact]
     public override Task CanAbandonQueueEntryOnceAsync()
     {
         return base.CanAbandonQueueEntryOnceAsync();
@@ -164,18 +182,6 @@ public class RedisQueueTests : QueueTestBase
     public override Task CanCompleteQueueEntryOnceAsync()
     {
         return base.CanCompleteQueueEntryOnceAsync();
-    }
-
-    [Fact]
-    public override Task CanHandleAutoAbandonInWorker()
-    {
-        return base.CanHandleAutoAbandonInWorker();
-    }
-
-    [Fact(Skip = "Need to fix some sort of left over metrics from other tests issue")]
-    public override Task CanUseQueueOptionsAsync()
-    {
-        return base.CanUseQueueOptionsAsync();
     }
 
     [RetryFact]
@@ -196,6 +202,30 @@ public class RedisQueueTests : QueueTestBase
         using var messageBus = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-queue", LoggerFactory = Log });
         var distributedLock = new CacheLockProvider(cache, messageBus, null, Log);
         await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
+    }
+
+    [Fact]
+    public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
+    {
+        return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+    }
+
+    [Fact]
+    public override Task VerifyRetryAttemptsAsync()
+    {
+        return base.VerifyRetryAttemptsAsync();
+    }
+
+    [Fact]
+    public override Task VerifyDelayedRetryAttemptsAsync()
+    {
+        return base.VerifyDelayedRetryAttemptsAsync();
+    }
+
+    [Fact]
+    public override Task CanHandleAutoAbandonInWorker()
+    {
+        return base.CanHandleAutoAbandonInWorker();
     }
 
     [Fact]
@@ -685,18 +715,6 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
         var muxer = SharedConnection.GetMuxer(Log);
         _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
-    }
-
-    [Fact]
-    public override Task VerifyRetryAttemptsAsync()
-    {
-        return base.VerifyRetryAttemptsAsync();
-    }
-
-    [Fact]
-    public override Task VerifyDelayedRetryAttemptsAsync()
-    {
-        return base.VerifyDelayedRetryAttemptsAsync();
     }
 
     [Fact]

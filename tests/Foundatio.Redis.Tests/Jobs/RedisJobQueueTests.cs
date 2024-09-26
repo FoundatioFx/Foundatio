@@ -43,4 +43,10 @@ public class RedisJobQueueTests : JobQueueTestsBase
     {
         return base.CanRunQueueJobAsync();
     }
+
+    [Fact]
+    public override Task ActivityWillFlowThroughQueueJobAsync()
+    {
+        return base.ActivityWillFlowThroughQueueJobAsync();
+    }
 }
