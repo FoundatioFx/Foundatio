@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -16,6 +16,7 @@ public class RabbitMqMessageBusTests : MessageBusTestBase
     private readonly string _topic = $"test_topic_{DateTime.UtcNow.Ticks}";
 
     public RabbitMqMessageBusTests(ITestOutputHelper output) : base(output) { }
+
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
     {
         return new RabbitMQMessageBus(o =>
@@ -54,6 +55,12 @@ public class RabbitMqMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
+    public override Task CanSendMappedMessageAsync()
+    {
+        return base.CanSendMappedMessageAsync();
+    }
+
+    [Fact]
     public override Task CanSendDelayedMessageAsync()
     {
         return base.CanSendDelayedMessageAsync();
@@ -65,7 +72,7 @@ public class RabbitMqMessageBusTests : MessageBusTestBase
         return base.CanSubscribeConcurrentlyAsync();
     }
 
-    [Fact(Skip = "TODO: Ensure this is not broken")]
+    [Fact]
     public override Task CanReceiveMessagesConcurrentlyAsync()
     {
         return base.CanReceiveMessagesConcurrentlyAsync();
@@ -119,7 +126,7 @@ public class RabbitMqMessageBusTests : MessageBusTestBase
         return base.WontKeepMessagesWithNoSubscribersAsync();
     }
 
-    [Fact(Skip = "TODO: Ensure this is not broken")]
+    [Fact]
     public override Task CanReceiveFromMultipleSubscribersAsync()
     {
         return base.CanReceiveFromMultipleSubscribersAsync();
