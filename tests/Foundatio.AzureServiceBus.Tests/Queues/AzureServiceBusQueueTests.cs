@@ -30,7 +30,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
             ? new RetryExponential(retryDelay.GetValueOrDefault(), retryDelay.GetValueOrDefault() + retryDelay.GetValueOrDefault(), retries + 1)
             : RetryPolicy.NoRetry;
 
-        _logger.LogDebug("Queue Id: {queueId}", _queueName);
+        _logger.LogDebug("Queue Id: {QueueId}", _queueName);
         return new AzureServiceBusQueue<SimpleWorkItem>(new AzureServiceBusQueueOptions<SimpleWorkItem>
         {
             ConnectionString = connectionString,
