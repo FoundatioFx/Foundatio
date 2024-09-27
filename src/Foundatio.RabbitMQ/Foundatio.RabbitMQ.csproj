@@ -2,7 +2,7 @@
   <ItemGroup>
     <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
 
-    <PackageReference Include="Foundatio" Version="11.0.2" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="Foundatio" Version="11.0.4" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>
