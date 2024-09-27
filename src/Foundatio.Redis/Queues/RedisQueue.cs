@@ -252,7 +252,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
 
         Interlocked.Increment(ref _enqueuedCount);
-        var entry = new QueueEntry<T>(id, null, data, this, now, 0);
+        var entry = new QueueEntry<T>(id, options.CorrelationId, data, this, now, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
         if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
