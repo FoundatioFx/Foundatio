@@ -103,20 +103,20 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         if (!String.IsNullOrEmpty(options.UniqueId))
             message.MessageDeduplicationId = options.UniqueId;
 
-        if (!String.IsNullOrEmpty(options?.CorrelationId))
+        if (!String.IsNullOrEmpty(options.CorrelationId))
             message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue
             {
                 DataType = "String",
                 StringValue = options.CorrelationId
             });
 
-        if (options?.Properties != null)
+        if (options.Properties is not null)
         {
             foreach (var property in options.Properties)
                 message.MessageAttributes.Add(property.Key, new MessageAttributeValue
                 {
                     DataType = "String",
-                    StringValue = property.Value.ToString() // TODO: Support more than string data types
+                    StringValue = property.Value // TODO: Support more than string data types
                 });
         }
 
@@ -127,7 +127,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         _logger.LogTrace("Enqueued SQS message {MessageId}", response.MessageId);
 
         Interlocked.Increment(ref _enqueuedCount);
-        var entry = new QueueEntry<T>(response.MessageId, options?.CorrelationId, data, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+        var entry = new QueueEntry<T>(response.MessageId, options.CorrelationId, data, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
         return response.MessageId;
