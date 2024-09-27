@@ -23,8 +23,9 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 {
     public TBuilder Name(string name)
     {
-        if (!String.IsNullOrEmpty(name))
-            Target.Name = name;
+        if (!String.IsNullOrWhiteSpace(name))
+            Target.Name = name.Trim();
+
         return (TBuilder)this;
     }
 
@@ -72,8 +73,8 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     /// </summary>
     public TBuilder MetricsPrefix(string prefix)
     {
-        if (!String.IsNullOrEmpty(prefix))
-            Target.MetricsPrefix = prefix;
+        if (!String.IsNullOrWhiteSpace(prefix))
+            Target.MetricsPrefix = prefix.Trim();
         return (TBuilder)this;
     }
 }

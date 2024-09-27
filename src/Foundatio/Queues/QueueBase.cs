@@ -41,10 +41,10 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
-        if (!String.IsNullOrEmpty(options.MetricsPrefix))
-            _metricsPrefix = $"{_metricsPrefix}.{options.MetricsPrefix}";
+        if (!String.IsNullOrWhiteSpace(options.MetricsPrefix))
+            _metricsPrefix = $"{_metricsPrefix}.{options.MetricsPrefix.Trim()}";
 
-        QueueId = options.Name + Guid.NewGuid().ToString("N").Substring(10);
+        QueueId = $"{options.Name.Trim()}{Guid.NewGuid().ToString("N").Substring(10)}";
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         options.Behaviors.ForEach(AttachBehavior);
