@@ -9,10 +9,6 @@ services:
       - 7000-7005:7000-7005 # cluster
       - 7006-7007:7006-7007 # single
       - 5000-5002:5000-5002 # sentinel
-    deploy:
-      resources:
-        limits:
-          memory: 2g
 
   ready:
     image: andrewlock/wait-for-dependencies
