@@ -101,7 +101,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
         const int chunkSize = 2500;
-        string regex = $"{prefix}*";
+        string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
+        string regex = normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*";
 
         int total = 0;
         int index = 0;
