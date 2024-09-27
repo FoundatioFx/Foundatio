@@ -24,16 +24,14 @@ public class InMemoryMetrics : IDisposable
     private readonly ConcurrentQueue<RecordedMeasurement<float>> _floatMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<double>> _doubleMeasurements = new();
     private readonly ConcurrentQueue<RecordedMeasurement<decimal>> _decimalMeasurements = new();
-    private readonly int _maxMeasurementCountPerType;
     private readonly AsyncAutoResetEvent _measurementEvent = new(false);
     private readonly ILogger _logger;
 
     public InMemoryMetrics(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
 
-    public InMemoryMetrics(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 100000)
+    public InMemoryMetrics(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCountPerType = 100000)
     {
         _logger = logger;
-        _maxMeasurementCountPerType = maxMeasurementCount;
 
         _meterListener.InstrumentPublished = (instrument, listener) =>
         {
@@ -44,7 +42,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<byte>((instrument, measurement, tags, state) =>
         {
             _byteMeasurements.Enqueue(new RecordedMeasurement<byte>(instrument, measurement, ref tags, state));
-            if (_byteMeasurements.Count > _maxMeasurementCountPerType)
+            if (_byteMeasurements.Count > maxMeasurementCountPerType)
                 _byteMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -52,7 +50,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<short>((instrument, measurement, tags, state) =>
         {
             _shortMeasurements.Enqueue(new RecordedMeasurement<short>(instrument, measurement, ref tags, state));
-            if (_shortMeasurements.Count > _maxMeasurementCountPerType)
+            if (_shortMeasurements.Count > maxMeasurementCountPerType)
                 _shortMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -60,7 +58,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<int>((instrument, measurement, tags, state) =>
         {
             _intMeasurements.Enqueue(new RecordedMeasurement<int>(instrument, measurement, ref tags, state));
-            if (_intMeasurements.Count > _maxMeasurementCountPerType)
+            if (_intMeasurements.Count > maxMeasurementCountPerType)
                 _intMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -68,7 +66,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
         {
             _longMeasurements.Enqueue(new RecordedMeasurement<long>(instrument, measurement, ref tags, state));
-            if (_longMeasurements.Count > _maxMeasurementCountPerType)
+            if (_longMeasurements.Count > maxMeasurementCountPerType)
                 _longMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -76,7 +74,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<float>((instrument, measurement, tags, state) =>
         {
             _floatMeasurements.Enqueue(new RecordedMeasurement<float>(instrument, measurement, ref tags, state));
-            if (_floatMeasurements.Count > _maxMeasurementCountPerType)
+            if (_floatMeasurements.Count > maxMeasurementCountPerType)
                 _floatMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -84,7 +82,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
         {
             _doubleMeasurements.Enqueue(new RecordedMeasurement<double>(instrument, measurement, ref tags, state));
-            if (_doubleMeasurements.Count > _maxMeasurementCountPerType)
+            if (_doubleMeasurements.Count > maxMeasurementCountPerType)
                 _doubleMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
@@ -92,7 +90,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.SetMeasurementEventCallback<decimal>((instrument, measurement, tags, state) =>
         {
             _decimalMeasurements.Enqueue(new RecordedMeasurement<decimal>(instrument, measurement, ref tags, state));
-            if (_decimalMeasurements.Count > _maxMeasurementCountPerType)
+            if (_decimalMeasurements.Count > maxMeasurementCountPerType)
                 _decimalMeasurements.TryDequeue(out _);
             _measurementEvent.Set();
         });
