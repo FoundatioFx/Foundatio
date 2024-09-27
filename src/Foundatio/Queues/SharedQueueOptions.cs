@@ -9,6 +9,11 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     public int Retries { get; set; } = 2;
     public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
+
+    /// <summary>
+    /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
+    /// </summary>
+    public string MetricsPrefix { get; set; }
 }
 
 public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -59,6 +64,16 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
             Target.Behaviors = new List<IQueueBehavior<T>>();
         Target.Behaviors.Add(behavior);
 
+        return (TBuilder)this;
+    }
+
+    /// <summary>
+    /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
+    /// </summary>
+    public TBuilder MetricsPrefix(string prefix)
+    {
+        if (!String.IsNullOrEmpty(prefix))
+            Target.MetricsPrefix = prefix;
         return (TBuilder)this;
     }
 }

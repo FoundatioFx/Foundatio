@@ -41,6 +41,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
+        if (!String.IsNullOrEmpty(options.MetricsPrefix))
+            _metricsPrefix = $"{_metricsPrefix}.{options.MetricsPrefix}";
 
         QueueId = options.Name + Guid.NewGuid().ToString("N").Substring(10);
 
