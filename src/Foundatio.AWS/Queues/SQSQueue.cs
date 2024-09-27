@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -144,7 +144,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
             MaxNumberOfMessages = 1,
             VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
             WaitTimeSeconds = waitTimeout,
-            AttributeNames = new List<string> { "All" },
+            MessageSystemAttributeNames = ["All"],
             MessageAttributeNames = new List<string> { "All" }
         };
 
