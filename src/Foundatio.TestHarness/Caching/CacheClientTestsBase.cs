@@ -410,6 +410,22 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Add the unscoped cache value back.
             await cache.SetAsync(cacheKey, 1);
 
+            // Remove by null key.
+            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(null));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Add the scoped cache value back.
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(null));
+            Assert.False(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Reset client values
+            await cache.SetAsync(cacheKey, 1);
+            await scopedCache1.SetAsync(cacheKey, 1);
+
             // Remove by empty key.
             Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(String.Empty));
             Assert.True(await cache.ExistsAsync(cacheKey));
