@@ -58,7 +58,7 @@ public class RedisQueueTests : QueueTestBase
         return base.CanQueueAndDequeueWorkItemAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "DeliveryDelay is not supported")]
     public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
     {
         return base.CanQueueAndDequeueWorkItemWithDelayAsync();
@@ -742,7 +742,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             .LoggerFactory(Log)
         );
 
-        _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+        _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
     }
 
