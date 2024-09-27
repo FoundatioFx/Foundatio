@@ -375,6 +375,13 @@ public class DiagnosticsMetricsCollector : IDisposable
         GC.SuppressFinalize(this);
         _timer.Dispose();
         _meterListener?.Dispose();
+        _byteMeasurements.Clear();
+        _shortMeasurements.Clear();
+        _intMeasurements.Clear();
+        _longMeasurements.Clear();
+        _floatMeasurements.Clear();
+        _doubleMeasurements.Clear();
+        _decimalMeasurements.Clear();
     }
 }
 
