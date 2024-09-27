@@ -170,7 +170,7 @@ public class DiagnosticsMetricsCollector : IDisposable
         // byte, short, int, long, float, double, decimal
     }
 
-    public int GetCount<T>(string name) where T : struct
+    public int GetMeasurementCount<T>(string name) where T : struct
     {
         return GetMeasurements<T>().Count(m => m.Name == name);
     }
