@@ -181,8 +181,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             {
                 ShouldListenTo = s => s.Name == "Foundatio",
                 Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-                ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
-                ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
+                ActivityStarted = activity => _logger.LogInformation("Start: {DisplayName}", activity.DisplayName),
+                ActivityStopped = activity => _logger.LogInformation("Stop: {DisplayName}", activity.DisplayName)
             };
 
             Activity.Current = new Activity("Parent");
