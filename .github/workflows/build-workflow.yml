@@ -54,7 +54,7 @@ jobs:
         echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME
     - name: Build Version
       run: |
-        dotnet tool install --global minver-cli --version 5.0.0
+        dotnet tool install --global minver-cli --version 6.0.0
         version=$(minver --tag-prefix v --default-pre-release-identifiers alpha.${GIT_BRANCH_SUFFIX}0)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
