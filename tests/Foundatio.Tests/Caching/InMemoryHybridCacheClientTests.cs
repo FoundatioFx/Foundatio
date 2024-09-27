@@ -40,6 +40,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTests
         return base.CanRemoveByPrefixAsync();
     }
 
+    [Fact]
+    public override Task CanRemoveByPrefixWithScopedCachesAsync()
+    {
+        return base.CanRemoveByPrefixWithScopedCachesAsync();
+    }
+
     [Theory]
     [InlineData(50)]
     [InlineData(500)]

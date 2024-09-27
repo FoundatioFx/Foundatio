@@ -384,6 +384,78 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task CanRemoveByPrefixWithScopedCachesAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+
+            const string cacheKey = "key";
+            await cache.SetAsync(cacheKey, 1);
+            await scopedCache1.SetAsync(cacheKey, 1);
+            Assert.Equal(1, (await cache.GetAsync<int>(cacheKey)).Value);
+            Assert.Equal(1, (await scopedCache1.GetAsync<int>(cacheKey)).Value);
+
+            // Remove by prefix should only remove the unscoped cache.
+            Assert.Equal(1, await cache.RemoveByPrefixAsync(cacheKey));
+            Assert.False(await cache.ExistsAsync(cacheKey));
+            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
+            Assert.Equal(1, (await scopedCache1.GetAsync<int>(cacheKey)).Value);
+
+            // Add the unscoped cache value back.
+            await cache.SetAsync(cacheKey, 1);
+
+            // Remove by null key.
+            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(null));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Add the scoped cache value back.
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(null));
+            Assert.False(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Reset client values
+            await cache.SetAsync(cacheKey, 1);
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            // Remove by empty key.
+            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(String.Empty));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Add the scoped cache value back.
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(String.Empty));
+            Assert.False(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Reset client values
+            await cache.SetAsync(cacheKey, 1);
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            // Remove by *.
+            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Reset client values
+            await scopedCache1.SetAsync(cacheKey, 1);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync("*"));
+            Assert.False(await cache.ExistsAsync(cacheKey));
+            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+        }
+    }
+
     public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count)
     {
         var cache = GetCacheClient();
