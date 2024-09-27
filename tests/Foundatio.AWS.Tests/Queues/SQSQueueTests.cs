@@ -24,14 +24,19 @@ public class SQSQueueTests : QueueTestBase
             o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                 .Name(_queueName)
                 .Retries(retries)
-                //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
+                .RetryDelay(attempt =>
+                {
+                    int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
+                    int index = Math.Min(attempt, multipliers.Length - 1);
+                    return TimeSpan.FromSeconds(multipliers[index]);
+                })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(TimeSpan.FromSeconds(1))
                 .ReadQueueTimeout(TimeSpan.FromSeconds(1))
                 .TimeProvider(timeProvider)
                 .LoggerFactory(Log));
 
-        _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+        _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
     }
 
@@ -41,13 +46,18 @@ public class SQSQueueTests : QueueTestBase
             o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
                 .Name(_queueName)
                 .Retries(retries)
-                //.RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
+                .RetryDelay(attempt =>
+                {
+                    int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
+                    int index = Math.Min(attempt, multipliers.Length - 1);
+                    return TimeSpan.FromSeconds(multipliers[index]);
+                })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(dequeueInterval ?? TimeSpan.FromSeconds(1))
                 .ReadQueueTimeout(readQueueTimeout ?? TimeSpan.FromSeconds(1))
                 .LoggerFactory(Log));
 
-        _logger.LogDebug("Queue Id: {queueId}", queue.QueueId);
+        _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
     }
 
@@ -213,7 +223,7 @@ public class SQSQueueTests : QueueTestBase
         return base.VerifyDelayedRetryAttemptsAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "SQS Queues has no queue stats for abandoned, it just increments the queued count and decrements the working count. Only the entry attribute ApproximateNumberOfMessages is available.")]
     public override Task CanHandleAutoAbandonInWorker()
     {
         return base.CanHandleAutoAbandonInWorker();
