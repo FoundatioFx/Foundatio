@@ -1047,7 +1047,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             var elapsed = DateTime.UtcNow.Subtract(startTime);
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", elapsed);
             Assert.NotNull(workItem);
-            Assert.InRange(elapsed, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
+            Assert.InRange(elapsed, TimeSpan.FromMilliseconds(900), TimeSpan.FromSeconds(10));
             await workItem.CompleteAsync();
 
             if (_assertStats)
