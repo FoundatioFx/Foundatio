@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -60,7 +60,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
             _queueCreated = true;
 
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Ensure queue exists took {Elapsed:g}.", sw.Elapsed);
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Ensure queue exists took {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -73,7 +73,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         var message = new CloudQueueMessage(_serializer.SerializeToBytes(data));
         await _queueReference.AddMessageAsync(message, null, options.DeliveryDelay, null, null).AnyContext();
 
-        var entry = new QueueEntry<T>(message.Id, null, data, this, _timeProvider.GetLocalNow().UtcDateTime, 0);
+        var entry = new QueueEntry<T>(message.Id, options.CorrelationId, data, this, _timeProvider.GetLocalNow().UtcDateTime, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
         return message.Id;
@@ -111,7 +111,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
 
         if (message == null)
         {
-            if (isTraceLogLevelEnabled) _logger.LogTrace("No message was dequeued.");
+            if (isTraceLogLevelEnabled) _logger.LogTrace("No message was dequeued");
             return null;
         }
 
@@ -200,7 +200,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
             _deadletterQueueReference.FetchAttributesAsync()
         ).AnyContext();
         sw.Stop();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}.", sw.Elapsed);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}", sw.Elapsed);
 
         return new QueueStats
         {
@@ -236,7 +236,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         _queueReference.FetchAttributes();
         _deadletterQueueReference.FetchAttributes();
         sw.Stop();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}.", sw.Elapsed);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Fetching stats took {Elapsed:g}", sw.Elapsed);
 
         return new QueueStats
         {
@@ -268,7 +268,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         _workerErrorCount = 0;
 
         sw.Stop();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Deleting queue took {Elapsed:g}.", sw.Elapsed);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Deleting queue took {Elapsed:g}", sw.Elapsed);
     }
 
     protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)

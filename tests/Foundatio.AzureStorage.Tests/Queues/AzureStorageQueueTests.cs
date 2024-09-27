@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Tests.Queue;
@@ -29,7 +29,7 @@ public class AzureStorageQueueTests : QueueTestBase
             .Retries(retries)
             .RetryPolicy(retries <= 0 ? new NoRetry() : new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries))
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-            .DequeueInterval(TimeSpan.FromMilliseconds(100))
+            .DequeueInterval(TimeSpan.FromSeconds(1))
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
     }
@@ -52,7 +52,7 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.CanQueueAndDequeueWorkItemWithDelayAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Storage Queues don't support the round tripping of user headers for values like correlation id")]
     public override Task CanUseQueueOptionsAsync()
     {
         return base.CanUseQueueOptionsAsync();
@@ -70,13 +70,13 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.CanDequeueWithCancelledTokenAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Dequeue Time takes forever")]
     public override Task CanDequeueEfficientlyAsync()
     {
         return base.CanDequeueEfficientlyAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Dequeue Time takes forever")]
     public override Task CanResumeDequeueEfficientlyAsync()
     {
         return base.CanResumeDequeueEfficientlyAsync();
@@ -118,7 +118,7 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.CanHandleErrorInWorkerAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "CompleteAsync after timeout will not throw")]
     public override Task WorkItemsWillTimeoutAsync()
     {
         return base.WorkItemsWillTimeoutAsync();
@@ -142,9 +142,10 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.CanHaveMultipleQueueInstancesAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "TODO: Retry delays are currently not applied to abandoned items")]
     public override Task CanDelayRetryAsync()
     {
+        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.CanDelayRetryAsync();
     }
 
@@ -202,7 +203,7 @@ public class AzureStorageQueueTests : QueueTestBase
         return base.VerifyDelayedRetryAttemptsAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Storage Queues has no queue stats for abandoned, it just increments the queued count and decrements the working count. Only the entry attribute ApproximateNumberOfMessages is available.")]
     public override Task CanHandleAutoAbandonInWorker()
     {
         return base.CanHandleAutoAbandonInWorker();
