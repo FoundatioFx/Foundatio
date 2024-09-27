@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -136,25 +136,26 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
     protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
     {
         // sqs doesn't support already canceled token, change timeout and token for sqs pattern
-        int waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : (int)_options.ReadQueueTimeout.TotalSeconds;
+        int visibilityTimeout = (int)Math.Round(_options.WorkItemTimeout.TotalSeconds, MidpointRounding.AwayFromZero);
+        int waitTimeout = linkedCancellationToken.IsCancellationRequested ? 0 : (int)Math.Round(_options.ReadQueueTimeout.TotalSeconds, MidpointRounding.AwayFromZero);
 
         var request = new ReceiveMessageRequest
         {
             QueueUrl = _queueUrl,
             MaxNumberOfMessages = 1,
-            VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
+            VisibilityTimeout = visibilityTimeout,
             WaitTimeSeconds = waitTimeout,
             MessageSystemAttributeNames = ["All"],
-            MessageAttributeNames = new List<string> { "All" }
+            MessageAttributeNames = ["All"]
         };
 
         // receive message local function
         Task<ReceiveMessageResponse> ReceiveMessageAsync()
         {
             if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Checking for SQS message... Cancel Requested: {IsCancellationRequested}", linkedCancellationToken.IsCancellationRequested);
+                _logger.LogTrace("Checking for SQS message... IsCancellationRequested={IsCancellationRequested} VisibilityTimeout={VisibilityTimeout} WaitTimeSeconds={WaitTimeSeconds}", linkedCancellationToken.IsCancellationRequested, visibilityTimeout, waitTimeout);
 
-            // The aws sdk will not abort an http long pull operation when the cancellation token is cancelled.
+            // The aws sdk will not abort a http long pull operation when the cancellation token is cancelled.
             // The aws sdk will throw the OperationCanceledException after the long poll http call is returned and
             // the message will be marked as in-flight but not returned from this call: https://github.com/aws/aws-sdk-net/issues/1680
             return _client.Value.ReceiveMessageAsync(request, CancellationToken.None);
@@ -189,7 +190,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         Interlocked.Increment(ref _dequeuedCount);
 
         if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Received message {MessageId} Cancel Requested: {IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
+            _logger.LogTrace("Received message {MessageId} IsCancellationRequested={IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
 
         var message = response.Messages.First();
         string body = message.Body;
@@ -206,15 +207,17 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, queueEntry.Id);
 
         var entry = ToQueueEntry(queueEntry);
+        int visibilityTimeout = (int)Math.Round(_options.WorkItemTimeout.TotalSeconds, MidpointRounding.AwayFromZero);
         var request = new ChangeMessageVisibilityRequest
         {
             QueueUrl = _queueUrl,
-            VisibilityTimeout = (int)_options.WorkItemTimeout.TotalSeconds,
+            VisibilityTimeout = visibilityTimeout,
             ReceiptHandle = entry.UnderlyingMessage.ReceiptHandle
         };
 
         await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", queueEntry.Id);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Renew lock done: {EntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", queueEntry.Id, entry.UnderlyingMessage.MessageId, visibilityTimeout);
     }
 
     public override async Task CompleteAsync(IQueueEntry<T> queueEntry)
@@ -240,26 +243,33 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
     public override async Task AbandonAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
+
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
         var sqsQueueEntry = ToQueueEntry(entry);
+        int visibilityTimeout = (int)Math.Round(_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds, MidpointRounding.AwayFromZero);
+
         // re-queue and wait for processing
         var request = new ChangeMessageVisibilityRequest
         {
             QueueUrl = _queueUrl,
-            VisibilityTimeout = (int)_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds,
+            VisibilityTimeout = visibilityTimeout,
             ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
         };
 
         await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Abandoned queue entry: {EntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", sqsQueueEntry.Id, sqsQueueEntry.UnderlyingMessage.MessageId, visibilityTimeout);
 
         Interlocked.Increment(ref _abandonedCount);
         entry.MarkAbandoned();
 
         await OnAbandonedAsync(sqsQueueEntry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
     }
 
     protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken)
@@ -345,11 +355,11 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
     {
         if (!String.IsNullOrEmpty(_queueUrl))
         {
-            var response = await _client.Value.DeleteQueueAsync(_queueUrl).AnyContext();
+            await _client.Value.DeleteQueueAsync(_queueUrl).AnyContext();
         }
         if (!String.IsNullOrEmpty(_deadUrl))
         {
-            var response = await _client.Value.DeleteQueueAsync(_deadUrl).AnyContext();
+            await _client.Value.DeleteQueueAsync(_deadUrl).AnyContext();
         }
 
         _enqueuedCount = 0;
@@ -396,13 +406,13 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
                     Interlocked.Increment(ref _workerErrorCount);
                     if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                    if (entry != null && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
+                    if (!entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
                         await entry.AbandonAsync().AnyContext();
                 }
             }
 
-            if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-        }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
+            if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {Name} IsCancellationRequested={IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+        }, linkedCancellationToken.Token).ContinueWith(_ => linkedCancellationToken.Dispose());
     }
 
     public override void Dispose()
@@ -443,7 +453,6 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         var createDeadResponse = await _client.Value.CreateQueueAsync(createDeadRequest).AnyContext();
         _deadUrl = createDeadResponse.QueueUrl;
 
-
         // step 3, get dead letter attributes
         var attributeNames = new List<string> { QueueAttributeName.QueueArn };
         var deadAttributeRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
@@ -463,13 +472,12 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         };
 
         var setAttributeRequest = new SetQueueAttributesRequest(_queueUrl, attributes);
-        var setAttributeResponse = await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();
+        await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();
     }
 
     private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry)
     {
-        var result = entry as SQSQueueEntry<T>;
-        if (result == null)
+        if (entry is not SQSQueueEntry<T> result)
             throw new ArgumentException($"Expected {nameof(SQSQueueEntry<T>)} but received unknown queue entry type {entry.GetType()}");
 
         return result;
