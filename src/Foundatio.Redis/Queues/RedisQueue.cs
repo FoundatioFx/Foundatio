@@ -80,7 +80,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             if (_queueDisposedCancellationTokenSource.IsCancellationRequested || _maintenanceTask != null)
                 return;
 
-            _logger.LogTrace("Starting maintenance for {Name}.", _options.Name);
+            _logger.LogTrace("Starting maintenance for {Name}", _options.Name);
             _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoopAsync());
         }
     }
@@ -95,10 +95,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             if (_queueDisposedCancellationTokenSource.IsCancellationRequested || _isSubscribed)
                 return;
 
-            _logger.LogTrace("Subscribing to enqueue messages for {Name}.", _options.Name);
+            _logger.LogTrace("Subscribing to enqueue messages for {Name}", _options.Name);
             await _subscriber.SubscribeAsync(RedisChannel.Literal(GetTopicName()), OnTopicMessage).AnyContext();
             _isSubscribed = true;
-            _logger.LogTrace("Subscribed to enqueue messages for {Name}.", _options.Name);
+            _logger.LogTrace("Subscribed to enqueue messages for {Name}", _options.Name);
         }
     }
 
@@ -110,7 +110,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         var deadLetter = Database.ListLengthAsync(_deadListName);
 
         return Task.WhenAll(queued, wait, working, deadLetter)
-            .ContinueWith(t => new QueueStats
+            .ContinueWith(_ => new QueueStats
             {
                 Queued = queued.Result + wait.Result,
                 Working = working.Result,
@@ -646,7 +646,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
-        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored.");
+        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
         _autoResetEvent.Set();
     }
