@@ -8,7 +8,7 @@ using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
-using Foundatio.Tests.Metrics;
+using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
@@ -41,7 +41,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         if (messageBus == null)
             return;
 
-        using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+        using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
 
         try
         {

@@ -9,7 +9,7 @@ using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Queues;
-using Foundatio.Tests.Metrics;
+using Foundatio.Tests.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -133,7 +133,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         var queues = new List<IQueue<SampleQueueWorkItem>>();
         try
         {
-            using var metricsCollector = new DiagnosticsMetricsCollector(FoundatioDiagnostics.Meter.Name, _logger);
+            using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
 
             for (int i = 0; i < jobCount; i++)
             {

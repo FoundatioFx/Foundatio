@@ -11,9 +11,9 @@ using Foundatio.AsyncEx;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Tests.Metrics;
+namespace Foundatio.Tests.Utility;
 
-public class DiagnosticsMetricsCollector : IDisposable
+public class InMemoryMetrics : IDisposable
 {
     private readonly Timer _timer;
     private readonly MeterListener _meterListener = new();
@@ -28,9 +28,9 @@ public class DiagnosticsMetricsCollector : IDisposable
     private readonly AsyncAutoResetEvent _measurementEvent = new(false);
     private readonly ILogger _logger;
 
-    public DiagnosticsMetricsCollector(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
+    public InMemoryMetrics(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
 
-    public DiagnosticsMetricsCollector(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 100000)
+    public InMemoryMetrics(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCount = 100000)
     {
         _logger = logger;
         _maxMeasurementCountPerType = maxMeasurementCount;
@@ -170,12 +170,7 @@ public class DiagnosticsMetricsCollector : IDisposable
         // byte, short, int, long, float, double, decimal
     }
 
-    public int GetMeasurementCount<T>(string name) where T : struct
-    {
-        return GetMeasurements<T>().Count(m => m.Name == name);
-    }
-
-    public double GetLast<T>(string name) where T : struct
+    public double Value<T>(string name) where T : struct
     {
         var measurement = GetMeasurements<T>(name)
             .Where(m => m.Name == name)
@@ -185,7 +180,7 @@ public class DiagnosticsMetricsCollector : IDisposable
         return Convert.ToDouble(measurement.Value);
     }
 
-    public double GetSum<T>(string name) where T : struct
+    public double Sum<T>(string name) where T : struct
     {
         if (typeof(T) == typeof(byte))
         {
@@ -232,7 +227,7 @@ public class DiagnosticsMetricsCollector : IDisposable
         return 0;
     }
 
-    public double GetAvg<T>(string name) where T : struct
+    public double Avg<T>(string name) where T : struct
     {
         if (typeof(T) == typeof(byte))
         {
@@ -279,7 +274,7 @@ public class DiagnosticsMetricsCollector : IDisposable
         return 0;
     }
 
-    public double GetMax<T>(string name) where T : struct
+    public double Max<T>(string name) where T : struct
     {
         if (typeof(T) == typeof(byte))
         {
@@ -345,14 +340,14 @@ public class DiagnosticsMetricsCollector : IDisposable
 
         var start = DateTime.UtcNow;
 
-        var currentCount = (int)GetSum<T>(name);
+        var currentCount = (int)Sum<T>(name);
         var targetCount = currentCount + count;
 
         if (work != null)
             await work().AnyContext();
 
         _logger.LogTrace("Wait: count={Count}", count);
-        currentCount = (int)GetSum<T>(name);
+        currentCount = (int)Sum<T>(name);
 
         while (!cancellationToken.IsCancellationRequested && currentCount < targetCount)
         {
@@ -361,7 +356,7 @@ public class DiagnosticsMetricsCollector : IDisposable
                 await _measurementEvent.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException) { }
-            currentCount = (int)GetSum<T>(name);
+            currentCount = (int)Sum<T>(name);
             _logger.LogTrace("Got new measurement: count={CurrentCount} expected={Count}", currentCount, targetCount);
         }
 
