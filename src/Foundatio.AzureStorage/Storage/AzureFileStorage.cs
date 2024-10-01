@@ -67,7 +67,7 @@ public class AzureFileStorage : IFileStorage
             return streamMode switch {
                 StreamMode.Read => await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext(),
                 StreamMode.Write => await blockBlob.OpenWriteAsync(null, null, null, cancellationToken).AnyContext(),
-                _ => null
+                _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
             };
         } catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404}) {
             _logger.LogDebug(ex, "Unable to get file stream for {Path}: File Not Found", normalizedPath);
