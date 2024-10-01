@@ -48,7 +48,7 @@ public class AzureFileStorage : IFileStorage
     ISerializer IHaveSerializer.Serializer => _serializer;
     public CloudBlobContainer Container => _container;
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behavior of stream")]
+    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behavior of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 

@@ -137,7 +137,7 @@ public class AzureStorageTests : FileStorageTestsBase
         return base.WillRespectStreamOffsetAsync();
     }
 
-    [Fact(Skip = "Write Stream is not yet supported")]
+    [Fact]
     public override Task WillWriteStreamContentAsync()
     {
         return base.WillWriteStreamContentAsync();
@@ -179,11 +179,6 @@ public class AzureStorageTests : FileStorageTestsBase
             Assert.False(await result.NextPageAsync());
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
-        }
-
-        [Fact]
-        public override Task WillWriteStreamContentAsync() {
-            return base.WillWriteStreamContentAsync();
         }
     }
 }

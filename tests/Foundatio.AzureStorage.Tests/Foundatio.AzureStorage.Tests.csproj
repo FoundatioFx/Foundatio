@@ -12,4 +12,7 @@
       <Link>docker-compose.yml</Link>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="Foundatio.TestHarness" Version="11.0.5" />
+  </ItemGroup>
 </Project>
