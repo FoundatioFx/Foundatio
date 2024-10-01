@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
   </ItemGroup>
@@ -11,8 +11,5 @@
     <Content Include="..\..\docker-compose.yml">
       <Link>docker-compose.yml</Link>
     </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Update="Foundatio.TestHarness" Version="11.0.5" />
   </ItemGroup>
 </Project>
