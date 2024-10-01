@@ -48,7 +48,7 @@ public class AzureFileStorage : IFileStorage
     ISerializer IHaveSerializer.Serializer => _serializer;
     public CloudBlobContainer Container => _container;
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
+    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behavior of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
@@ -57,9 +57,6 @@ public class AzureFileStorage : IFileStorage
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
-        if (streamMode is StreamMode.Write)
-            throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
-
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
 
@@ -67,10 +64,12 @@ public class AzureFileStorage : IFileStorage
 
         try
         {
-            return await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext();
-        }
-        catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404 })
-        {
+            return streamMode switch {
+                StreamMode.Read => await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext(),
+                StreamMode.Write => await blockBlob.OpenWriteAsync(null, null, null, cancellationToken).AnyContext(),
+                _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported.")
+            };
+        } catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404}) {
             _logger.LogDebug(ex, "Unable to get file stream for {Path}: File Not Found", normalizedPath);
             return null;
         }
