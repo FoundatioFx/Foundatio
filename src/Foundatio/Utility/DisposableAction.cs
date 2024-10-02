@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 
 namespace Foundatio.Utility;
 
@@ -7,8 +8,7 @@ namespace Foundatio.Utility;
 /// </summary>
 public sealed class DisposableAction : IDisposable
 {
-    private readonly Action _exitAction;
-    private bool _disposed;
+    private Action _exitAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisposableAction"/> class.
@@ -24,10 +24,7 @@ public sealed class DisposableAction : IDisposable
     /// </summary>
     void IDisposable.Dispose()
     {
-        if (_disposed)
-            return;
-
-        _exitAction();
-        _disposed = true;
+        var exitAction = Interlocked.Exchange(ref _exitAction, null);
+        exitAction?.Invoke();
     }
 }
