@@ -102,7 +102,7 @@ public class Program
                 // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
                 s.AddStartupActionToWaitForHealthChecks("Critical");
 
-                s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: new[] { "Critical" });
+                s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: ["Critical"]);
 
                 // add health check that does not return healthy until the startup actions have completed
                 // useful for readiness checks
@@ -122,12 +122,12 @@ public class Program
                     });
 
                 if (sample1)
-                    s.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions(true).InitialDelay(TimeSpan.FromSeconds(4)));
+                    s.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
 
                 if (sample2)
                 {
                     s.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
-                    s.AddJob<Sample2Job>(o => o.WaitForStartupActions(true));
+                    s.AddJob<Sample2Job>(o => o.WaitForStartupActions());
                 }
 
                 // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0

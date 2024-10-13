@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.HostingSample;
 
-[Job(Description = "Sample 2 job", Interval = "2s", IterationLimit = 10)]
+[Job(Description = "Sample 2 job", Interval = "15s", IterationLimit = 24)]
 public class Sample2Job : IJob, IHealthCheck
 {
     private readonly ILogger _logger;
