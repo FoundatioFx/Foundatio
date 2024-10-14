@@ -26,7 +26,7 @@ public static partial class StartupExtensions
 {
     public static async Task<RunStartupActionsResult> RunStartupActionsAsync(this IServiceProvider serviceProvider, CancellationToken shutdownToken = default)
     {
-        using var startupActionsScope = serviceProvider.CreateScope();
+        await using var startupActionsScope = serviceProvider.CreateAsyncScope();
         var sw = Stopwatch.StartNew();
         var logger = startupActionsScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
         var startupActions = startupActionsScope.ServiceProvider.GetServices<StartupActionRegistration>().ToArray();

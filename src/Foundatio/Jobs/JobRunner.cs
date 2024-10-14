@@ -181,7 +181,7 @@ public class JobRunner
                             {
                                 try
                                 {
-                                    var scope = _serviceProvider.CreateScope();
+                                    await using var scope = _serviceProvider.CreateAsyncScope();
                                     var jobInstance = _options.JobFactory(scope.ServiceProvider);
                                     await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit,
                                         cancellationToken).AnyContext();
