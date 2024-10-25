@@ -142,7 +142,6 @@ internal class ScheduledJobRunner
             {
                 try
                 {
-                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + Options.Name, ActivityKind.Server);
                     await using var scope = _serviceProvider.CreateAsyncScope();
 
                     var job = Options.JobFactory(scope.ServiceProvider);

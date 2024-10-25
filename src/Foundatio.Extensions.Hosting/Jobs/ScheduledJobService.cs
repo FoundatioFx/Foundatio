@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +37,8 @@ public class ScheduledJobService : BackgroundService
         {
             foreach (var jobToRun in _jobManager.Jobs)
             {
+                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Scheduled Job: " + jobToRun.Options.Name, ActivityKind.Server);
+
                 if (await jobToRun.ShouldRunAsync())
                     await jobToRun.StartAsync(stoppingToken).AnyContext();
             }
