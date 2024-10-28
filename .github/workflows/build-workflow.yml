@@ -69,7 +69,7 @@ jobs:
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ inputs.solution }} --configuration Release --no-build
     - name: Publish CI Packages
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
       run: |
         for package in $(find -name "*.nupkg" | grep "minver" -v); do
 
