@@ -51,7 +51,7 @@ jobs:
           branch=""
         fi
         echo "GIT_BRANCH_SUFFIX=$branch" >> $GITHUB_ENV
-        echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME
+        echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME actor: $GITHUB_ACTOR
     - name: Build Version
       run: |
         dotnet tool install --global minver-cli --version 6.0.0
