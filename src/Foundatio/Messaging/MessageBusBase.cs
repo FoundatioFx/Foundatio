@@ -297,7 +297,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
 
     protected virtual Activity StartHandleMessageActivity(IMessage message)
     {
-        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Server, message.CorrelationId);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Internal, message.CorrelationId);
         if (activity is null)
             return null;
 

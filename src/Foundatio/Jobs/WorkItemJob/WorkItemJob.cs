@@ -185,7 +185,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
 
     protected virtual Activity StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
     {
-        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, entry.CorrelationId);
         if (activity is null)
             return null;
 

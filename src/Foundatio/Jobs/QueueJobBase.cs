@@ -138,7 +138,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
 
     protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry)
     {
-        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Server, entry.CorrelationId);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, entry.CorrelationId);
         if (activity is null)
             return null;
 
