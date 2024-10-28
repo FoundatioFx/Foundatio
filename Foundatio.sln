@@ -15,6 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		samples\Directory.Build.props = samples\Directory.Build.props
 		NuGet.config = NuGet.config
 		README.md = README.md
+		.github\workflows\build-workflow.yml = .github\workflows\build-workflow.yml
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{A1DFF80C-113F-4FEC-84BB-1E3790FB410F}"

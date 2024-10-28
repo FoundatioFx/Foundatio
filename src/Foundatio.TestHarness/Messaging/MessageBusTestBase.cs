@@ -55,7 +55,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
             ActivitySource.AddActivityListener(listener);
 
-            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent", ActivityKind.Internal);
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent");
             Assert.Equal(Activity.Current, activity);
 
             var countdown = new AsyncCountdownEvent(1);

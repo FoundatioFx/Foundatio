@@ -52,7 +52,7 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
 
         try
         {
-            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + _jobOptions.Name, ActivityKind.Server);
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job " + _jobOptions.Name);
 
             await runner.RunAsync(stoppingToken).AnyContext();
 #if NET8_0_OR_GREATER
