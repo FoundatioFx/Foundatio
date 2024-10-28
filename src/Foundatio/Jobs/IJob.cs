@@ -51,6 +51,8 @@ public static class JobExtensions
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + jobName);
+
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, jobName);
 

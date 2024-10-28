@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
-using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,11 +13,13 @@ public class ScheduledJobService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly JobManager _jobManager;
+    private readonly TimeProvider _timeProvider;
 
     public ScheduledJobService(IServiceProvider serviceProvider, JobManager jobManager)
     {
         _serviceProvider = serviceProvider;
         _jobManager = jobManager;
+        _timeProvider = _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -33,25 +34,28 @@ public class ScheduledJobService : BackgroundService
             }
         }
 
+        // delay until right after next minute starts to sync with cron schedules
+        await Task.Delay(TimeSpan.FromSeconds(60 - _timeProvider.GetUtcNow().UtcDateTime.Second));
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var jobToRun in _jobManager.Jobs)
+            var jobsToRun = new List<ScheduledJobRunner>();
+            using (var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Scheduler"))
+            {
+                foreach (var job in _jobManager.Jobs)
+                    if (await job.ShouldRunAsync())
+                        jobsToRun.Add(job);
+            }
+
+            foreach (var jobToRun in jobsToRun)
             {
                 using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + jobToRun.Options.Name);
 
-                if (await jobToRun.ShouldRunAsync())
-                {
-                    await jobToRun.StartAsync(stoppingToken).AnyContext();
-                }
-                else
-                {
-                    // don't record trace if we didn't run the job and we started the root activity
-                    if (activity is { Parent: null })
-                        activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
-                }
+                await jobToRun.StartAsync(stoppingToken).AnyContext();
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).AnyContext();
+            // shortest cron schedule is 1 minute so only check every minute
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken).AnyContext();
         }
     }
 }

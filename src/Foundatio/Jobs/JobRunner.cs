@@ -210,6 +210,8 @@ public class JobRunner
                 }
                 else
                 {
+                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + _jobName);
+
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     _logger.LogJobResult(result, _jobName);
 
