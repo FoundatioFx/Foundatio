@@ -4,166 +4,150 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Startup;
+using Foundatio.Extensions.Hosting.Jobs;
+using Foundatio.HostingSample;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using Serilog.Events;
 
-namespace Foundatio.HostingSample;
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateLogger();
 
-public class Program
+try
 {
-    public static int Main(string[] args)
+    Log.Information("Starting web application");
+
+    bool all = args.Contains("all", StringComparer.OrdinalIgnoreCase);
+    bool sample1 = all || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
+    bool sample2 = all || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
+    bool everyMinute = all || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
+    bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.AddServiceDefaults();
+
+    builder.Services.AddSerilog();
+
+    // shutdown the host if no jobs are running
+    builder.Services.AddJobLifetimeService();
+    builder.Services.AddSingleton<ICacheClient>(_ => new InMemoryCacheClient());
+
+    // inserts a startup action that does not complete until the critical health checks are healthy
+    // gets inserted as 1st startup action so that any other startup actions don't run until the critical resources are available
+    builder.Services.AddStartupActionToWaitForHealthChecks("Critical");
+
+    builder.Services.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: ["Critical"]);
+
+    // add health check that does not return healthy until the startup actions have completed
+    // useful for readiness checks
+    builder.Services.AddHealthChecks().AddCheckForStartupActions("Critical");
+
+    // this gets added automatically by any AddJob call, but we might not be running any jobs and we need it for doing dynamic jobs
+    builder.Services.AddJobScheduler();
+
+    if (everyMinute)
+        builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *", j => j.Name(nameof(EveryMinuteJob)));
+
+    if (evenMinutes)
+        builder.Services.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<Program>>();
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+
+            await Task.Delay(TimeSpan.FromSeconds(5));
+        });
+
+    if (sample1)
+        builder.Services.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
+
+    if (sample2)
     {
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", LogEventLevel.Warning)
-            .Enrich.FromLogContext()
-            .WriteTo.Console()
-            .CreateLogger();
-
-        try
-        {
-            Log.Information("Starting host");
-            CreateHostBuilder(args).Build().Run();
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Host terminated unexpectedly");
-            return 1;
-        }
-        finally
-        {
-            Log.CloseAndFlush();
-
-            if (Debugger.IsAttached)
-                Console.ReadKey();
-        }
+        builder.Services.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
+        builder.Services.AddJob<Sample2Job>(o => o.WaitForStartupActions());
     }
 
-    public static IHostBuilder CreateHostBuilder(string[] args)
+    // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
+    builder.Services.AddStartupAction("Test1", async sp =>
     {
-        bool all = args.Contains("all", StringComparer.OrdinalIgnoreCase);
-        bool sample1 = all || args.Contains("sample1", StringComparer.OrdinalIgnoreCase);
-        bool sample2 = all || args.Contains("sample2", StringComparer.OrdinalIgnoreCase);
-        bool everyMinute = all || args.Contains("everyMinute", StringComparer.OrdinalIgnoreCase);
-        bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogTrace("Running startup 1 action");
+        for (int i = 0; i < 3; i++)
+        {
+            await Task.Delay(1000);
+            logger.LogTrace("Running startup 1 action...");
+        }
 
-        var builder = Host.CreateDefaultBuilder(args)
-            .UseSerilog()
-            .ConfigureWebHostDefaults(webBuilder =>
-            {
-                webBuilder.Configure(app =>
-                {
-                    app.UseSerilogRequestLogging();
+        logger.LogTrace("Done running startup 1 action");
+    });
 
-                    app.UseHealthChecks("/health");
-                    app.UseReadyHealthChecks("Critical");
-                    app.UseRouting();
+    // then these startup actions will run concurrently since they both have the same priority
+    builder.Services.AddStartupAction<MyStartupAction>(priority: 100);
+    builder.Services.AddStartupAction<OtherStartupAction>(priority: 100);
 
-                    app.UseEndpoints(e =>
-                    {
-                        e.MapGet("/jobstatus", httpContext =>
-                        {
-                            var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
-                            var status = jobManager.GetJobStatus();
-                            return httpContext.Response.WriteAsJsonAsync(status);
-                        });
+    builder.Services.AddStartupAction("Test2", async sp =>
+    {
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogTrace("Running startup 2 action");
+        for (int i = 0; i < 2; i++)
+        {
+            await Task.Delay(1500);
+            logger.LogTrace("Running startup 2 action...");
+        }
+        //throw new ApplicationException("Boom goes the startup");
+        logger.LogTrace("Done running startup 2 action");
+    });
 
-                        e.MapGet("/runjob", async httpContext =>
-                        {
-                            var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
-                            await jobManager.RunJobAsync("EvenMinutes");
-                            await jobManager.RunJobAsync<EveryMinuteJob>();
-                        });
-                    });
+    //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
 
-                    // this middleware will return Service Unavailable until the startup actions have completed
-                    app.UseWaitForStartupActionsBeforeServingRequests();
+    var app = builder.Build();
 
-                    // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
-                });
-            })
-            .ConfigureServices(s =>
-            {
-                // will shutdown the host if no jobs are running
-                s.AddJobLifetimeService();
-                s.AddSingleton<ICacheClient>(_ => new InMemoryCacheClient());
+    app.UseSerilogRequestLogging();
 
-                // inserts a startup action that does not complete until the critical health checks are healthy
-                // gets inserted as 1st startup action so that any other startup actions dont run until the critical resources are available
-                s.AddStartupActionToWaitForHealthChecks("Critical");
+    app.MapGet("/", () => "Foundatio!");
 
-                s.AddHealthChecks().AddCheck<MyCriticalHealthCheck>("My Critical Resource", tags: ["Critical"]);
+    app.MapGet("/jobstatus", httpContext =>
+    {
+        var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
+        var status = jobManager.GetJobStatus();
+        return httpContext.Response.WriteAsJsonAsync(status);
+    });
 
-                // add health check that does not return healthy until the startup actions have completed
-                // useful for readiness checks
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+    app.MapGet("/runjob", async httpContext =>
+    {
+        var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
+        await jobManager.RunJobAsync("EvenMinutes");
+        await jobManager.RunJobAsync<EveryMinuteJob>();
+    });
 
-                if (everyMinute)
-                    s.AddDistributedCronJob<EveryMinuteJob>("* * * * *");
+    app.UseHealthChecks("/health");
+    app.UseReadyHealthChecks("Critical");
 
-                if (evenMinutes)
-                    s.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
-                    {
-                        var logger = sp.GetRequiredService<ILogger<Program>>();
-                        if (logger.IsEnabled(LogLevel.Information))
-                            logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+    // this middleware will return Service Unavailable until the startup actions have completed
+    app.UseWaitForStartupActionsBeforeServingRequests();
 
-                        await Task.Delay(TimeSpan.FromSeconds(5));
-                    });
+    // add mvc or other request middleware after the UseWaitForStartupActionsBeforeServingRequests call
 
-                if (sample1)
-                    s.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
-
-                if (sample2)
-                {
-                    s.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
-                    s.AddJob<Sample2Job>(o => o.WaitForStartupActions());
-                }
-
-                // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0
-                s.AddStartupAction("Test1", async sp =>
-                {
-                    var logger = sp.GetRequiredService<ILogger<Program>>();
-                    logger.LogTrace("Running startup 1 action");
-                    for (int i = 0; i < 3; i++)
-                    {
-                        await Task.Delay(1000);
-                        logger.LogTrace("Running startup 1 action...");
-                    }
-
-                    logger.LogTrace("Done running startup 1 action");
-                });
-
-                // then these startup actions will run concurrently since they both have the same priority
-                s.AddStartupAction<MyStartupAction>(priority: 100);
-                s.AddStartupAction<OtherStartupAction>(priority: 100);
-
-                s.AddStartupAction("Test2", async sp =>
-                {
-                    var logger = sp.GetRequiredService<ILogger<Program>>();
-                    logger.LogTrace("Running startup 2 action");
-                    for (int i = 0; i < 2; i++)
-                    {
-                        await Task.Delay(1500);
-                        logger.LogTrace("Running startup 2 action...");
-                    }
-                    //throw new ApplicationException("Boom goes the startup");
-                    logger.LogTrace("Done running startup 2 action");
-                });
-
-                //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
-            });
-
-        return builder;
-    }
+    app.Run();
 }
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+    return 1;
+}
+finally
+{
+    Log.CloseAndFlush();
+
+    if (Debugger.IsAttached)
+        Console.ReadKey();
+}
+
+return 0;
+

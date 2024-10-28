@@ -54,6 +54,7 @@ public static partial class StartupExtensions
                 {
                     try
                     {
+                        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Startup: " + a.Name);
                         // ReSharper disable once AccessToDisposedClosure
                         await a.RunAsync(startupActionsScope.ServiceProvider, shutdownToken).AnyContext();
                     }

@@ -37,10 +37,18 @@ public class ScheduledJobService : BackgroundService
         {
             foreach (var jobToRun in _jobManager.Jobs)
             {
-                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Scheduled Job: " + jobToRun.Options.Name);
+                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + jobToRun.Options.Name);
 
                 if (await jobToRun.ShouldRunAsync())
+                {
                     await jobToRun.StartAsync(stoppingToken).AnyContext();
+                }
+                else
+                {
+                    // don't record trace if we didn't run the job and we started the root activity
+                    if (activity is { Parent: null })
+                        activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+                }
             }
 
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).AnyContext();

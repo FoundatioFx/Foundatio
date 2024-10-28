@@ -1,8 +1,27 @@
 {
-  "profiles": {
-    "Foundatio.HostingSample": {
-      "commandName": "Project",
-      "commandLineArgs": "all"
+    "$schema": "https://json.schemastore.org/launchsettings.json",
+    "profiles": {
+        "http": {
+            "commandName": "Project",
+            "commandLineArgs": "all",
+            "dotnetRunMessages": true,
+            "launchBrowser": true,
+            "launchUrl": "jobstatus",
+            "applicationUrl": "http://localhost:5324",
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        },
+        "https": {
+            "commandName": "Project",
+            "commandLineArgs": "all",
+            "dotnetRunMessages": true,
+            "launchBrowser": true,
+            "launchUrl": "jobstatus",
+            "applicationUrl": "https://localhost:7580;http://localhost:5324",
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        }
     }
-  }
 }

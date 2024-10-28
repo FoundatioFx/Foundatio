@@ -1,8 +1,0 @@
-<Project>
-  <Import Project="..\build\common.props" />
-  <PropertyGroup>
-    <TargetFrameworks>net8.0</TargetFrameworks>
-    <OutputType>Exe</OutputType>
-    <IsPackable>False</IsPackable>
-  </PropertyGroup>
-</Project>
