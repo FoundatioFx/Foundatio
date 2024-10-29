@@ -35,12 +35,12 @@ public class ScheduledJobService : BackgroundService
         }
 
         // delay until right after next minute starts to sync with cron schedules
-        await Task.Delay(TimeSpan.FromSeconds(60 - _timeProvider.GetUtcNow().UtcDateTime.Second));
+        await Task.Delay(TimeSpan.FromSeconds(60 - _timeProvider.GetUtcNow().UtcDateTime.Second), stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             var jobsToRun = new List<ScheduledJobRunner>();
-            using (var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Scheduler"))
+            using (FoundatioDiagnostics.ActivitySource.StartActivity("Job Scheduler"))
             {
                 foreach (var job in _jobManager.Jobs)
                     if (await job.ShouldRunAsync())
