@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class JobWithLockBase : IJob, IHaveLogger, IHaveTimeProvider
+public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveTimeProvider
 {
     protected readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
@@ -30,11 +30,12 @@ public abstract class JobWithLockBase : IJob, IHaveLogger, IHaveTimeProvider
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     ILogger IHaveLogger.Logger => _logger;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    public JobOptions Options { get; set; }
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         ILock lockValue;
-        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + _jobName))
+        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + Options?.Name ?? _jobName))
         {
             lockActivity?.AddTag("job.id", JobId);
 

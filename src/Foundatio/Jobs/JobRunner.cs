@@ -15,7 +15,6 @@ public class JobRunner
 {
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
-    private string _jobName;
     private readonly JobOptions _options;
     private readonly IServiceProvider _serviceProvider;
 
@@ -86,7 +85,7 @@ public class JobRunner
         catch (Exception e)
         {
             if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(e, "Job {JobName} error: {Message}", _jobName, e.GetMessage());
+                _logger.LogError(e, "Job {JobName} error: {Message}", _options.Name, e.GetMessage());
 
             if (Debugger.IsAttached)
                 Console.ReadKey();
@@ -136,6 +135,8 @@ public class JobRunner
         try
         {
             job = _options.JobFactory(_serviceProvider);
+            if (job is IJobWithOptions jobWithOptions)
+                jobWithOptions.Options = _options;
         }
         catch (Exception ex)
         {
@@ -149,20 +150,19 @@ public class JobRunner
             return false;
         }
 
-        _jobName = TypeHelper.GetTypeDisplayName(job.GetType());
-        using (_logger.BeginScope(s => s.Property("job", _jobName)))
+        using (_logger.BeginScope(s => s.Property("job", _options.Name)))
         {
             if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
+                _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
 
             var jobLifetime = job as IAsyncLifetime;
             if (jobLifetime != null)
             {
                 if (_logger.IsEnabled(LogLevel.Information))
-                    _logger.LogInformation("Initializing job lifetime {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
+                    _logger.LogInformation("Initializing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
                 await jobLifetime.InitializeAsync().AnyContext();
                 if (_logger.IsEnabled(LogLevel.Information))
-                    _logger.LogInformation("Done initializing job lifetime {JobName} on machine {MachineName}.", _jobName, Environment.MachineName);
+                    _logger.LogInformation("Done initializing job lifetime {JobName} on machine {MachineName}.", _options.Name, Environment.MachineName);
             }
 
             try
@@ -183,8 +183,10 @@ public class JobRunner
                                 {
                                     await using var scope = _serviceProvider.CreateAsyncScope();
                                     var jobInstance = _options.JobFactory(scope.ServiceProvider);
-                                    await jobInstance.RunContinuousAsync(_options.Interval, _options.IterationLimit,
-                                        cancellationToken).AnyContext();
+                                    if (jobInstance is IJobWithOptions jobWithOptions)
+                                        jobWithOptions.Options = _options;
+
+                                    await jobInstance.RunContinuousAsync(_options, cancellationToken).AnyContext();
                                 }
                                 catch (TaskCanceledException)
                                 {
@@ -210,10 +212,10 @@ public class JobRunner
                 }
                 else
                 {
-                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + _jobName);
+                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + _options.Name);
 
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                    _logger.LogJobResult(result, _jobName);
+                    _logger.LogJobResult(result, _options.Name);
 
                     return result.IsSuccess;
                 }
@@ -224,10 +226,10 @@ public class JobRunner
                 if (jobDisposable != null)
                 {
                     if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("Disposing job lifetime {JobName} on machine {MachineName}...", _jobName, Environment.MachineName);
+                        _logger.LogInformation("Disposing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
                     await jobDisposable.DisposeAsync().AnyContext();
                     if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("Done disposing job lifetime {JobName} on machine {MachineName}.", _jobName, Environment.MachineName);
+                        _logger.LogInformation("Done disposing job lifetime {JobName} on machine {MachineName}.", _options.Name, Environment.MachineName);
                 }
             }
         }
