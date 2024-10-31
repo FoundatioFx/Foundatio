@@ -19,8 +19,7 @@ public class Sample1Job : IJob
     public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _iterationCount);
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
+        _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
 
         return Task.FromResult(JobResult.Success);
     }

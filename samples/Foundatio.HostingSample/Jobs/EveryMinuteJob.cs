@@ -17,8 +17,7 @@ public class EveryMinuteJob : IJob
 
     public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("EveryMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+        _logger.LogInformation("EveryMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
 
         await Task.Delay(TimeSpan.FromSeconds(4));
 

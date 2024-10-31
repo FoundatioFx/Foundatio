@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -67,10 +67,12 @@ try
     if (sample1)
         builder.Services.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
 
+    builder.Services.AddJob<SampleLockJob>(o => o.WaitForStartupActions().Name(nameof(SampleLockJob)));
+
     if (sample2)
     {
         builder.Services.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
-        builder.Services.AddJob<Sample2Job>(o => o.WaitForStartupActions());
+        builder.Services.AddJob<Sample2Job>(o => o.WaitForStartupActions().Name(nameof(Sample2Job)));
     }
 
     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0

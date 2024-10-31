@@ -23,8 +23,7 @@ public class Sample2Job : IJob, IHealthCheck
     {
         _lastRun = DateTime.UtcNow;
         Interlocked.Increment(ref _iterationCount);
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogTrace("Sample2Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
+        _logger.LogTrace("Sample2Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
 
         return Task.FromResult(JobResult.Success);
     }
