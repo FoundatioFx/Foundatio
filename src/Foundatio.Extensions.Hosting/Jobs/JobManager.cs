@@ -52,7 +52,7 @@ public class JobManager : IJobManager
 
     public void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob
     {
-        string jobName = typeof(TJob).FullName;
+        string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
         {
             var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
@@ -151,7 +151,7 @@ public class JobManager : IJobManager
 
     public void Remove<TJob>() where TJob : class, IJob
     {
-        string jobName = typeof(TJob).FullName;
+        string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
         {
             var job = Jobs.FirstOrDefault(j => j.Options.Name == jobName);
@@ -191,7 +191,7 @@ public class JobManager : IJobManager
 
     public async Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob
     {
-        string jobName = typeof(TJob).FullName;
+        string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         await RunJobAsync(jobName, cancellationToken).AnyContext();
     }
 

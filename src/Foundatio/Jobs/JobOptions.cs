@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs;
@@ -28,13 +29,7 @@ public class JobOptions
 
         jobOptions.Name = jobAttribute.Name;
         if (String.IsNullOrEmpty(jobOptions.Name))
-        {
-            string jobName = jobType.Name;
-            if (jobName.EndsWith("Job"))
-                jobName = jobName.Substring(0, jobName.Length - 3);
-
-            jobOptions.Name = jobName.ToLower();
-        }
+            jobOptions.Name = GetDefaultJobName(jobType);
 
         jobOptions.Description = jobAttribute.Description;
         jobOptions.RunContinuous = jobAttribute.IsContinuous;
@@ -88,6 +83,15 @@ public class JobOptions
         var jobOptions = GetDefaults<T>();
         jobOptions.JobFactory = jobFactory;
         return jobOptions;
+    }
+
+    public static string GetDefaultJobName(Type type)
+    {
+        string jobName = type.Name;
+        if (jobName.EndsWith("Job"))
+            jobName = jobName.Substring(0, jobName.Length - 3);
+
+        return jobName.ToSpacedWords();
     }
 }
 

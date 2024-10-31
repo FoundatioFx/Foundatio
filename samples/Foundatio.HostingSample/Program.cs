@@ -52,7 +52,7 @@ try
     builder.Services.AddJobScheduler();
 
     if (everyMinute)
-        builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *", j => j.Name(nameof(EveryMinuteJob)));
+        builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *");
 
     if (evenMinutes)
         builder.Services.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
@@ -67,12 +67,12 @@ try
     if (sample1)
         builder.Services.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
 
-    builder.Services.AddJob<SampleLockJob>(o => o.WaitForStartupActions().Name(nameof(SampleLockJob)));
+    builder.Services.AddJob<SampleLockJob>(o => o.WaitForStartupActions());
 
     if (sample2)
     {
         builder.Services.AddHealthChecks().AddCheck<Sample2Job>("Sample2Job");
-        builder.Services.AddJob<Sample2Job>(o => o.WaitForStartupActions().Name(nameof(Sample2Job)));
+        builder.Services.AddJob<Sample2Job>(o => o.WaitForStartupActions());
     }
 
     // if you don't specify priority, actions will automatically be assigned an incrementing priority starting at 0

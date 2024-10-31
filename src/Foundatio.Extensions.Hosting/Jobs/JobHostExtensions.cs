@@ -30,7 +30,7 @@ public static class JobHostExtensions
                 jobOptions.ApplyDefaults<T>();
             }
 
-            jobOptions.Name ??= typeof(T).FullName;
+            jobOptions.Name ??= JobOptions.GetDefaultJobName(typeof(T));
             jobOptions.JobFactory ??= sp => sp.GetRequiredService<T>();
 
             return new HostedJobService(s, jobOptions, s.GetService<ILoggerFactory>());
@@ -41,7 +41,7 @@ public static class JobHostExtensions
     {
         var jobOptionsBuilder = new HostedJobOptionsBuilder();
         jobOptionsBuilder.ApplyDefaults<T>();
-        jobOptionsBuilder.Name(typeof(T).FullName);
+        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T)));
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddJob<T>(jobOptionsBuilder.Target);
     }
@@ -82,7 +82,7 @@ public static class JobHostExtensions
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
-        jobOptionsBuilder.Name(typeof(T).FullName).CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
+        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
@@ -133,7 +133,7 @@ public static class JobHostExtensions
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
-        jobOptionsBuilder.Name(typeof(T).FullName).Distributed().CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
+        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).Distributed().CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddCronJob(jobOptionsBuilder.Target);
     }

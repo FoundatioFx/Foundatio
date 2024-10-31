@@ -208,7 +208,7 @@ public class JobRunner
                 }
                 else if (_options.RunContinuous && _options.InstanceCount == 1)
                 {
-                    await job.RunContinuousAsync(_options.Interval, _options.IterationLimit, cancellationToken).AnyContext();
+                    await job.RunContinuousAsync(_options, cancellationToken).AnyContext();
                 }
                 else
                 {
