@@ -43,6 +43,17 @@ public class ConfigurationTests
     }
 
     [Fact]
+    public void CanParseSimpleConnectionString()
+    {
+        const string connectionString = "localhost,6379";
+        var data = connectionString.ParseConnectionString(defaultKey: "server");
+        Assert.Single(data);
+        Assert.Equal("localhost,6379", data["server"]);
+
+        Assert.Equal("server=localhost,6379", data.BuildConnectionString());
+    }
+
+    [Fact]
     public void CanParseComplexQuotedConnectionString()
     {
         const string connectionString = "Blah=\"foo1=\"\"my value\"\";foo2 =\"\"my value\"\";\"";

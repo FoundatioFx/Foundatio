@@ -29,7 +29,7 @@ public static class ConnectionStringParser
 
     private static readonly Regex _connectionStringRegex = new(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
 
-    private static Dictionary<string, string> Parse(string connectionString, IDictionary<string, string> synonyms)
+    private static Dictionary<string, string> Parse(string connectionString, IDictionary<string, string> synonyms, string defaultKey = null)
     {
         var parseTable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -42,7 +42,15 @@ public static class ConnectionStringParser
 
         var match = _connectionStringRegex.Match(connectionString);
         if (!match.Success || (match.Length != connectionString.Length))
+        {
+            if (defaultKey != null)
+            {
+                parseTable[defaultKey] = connectionString;
+                return parseTable;
+            }
+
             throw new ArgumentException($"Format of the initialization string does not conform to specification starting at index {match.Length}");
+        }
 
         int indexValue = 0;
         var keyValues = match.Groups[valueIndex].Captures;
@@ -87,9 +95,9 @@ public static class ConnectionStringParser
         return keyName[0] != ';' && !Char.IsWhiteSpace(keyName[0]) && keyName.IndexOf('\u0000') == -1;
     }
 
-    public static Dictionary<string, string> ParseConnectionString(this string connectionString, IDictionary<string, string> synonyms = null)
+    public static Dictionary<string, string> ParseConnectionString(this string connectionString, IDictionary<string, string> synonyms = null, string defaultKey = null)
     {
-        return Parse(connectionString, synonyms);
+        return Parse(connectionString, synonyms, defaultKey);
     }
 
     public static string BuildConnectionString(this IDictionary<string, string> options, IEnumerable<string> excludedKeys = null)
