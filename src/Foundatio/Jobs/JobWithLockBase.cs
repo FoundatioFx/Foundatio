@@ -12,14 +12,17 @@ public abstract class JobWithLockBase : IJob, IHaveLogger, IHaveTimeProvider
 {
     protected readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly string _jobName;
 
     public JobWithLockBase(ILoggerFactory loggerFactory = null)
     {
+        _jobName = GetType().Name;
         _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
 
     public JobWithLockBase(TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
     {
+        _jobName = GetType().Name;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
@@ -30,10 +33,16 @@ public abstract class JobWithLockBase : IJob, IHaveLogger, IHaveTimeProvider
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        var lockValue = await GetLockAsync(cancellationToken).AnyContext();
-        if (lockValue is null)
+        ILock lockValue;
+        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + _jobName))
         {
-            return JobResult.CancelledWithMessage("Unable to acquire job lock");
+            lockActivity?.AddTag("job.id", JobId);
+
+            lockValue = await GetLockAsync(cancellationToken).AnyContext();
+            if (lockValue is null)
+            {
+                return JobResult.CancelledWithMessage("Unable to acquire job lock");
+            }
         }
 
         try
