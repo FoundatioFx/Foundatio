@@ -64,6 +64,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         {
             try
             {
+                using var _ = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
                 var stats = GetMetricsQueueStats();
                 return (stats.Queued, stats.Working, stats.Deadletter);
             }

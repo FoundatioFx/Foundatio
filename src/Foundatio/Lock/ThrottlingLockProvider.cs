@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,7 +20,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
     public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
-        _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? NullLogger<ThrottlingLockProvider>.Instance;
+        _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? cacheClient.GetLogger() ?? NullLogger<ThrottlingLockProvider>.Instance;
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
         _maxHitsPerPeriod = maxHitsPerPeriod;
 
@@ -95,7 +95,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error acquiring throttled lock: name={Resource} message={Message}", resource, ex.Message);
+                _logger.LogError(ex, "Error acquiring throttled lock ({Resource}): {Message}", resource, ex.Message);
                 errors++;
                 if (errors >= 3)
                     break;

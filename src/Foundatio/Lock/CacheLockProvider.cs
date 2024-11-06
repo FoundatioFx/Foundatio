@@ -30,7 +30,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
-        _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? NullLogger<CacheLockProvider>.Instance;
+        _logger = loggerFactory?.CreateLogger<CacheLockProvider>() ?? cacheClient.GetLogger() ?? NullLogger<CacheLockProvider>.Instance;
         _cacheClient = new ScopedCacheClient(cacheClient, "lock");
         _messageBus = messageBus;
 

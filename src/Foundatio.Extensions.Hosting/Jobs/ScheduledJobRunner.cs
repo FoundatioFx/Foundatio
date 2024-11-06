@@ -23,11 +23,13 @@ internal class ScheduledJobRunner
     private readonly ILogger _logger;
     private readonly DateTime _baseDate = new(2010, 1, 1);
     private DateTime _lastStatusUpdate = DateTime.MinValue;
+    private string _cacheKey;
 
     public ScheduledJobRunner(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
     {
         _jobOptions = jobOptions;
         _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
+        _cacheKey = _jobOptions.Name.ToLower().Replace(' ', '_');
         _serviceProvider = serviceProvider;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
@@ -76,22 +78,29 @@ internal class ScheduledJobRunner
     {
         if (_timeProvider.GetUtcNow().UtcDateTime.Subtract(_lastStatusUpdate).TotalSeconds > 15)
         {
-            var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
-            if (lastRun.HasValue)
+            try
             {
-                LastRun = lastRun.Value;
-                NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+                var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
+                if (lastRun.HasValue)
+                {
+                    LastRun = lastRun.Value;
+                    NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+                }
+
+                var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
+                if (lastSuccess.HasValue)
+                    LastSuccess = lastSuccess.Value;
+
+                var lastError = await _cacheClient.GetAsync<string>("lasterror:" + Options.Name).AnyContext();
+                if (lastError.HasValue)
+                    LastErrorMessage = lastError.Value;
+
+                _lastStatusUpdate = _timeProvider.GetUtcNow().UtcDateTime;
             }
-
-            var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
-            if (lastSuccess.HasValue)
-                LastSuccess = lastSuccess.Value;
-
-            var lastError = await _cacheClient.GetAsync<string>("lasterror:" + Options.Name).AnyContext();
-            if (lastError.HasValue)
-                LastErrorMessage = lastError.Value;
-
-            _lastStatusUpdate = _timeProvider.GetUtcNow().UtcDateTime;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting job ({JobName}) status", Options.Name);
+            }
         }
 
         if (!NextRun.HasValue)
@@ -114,21 +123,35 @@ internal class ScheduledJobRunner
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
-            l = await _lockProvider.AcquireAsync(GetLockKey(NextRun.Value), TimeSpan.FromMinutes(60), TimeSpan.Zero).AnyContext();
+            try
+            {
+                l = await _lockProvider.AcquireAsync(GetLockKey(NextRun.Value), TimeSpan.FromMinutes(60), TimeSpan.Zero).AnyContext();
+            } catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error acquiring lock for job ({JobName})", Options.Name);
+            }
+
             if (l == null)
             {
-                // if we didn't get the lock, update the last run time
-                var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
-                if (lastRun.HasValue)
-                    LastRun = lastRun.Value;
+                try
+                {
+                    // if we didn't get the lock, update the last run time
+                    var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
+                    if (lastRun.HasValue)
+                        LastRun = lastRun.Value;
 
-                var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
-                if (lastSuccess.HasValue)
-                    LastSuccess = lastSuccess.Value;
+                    var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
+                    if (lastSuccess.HasValue)
+                        LastSuccess = lastSuccess.Value;
 
-                var lastError = await _cacheClient.GetAsync<string>("lasterror:" + Options.Name).AnyContext();
-                if (lastError.HasValue)
-                    LastErrorMessage = lastError.Value;
+                    var lastError = await _cacheClient.GetAsync<string>("lasterror:" + Options.Name).AnyContext();
+                    if (lastError.HasValue)
+                        LastErrorMessage = lastError.Value;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error getting job ({JobName}) status", Options.Name);
+                }
 
                 return;
             }
@@ -150,12 +173,26 @@ internal class ScheduledJobRunner
                     if (result.IsSuccess)
                     {
                         LastSuccess = _timeProvider.GetUtcNow().UtcDateTime;
-                        await _cacheClient.SetAsync("lastsuccess:" + Options.Name, LastSuccess.Value).AnyContext();
+                        try
+                        {
+                            await _cacheClient.SetAsync("lastsuccess:" + Options.Name, LastSuccess.Value).AnyContext();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error updating last success time for job ({JobName})", Options.Name);
+                        }
                     }
                     else
                     {
                         LastErrorMessage = result.Message;
-                        await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
+                        try
+                        {
+                            await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error updating last error message for job ({JobName})", Options.Name);
+                        }
                     }
                 }
                 catch (TaskCanceledException)
@@ -164,12 +201,26 @@ internal class ScheduledJobRunner
                 catch (Exception ex)
                 {
                     LastErrorMessage = ex.Message;
-                    await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
+                    try
+                    {
+                        await _cacheClient.SetAsync("lasterror:" + Options.Name, LastErrorMessage).AnyContext();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
                 }
             }, cancellationToken).Unwrap();
 
             LastRun = _timeProvider.GetUtcNow().UtcDateTime;
-            await _cacheClient.SetAsync("lastrun:" + Options.Name, LastRun.Value).AnyContext();
+            try
+            {
+                await _cacheClient.SetAsync("lastrun:" + Options.Name, LastRun.Value).AnyContext();
+            }
+            catch
+            {
+                // ignored
+            }
             NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
         }
     }
@@ -178,6 +229,6 @@ internal class ScheduledJobRunner
     {
         long minute = (long)date.Subtract(_baseDate).TotalMinutes;
 
-        return Options.Name + ":" + minute;
+        return _cacheKey + ":" + minute;
     }
 }

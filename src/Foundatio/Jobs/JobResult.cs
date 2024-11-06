@@ -70,9 +70,7 @@ public static class JobResultExtensions
     {
         if (result == null)
         {
-            if (logger.IsEnabled(LogLevel.Error))
-                logger.LogError("Null job run result for {JobName}", jobName);
-
+            logger.LogError("Null job run result for {JobName}", jobName);
             return;
         }
 

@@ -6,6 +6,8 @@ using Foundatio.Extensions.Hosting.Startup;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
@@ -14,12 +16,14 @@ public class ScheduledJobService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly JobManager _jobManager;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
 
     public ScheduledJobService(IServiceProvider serviceProvider, JobManager jobManager)
     {
         _serviceProvider = serviceProvider;
         _jobManager = jobManager;
         _timeProvider = _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        _logger = serviceProvider.GetService<ILogger<ScheduledJobService>>() ?? NullLogger<ScheduledJobService>.Instance;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,7 +34,7 @@ public class ScheduledJobService : BackgroundService
             var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
             if (!result.Success)
             {
-                throw new ApplicationException("Failed to wait for startup actions to complete");
+                throw new StartupActionsException("Failed to wait for startup actions to complete");
             }
         }
 

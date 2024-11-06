@@ -36,7 +36,7 @@ try
 
     // shutdown the host if no jobs are running
     builder.Services.AddJobLifetimeService();
-    builder.Services.AddSingleton<ICacheClient>(_ => new InMemoryCacheClient());
+    builder.Services.AddSingleton<ICacheClient>(sp => new InMemoryCacheClient(o => o.LoggerFactory(sp.GetService<ILoggerFactory>())));
 
     // inserts a startup action that does not complete until the critical health checks are healthy
     // gets inserted as 1st startup action so that any other startup actions don't run until the critical resources are available

@@ -52,3 +52,8 @@ public class StartupActionsContext
         return new RunStartupActionsResult { Success = false, ErrorMessage = $"Timed out waiting for startup actions to be completed after {DateTime.UtcNow.Subtract(startTime):mm\\:ss}" };
     }
 }
+
+public class StartupActionsException : Exception
+{
+    public StartupActionsException(string message) : base(message) { }
+}
