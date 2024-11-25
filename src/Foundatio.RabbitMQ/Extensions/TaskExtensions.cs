@@ -25,4 +25,10 @@ internal static class TaskExtensions
     {
         return task.ConfigureAwait(continueOnCapturedContext: false);
     }
+
+    [DebuggerStepThrough]
+    public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
 }
