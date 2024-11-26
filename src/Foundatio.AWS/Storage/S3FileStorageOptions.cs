@@ -101,9 +101,9 @@ public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOpt
         return this;
     }
 
-    public S3FileStorageOptionsBuilder AllowInMemoryStreaming(bool allowInMemoryStreaming = true)
+    public S3FileStorageOptionsBuilder AllowInMemoryStream(bool allowInMemoryStream = true)
     {
-        Target.AllowInMemoryStream = allowInMemoryStreaming;
+        Target.AllowInMemoryStream = allowInMemoryStream;
         return this;
     }
 

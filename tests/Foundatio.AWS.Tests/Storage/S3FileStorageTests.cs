@@ -18,7 +18,7 @@ public class S3FileStorageTests : FileStorageTestsBase
     {
         return new S3FileStorage(
             o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
-                .LoggerFactory(Log).AllowInMemoryStreaming());
+                .LoggerFactory(Log).AllowInMemoryStream());
     }
 
     [Fact]
