@@ -525,17 +525,30 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         using (storage)
         {
-            await using var stream = await storage.GetFileStreamAsync(path, StreamMode.Write);
-            Assert.NotNull(stream);
-            Assert.True(stream.CanWrite);
+            await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Write)) {
+                Assert.NotNull(stream);
+                Assert.True(stream.CanWrite);
 
-            await using (var writer = new StreamWriter(stream, Encoding.UTF8, 1024, false))
-            {
+                await using var writer = new StreamWriter(stream, Encoding.UTF8, 1024, false);
                 await writer.WriteAsync(testContent);
             }
 
             string content = await storage.GetFileContentsAsync(path);
             Assert.Equal(testContent, content);
+
+            string newTestContent = testContent.Substring(0, testContent.Length - 1);
+
+            await using (var stream2 = await storage.GetFileStreamAsync(path, StreamMode.Write))
+            {
+                Assert.NotNull(stream2);
+                Assert.True(stream2.CanWrite);
+
+                await using var writer = new StreamWriter(stream2, Encoding.UTF8, 1024, false);
+                await writer.WriteAsync(newTestContent);
+            }
+
+            content = await storage.GetFileContentsAsync(path);
+            Assert.Equal(newTestContent, content);
         }
     }
 

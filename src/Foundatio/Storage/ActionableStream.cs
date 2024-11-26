@@ -5,24 +5,23 @@ using System.Threading.Tasks;
 
 namespace Foundatio.Storage;
 
-public class ActionableStream : Stream
+public class ActionableStream : Stream, IAsyncDisposable
 {
-    private readonly Action _disposeAction;
+    private readonly Func<Task> _disposeAction;
     private readonly Stream _stream;
-
-    protected override void Dispose(bool disposing)
-    {
-        try
-        {
-            _disposeAction.Invoke();
-        }
-        catch { /* ignore if these are already disposed;  this is to make sure they are */ }
-
-        _stream.Dispose();
-        base.Dispose(disposing);
-    }
+    private bool _disposed;
 
     public ActionableStream(Stream stream, Action disposeAction)
+    {
+        _stream = stream ?? throw new ArgumentNullException();
+        _disposeAction = () =>
+        {
+            disposeAction();
+            return Task.CompletedTask;
+        };
+    }
+
+    public ActionableStream(Stream stream, Func<Task> disposeAction)
     {
         _stream = stream ?? throw new ArgumentNullException();
         _disposeAction = disposeAction;
@@ -85,5 +84,38 @@ public class ActionableStream : Stream
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         return _stream.WriteAsync(buffer, offset, count, cancellationToken);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        DisposeAsync().GetAwaiter().GetResult();
+    }
+
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _disposed = true;
+            await _disposeAction.Invoke();
+        }
+        catch { /* ignore if these are already disposed;  this is to make sure they are */ }
+
+        if (_stream is IAsyncDisposable streamAsyncDisposable)
+        {
+            await streamAsyncDisposable.DisposeAsync();
+        }
+        else
+        {
+            _stream?.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+        GC.SuppressFinalize(this);
     }
 }
