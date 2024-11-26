@@ -15,6 +15,7 @@ public class S3FileStorageOptions : SharedOptions
     public string ServiceUrl { get; set; }
     public S3CannedACL CannedACL { get; set; }
     public HttpClientFactory HttpClientFactory { get; set; }
+    public bool AllowInMemoryStream { get; set; }
 }
 
 public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder>
@@ -97,6 +98,12 @@ public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOpt
         if (String.IsNullOrEmpty(cannedAcl))
             throw new ArgumentNullException(nameof(cannedAcl));
         Target.CannedACL = S3CannedACL.FindValue(cannedAcl);
+        return this;
+    }
+
+    public S3FileStorageOptionsBuilder AllowInMemoryStreaming(bool allowInMemoryStreaming = true)
+    {
+        Target.AllowInMemoryStream = allowInMemoryStreaming;
         return this;
     }
 

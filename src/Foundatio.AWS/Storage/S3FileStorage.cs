@@ -26,6 +26,7 @@ public class S3FileStorage : IFileStorage
     private readonly AmazonS3Client _client;
     private readonly bool _useChunkEncoding;
     private readonly S3CannedACL _cannedAcl;
+    private readonly bool _allowInMemoryStream;
     private readonly ILogger _logger;
 
     public S3FileStorage(S3FileStorageOptions options)
@@ -39,6 +40,7 @@ public class S3FileStorage : IFileStorage
         _bucket = options.Bucket;
         _useChunkEncoding = options.UseChunkEncoding ?? true;
         _cannedAcl = options.CannedACL;
+        _allowInMemoryStream = options.AllowInMemoryStream;
 
         var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
 
@@ -78,7 +80,24 @@ public class S3FileStorage : IFileStorage
             throw new ArgumentNullException(nameof(path));
 
         if (streamMode is StreamMode.Write)
-            throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
+        {
+            if (!_allowInMemoryStream)
+                throw new NotSupportedException($"Stream mode {streamMode} is not supported. S3 does not support writing to streams. Enable the {nameof(S3FileStorageOptions.AllowInMemoryStream)} option enable using a MemoryStream or use the SaveFileAsync method.");
+
+            var stream = new MemoryStream();
+            var actionStream = new ActionableStream(stream, async () =>
+            {
+                stream.Position = 0;
+                bool result = await SaveFileAsync(path, stream, cancellationToken).AnyContext();
+                if (!result)
+                {
+                    _logger.LogError("Unable to save file {Path}", path);
+                    throw new Exception($"Unable to save file {path}");
+                }
+            });
+
+            return actionStream;
+        }
 
         var req = new GetObjectRequest
         {

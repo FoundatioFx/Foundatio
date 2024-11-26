@@ -18,7 +18,7 @@ public class S3FileStorageTests : FileStorageTestsBase
     {
         return new S3FileStorage(
             o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
-                .LoggerFactory(Log));
+                .LoggerFactory(Log).AllowInMemoryStreaming());
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class S3FileStorageTests : FileStorageTestsBase
         return base.WillRespectStreamOffsetAsync();
     }
 
-    [Fact(Skip = "Write Stream is not yet supported")]
+    [Fact]
     public override Task WillWriteStreamContentAsync()
     {
         return base.WillWriteStreamContentAsync();
