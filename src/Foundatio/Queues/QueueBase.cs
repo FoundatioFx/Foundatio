@@ -62,12 +62,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _totalTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>(GetFullMetricName("totaltime"), description: "Total time in queue", unit: "ms");
         _abandonedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("abandoned"), description: "Number of abandoned items");
 
+        if (!options.MetricsPollingEnabled)
+            return;
+
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
-            if (options.MetricsInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
+            if (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
                 return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
 
-            _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsInterval);
+            _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsPollingInterval);
             try
             {
                 using var _ = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
@@ -80,9 +83,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             }
         }, _logger);
 
-        _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"), () => new Measurement<long>(queueMetricValues.GetValue1()), description: "Number of items in the queue");
-        _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"), () => new Measurement<long>(queueMetricValues.GetValue2()), description: "Number of items currently being processed");
-        _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"), () => new Measurement<long>(queueMetricValues.GetValue3()), description: "Number of items in the deadletter queue");
+        _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"),
+            () => new Measurement<long>(queueMetricValues.GetValue1()),
+            description: "Number of items in the queue");
+        _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"),
+            () => new Measurement<long>(queueMetricValues.GetValue2()),
+            description: "Number of items currently being processed");
+        _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"),
+            () => new Measurement<long>(queueMetricValues.GetValue3()),
+            description: "Number of items in the deadletter queue");
     }
 
     public string QueueId { get; protected set; }

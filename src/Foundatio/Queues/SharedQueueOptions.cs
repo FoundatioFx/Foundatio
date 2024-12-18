@@ -16,9 +16,14 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     public string MetricsPrefix { get; set; }
 
     /// <summary>
-    /// How often to update queue metrics. Defaults to 30 seconds.
+    /// How often to poll queue metrics. These metrics are more expensive to calculate. Defaults to 5 seconds.
     /// </summary>
-    public TimeSpan MetricsInterval { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan MetricsPollingInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// If metrics that require polling are enabled. These metrics are more expensive to calculate and should be disabled if you are not using them. Defaults to true.
+    /// </summary>
+    public bool MetricsPollingEnabled { get; set; } = true;
 }
 
 public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -84,14 +89,32 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     }
 
     /// <summary>
-    /// How often to update queue metrics. Defaults to 30 seconds.
+    /// How often to poll queue metrics. These metrics are more expensive to calculate. Defaults to 5 seconds.
     /// </summary>
-    public TBuilder MetricsInterval(TimeSpan interval)
+    public TBuilder MetricsPollingInterval(TimeSpan interval)
     {
         if (interval < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(interval));
 
-        Target.MetricsInterval = interval;
+        Target.MetricsPollingInterval = interval;
+        return (TBuilder)this;
+    }
+
+    /// <summary>
+    /// If metrics that require polling are enabled. These metrics are more expensive to calculate and should be disabled if you are not using them. Defaults to true.
+    /// </summary>
+    public TBuilder MetricsPollingEnabled(bool enabled)
+    {
+        Target.MetricsPollingEnabled = enabled;
+        return (TBuilder)this;
+    }
+
+    /// <summary>
+    /// Disable metrics collection for this queue.
+    /// </summary>
+    public TBuilder DisableMetricsPolling()
+    {
+        Target.MetricsPollingEnabled = false;
         return (TBuilder)this;
     }
 }

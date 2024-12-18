@@ -1063,7 +1063,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         int completedCount = 0;
 
-        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).MetricsInterval(TimeSpan.Zero));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).MetricsPollingInterval(TimeSpan.Zero));
 
         Task Handler(object sender, CompletedEventArgs<WorkItemData> e)
         {
