@@ -25,6 +25,7 @@ public class InMemoryQueueTests : QueueTestBase
                 .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .TimeProvider(timeProvider)
+                .MetricsInterval(TimeSpan.Zero)
                 .LoggerFactory(Log));
         if (_logger.IsEnabled(LogLevel.Debug))
             _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);

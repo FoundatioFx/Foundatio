@@ -36,6 +36,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly List<IQueueBehavior<T>> _behaviors = new();
     protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
     private bool _isDisposed;
+    private QueueStats _queueStats;
+    private DateTime _nextQueueStatsUpdate = DateTime.MinValue;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
@@ -62,11 +64,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
+            if (options.MetricsInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
+                return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
+
+            _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsInterval);
             try
             {
                 using var _ = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
-                var stats = GetMetricsQueueStats();
-                return (stats.Queued, stats.Working, stats.Deadletter);
+                _queueStats = GetMetricsQueueStats();
+                return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
             }
             catch
             {
@@ -138,9 +144,10 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected abstract Task<QueueStats> GetQueueStatsImplAsync();
 
-    public Task<QueueStats> GetQueueStatsAsync()
+    public async Task<QueueStats> GetQueueStatsAsync()
     {
-        return GetQueueStatsImplAsync();
+        _queueStats = await GetQueueStatsImplAsync();
+        return _queueStats;
     }
 
     protected virtual QueueStats GetMetricsQueueStats()

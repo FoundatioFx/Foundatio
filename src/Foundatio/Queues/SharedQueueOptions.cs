@@ -14,6 +14,11 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
     /// </summary>
     public string MetricsPrefix { get; set; }
+
+    /// <summary>
+    /// How often to update queue metrics. Defaults to 30 seconds.
+    /// </summary>
+    public TimeSpan MetricsInterval { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -75,6 +80,18 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     {
         if (!String.IsNullOrWhiteSpace(prefix))
             Target.MetricsPrefix = prefix.Trim();
+        return (TBuilder)this;
+    }
+
+    /// <summary>
+    /// How often to update queue metrics. Defaults to 30 seconds.
+    /// </summary>
+    public TBuilder MetricsInterval(TimeSpan interval)
+    {
+        if (interval < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(interval));
+
+        Target.MetricsInterval = interval;
         return (TBuilder)this;
     }
 }
