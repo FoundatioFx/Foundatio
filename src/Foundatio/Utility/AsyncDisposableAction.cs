@@ -27,6 +27,6 @@ public sealed class AsyncDisposableAction : IAsyncDisposable
     {
         var exitAction = Interlocked.Exchange(ref _exitTask, null);
         if (exitAction is not null)
-            await _exitTask().AnyContext();
+            await exitAction().AnyContext();
     }
 }
