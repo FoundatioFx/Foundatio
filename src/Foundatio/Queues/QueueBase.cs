@@ -374,12 +374,12 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     {
         if (_isDisposed)
         {
-            _logger.LogTrace("Queue {Name} ({Id})  dispose was already called", _options.Name, QueueId);
+            _logger.LogTrace("Queue {QueueName} ({QueueId})  dispose was already called", _options.Name, QueueId);
             return;
         }
 
         _isDisposed = true;
-        _logger.LogTrace("Queue {Name} ({Id}) dispose", _options.Name, QueueId);
+        _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose", _options.Name, QueueId);
         _queueDisposedCancellationTokenSource?.Cancel();
         _queueDisposedCancellationTokenSource?.Dispose();
         base.Dispose();

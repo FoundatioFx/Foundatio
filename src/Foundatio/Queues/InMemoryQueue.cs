@@ -86,7 +86,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
         string id = Guid.NewGuid().ToString("N");
-        _logger.LogTrace("Queue {Name} enqueue item: {Id}", _options.Name, id);
+        _logger.LogTrace("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
 
         if (!await OnEnqueuingAsync(data, options).AnyContext())
             return null;
@@ -129,16 +129,16 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (handler == null)
             throw new ArgumentNullException(nameof(handler));
 
-        _logger.LogTrace("Queue {Name} start working", _options.Name);
+        _logger.LogTrace("Queue {QueueName} start working", _options.Name);
 
         _workers.Add(Task.Run(async () =>
         {
             using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-            _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
+            _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
             while (!linkedCancellationToken.IsCancellationRequested)
             {
-                _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
+                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> queueEntry = null;
                 try
@@ -189,13 +189,13 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 }
             }
 
-            _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
         }, GetLinkedDisposableCancellationTokenSource(cancellationToken).Token));
     }
 
     protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
     {
-        _logger.LogTrace("Queue {Name} dequeuing item... Queue count: {Count}", _options.Name, _queue.Count);
+        _logger.LogTrace("Queue {QueueName} dequeuing item... Queue count: {Count}", _options.Name, _queue.Count);
 
         while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested)
         {
@@ -241,7 +241,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     public override async Task RenewLockAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name} renew lock item: {Id}", _options.Name, queueEntry.Id);
+        _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, queueEntry.Id);
 
         if (!_dequeued.TryGetValue(queueEntry.Id, out var targetEntry))
             return;
@@ -249,12 +249,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         targetEntry.RenewedTimeUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         await OnLockRenewedAsync(queueEntry).AnyContext();
-        _logger.LogTrace("Renew lock done: {Id}", queueEntry.Id);
+        _logger.LogTrace("Renew lock done: {QueueEntryId}", queueEntry.Id);
     }
 
     public override async Task CompleteAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name} complete item: {Id}", _options.Name, queueEntry.Id);
+        _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, queueEntry.Id);
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
@@ -271,12 +271,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         queueEntry.MarkCompleted();
         Interlocked.Increment(ref _completedCount);
         await OnCompletedAsync(queueEntry).AnyContext();
-        _logger.LogTrace("Complete done: {Id}", queueEntry.Id);
+        _logger.LogTrace("Complete done: {QueueEntryId}", queueEntry.Id);
     }
 
     public override async Task AbandonAsync(IQueueEntry<T> queueEntry)
     {
-        _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {Id}", _options.Name, QueueId, queueEntry.Id);
+        _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {QueueEntryId}", _options.Name, QueueId, queueEntry.Id);
 
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
@@ -299,7 +299,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         queueEntry.MarkAbandoned();
         Interlocked.Increment(ref _abandonedCount);
-        _logger.LogTrace("Abandon complete: {Id}", queueEntry.Id);
+        _logger.LogTrace("Abandon complete: {QueueEntryId}", queueEntry.Id);
 
         try
         {
@@ -311,18 +311,18 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             {
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
-                    _logger.LogTrace("Adding item to wait list for future retry: {Id}", queueEntry.Id);
+                    _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId}", queueEntry.Id);
                     var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, _queueDisposedCancellationTokenSource.Token);
                 }
                 else
                 {
-                    _logger.LogTrace("Adding item back to queue for retry: {Id}", queueEntry.Id);
+                    _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId}", queueEntry.Id);
                     _ = Task.Run(() => RetryAsync(targetEntry));
                 }
             }
             else
             {
-                _logger.LogTrace("Exceeded retry limit moving to deadletter: {Id}", queueEntry.Id);
+                _logger.LogTrace("Exceeded retry limit moving to deadletter: {QueueEntryId}", queueEntry.Id);
                 _deadletterQueue.Enqueue(targetEntry);
             }
         }
@@ -330,7 +330,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     private Task RetryAsync(QueueEntry<T> entry)
     {
-        _logger.LogTrace("Queue {Name} retrying item: {Id} Attempts: {Attempts}", _options.Name, entry.Id, entry.Attempts);
+        _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, entry.Attempts);
 
         entry.Reset();
         _queue.Enqueue(entry);
@@ -352,7 +352,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     public override Task DeleteQueueAsync()
     {
-        _logger.LogTrace("Deleting queue: {Name}", _options.Name);
+        _logger.LogTrace("Deleting queue: {QueueName}", _options.Name);
 
         _queue.Clear();
         _deadletterQueue.Clear();
@@ -378,7 +378,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 var abandonAt = entry.RenewedTimeUtc.Add(_options.WorkItemTimeout);
                 if (abandonAt < utcNow)
                 {
-                    _logger.LogInformation("DoMaintenance Abandon: {Id}", entry.Id);
+                    _logger.LogInformation("DoMaintenance Abandon: {QueueEntryId}", entry.Id);
 
                     await AbandonAsync(entry).AnyContext();
                     Interlocked.Increment(ref _workerItemTimeoutCount);

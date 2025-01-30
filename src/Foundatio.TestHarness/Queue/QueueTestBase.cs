@@ -388,7 +388,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 await w.AbandonAsync();
                 countdown.Signal();
 
-                _logger.LogInformation("Finished Attempt {Attempt} to work on queue item, Metadata Attempts: {MetadataAttempts}", attempts, queueEntryMetadata.Attempts);
+                _logger.LogInformation("Finished Attempt {Attempt} to work on queue item, Metadata Attempts: {QueueEntryAttempts}", attempts, queueEntryMetadata.Attempts);
             }, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem
@@ -952,7 +952,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 for (int i = 0; i < workerCount; i++)
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue Id: {Id}, I: {Instance}", q.QueueId, i);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
                     await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
@@ -964,7 +964,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         Data = "Hello",
                         Id = i
                     });
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {Id}", i, id);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
                 });
 
                 await countdown.WaitAsync(cancellationTokenSource.Token);
@@ -1370,21 +1370,21 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     await q.StartWorkingAsync(async w =>
                     {
                         if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {Id}", instanceCount, w.Id);
+                            _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {QueueEntryId}", instanceCount, w.Id);
                         var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
                         Assert.NotNull(l);
                         if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Acquired distributed lock: {Id}", instanceCount, w.Id);
+                            _logger.LogInformation("[{Instance}] Acquired distributed lock: {QueueEntryId}", instanceCount, w.Id);
                         await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();
                         if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Released distributed lock: {Id}", instanceCount, w.Id);
+                            _logger.LogInformation("[{Instance}] Released distributed lock: {QueueEntryId}", instanceCount, w.Id);
 
                         await w.CompleteAsync();
                         info.IncrementCompletedCount();
                         countdown.Signal();
                         if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Signaled countdown: {Id}", instanceCount, w.Id);
+                            _logger.LogInformation("[{Instance}] Signaled countdown: {QueueEntryId}", instanceCount, w.Id);
                     }, cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
@@ -1396,7 +1396,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         Data = "Hello",
                         Id = i
                     });
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {Id}", i, id);
+                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1559,7 +1559,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             await queue.StartWorkingAsync(async item =>
             {
-                _logger.LogDebug("Processing item: {Id} Value={Value}", item.Id, item.Value.Data);
+                _logger.LogDebug("Processing item: {QueueEntryId} Value={Value}", item.Id, item.Value.Data);
                 if (item.Value.Data == "Delay")
                 {
                     // wait for queue item to get auto abandoned

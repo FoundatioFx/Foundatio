@@ -15,7 +15,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
     protected readonly ILogger _logger;
     protected readonly Lazy<IQueue<T>> _queue;
     protected readonly TimeProvider _timeProvider;
-    protected readonly string _queueEntryName = typeof(T).Name;
+    protected readonly string _queueName = typeof(T).Name;
 
     public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
@@ -67,26 +67,26 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s
             .Property("JobId", JobId)
+            .Property("QueueName", _queueName)
             .Property("QueueEntryId", queueEntry.Id)
-            .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId))
-            .Property("QueueEntryName", _queueEntryName));
+            .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId)));
 
-        _logger.LogInformation("Processing queue entry: id={QueueEntryId} type={QueueEntryName} attempt={QueueEntryAttempt}", queueEntry.Id, _queueEntryName, queueEntry.Attempts);
+        _logger.LogInformation("Processing queue entry: id={QueueEntryId} type={QueueName} attempt={QueueEntryAttempt}", queueEntry.Id, _queueName, queueEntry.Attempts);
 
         if (cancellationToken.IsCancellationRequested)
         {
             if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Job was cancelled. Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                _logger.LogInformation("Job was cancelled. Abandoning {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
 
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.CancelledWithMessage($"Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
+            return JobResult.CancelledWithMessage($"Abandoning {_queueName} queue entry: {queueEntry.Id}");
         }
 
         var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
         if (lockValue is null)
         {
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.CancelledWithMessage($"Unable to acquire queue entry lock. Abandoning {_queueEntryName} queue entry: {queueEntry.Id}");
+            return JobResult.CancelledWithMessage($"Unable to acquire queue entry lock. Abandoning {_queueName} queue entry: {queueEntry.Id}");
         }
 
         bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
@@ -106,20 +106,20 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
             else
             {
                 if (result.Error != null || result.Message != null)
-                    _logger.LogError(result.Error, "{QueueEntryName} queue entry {Id} returned an unsuccessful response: {Message}", _queueEntryName, queueEntry.Id, result.Message ?? result.Error?.Message);
+                    _logger.LogError(result.Error, "{QueueName} queue entry {QueueEntryId} returned an unsuccessful response: {Message}", _queueName, queueEntry.Id, result.Message ?? result.Error?.Message);
 
                 if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                    _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
                 await queueEntry.AbandonAsync().AnyContext();
                 if (_logger.IsEnabled(LogLevel.Warning))
-                    _logger.LogWarning("Auto abandoned {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                    _logger.LogWarning("Auto abandoned {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
             }
 
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            _logger.LogError(ex, "Error processing {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
 
             if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)
                 await queueEntry.AbandonAsync().AnyContext();
@@ -129,10 +129,10 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
         finally
         {
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Releasing Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                _logger.LogTrace("Releasing Lock for {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
             await lockValue.ReleaseAsync().AnyContext();
             if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Released Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+                _logger.LogTrace("Released Lock for {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
         }
     }
 
@@ -174,13 +174,13 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
     protected virtual void LogProcessingQueueEntry(IQueueEntry<T> queueEntry)
     {
         if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("Processing {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            _logger.LogInformation("Processing {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
     }
 
     protected virtual void LogAutoCompletedQueueEntry(IQueueEntry<T> queueEntry)
     {
         if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("Auto completed {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            _logger.LogInformation("Auto completed {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
     }
 
     protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);
@@ -188,7 +188,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveTimeProv
     protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default)
     {
         if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Returning Empty Lock for {QueueEntryName} queue entry: {Id}", _queueEntryName, queueEntry.Id);
+            _logger.LogTrace("Returning Empty Lock for {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
 
         return Task.FromResult(Disposable.EmptyLock);
     }
