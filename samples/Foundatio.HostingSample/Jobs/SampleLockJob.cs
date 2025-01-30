@@ -15,7 +15,7 @@ public class SampleLockJob : JobWithLockBase
 
     public SampleLockJob(ICacheClient cache)
     {
-        _lockProvider = new ThrottlingLockProvider(cache, 1, TimeSpan.FromMinutes(1));;
+        _lockProvider = new ThrottlingLockProvider(cache, 1, TimeSpan.FromMinutes(1));
     }
 
     protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default)

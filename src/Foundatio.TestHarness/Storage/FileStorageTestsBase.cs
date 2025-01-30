@@ -525,7 +525,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         using (storage)
         {
-            await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Write)) {
+            await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Write))
+            {
                 Assert.NotNull(stream);
                 Assert.True(stream.CanWrite);
 

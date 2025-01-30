@@ -876,7 +876,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
         // Unset 7 bit for Day of week field because both 0 and 7 stand for Sunday.
         if (field == CronField.DaysOfWeek) fieldValue &= ~(1 << field.Last);
 
-        for (var i = GetFirstSet(fieldValue); ; i = GetFirstSet(fieldValue >> i << i))
+        for (int i = GetFirstSet(fieldValue); ; i = GetFirstSet(fieldValue >> i << i))
         {
             expressionBuilder.Append(i);
             if (fieldValue >> ++i == 0) break;

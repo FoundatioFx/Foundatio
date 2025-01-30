@@ -126,7 +126,8 @@ internal class ScheduledJobRunner
             try
             {
                 l = await _lockProvider.AcquireAsync(GetLockKey(NextRun.Value), TimeSpan.FromMinutes(60), TimeSpan.Zero).AnyContext();
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "Error acquiring lock for job ({JobName})", Options.Name);
             }
