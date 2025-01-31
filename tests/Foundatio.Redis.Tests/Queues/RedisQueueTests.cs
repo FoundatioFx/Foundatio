@@ -44,6 +44,7 @@ public class RedisQueueTests : QueueTestBase
             .DeadLetterMaxItems(deadLetterMaxItems)
             .TimeProvider(timeProvider ?? TimeProvider.System)
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+            .MetricsPollingInterval(TimeSpan.Zero)
             .RunMaintenanceTasks(runQueueMaintenance)
             .LoggerFactory(Log)
         );
