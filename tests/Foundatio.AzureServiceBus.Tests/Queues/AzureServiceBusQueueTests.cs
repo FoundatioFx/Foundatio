@@ -45,6 +45,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
             Retries = retries,
             RetryPolicy = retryPolicy,
             TimeProvider = timeProvider,
+            MetricsPollingInterval = TimeSpan.Zero,
             WorkItemTimeout = workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)),
             LoggerFactory = Log
         });
