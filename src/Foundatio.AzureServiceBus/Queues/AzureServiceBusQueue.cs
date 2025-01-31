@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -205,7 +205,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
     protected override Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken cancellationToken)
     {
-        _logger.LogWarning("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout.");
+        _logger.LogWarning("Azure Service Bus does not support CancellationTokens - use TimeSpan overload instead. Using default 30 second timeout");
         return DequeueAsync();
     }
 
