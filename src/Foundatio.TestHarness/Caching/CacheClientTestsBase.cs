@@ -904,7 +904,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.True((await cache.GetAsync<bool>("flag")).Value);
             }
             sw.Stop();
-            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
+            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -933,7 +933,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.Equal(12, model.Value.Data2);
             }
             sw.Stop();
-            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
+            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -986,7 +986,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 Assert.Equal(12, model.Value.Data2);
             }
             sw.Stop();
-            _logger.LogInformation("Time: {0}ms", sw.ElapsedMilliseconds);
+            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
         }
     }
 }

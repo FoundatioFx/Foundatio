@@ -151,7 +151,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
     public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class
     {
         if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Adding subscriber for {MessageType}.", typeof(T).FullName);
+            _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
 
         await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
@@ -375,13 +375,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
     {
         if (_isDisposed)
         {
-            _logger.LogTrace("MessageBus {0} dispose was already called.", MessageBusId);
+            _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
             return;
         }
 
         _isDisposed = true;
 
-        _logger.LogTrace("MessageBus {0} dispose", MessageBusId);
+        _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
         _subscribers?.Clear();
         _messageBusDisposedCancellationTokenSource?.Cancel();
         _messageBusDisposedCancellationTokenSource?.Dispose();
