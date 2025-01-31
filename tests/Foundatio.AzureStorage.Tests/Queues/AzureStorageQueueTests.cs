@@ -30,6 +30,7 @@ public class AzureStorageQueueTests : QueueTestBase
             .RetryPolicy(retries <= 0 ? new NoRetry() : new ExponentialRetry(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)), retries))
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
             .DequeueInterval(TimeSpan.FromSeconds(1))
+            .MetricsPollingInterval(TimeSpan.Zero)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
     }
