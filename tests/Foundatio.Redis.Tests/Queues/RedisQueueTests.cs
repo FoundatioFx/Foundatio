@@ -505,7 +505,7 @@ public class RedisQueueTests : QueueTestBase
     {
         // not using GetQueue() here because I need to change the ops timeout in the redis connection string
         const int OPS_TIMEOUT_MS = 100;
-        string connectionString = Configuration.GetConnectionString("RedisConnectionString") + $",syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}"; ;
+        string connectionString = Configuration.GetConnectionString("RedisConnectionString") + $",syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}";
         var muxer = await ConnectionMultiplexer.ConnectAsync(connectionString);
 
         const string QUEUE_NAME = "Test";
