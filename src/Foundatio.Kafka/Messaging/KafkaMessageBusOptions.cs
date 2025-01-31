@@ -455,7 +455,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public int? MessageSendMaxRetries { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ProducerConfig.RetryBackoffMs"/>
+    /// <inheritdoc cref="ClientConfig.RetryBackoffMs"/>
     /// </summary>
     public int? RetryBackoffMs { get; set; }
 
