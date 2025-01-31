@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <PropertyGroup>
-    <TargetFrameworks>net8.0</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <IsPackable>False</IsPackable>
   </PropertyGroup>
@@ -10,7 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
   </ItemGroup>
 </Project>
