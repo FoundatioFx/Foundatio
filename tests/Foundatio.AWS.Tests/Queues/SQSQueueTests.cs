@@ -33,6 +33,7 @@ public class SQSQueueTests : QueueTestBase
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(TimeSpan.FromSeconds(1))
                 .ReadQueueTimeout(TimeSpan.FromSeconds(1))
+                .MetricsPollingInterval(TimeSpan.Zero)
                 .TimeProvider(timeProvider)
                 .LoggerFactory(Log));
 
@@ -55,6 +56,7 @@ public class SQSQueueTests : QueueTestBase
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
                 .DequeueInterval(dequeueInterval ?? TimeSpan.FromSeconds(1))
                 .ReadQueueTimeout(readQueueTimeout ?? TimeSpan.FromSeconds(1))
+                .MetricsPollingInterval(TimeSpan.Zero)
                 .LoggerFactory(Log));
 
         _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);

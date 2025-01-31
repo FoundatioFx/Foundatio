@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.402.34" />
-    <PackageReference Include="AWSSDK.S3" Version="3.7.413.1" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.411.7" />
     <PackageReference Include="AWSSDK.SQS" Version="3.7.400.86" />
 
     <PackageReference Include="Foundatio" Version="11.0.8" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
