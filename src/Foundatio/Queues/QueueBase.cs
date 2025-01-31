@@ -68,7 +68,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
             if (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
-                return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
+            {
+                return _queueStats is not null ? (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter) : (0, 0, 0);
+            }
 
             _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsPollingInterval);
             try
