@@ -216,6 +216,8 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         };
 
         await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
+        await OnLockRenewedAsync(entry).AnyContext();
+
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Renew lock done: {EntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", queueEntry.Id, entry.UnderlyingMessage.MessageId, visibilityTimeout);
     }
