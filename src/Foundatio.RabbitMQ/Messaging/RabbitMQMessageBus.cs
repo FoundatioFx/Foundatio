@@ -393,7 +393,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             if (_publisherChannel != null)
             {
-                _publisherChannel.DisposeAsync().AnyContext();
+                await _publisherChannel.DisposeAsync().AnyContext();
                 _publisherChannel = null;
             }
 
