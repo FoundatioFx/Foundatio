@@ -61,7 +61,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             if (_options.PrefetchCount.HasValue)
                 _subscriptionClient.PrefetchCount = _options.PrefetchCount.Value;
             sw.Stop();
-            _logger.LogTrace("Ensure topic subscription exists took {0}ms.", sw.ElapsedMilliseconds);
+            _logger.LogTrace("Ensure topic subscription exists took {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -70,7 +70,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         if (_subscribers.IsEmpty)
             return Task.CompletedTask;
 
-        _logger.LogTrace("OnMessageAsync({messageId})", brokeredMessage.MessageId);
+        _logger.LogTrace("OnMessageAsync({MessageId})", brokeredMessage.MessageId);
         var message = new Message(brokeredMessage.Body, DeserializeMessageBody)
         {
             Type = brokeredMessage.ContentType,
@@ -87,7 +87,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
     private Task MessageHandlerException(ExceptionReceivedEventArgs e)
     {
-        _logger.LogWarning("Exception: \"{0}\" {0}", e.Exception.Message, e.ExceptionReceivedContext.EntityPath);
+        _logger.LogWarning("Exception: \"{Message}\" {Path}", e.Exception.Message, e.ExceptionReceivedContext.EntityPath);
         return Task.CompletedTask;
     }
 
@@ -111,7 +111,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
             _topicClient = new TopicClient(_options.ConnectionString, _options.Topic);
             sw.Stop();
-            _logger.LogTrace("Ensure topic exists took {0}ms.", sw.ElapsedMilliseconds);
+            _logger.LogTrace("Ensure topic exists took {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -131,12 +131,12 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
-            _logger.LogTrace("Schedule delayed message: {messageType} ({delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             brokeredMessage.ScheduledEnqueueTimeUtc = _timeProvider.GetUtcNow().UtcDateTime.Add(options.DeliveryDelay.Value);
         }
         else
         {
-            _logger.LogTrace("Message Publish: {messageType}", messageType);
+            _logger.LogTrace("Message Publish: {MessageType}", messageType);
         }
 
         return _topicClient.SendAsync(brokeredMessage);

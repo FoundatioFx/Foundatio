@@ -79,7 +79,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
             _queueSender = new MessageSender(_options.ConnectionString, _options.Name, _options.RetryPolicy);
             _queueReceiver = new MessageReceiver(_options.ConnectionString, _options.Name, ReceiveMode.PeekLock, _options.RetryPolicy);
             sw.Stop();
-            _logger.LogTrace("Ensure queue exists took {0}ms.", sw.ElapsedMilliseconds);
+            _logger.LogTrace("Ensure queue exists took {Elapsed:g}", sw.Elapsed);
         }
     }
 
@@ -180,7 +180,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
             catch (Exception ex)
             {
                 Interlocked.Increment(ref _workerErrorCount);
-                _logger.LogWarning(ex, "Error sending work item to worker: {0}", ex.Message);
+                _logger.LogWarning(ex, "Error sending work item to worker: {Message}", ex.Message);
 
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                     await queueEntry.AbandonAsync().AnyContext();
@@ -190,7 +190,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
     private Task LogMessageHandlerException(ExceptionReceivedEventArgs e)
     {
-        _logger.LogWarning("Exception: \"{0}\" {0}", e.Exception.Message, e.ExceptionReceivedContext.EntityPath);
+        _logger.LogWarning("Exception: \"{Message}\" {Path}", e.Exception.Message, e.ExceptionReceivedContext.EntityPath);
         return Task.CompletedTask;
     }
 
@@ -211,15 +211,15 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
     public override async Task RenewLockAsync(IQueueEntry<T> entry)
     {
-        _logger.LogDebug("Queue {0} renew lock item: {1}", _options.Name, entry.Id);
+        _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, entry.Id);
         await _queueReceiver.RenewLockAsync(entry.LockToken()).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
-        _logger.LogTrace("Renew lock done: {0}", entry.Id);
+        _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
     }
 
     public override async Task CompleteAsync(IQueueEntry<T> entry)
     {
-        _logger.LogDebug("Queue {0} complete item: {1}", _options.Name, entry.Id);
+        _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, entry.Id);
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -227,12 +227,12 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
         await OnCompletedAsync(entry).AnyContext();
-        _logger.LogTrace("Complete done: {0}", entry.Id);
+        _logger.LogTrace("Complete done: {QueueEntryId}", entry.Id);
     }
 
     public override async Task AbandonAsync(IQueueEntry<T> entry)
     {
-        _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
+        _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {QueueEntryId}", _options.Name, QueueId, entry.Id);
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -240,7 +240,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         Interlocked.Increment(ref _abandonedCount);
         entry.MarkAbandoned();
         await OnAbandonedAsync(entry).AnyContext();
-        _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
+        _logger.LogTrace("Abandon complete: {QueueEntryId}", entry.Id);
     }
 
     private async Task<IQueueEntry<T>> HandleDequeueAsync(Message brokeredMessage)
@@ -281,7 +281,6 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
         if (_options.EnableDeadLetteringOnMessageExpiration.HasValue)
             qd.EnableDeadLetteringOnMessageExpiration = _options.EnableDeadLetteringOnMessageExpiration.Value;
-
 
 
         if (_options.EnablePartitioning.HasValue)
