@@ -115,7 +115,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
             return null;
         }
 
-        if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeued message {Id}", message.Id);
+        if (isTraceLogLevelEnabled) _logger.LogTrace("Dequeued message {QueueEntryId}", message.Id);
         Interlocked.Increment(ref _dequeuedCount);
         var data = _serializer.Deserialize<T>(message.AsBytes);
         var entry = new AzureStorageQueueEntry<T>(message, data, this);
@@ -125,16 +125,16 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
 
     public override async Task RenewLockAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} renew lock item: {EntryId}", _options.Name, entry.Id);
+        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, entry.Id);
         var azureQueueEntry = ToAzureEntryWithCheck(entry);
         await _queueReference.UpdateMessageAsync(azureQueueEntry.UnderlyingMessage, _options.WorkItemTimeout, MessageUpdateFields.Visibility).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {EntryId}", entry.Id);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
     }
 
     public override async Task CompleteAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name} complete item: {EntryId}", _options.Name, entry.Id);
+        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, entry.Id);
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -144,12 +144,12 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
         await OnCompletedAsync(entry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {EntryId}", entry.Id);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {QueueEntryId}", entry.Id);
     }
 
     public override async Task AbandonAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {Name}:{QueueId} abandon item: {EntryId}", _options.Name, QueueId, entry.Id);
+        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {QueueEntryId}", _options.Name, QueueId, entry.Id);
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -170,7 +170,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         Interlocked.Increment(ref _abandonedCount);
         entry.MarkAbandoned();
         await OnAbandonedAsync(entry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandon complete: {EntryId}", entry.Id);
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandon complete: {QueueEntryId}", entry.Id);
     }
 
     protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken)
@@ -281,11 +281,11 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         Task.Run(async () =>
         {
             bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {Name}", _options.Name);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
             while (!linkedCancellationToken.IsCancellationRequested)
             {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Signaled {Name}", _options.Name);
+                if (isTraceLogLevelEnabled) _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> queueEntry = null;
                 try
@@ -314,7 +314,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
                 }
             }
 
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Worker exiting: {Name} Cancel Requested: {IsCancellationRequested}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
+            if (isTraceLogLevelEnabled) _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _queueReference.Name, linkedCancellationToken.IsCancellationRequested);
         }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
     }
 
