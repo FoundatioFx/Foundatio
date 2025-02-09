@@ -44,7 +44,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
         : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
 
-    public int Count => _memory.Count;
+    public int Count => _memory.Count(i => !i.Value.IsExpired);
     public int? MaxItems => _maxItems;
     public long Calls => _writes + _hits + _misses;
     public long Writes => _writes;
@@ -67,7 +67,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _misses = 0;
     }
 
-    public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new AsyncEvent<ItemExpiredEventArgs>();
+    public AsyncEvent<ItemExpiredEventArgs> ItemExpired { get; } = new();
 
     private void OnItemExpired(string key, bool sendNotification = true)
     {
@@ -92,6 +92,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         get
         {
             return _memory.ToArray()
+                .Where(kvp => !kvp.Value.IsExpired)
                 .OrderBy(kvp => kvp.Value.LastAccessTicks)
                 .ThenBy(kvp => kvp.Value.InstanceNumber)
                 .Select(kvp => kvp.Key)
@@ -104,6 +105,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         get
         {
             return _memory.ToArray()
+                .Where(kvp => !kvp.Value.IsExpired)
                 .OrderBy(kvp => kvp.Value.LastAccessTicks)
                 .ThenBy(kvp => kvp.Value.InstanceNumber)
                 .Select(kvp => new KeyValuePair<string, object>(kvp.Key, kvp.Value))
@@ -202,11 +204,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     internal void RemoveExpiredKey(string key, bool sendNotification = true)
     {
         // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
-        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt < _timeProvider.GetUtcNow())
+        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.IsExpired)
         {
             if (_memory.TryRemove(key, out var removedEntry))
             {
-                if (removedEntry.ExpiresAt >= _timeProvider.GetUtcNow())
+                if (!removedEntry.IsExpired)
                     throw new Exception("Removed item was not expired");
 
                 _logger.LogDebug("Removing expired cache entry {Key}", key);
@@ -226,7 +228,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(CacheValue<T>.NoValue);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+        if (existingEntry.IsExpired)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(CacheValue<T>.NoValue);
@@ -488,7 +490,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (values is string stringValue)
         {
-            var items = new HashSet<string>(new[] { stringValue });
+            var items = new HashSet<string>([stringValue]);
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
@@ -551,7 +553,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (values is string stringValue)
         {
-            var items = new HashSet<string>(new[] { stringValue });
+            var items = new HashSet<string>([stringValue]);
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
                 if (existingEntry.Value is ICollection<string> { Count: > 0 } collection)
@@ -614,7 +616,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty");
 
-        if (entry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+        if (entry.IsExpired)
         {
             RemoveExpiredKey(key);
             return false;
@@ -632,7 +634,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 wasUpdated = false;
 
                 // check to see if existing entry is expired
-                if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+                if (existingEntry.IsExpired)
                 {
                     if (isTraceLogLevelEnabled)
                         _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
@@ -812,7 +814,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(false);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+        if (existingEntry.IsExpired)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult(false);
@@ -833,7 +835,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult<TimeSpan?>(null);
         }
 
-        if (existingEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime || existingEntry.ExpiresAt == DateTime.MaxValue)
+        if (existingEntry.IsExpired || existingEntry.ExpiresAt == DateTime.MaxValue)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult<TimeSpan?>(null);
@@ -892,7 +894,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
             foreach (var kvp in _memory)
             {
-                bool isExpired = kvp.Value.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+                bool isExpired = kvp.Value.IsExpired;
                 if (isExpired ||
                     kvp.Value.LastAccessTicks < oldest.LastAccessTicks ||
                     (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
@@ -907,7 +909,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit", oldest);
             _memory.TryRemove(oldest.Key, out var cacheEntry);
-            if (cacheEntry != null && cacheEntry.ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+            if (cacheEntry is { IsExpired: true })
                 expiredKey = oldest.Key;
         }
 
@@ -972,6 +974,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         internal long InstanceNumber { get; private set; }
         internal DateTime ExpiresAt { get; set; }
+        internal bool IsExpired => ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
 #if DEBUG
