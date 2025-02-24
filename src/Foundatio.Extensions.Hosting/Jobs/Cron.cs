@@ -31,6 +31,14 @@ public static class Cron
     }
 
     /// <summary>
+    /// Returns cron expression that fires every Nth minute.
+    /// </summary>
+    public static string Minutely(int minute)
+    {
+        return $"0/{minute} * * * *";
+    }
+
+    /// <summary>
     /// Returns cron expression that fires every hour at the first minute.
     /// </summary>
     public static string Hourly()
