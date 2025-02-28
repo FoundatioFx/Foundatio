@@ -30,7 +30,7 @@ public static partial class StartupExtensions
         var sw = Stopwatch.StartNew();
         var logger = startupActionsScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
         var startupActions = startupActionsScope.ServiceProvider.GetServices<StartupActionRegistration>().ToArray();
-        logger.LogInformation("Found {StartupActionCount} registered startup action(s).", startupActions.Length);
+        logger.LogInformation("Found {StartupActionCount} registered startup action(s)", startupActions.Length);
 
         var startupActionPriorityGroups = startupActions.GroupBy(s => s.Priority).OrderBy(s => s.Key).ToArray();
         foreach (var startupActionGroup in startupActionPriorityGroups)
@@ -70,10 +70,10 @@ public static partial class StartupExtensions
                 swGroup.Stop();
 
                 if (startupActionsCount == 1)
-                    logger.LogInformation("Completed {StartupActions} startup action in {Duration:mm\\:ss}.",
+                    logger.LogInformation("Completed {StartupActions} startup action in {Duration:mm\\:ss}",
                         startupActionsNames, swGroup.Elapsed);
                 else
-                    logger.LogInformation("Completed {StartupActions} startup actions in {Duration:mm\\:ss}.",
+                    logger.LogInformation("Completed {StartupActions} startup actions in {Duration:mm\\:ss}",
                         startupActionsNames, swGroup.Elapsed);
             }
             catch
@@ -88,7 +88,7 @@ public static partial class StartupExtensions
         }
 
         sw.Stop();
-        logger.LogInformation("Completed all {StartupActionCount} startup action(s) in {Duration:mm\\:ss}.",
+        logger.LogInformation("Completed all {StartupActionCount} startup action(s) in {Duration:mm\\:ss}",
             startupActions.Length, sw.Elapsed);
 
         return new RunStartupActionsResult { Success = true };

@@ -37,7 +37,7 @@ internal class ScheduledJobRunner
 
         _cronSchedule = CronExpression.Parse(_jobOptions.CronSchedule);
         if (_cronSchedule == null)
-            throw new ArgumentException("Could not parse schedule.", nameof(ScheduledJobOptions.CronSchedule));
+            throw new ArgumentException("Could not parse schedule", nameof(ScheduledJobOptions.CronSchedule));
 
         var interval = TimeSpan.FromDays(1);
 
