@@ -91,8 +91,25 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         else
         {
             var redisKeys = keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).ToArray();
-            if (redisKeys.Length > 0)
-                return (int)await Database.KeyDeleteAsync(redisKeys).AnyContext();
+            if (redisKeys.Length <= 0)
+                return 0;
+
+            int count = 0;
+            foreach (var key in redisKeys)
+            {
+                try
+                {
+                    if (await Database.KeyDeleteAsync(key).AnyContext())
+                        count++;
+                }
+                catch (Exception ex)
+                {
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to delete key {Key}", key);
+                }
+            }
+
+            return count;
         }
 
         return 0;
@@ -111,12 +128,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         while (keys.Length != 0 || index < chunkSize)
         {
-            foreach (string key in keys)
-            {
-                bool success = await RemoveAsync(key).AnyContext();
-                if (success)
-                    total++;
-            }
+            total += await RemoveAllAsync(keys).AnyContext();
 
             index += chunkSize;
             (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
