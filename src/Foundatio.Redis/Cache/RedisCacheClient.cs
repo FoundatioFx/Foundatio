@@ -111,7 +111,13 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         while (keys.Length != 0 || index < chunkSize)
         {
-            total += await RemoveAllAsync(keys).AnyContext();
+            foreach (string key in keys)
+            {
+                bool success = await RemoveAsync(key).AnyContext();
+                if (success)
+                    total++;
+            }
+
             index += chunkSize;
             (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
         }
