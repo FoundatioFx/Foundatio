@@ -78,14 +78,22 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                     await server.FlushDatabaseAsync().AnyContext();
                     continue;
                 }
-                catch (Exception) { }
+                catch (Exception ex)
+                {
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to flush database");
+                }
 
                 try
                 {
                     await foreach (var key in server.KeysAsync().ConfigureAwait(false))
                         await Database.KeyDeleteAsync(key).AnyContext();
                 }
-                catch (Exception) { }
+                catch (Exception ex)
+                {
+                    if (_logger.IsEnabled(LogLevel.Error))
+                        _logger.LogError(ex, "Unable to delete all");
+                }
             }
         }
         else
