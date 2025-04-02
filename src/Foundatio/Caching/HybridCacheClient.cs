@@ -123,15 +123,20 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
-        var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
-        if (cacheValue.HasValue)
+        CacheValue<T> cacheValue;
+        if (!SkipLocalCacheScope.ShouldSkip)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
-            Interlocked.Increment(ref _localCacheHits);
-            return cacheValue;
+            cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
+            if (cacheValue.HasValue)
+            {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
+                Interlocked.Increment(ref _localCacheHits);
+                return cacheValue;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
         cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
         {
@@ -303,15 +308,20 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
-        var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
-        if (cacheValue.HasValue)
+        CacheValue<ICollection<T>> cacheValue;
+        if (!SkipLocalCacheScope.ShouldSkip)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
-            Interlocked.Increment(ref _localCacheHits);
-            return cacheValue;
+            cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
+            if (cacheValue.HasValue)
+            {
+                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
+                Interlocked.Increment(ref _localCacheHits);
+                return cacheValue;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
         cacheValue = await _distributedCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
         {
@@ -339,5 +349,71 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         public string[] Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
+    }
+}
+
+public class HybridCacheClientWithoutLocalCache(IHybridCacheClient cacheClient) : ICacheClient
+{
+    public Task<bool> RemoveAsync(string key) => cacheClient.RemoveAsync(key);
+    public Task<bool> RemoveIfEqualAsync<T>(string key, T expected) => cacheClient.RemoveIfEqualAsync(key, expected);
+    public Task<int> RemoveAllAsync(IEnumerable<string> keys = null) => cacheClient.RemoveAllAsync(keys);
+    public Task<int> RemoveByPrefixAsync(string prefix) => cacheClient.RemoveByPrefixAsync(prefix);
+    public Task<CacheValue<T>> GetAsync<T>(string key)
+    {
+        using var _ = SkipLocalCacheScope.Begin();
+        return cacheClient.GetAsync<T>(key);
+    }
+
+    public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys) => cacheClient.GetAllAsync<T>(keys);
+    public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null) => cacheClient.AddAsync(key, value, expiresIn);
+    public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null) => cacheClient.SetAsync(key, value, expiresIn);
+    public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null) => cacheClient.SetAllAsync(values, expiresIn);
+    public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null) => cacheClient.ReplaceAsync(key, value, expiresIn);
+    public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null) => cacheClient.ReplaceIfEqualAsync(key, value, expected, expiresIn);
+    public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null) => cacheClient.IncrementAsync(key, amount, expiresIn);
+    public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null) => cacheClient.IncrementAsync(key, amount, expiresIn);
+    public Task<bool> ExistsAsync(string key) => cacheClient.ExistsAsync(key);
+    public Task<TimeSpan?> GetExpirationAsync(string key) => cacheClient.GetExpirationAsync(key);
+    public Task SetExpirationAsync(string key, TimeSpan expiresIn) => cacheClient.SetExpirationAsync(key, expiresIn);
+    public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null) => cacheClient.SetIfHigherAsync(key, value, expiresIn);
+    public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null) => cacheClient.SetIfHigherAsync(key, value, expiresIn);
+    public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null) => cacheClient.SetIfLowerAsync(key, value, expiresIn);
+    public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null) => cacheClient.SetIfLowerAsync(key, value, expiresIn);
+    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null) => cacheClient.ListAddAsync(key, value, expiresIn);
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null) => cacheClient.ListRemoveAsync(key, value, expiresIn);
+    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    {
+        using var _ = SkipLocalCacheScope.Begin();
+        return cacheClient.GetListAsync<T>(key, page, pageSize);
+    }
+
+    public void Dispose() => cacheClient.Dispose();
+}
+
+public sealed class SkipLocalCacheScope : IDisposable
+{
+    private static readonly AsyncLocal<bool> s_asyncSkipLocalCache = new();
+
+    private bool _disposed;
+
+    private SkipLocalCacheScope()
+    {
+        s_asyncSkipLocalCache.Value = false;
+    }
+
+    internal static bool ShouldSkip => s_asyncSkipLocalCache.Value;
+
+    public static IDisposable Begin()
+    {
+        return new SkipLocalCacheScope();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        s_asyncSkipLocalCache.Value = false;
+        _disposed = true;
     }
 }
