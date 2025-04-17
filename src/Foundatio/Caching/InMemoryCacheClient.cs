@@ -201,7 +201,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return RemoveAllAsync(keysToRemove);
     }
 
-    internal void RemoveExpiredKey(string key, bool sendNotification = true)
+    internal long RemoveExpiredKey(string key, bool sendNotification = true)
     {
         // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
         if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.IsExpired)
@@ -213,8 +213,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 _logger.LogDebug("Removing expired cache entry {Key}", key);
                 OnItemExpired(key, sendNotification);
+                return 1;
             }
         }
+
+        return 0;
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
@@ -482,59 +485,79 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
-            RemoveExpiredKey(key);
-            return default;
+            await ListRemoveAsync(key, values).AnyContext();
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
 
         if (values is string stringValue)
         {
-            var items = new HashSet<string>([stringValue]);
+            var items = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase)
+            {
+                { stringValue, expiresAt }
+            };
+
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not ICollection<string> collection)
-                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
+                if (existingEntry.Value is not IDictionary<string, DateTime> dictionary)
+                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
 
-                collection.Add(stringValue);
-                existingEntry.Value = collection;
+                ExpireListValues(dictionary, existingKey);
 
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
-
+                dictionary.Add(stringValue, expiresAt);
+                existingEntry.Value = dictionary;
+                existingEntry.ExpiresAt = dictionary.Values.Max();
                 return existingEntry;
             });
 
             await StartMaintenanceAsync().AnyContext();
-
             return items.Count;
         }
         else
         {
-            var items = new HashSet<T>(values);
+            var items = new HashSet<T>(values).ToDictionary(k => k, _ => expiresAt);
+            if (items.Count == 0)
+            {
+                // NOTE: This will not expire list values
+                await StartMaintenanceAsync().AnyContext();
+                return 0;
+            }
+
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not ICollection<T> collection)
+                if (existingEntry.Value is not IDictionary<T, DateTime> dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
-                collection.AddRange(items);
-                existingEntry.Value = collection;
+                ExpireListValues(dictionary, existingKey);
 
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
+                foreach (var kvp in items)
+                    dictionary[kvp.Key] = kvp.Value;
 
+                existingEntry.Value = dictionary;
+                existingEntry.ExpiresAt = dictionary.Values.Max();
                 return existingEntry;
             });
 
             await StartMaintenanceAsync().AnyContext();
-
             return items.Count;
         }
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    private int ExpireListValues<T>(IDictionary<T, DateTime> dictionary, string existingKey)
+    {
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
+        int expiredValues = expiredValueKeys.Count(dictionary.Remove);
+        if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, existingKey);
+
+        return expiredValues;
+    }
+
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
@@ -545,55 +568,71 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
         if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
-            RemoveExpiredKey(key);
-            return default;
+            await StartMaintenanceAsync().AnyContext();
+            return RemoveExpiredKey(key);
         }
 
         Interlocked.Increment(ref _writes);
 
+        long removed = 0;
         if (values is string stringValue)
         {
             var items = new HashSet<string>([stringValue]);
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is ICollection<string> { Count: > 0 } collection)
+                if (existingEntry.Value is IDictionary<string, DateTime> { Count: > 0 } dictionary)
                 {
+                    ExpireListValues(dictionary, existingKey);
+
                     foreach (string value in items)
-                        collection.Remove(value);
+                    {
+                        if (dictionary.Remove(value))
+                            Interlocked.Increment(ref removed);
+                    }
 
-                    existingEntry.Value = collection;
+                    existingEntry.Value = dictionary;
+                    existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
                 }
-
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
-            return Task.FromResult<long>(items.Count);
+            await StartMaintenanceAsync().AnyContext();
+            return items.Count;
         }
         else
         {
             var items = new HashSet<T>(values);
+            if (items.Count == 0)
+            {
+                // NOTE: This will not expire list values
+                await StartMaintenanceAsync().AnyContext();
+                return 0;
+            }
+
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is ICollection<T> { Count: > 0 } collection)
+                if (existingEntry.Value is IDictionary<T, DateTime> { Count: > 0 } dictionary)
                 {
+                    ExpireListValues(dictionary, existingKey);
+
                     foreach (var value in items)
-                        collection.Remove(value);
+                    {
+                        if (dictionary.Remove(value))
+                            Interlocked.Increment(ref removed);
+                    }
 
-                    existingEntry.Value = collection;
+                    existingEntry.Value = dictionary;
+                    existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
                 }
-
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
 
                 if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
-            return Task.FromResult<long>(items.Count);
+            await StartMaintenanceAsync().AnyContext();
+            return removed;
         }
     }
 
@@ -602,12 +641,30 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        var list = await GetAsync<ICollection<T>>(key);
-        if (!list.HasValue || !page.HasValue)
-            return list;
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        _memory.TryUpdate(key, (existingKey, existingEntry) =>
+        {
+            if (existingEntry.Value is IDictionary<T, DateTime> { Count: > 0 } dictionary)
+            {
+                int expiredValues = ExpireListValues(dictionary, existingKey);
+                if (expiredValues is 0)
+                    return existingEntry;
+
+                existingEntry.Value = dictionary;
+                existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
+            }
+
+            return existingEntry;
+        });
+
+        var dictionary = await GetAsync<IDictionary<T, DateTime>>(key);
+        if (!dictionary.HasValue || !page.HasValue)
+            return new CacheValue<ICollection<T>>(dictionary.Value?.Keys ?? [], dictionary.HasValue);
 
         int skip = (page.Value - 1) * pageSize;
-        var pagedItems = list.Value.Skip(skip).Take(pageSize).ToArray();
+        var pagedItems = dictionary.Value.Keys.Skip(skip).Take(pageSize).ToArray();
         return new CacheValue<ICollection<T>>(pagedItems, true);
     }
 

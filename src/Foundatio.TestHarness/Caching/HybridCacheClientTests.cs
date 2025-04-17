@@ -144,6 +144,36 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     }
 
     [Fact]
+    public override Task CanManageStringListsAsync()
+    {
+        return base.CanManageStringListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListPagingAsync()
+    {
+        return base.CanManageListPagingAsync();
+    }
+
+    [Fact]
+    public override Task CanManageGetListExpirationAsync()
+    {
+        return base.CanManageGetListExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListAddExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListRemoveExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
     public virtual async Task WillUseLocalCache()
     {
         using var firstCache = GetCacheClient() as HybridCacheClient;
