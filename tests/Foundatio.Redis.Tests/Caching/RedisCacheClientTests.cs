@@ -188,7 +188,7 @@ public class RedisCacheClientTests : CacheClientTestsBase
     [Fact]
     public override Task CanManageListRemoveExpirationAsync()
     {
-        return base.CanManageListAddExpirationAsync();
+        return base.CanManageListRemoveExpirationAsync();
     }
 
     [Fact]
