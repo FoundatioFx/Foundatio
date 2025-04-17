@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Redis;
+using Foundatio.Redis.Extensions;
 using Foundatio.Redis.Utility;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ namespace Foundatio.Caching;
 public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 {
     private readonly RedisCacheClientOptions _options;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
     private readonly AsyncLock _lock = new();
@@ -30,13 +32,16 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public RedisCacheClient(RedisCacheClientOptions options)
     {
         _options = options;
-        options.Serializer = options.Serializer ?? DefaultSerializer.Instance;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        options.Serializer ??= DefaultSerializer.Instance;
         _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
         options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
     }
 
     public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
-        : this(config(new RedisCacheClientOptionsBuilder()).Build()) { }
+        : this(config(new RedisCacheClientOptionsBuilder()).Build())
+    {
+    }
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
@@ -48,7 +53,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
@@ -194,7 +199,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             }
         }
 
-        return new CacheValue<ICollection<T>>(result, true);
+        return new CacheValue<ICollection<T>>(result, result.Count > 0);
     }
 
     private CacheValue<T> RedisValueToCacheValue<T>(RedisValue redisValue)
@@ -234,10 +239,12 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (page.HasValue && page.Value < 1)
-            throw new ArgumentNullException(nameof(page), "Page cannot be less than 1.");
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        await ExpireListValuesAsync<T>(key, typeof(T) == typeof(string)).AnyContext();
 
         if (!page.HasValue)
         {
@@ -246,7 +253,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
         else
         {
-            long start = ((page.Value - 1) * pageSize);
+            long start = (page.Value - 1) * pageSize;
             long end = start + pageSize - 1;
             var set = await Database.SortedSetRangeByRankAsync(key, start, end, flags: _options.ReadMode).AnyContext();
             return RedisValuesToCacheValue<T>(set);
@@ -256,7 +263,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         if (expiresIn?.Ticks < 0)
         {
@@ -277,61 +284,37 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        if (expiresIn?.Ticks < 0)
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
-
-            await RemoveAsync(key).AnyContext();
-            return default;
-        }
-
-        long highestScore = 0;
-        try
-        {
-            var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending);
-            highestScore = items.Length > 0 ? (long)items.First().Score : 0;
-        }
-        catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE"))
-        {
-            // convert legacy set to sortedset
-            var oldItems = await Database.SetMembersAsync(key).AnyContext();
-            await Database.KeyDeleteAsync(key).AnyContext();
-
-            if (values is string)
-            {
-                var oldItemValues = new List<string>();
-                foreach (var oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
-                    oldItemValues.Add(oldItem);
-
-                highestScore = await ListAddAsync(key, oldItemValues).AnyContext();
-            }
-            else
-            {
-                var oldItemValues = new List<T>();
-                foreach (var oldItem in RedisValuesToCacheValue<T>(oldItems).Value)
-                    oldItemValues.Add(oldItem);
-
-                highestScore = await ListAddAsync(key, oldItemValues).AnyContext();
-            }
+            await ListRemoveAsync(key, values).AnyContext();
+            return 0;
         }
 
         var redisValues = new List<SortedSetEntry>();
+        long expiresAtMilliseconds = expiresAt.ToUnixTimeMilliseconds();
+
         if (values is string stringValue)
         {
-            redisValues.Add(new SortedSetEntry(stringValue.ToRedisValue(_options.Serializer), highestScore + 1));
+            redisValues.Add(new SortedSetEntry(stringValue.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
         }
         else
         {
             var valuesArray = values.ToArray();
-            for (int i = 0; i < valuesArray.Length; i++)
-                redisValues.Add(new SortedSetEntry(valuesArray[i].ToRedisValue(_options.Serializer), highestScore + i + 1));
+            foreach (var value in valuesArray)
+                redisValues.Add(new SortedSetEntry(value.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
         }
 
-        long result = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
-        if (result > 0 && expiresIn.HasValue)
-            await SetExpirationAsync(key, expiresIn.Value).AnyContext();
+        await ExpireListValuesAsync<T>(key, values is string).AnyContext();
 
-        return result;
+        if (redisValues.Count == 0)
+            return 0;
+
+        long added = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
+        if (added > 0)
+            await ExpireListKeyExpirationAsync(key).AnyContext();
+
+        return added;
     }
 
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
@@ -342,14 +325,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        if (expiresIn?.Ticks < 0)
-        {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
-
-            await RemoveAsync(key).AnyContext();
-            return default;
-        }
-
         var redisValues = new List<RedisValue>();
         if (values is string stringValue)
             redisValues.Add(stringValue.ToRedisValue(_options.Serializer));
@@ -357,39 +332,71 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             foreach (var value in values)
                 redisValues.Add(value.ToRedisValue(_options.Serializer));
 
+        await ExpireListValuesAsync<T>(key, values is string).AnyContext();
+
+        if (redisValues.Count == 0)
+            return 0;
+
+        long removed = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+        if (removed > 0)
+            await ExpireListKeyExpirationAsync(key).AnyContext();
+
+        return removed;
+    }
+
+
+    private async Task ExpireListKeyExpirationAsync(string key)
+    {
+        var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending).AnyContext();
+        if (items.Length == 0)
+            return;
+
+        long highestExpirationInMs = (long)items.Single().Score;
+        var furthestExpirationUtc = highestExpirationInMs.FromUnixTimeMilliseconds();
+
+        var expiresIn = furthestExpirationUtc - _timeProvider.GetUtcNow();
+        await SetExpirationAsync(key, expiresIn).AnyContext();
+    }
+
+    private async Task ExpireListValuesAsync<T>(string key, bool isStringValues)
+    {
         try
         {
-            long result = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
-            if (result > 0 && expiresIn.HasValue)
-                await SetExpirationAsync(key, expiresIn.Value).AnyContext();
+            long expiredValues = await Database
+                .SortedSetRemoveRangeByScoreAsync(key, 0, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
+                .AnyContext();
 
-            return result;
+            if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
         }
         catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE"))
         {
+            _logger.LogInformation(ex, "Migrating legacy set to sortedset for key: {Key}", key);
+
             // convert legacy set to sortedset
             var oldItems = await Database.SetMembersAsync(key).AnyContext();
             await Database.KeyDeleteAsync(key).AnyContext();
 
-            if (values is string)
+            var currentKeyExpiresIn = await GetExpirationAsync(key).AnyContext();
+            if (isStringValues)
             {
-                var oldItemValues = new List<string>();
-                foreach (var oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
+                var oldItemValues = new List<string>(oldItems.Length);
+                foreach (string oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
                     oldItemValues.Add(oldItem);
 
-                await ListAddAsync(key, oldItemValues).AnyContext();
+                await ListAddAsync(key, oldItemValues, currentKeyExpiresIn).AnyContext();
             }
             else
             {
-                var oldItemValues = new List<T>();
+                var oldItemValues = new List<T>(oldItems.Length);
                 foreach (var oldItem in RedisValuesToCacheValue<T>(oldItems).Value)
                     oldItemValues.Add(oldItem);
 
-                await ListAddAsync(key, oldItemValues).AnyContext();
+                await ListAddAsync(key, oldItemValues, currentKeyExpiresIn).AnyContext();
             }
 
-            // try again
-            return await ListRemoveAsync(key, values).AnyContext();
+            if (currentKeyExpiresIn.HasValue)
+                await Database.KeyExpireAsync(key, (DateTime?)null).AnyContext();
         }
     }
 
@@ -628,7 +635,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
-        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored.");
+        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
     }
 

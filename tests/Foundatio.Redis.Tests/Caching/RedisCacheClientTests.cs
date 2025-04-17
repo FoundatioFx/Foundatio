@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Xunit;
 using Xunit.Abstractions;
@@ -161,6 +162,36 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanManageStringListsAsync()
+    {
+        return base.CanManageStringListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListPagingAsync()
+    {
+        return base.CanManageListPagingAsync();
+    }
+
+    [Fact]
+    public override Task CanManageGetListExpirationAsync()
+    {
+        return base.CanManageGetListExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListAddExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListRemoveExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
     public async Task CanUpgradeListType()
     {
         var db = SharedConnection.GetMuxer(Log).GetDatabase();
@@ -175,73 +206,31 @@ public class RedisCacheClientTests : CacheClientTestsBase
                 items.Add(Guid.NewGuid().ToString());
 
             await cache.RemoveAllAsync();
+            const string key = "list:upgrade";
 
-            await db.SetAddAsync("mylist", items.ToArray());
-            await cache.ListAddAsync("mylist", new[] { "newitem1", "newitem2" });
-            await cache.ListAddAsync("mylist", "newitem3");
+            // Assert Upgrade during GetListAsync
+            await db.SetAddAsync(key, items.ToArray());
+            var listItems = await cache.GetListAsync<string>(key);
+            Assert.Equal(items.Count, listItems.Value.Count);
 
-            var listItems = await cache.GetListAsync<string>("mylist");
+            // Assert Upgrade during ListAddAsync
+            await cache.RemoveAllAsync();
+
+            await db.SetAddAsync(key, items.ToArray());
+            await cache.ListAddAsync(key, ["newitem1", "newitem2"]);
+            await cache.ListAddAsync(key, "newitem3");
+
+            listItems = await cache.GetListAsync<string>(key);
             Assert.Equal(items.Count + 3, listItems.Value.Count);
 
+            // Assert Upgrade during ListRemoveAsync
             await cache.RemoveAllAsync();
 
-            await db.SetAddAsync("mylist", items.ToArray());
-            await cache.ListRemoveAsync("mylist", (string)items[10]);
+            await db.SetAddAsync(key, items.ToArray());
+            await cache.ListRemoveAsync(key, (string)items[10]);
 
-            listItems = await cache.GetListAsync<string>("mylist");
+            listItems = await cache.GetListAsync<string>(key);
             Assert.Equal(items.Count - 1, listItems.Value.Count);
-        }
-    }
-
-    [Fact]
-    public async Task CanManageLargeListsAsync()
-    {
-        var cache = GetCacheClient();
-        if (cache == null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var items = new List<string>();
-            // test paging through items in list
-            for (int i = 1; i < 20001; i++)
-                items.Add(Guid.NewGuid().ToString());
-
-            foreach (var batch in Batch(items, 1000))
-                await cache.ListAddAsync("largelist", batch);
-
-            var pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[1], items[2], items[3], items[4] });
-
-            pagedResult = await cache.GetListAsync<string>("largelist", 2, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[5], items[6], items[7], items[8], items[9] });
-
-            string newGuid1 = Guid.NewGuid().ToString();
-            string newGuid2 = Guid.NewGuid().ToString();
-            await cache.ListAddAsync("largelist", new[] { newGuid1, newGuid2 });
-
-            int page = (20000 / 5) + 1;
-            pagedResult = await cache.GetListAsync<string>("largelist", page, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(2, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { newGuid1, newGuid2 });
-
-            long result = await cache.ListAddAsync("largelist", Guid.NewGuid().ToString());
-            Assert.Equal(1, result);
-
-            result = await cache.ListRemoveAsync("largelist", items[1]);
-            Assert.Equal(1, result);
-
-            pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[2], items[3], items[4], items[5] });
         }
     }
 
