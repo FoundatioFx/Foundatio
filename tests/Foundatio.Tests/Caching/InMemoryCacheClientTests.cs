@@ -184,7 +184,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public override Task CanManageListRemoveExpirationAsync()
     {
-        return base.CanManageListAddExpirationAsync();
+        return base.CanManageListRemoveExpirationAsync();
     }
 
     [Fact]

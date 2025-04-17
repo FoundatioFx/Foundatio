@@ -170,7 +170,7 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     [Fact]
     public override Task CanManageListRemoveExpirationAsync()
     {
-        return base.CanManageListAddExpirationAsync();
+        return base.CanManageListRemoveExpirationAsync();
     }
 
     [Fact]

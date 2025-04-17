@@ -973,7 +973,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Add with expiration
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(100)));
-            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(150)));
+            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(175)));
 
             var cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
@@ -981,7 +981,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(cacheValue.Value.Contains(2));
             Assert.True(cacheValue.Value.Contains(3));
 
-            await Task.Delay(100);
+            await Task.Delay(125);
             cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
