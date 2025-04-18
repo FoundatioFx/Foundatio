@@ -316,7 +316,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -365,7 +364,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -414,7 +412,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -463,7 +460,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -510,8 +506,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        if (expiresAt < utcNow)
         {
             await ListRemoveAsync(key, values).AnyContext();
             return 0;
@@ -547,11 +544,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             var items = new HashSet<T>(values).ToDictionary(k => k, _ => expiresAt);
             if (items.Count == 0)
-            {
-                // NOTE: This will not expire list values
-                await StartMaintenanceAsync().AnyContext();
                 return 0;
-            }
 
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
@@ -626,11 +619,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             var items = new HashSet<T>(values);
             if (items.Count == 0)
-            {
-                // NOTE: This will not expire list values
-                await StartMaintenanceAsync().AnyContext();
                 return 0;
-            }
 
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
@@ -697,7 +686,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (entry.IsExpired)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return false;
         }
 
@@ -806,7 +794,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -849,7 +836,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -931,11 +917,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn);
-        if (expiresAt < _timeProvider.GetUtcNow())
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var expiresAt = utcNow.SafeAdd(expiresIn);
+        if (expiresAt < utcNow)
         {
             RemoveExpiredKey(key);
-            await StartMaintenanceAsync().AnyContext();
             return;
         }
 
@@ -951,13 +937,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task StartMaintenanceAsync(bool compactImmediately = false)
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         if (compactImmediately)
             await CompactAsync().AnyContext();
 
-        if (TimeSpan.FromMilliseconds(100) < now - _lastMaintenance)
+        if (TimeSpan.FromMilliseconds(100) < utcNow - _lastMaintenance)
         {
-            _lastMaintenance = now;
+            _lastMaintenance = utcNow;
             _ = Task.Run(DoMaintenanceAsync);
         }
     }
@@ -1002,7 +988,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private async Task DoMaintenanceAsync()
     {
         _logger.LogTrace("DoMaintenance");
-
         var utcNow = _timeProvider.GetUtcNow().AddMilliseconds(50);
 
         // Remove expired items and items that are infrequently accessed as they may be updated by add.
@@ -1076,8 +1061,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             set
             {
                 _cacheValue = _shouldClone ? value.DeepClone() : value;
-                LastAccessTicks = _timeProvider.GetUtcNow().Ticks;
-                LastModifiedTicks = _timeProvider.GetUtcNow().Ticks;
+
+                var utcNow = _timeProvider.GetUtcNow();
+                LastAccessTicks = utcNow.Ticks;
+                LastModifiedTicks = utcNow.Ticks;
             }
         }
 
