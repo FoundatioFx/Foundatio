@@ -201,9 +201,33 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return RemoveAllAsync(keysToRemove);
     }
 
+    /// <summary>
+    /// Removes cache entry from expires in argument value.
+    /// </summary>
     internal long RemoveExpiredKey(string key, bool sendNotification = true)
     {
         // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+        if (_memory.TryRemove(key, out _))
+        {
+            OnItemExpired(key, sendNotification);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Used by the maintenance task to remove expired keys.
+    /// </summary>
+    private long RemoveKeyIfExpired(string key, bool sendNotification = true)
+    {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.IsExpired)
         {
             if (_memory.TryRemove(key, out var removedEntry))
@@ -292,6 +316,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -340,6 +365,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -388,6 +414,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -436,6 +463,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -565,13 +593,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null)
             throw new ArgumentNullException(nameof(values));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
-        {
-            await StartMaintenanceAsync().AnyContext();
-            return RemoveExpiredKey(key);
-        }
-
         Interlocked.Increment(ref _writes);
 
         long removed = 0;
@@ -676,6 +697,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (entry.IsExpired)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return false;
         }
 
@@ -784,6 +806,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -826,6 +849,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks < 0)
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return -1;
         }
 
@@ -911,6 +935,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresAt < _timeProvider.GetUtcNow())
         {
             RemoveExpiredKey(key);
+            await StartMaintenanceAsync().AnyContext();
             return;
         }
 
@@ -991,7 +1016,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 if (lastAccessTimeIsInfrequent && kvp.Value.ExpiresAt < DateTime.MaxValue && kvp.Value.ExpiresAt <= utcNow)
                 {
                     _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
-                    RemoveExpiredKey(kvp.Key);
+                    RemoveKeyIfExpired(kvp.Key);
                 }
             }
         }
