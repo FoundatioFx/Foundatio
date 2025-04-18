@@ -532,7 +532,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 ExpireListValues(dictionary, existingKey);
 
-                dictionary.Add(stringValue, expiresAt);
+                dictionary[stringValue] = expiresAt;
                 existingEntry.Value = dictionary;
                 existingEntry.ExpiresAt = dictionary.Values.Max();
                 return existingEntry;
@@ -614,7 +614,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             });
 
             await StartMaintenanceAsync().AnyContext();
-            return items.Count;
+            return removed;
         }
         else
         {
