@@ -268,7 +268,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (expiresIn?.Ticks < 0)
         {
             if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
-
             await RemoveAsync(key).AnyContext();
             return false;
         }
@@ -538,6 +537,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (expiresIn?.Ticks < 0)
         {
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
             return -1;
         }
@@ -559,6 +559,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (expiresIn?.Ticks < 0)
         {
+            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
             return -1;
         }
