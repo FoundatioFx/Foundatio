@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
+using Foundatio.Extensions;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -731,12 +732,35 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null || values.Count == 0)
             return 0;
 
-        var tasks = new List<Task<bool>>();
-        foreach (var entry in values)
-            tasks.Add(SetAsync(entry.Key, entry.Value, expiresIn));
+        int limit = Math.Min(_maxItems.GetValueOrDefault(values.Count), values.Count);
+        if (values.Count > limit)
+        {
+            _logger.LogWarning(
+                "Received {TotalCount} items but max items is {MaxItems}: processing only the first {Limit}",
+                values.Count, _maxItems, limit);
+        }
 
-        bool[] results = await Task.WhenAll(tasks).AnyContext();
-        return results.Count(r => r);
+        // NOTE: Would be great to target Parallel.ForEachAsync but we need .NET 6+;
+
+        // Use the whole dictionary when possible, otherwise copy just the slice we need.
+        var work = limit == values.Count
+            ? (IReadOnlyDictionary<string, T>)values
+            : values.Take(limit).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        const int batchSize = 1_024;
+
+        // Local function satisfies the ValueTask-returning delegate
+        async ValueTask ProcessSliceAsync(ReadOnlyMemory<KeyValuePair<string, T>> slice)
+        {
+            for (int i = 0; i < slice.Span.Length; i++)
+            {
+                var pair = slice.Span[i];
+                await SetAsync(pair.Key, pair.Value, expiresIn).AnyContext();
+            }
+        }
+
+        await work.BatchAsync(batchSize, ProcessSliceAsync).AnyContext();
+        return values.Count;
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
