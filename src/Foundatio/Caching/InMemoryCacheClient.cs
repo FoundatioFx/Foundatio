@@ -579,7 +579,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return expiredValues;
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
@@ -613,13 +613,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            return removed;
+            return Task.FromResult(removed);
         }
         else
         {
             var items = new HashSet<T>(values);
             if (items.Count == 0)
-                return 0;
+                return Task.FromResult<long>(0);
 
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
@@ -641,7 +641,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            return removed;
+            return Task.FromResult(removed);
         }
     }
 
