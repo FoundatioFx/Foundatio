@@ -613,7 +613,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            await StartMaintenanceAsync().AnyContext();
             return removed;
         }
         else
@@ -642,7 +641,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            await StartMaintenanceAsync().AnyContext();
             return removed;
         }
     }
@@ -655,27 +653,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 
-        _memory.TryUpdate(key, (existingKey, existingEntry) =>
-        {
-            if (existingEntry.Value is IDictionary<T, DateTime> { Count: > 0 } dictionary)
-            {
-                int expiredValues = ExpireListValues(dictionary, existingKey);
-                if (expiredValues is 0)
-                    return existingEntry;
+        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime>>(key);
+        if (!dictionaryCacheValue.HasValue)
+            return new CacheValue<ICollection<T>>([], false);
 
-                existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
-            }
+        // Filter out expired keys instead of mutating them via ExpireListValues.
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
+        if (nonExpiredKeys.Length is 0)
+            return new CacheValue<ICollection<T>>([], false);
 
-            return existingEntry;
-        });
-
-        var dictionary = await GetAsync<IDictionary<T, DateTime>>(key);
-        if (!dictionary.HasValue || !page.HasValue)
-            return new CacheValue<ICollection<T>>(dictionary.Value?.Keys ?? [], dictionary.HasValue);
+        if (!page.HasValue)
+            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
 
         int skip = (page.Value - 1) * pageSize;
-        var pagedItems = dictionary.Value.Keys.Skip(skip).Take(pageSize).ToArray();
+        var pagedItems = nonExpiredKeys.Skip(skip).Take(pageSize).ToArray();
         return new CacheValue<ICollection<T>>(pagedItems, true);
     }
 
