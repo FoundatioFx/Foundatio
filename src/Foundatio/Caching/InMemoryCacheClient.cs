@@ -743,7 +743,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // NOTE: Would be great to target Parallel.ForEachAsync but we need .NET 6+;
 
         // Use the whole dictionary when possible, otherwise copy just the slice we need.
-        var work = limit == values.Count
+        var work = limit >= values.Count
             ? (IReadOnlyDictionary<string, T>)values
             : values.Take(limit).ToDictionary(kv => kv.Key, kv => kv.Value);
 
