@@ -725,10 +725,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
 
         int limit = Math.Min(_maxItems.GetValueOrDefault(values.Count), values.Count);
-        if (values.Count > limit)
+        if (_maxItems.HasValue && values.Count > _maxItems)
         {
             _logger.LogWarning(
-                "Received {TotalCount} items but max items is {MaxItems}: processing only the first {Limit}",
+                "Received {TotalCount} items but max items is {MaxItems}: processing the last {Limit}",
                 values.Count, _maxItems, limit);
         }
 
@@ -737,7 +737,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Use the whole dictionary when possible, otherwise copy just the slice we need.
         var work = limit >= values.Count
             ? (IReadOnlyDictionary<string, T>)values
-            : values.Take(limit).ToDictionary(kv => kv.Key, kv => kv.Value);
+            : values.Skip(values.Count - limit).ToDictionary(kv => kv.Key, kv => kv.Value);
 
         const int batchSize = 1_024;
 
