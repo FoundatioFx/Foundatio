@@ -167,18 +167,18 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             // Create the client connection, channel, declares the exchange, queue and binds
             // the exchange with the publisher queue. It requires the name of our exchange, exchange type, durability and auto-delete.
-            // For now, we are using same autoDelete for both exchange and queue ( it will survive a server restart )
+            // For now, we are using same autoDelete for both exchange and queue (it will survive a server restart)
             _publisherConnection = await CreateConnectionAsync().AnyContext();
             _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
 
             // We first attempt to create "x-delayed-type". For this plugin should be installed.
             // However, we plug in is not installed this will throw an exception. In that case
             // we attempt to create regular exchange. If regular exchange also throws and exception
-            // then trouble shoot the problem.
+            // then troubleshoot the problem.
             if (!await CreateDelayedExchangeAsync(_publisherChannel).AnyContext())
             {
-                // if the initial exchange creation was not successful then we must close the previous connection
-                // and establish the new client connection and model otherwise you will keep receiving failure in creation
+                // if the initial exchange creation was not successful, then we must close the previous connection
+                // and establish the new client connection and model; otherwise you will keep receiving failure in creation
                 // of the regular exchange too.
                 await _publisherChannel.DisposeAsync().AnyContext();
                 await _publisherConnection.DisposeAsync().AnyContext();
