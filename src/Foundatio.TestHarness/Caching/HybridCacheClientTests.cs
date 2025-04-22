@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -141,6 +141,36 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     public override Task CanManageListsAsync()
     {
         return base.CanManageListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageStringListsAsync()
+    {
+        return base.CanManageStringListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListPagingAsync()
+    {
+        return base.CanManageListPagingAsync();
+    }
+
+    [Fact]
+    public override Task CanManageGetListExpirationAsync()
+    {
+        return base.CanManageGetListExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListAddExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListRemoveExpirationAsync()
+    {
+        return base.CanManageListRemoveExpirationAsync();
     }
 
     [Fact]

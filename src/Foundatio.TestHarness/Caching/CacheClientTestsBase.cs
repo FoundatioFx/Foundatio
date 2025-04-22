@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -39,7 +39,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("test1", 1);
             await cache.SetAsync("test2", 2);
             await cache.SetAsync("test3", 3);
-            var result = await cache.GetAllAsync<int>(new[] { "test1", "test2", "test3" });
+            var result = await cache.GetAllAsync<int>(["test1", "test2", "test3"]);
             Assert.NotNull(result);
             Assert.Equal(3, result.Count);
             Assert.Equal(1, result["test1"].Value);
@@ -51,7 +51,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("obj3", (SimpleModel)null);
             await cache.SetAsync("obj4", new SimpleModel { Data1 = "test 1", Data2 = 4 });
 
-            var result2 = await cache.GetAllAsync<SimpleModel>(new[] { "obj1", "obj2", "obj3", "obj4", "obj5" });
+            var result2 = await cache.GetAllAsync<SimpleModel>(["obj1", "obj2", "obj3", "obj4", "obj5"]);
             Assert.NotNull(result2);
             Assert.Equal(5, result2.Count);
             Assert.True(result2["obj3"].IsNull);
@@ -64,7 +64,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("str1", "string 1");
             await cache.SetAsync("str2", "string 2");
             await cache.SetAsync("str3", (string)null);
-            var result3 = await cache.GetAllAsync<string>(new[] { "str1", "str2", "str3" });
+            var result3 = await cache.GetAllAsync<string>(["str1", "str2", "str3"]);
             Assert.NotNull(result3);
             Assert.Equal(3, result3.Count);
         }
@@ -89,7 +89,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 { "test5", 5.0 }
             });
 
-            var result = await cache.GetAllAsync<double>(new[] { "test1", "test2", "test3", "test4", "test5" });
+            var result = await cache.GetAllAsync<double>(["test1", "test2", "test3", "test4", "test5"]);
             Assert.NotNull(result);
             Assert.Equal(5, result.Count);
             Assert.Equal(1.0, result["test1"].Value);
@@ -349,10 +349,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
             Assert.Equal(20, await nestedScopedCache1.IncrementAsync("total", 20));
             Assert.Equal(20, await nestedScopedCache1.GetAsync<double>("total", 0));
-            Assert.Equal(1, await nestedScopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+            Assert.Equal(1, await nestedScopedCache1.RemoveAllAsync(["id", "total"]));
             Assert.Equal(0, await nestedScopedCache1.GetAsync<double>("total", 0));
 
-            Assert.Equal(1, await scopedCache1.RemoveAllAsync(new[] { "id", "total" }));
+            Assert.Equal(1, await scopedCache1.RemoveAllAsync(["id", "total"]));
             Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
         }
     }
@@ -673,7 +673,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(await cache.SetAsync("test", value));
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
 
-            var lowerValue = value - 1000;
+            double lowerValue = value - 1000;
             Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
 
@@ -722,7 +722,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(TimeSpan.Zero, actual.Offset);
 
             var lowerValue = value - TimeSpan.FromHours(1);
-            var lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
+            long lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
             Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfLowerAsync("test", lowerValue));
             Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
 
@@ -747,7 +747,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
 
             var higherValue = value + TimeSpan.FromHours(1);
-            var higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
+            long higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
             Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfHigherAsync("test", higherValue));
             Assert.Equal(higherUnixTimeValue, await cache.GetAsync<long>("test", 0));
             Assert.Equal(higherValue, await cache.GetUnixTimeMillisecondsAsync("test"));
@@ -770,7 +770,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
             Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
 
-            var lowerValue = value - 1000;
+            double lowerValue = value - 1000;
             Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue, TimeSpan.FromHours(2)));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
             Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
@@ -798,6 +798,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
+            const string key = "list";
 
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(String.Empty, 1));
@@ -808,45 +809,36 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
 
-            await cache.ListAddAsync("test1", new[] { 1, 2, 3 });
-            var result = await cache.GetListAsync<int>("test1");
+            await cache.ListAddAsync(key, [1, 2, 3, 3]);
+            var result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(3, result.Value.Count);
 
-            await cache.ListRemoveAsync("test1", new[] { 1, 2, 3 });
-            result = await cache.GetListAsync<int>("test1");
+            await cache.ListRemoveAsync(key, [1, 2, 3]);
+            result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
 
-            // test single strings don't get handled as char arrays
             await cache.RemoveAllAsync();
 
-            await cache.ListAddAsync("stringlist", "myvalue");
-            var stringResult = await cache.GetListAsync<string>("stringlist");
-            Assert.Single(stringResult.Value);
-            Assert.Equal("myvalue", stringResult.Value.First());
+            // Add an empty item.
+            await cache.ListAddAsync<int>(key, []);
 
-            await cache.ListRemoveAsync("stringlist", "myvalue");
-            stringResult = await cache.GetListAsync<string>("stringlist");
-            Assert.Empty(stringResult.Value);
-
-            await cache.RemoveAllAsync();
-
-            await cache.ListAddAsync("test1", 1);
-            await cache.ListAddAsync("test1", 2);
-            await cache.ListAddAsync("test1", 3);
-            result = await cache.GetListAsync<int>("test1");
+            await cache.ListAddAsync(key, 1);
+            await cache.ListAddAsync(key, 2);
+            await cache.ListAddAsync(key, 3);
+            result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(3, result.Value.Count);
 
-            await cache.ListRemoveAsync("test1", 2);
-            result = await cache.GetListAsync<int>("test1");
+            await cache.ListRemoveAsync(key, 2);
+            result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(2, result.Value.Count);
 
-            await cache.ListRemoveAsync("test1", 1);
-            await cache.ListRemoveAsync("test1", 3);
-            result = await cache.GetListAsync<int>("test1");
+            await cache.ListRemoveAsync(key, 1);
+            await cache.ListRemoveAsync(key, 3);
+            result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
 
@@ -855,31 +847,175 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 await cache.AddAsync("key1", 1);
                 await cache.ListAddAsync("key1", 1);
             });
+        }
+    }
 
-            // test paging through items in list
-            await cache.ListAddAsync("testpaging", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 });
-            var pagedResult = await cache.GetListAsync<int>("testpaging", 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { 1, 2, 3, 4, 5 });
+    /// <summary>
+    /// single strings don't get handled as char arrays
+    /// </summary>
+    public virtual async Task CanManageStringListsAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
 
-            pagedResult = await cache.GetListAsync<int>("testpaging", 2, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { 6, 7, 8, 9, 10 });
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:strings";
 
-            await cache.ListAddAsync("testpaging", new[] { 21, 22 });
+            await cache.ListAddAsync(key, "my-value");
+            var stringResult = await cache.GetListAsync<string>(key);
+            Assert.Single(stringResult.Value);
+            Assert.Equal("my-value", stringResult.Value.First());
 
-            pagedResult = await cache.GetListAsync<int>("testpaging", 5, 5);
+            await cache.ListRemoveAsync(key, "my-value");
+            stringResult = await cache.GetListAsync<string>(key);
+            Assert.Empty(stringResult.Value);
+        }
+    }
+
+    public virtual async Task CanManageListPagingAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:paging";
+
+            int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+
+            CacheValue<ICollection<int>> pagedResult;
+            var firstPageResults = new HashSet<int>(5);
+            var actualResults = new HashSet<int>(values.Length);
+
+            for (int page = 1; page < values.Length / 5 + 1; page++)
+            {
+                pagedResult = await cache.GetListAsync<int>(key, page, 5);
+                Assert.NotNull(pagedResult);
+                Assert.Equal(5, pagedResult.Value.Count);
+                actualResults.AddRange(pagedResult.Value);
+
+                if (page is 1)
+                    firstPageResults.AddRange(pagedResult.Value);
+            }
+
+            // Use a higher expiration so we can assert the new items are returned last in the list.
+            await cache.ListAddAsync(key, [21, 22], TimeSpan.FromMinutes(2));
+            pagedResult = await cache.GetListAsync<int>(key, 5, 5);
             Assert.NotNull(pagedResult);
             Assert.Equal(2, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { 21, 22 });
+            actualResults.AddRange(pagedResult.Value);
+            Assert.Equal(values.Length + 2, actualResults.Count);
 
-            await cache.ListRemoveAsync("testpaging", 2);
-            pagedResult = await cache.GetListAsync<int>("testpaging", 1, 5);
+            // Assert invalid starting page is empty.
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>(key, 0, 5));
+
+            // Assert invalid page is empty
+            pagedResult = await cache.GetListAsync<int>(key, 6, 5);
+            Assert.NotNull(pagedResult);
+            Assert.Empty(pagedResult.Value);
+
+            // Assert the first page is the same.
+            pagedResult = await cache.GetListAsync<int>(key, 1, 5);
             Assert.NotNull(pagedResult);
             Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { 1, 3, 4, 5, 6 });
+            Assert.Equal(firstPageResults, pagedResult.Value.ToArray());
+        }
+    }
+
+    public virtual async Task CanManageGetListExpirationAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:expiration:get";
+
+            Assert.Equal(1, await cache.ListAddAsync(key, [1], TimeSpan.FromMilliseconds(100)));
+
+            var cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Single(cacheValue.Value);
+            Assert.True(cacheValue.Value.Contains(1));
+
+            await Task.Delay(150);
+
+            // GetList should invalidate expired items
+            cacheValue = await cache.GetListAsync<int>(key);
+            Assert.False(cacheValue.HasValue);
+            Assert.False(await cache.ExistsAsync(key));
+        }
+    }
+    public virtual async Task CanManageListAddExpirationAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:expiration:add";
+
+            Assert.Equal(1, await cache.ListAddAsync(key, [1]));
+
+            // Remove the expired item via Add.
+            Assert.Equal(0, await cache.ListAddAsync(key, [1], TimeSpan.FromSeconds(-1)));
+            Assert.False(await cache.ExistsAsync(key));
+
+            // Add with expiration
+            Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(100)));
+            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(175)));
+
+            var cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Equal(2, cacheValue.Value.Count);
+            Assert.True(cacheValue.Value.Contains(2));
+            Assert.True(cacheValue.Value.Contains(3));
+
+            await Task.Delay(125);
+            cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Single(cacheValue.Value);
+            Assert.True(cacheValue.Value.Contains(3));
+
+            await Task.Delay(100);
+            Assert.False(await cache.ExistsAsync(key));
+        }
+    }
+
+    public virtual async Task CanManageListRemoveExpirationAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:expiration:remove";
+
+            Assert.Equal(2, await cache.ListAddAsync(key, [1, 2]));
+
+            // Past expiration just calls remove on the item if it's there.
+            Assert.Equal(1, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
+            Assert.Equal(0, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
+
+            var cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Single(cacheValue.Value);
+            Assert.True(cacheValue.Value.Contains(2));
+
+            Assert.Equal(1, await cache.ListRemoveAsync(key, [2], TimeSpan.FromSeconds(1)));
+            Assert.False(await cache.ExistsAsync(key));
         }
     }
 

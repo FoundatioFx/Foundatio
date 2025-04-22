@@ -158,6 +158,36 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanManageStringListsAsync()
+    {
+        return base.CanManageStringListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListPagingAsync()
+    {
+        return base.CanManageListPagingAsync();
+    }
+
+    [Fact]
+    public override Task CanManageGetListExpirationAsync()
+    {
+        return base.CanManageGetListExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListAddExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListRemoveExpirationAsync()
+    {
+        return base.CanManageListRemoveExpirationAsync();
+    }
+
+    [Fact]
     public async Task CanSetMaxItems()
     {
         // run in tight loop so that the code is warmed up and we can catch timing issues
