@@ -460,14 +460,16 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
         }
 
-        await Run.WithRetriesAsync(() => Task.WhenAll(
-            Database.KeyDeleteAsync(GetPayloadKey(entry.Id)),
-            Database.KeyDeleteAsync(GetAttemptsKey(entry.Id)),
-            Database.KeyDeleteAsync(GetEnqueuedTimeKey(entry.Id)),
-            Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
-            Database.KeyDeleteAsync(GetRenewedTimeKey(entry.Id)),
-            Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
-        ), logger: _logger).AnyContext();
+        await Run.WithRetriesAsync(() =>
+            Database.KeyDeleteAsync([
+                    GetPayloadKey(entry.Id),
+                    GetAttemptsKey(entry.Id),
+                    GetEnqueuedTimeKey(entry.Id),
+                    GetDequeuedTimeKey(entry.Id),
+                    GetRenewedTimeKey(entry.Id),
+                    GetWaitTimeKey(entry.Id)
+                ]
+            ), logger: _logger).AnyContext();
 
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
@@ -509,8 +511,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
             await Run.WithRetriesAsync(() => Task.WhenAll(
                 _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl()),
-                Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
-                Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
+                Database.KeyDeleteAsync([GetDequeuedTimeKey(entry.Id), GetWaitTimeKey(entry.Id)])
             ), logger: _logger).AnyContext();
         }
         else if (retryDelay > TimeSpan.Zero)
@@ -598,17 +599,17 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private async Task DeleteListAsync(string name)
     {
         var itemIds = await Database.ListRangeAsync(name).AnyContext();
-        var tasks = new List<Task>();
+        var tasks = new List<Task>(itemIds.Length + 1);
         foreach (var id in itemIds)
         {
-            tasks.AddRange(new Task[] {
-                Database.KeyDeleteAsync(GetPayloadKey(id)),
-                Database.KeyDeleteAsync(GetAttemptsKey(id)),
-                Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
-                Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
-                Database.KeyDeleteAsync(GetRenewedTimeKey(id)),
-                Database.KeyDeleteAsync(GetWaitTimeKey(id))
-            });
+            tasks.Add(Database.KeyDeleteAsync([
+                GetPayloadKey(id),
+                GetAttemptsKey(id),
+                GetEnqueuedTimeKey(id),
+                GetDequeuedTimeKey(id),
+                GetRenewedTimeKey(id),
+                GetWaitTimeKey(id)
+            ]));
         }
 
         tasks.Add(Database.KeyDeleteAsync(name));
@@ -617,22 +618,24 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     private async Task TrimDeadletterItemsAsync(int maxItems)
     {
-        var itemIds = (await Database.ListRangeAsync(_deadListName).AnyContext()).Skip(maxItems);
-        var tasks = new List<Task>();
+        var itemIds = (await Database.ListRangeAsync(_deadListName).AnyContext()).Skip(maxItems).ToArray();
+        var tasks = new List<Task>(itemIds.Length * 5);
         foreach (var id in itemIds)
         {
-            tasks.AddRange(new Task[] {
-                Database.KeyDeleteAsync(GetPayloadKey(id)),
-                Database.KeyDeleteAsync(GetAttemptsKey(id)),
-                Database.KeyDeleteAsync(GetEnqueuedTimeKey(id)),
-                Database.KeyDeleteAsync(GetDequeuedTimeKey(id)),
-                Database.KeyDeleteAsync(GetRenewedTimeKey(id)),
-                Database.KeyDeleteAsync(GetWaitTimeKey(id)),
+            tasks.AddRange([
+                Database.KeyDeleteAsync([
+                    GetPayloadKey(id),
+                    GetAttemptsKey(id),
+                    GetEnqueuedTimeKey(id),
+                    GetDequeuedTimeKey(id),
+                    GetRenewedTimeKey(id),
+                    GetWaitTimeKey(id)
+                ]),
                 Database.ListRemoveAsync(_queueListName, id),
                 Database.ListRemoveAsync(_workListName, id),
                 Database.ListRemoveAsync(_waitListName, id),
                 Database.ListRemoveAsync(_deadListName, id)
-            });
+            ]);
         }
 
         await Task.WhenAll(tasks).AnyContext();
