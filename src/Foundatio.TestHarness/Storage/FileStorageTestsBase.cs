@@ -464,13 +464,13 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
             using (var memoryStream = new MemoryStream())
             {
-                _logger.LogTrace("Saving xml to stream with position {Position}.", memoryStream.Position);
+                _logger.LogTrace("Saving xml to stream with position {Position}", memoryStream.Position);
                 element.Save(memoryStream, SaveOptions.DisableFormatting);
 
                 memoryStream.Seek(0, SeekOrigin.Begin);
                 _logger.LogTrace("Saving contents with position {Position}", memoryStream.Position);
                 await storage.SaveFileAsync(path, memoryStream);
-                _logger.LogTrace("Saved contents with position {Position}.", memoryStream.Position);
+                _logger.LogTrace("Saved contents with position {Position}", memoryStream.Position);
             }
 
             await using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read);
